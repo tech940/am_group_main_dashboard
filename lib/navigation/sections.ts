@@ -3,11 +3,15 @@ import { isSuperAdminRole, hasGlobalAccessRole } from '@/lib/auth/roles'
 import { hasAllBranchAccess } from '@/lib/branches'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import { canViewBookingPaymentHistory } from '@/lib/kia/booking-payment-history-access'
+import {
+  canViewRestrictedAnalytics,
+  isRestrictedAnalyticsHref,
+} from '@/lib/auth/restricted-analytics'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { isPettyCashViewRole, isAmFinanceViewRole, isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 
-// Define the departments we support
 export type DepartmentType = 'sales' | 'service' | 'finance' | 'admin'
+export type SectionCategory = 'common_dashboards' | 'general_modules' | 'kia' | 'hyundai' | 'platinum'
 
 export interface SearchSection {
   id: string
@@ -18,6 +22,8 @@ export interface SearchSection {
   brand: 'kia' | 'hyundai' | 'platinum' | 'mg' | 'common'
   iconName: string
   badge?: string
+  initials?: string
+  category?: SectionCategory
 }
 
 export const ALL_SECTIONS: SearchSection[] = [
@@ -30,6 +36,30 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'admin',
     brand: 'common',
     iconName: 'Gauge',
+    initials: 'GC',
+    category: 'common_dashboards',
+  },
+  {
+    id: 'call_analysis',
+    name: 'Call Analysis',
+    description: 'Call volume, agent performance, timing patterns, customer matching and call recordings.',
+    href: '/call-analysis',
+    department: 'admin',
+    brand: 'common',
+    iconName: 'PhoneCall',
+    initials: 'CA',
+    category: 'common_dashboards',
+  },
+  {
+    id: 'insurance_analysis',
+    name: 'Insurance Analysis',
+    description: 'Hyundai, Platinum and Kia insurance policy analytics — executive KPIs, premium and revenue, insurer performance, and vehicle-level customer retention.',
+    href: '/insurance',
+    department: 'admin',
+    brand: 'common',
+    iconName: 'ShieldCheck',
+    initials: 'IA',
+    category: 'common_dashboards',
   },
   {
     id: 'delegation_tasks',
@@ -39,6 +69,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'admin',
     brand: 'common',
     iconName: 'ClipboardList',
+    initials: 'DT',
+    category: 'common_dashboards',
   },
   {
     id: 'purchase_orders',
@@ -48,6 +80,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'admin',
     brand: 'common',
     iconName: 'ShoppingCart',
+    initials: 'PO',
+    category: 'common_dashboards',
   },
   {
     id: 'scrap',
@@ -57,6 +91,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'admin',
     brand: 'common',
     iconName: 'Recycle',
+    initials: 'SC',
+    category: 'common_dashboards',
   },
   {
     id: 'admin_panel',
@@ -66,18 +102,11 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'admin',
     brand: 'common',
     iconName: 'Shield',
+    initials: 'AP',
+    category: 'general_modules',
   },
 
   // ── Finance & Accounts ──
-  {
-    id: 'petty_cash',
-    name: 'Petty Cash',
-    description: 'Log and track cash vouchers, local store expenses, and branch petty cash approvals.',
-    href: '/petty-cash',
-    department: 'finance',
-    brand: 'common',
-    iconName: 'Banknote',
-  },
   {
     id: 'am_finance',
     name: 'AM Finance',
@@ -86,6 +115,19 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'finance',
     brand: 'common',
     iconName: 'Landmark',
+    initials: 'AF',
+    category: 'general_modules',
+  },
+  {
+    id: 'petty_cash',
+    name: 'Petty Cash',
+    description: 'Log and track cash vouchers, local store expenses, and branch petty cash approvals.',
+    href: '/petty-cash',
+    department: 'finance',
+    brand: 'common',
+    iconName: 'Banknote',
+    initials: 'PC',
+    category: 'general_modules',
   },
   {
     id: 'finance',
@@ -95,6 +137,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'finance',
     brand: 'common',
     iconName: 'HandCoins',
+    initials: 'CV',
+    category: 'general_modules',
   },
   {
     id: 'kia_approvals',
@@ -104,6 +148,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'finance',
     brand: 'common',
     iconName: 'FileCheck',
+    initials: 'VP',
+    category: 'general_modules',
   },
   {
     id: 'kia_vendors',
@@ -113,6 +159,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'finance',
     brand: 'common',
     iconName: 'Users',
+    initials: 'VR',
+    category: 'general_modules',
   },
 
   // ── AM KIA Sales ──
@@ -124,6 +172,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'FileText',
+    initials: 'KB',
+    category: 'kia',
   },
   {
     id: 'kia_sales_report',
@@ -133,6 +183,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'BarChart3',
+    initials: 'SR',
+    category: 'kia',
   },
   {
     id: 'kia_stock_report',
@@ -142,6 +194,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'Layers',
+    initials: 'ST',
+    category: 'kia',
   },
   {
     id: 'kia_sales_performance',
@@ -152,6 +206,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     brand: 'kia',
     iconName: 'TrendingUp',
     badge: 'TEST',
+    initials: 'SP',
+    category: 'kia',
   },
   {
     id: 'kia_call_center',
@@ -161,15 +217,19 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'PhoneCall',
+    initials: 'CC',
+    category: 'kia',
   },
   {
     id: 'kia_lead_followups',
-    name: 'Booking Follow-ups',
+    name: 'Booking Follow-up Analytics',
     description: 'Pending callback schedules, next follow-up dates, and logs of active customer conversations.',
     href: '/brands/kia/follow-ups',
     department: 'sales',
     brand: 'kia',
     iconName: 'Clock',
+    initials: 'BF',
+    category: 'kia',
   },
   {
     id: 'kia_call_analytics',
@@ -179,6 +239,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'PieChart',
+    initials: 'CFA',
+    category: 'kia',
   },
   {
     id: 'kia_booking_payment_history',
@@ -188,6 +250,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'Banknote',
+    initials: 'BPH',
+    category: 'kia',
   },
   {
     id: 'kia_demo_cars_list',
@@ -197,6 +261,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'Car',
+    initials: 'DCL',
+    category: 'kia',
   },
 
   // ── AM KIA Service ──
@@ -208,6 +274,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'kia',
     iconName: 'Award',
+    initials: 'BE',
+    category: 'kia',
   },
   {
     id: 'kia_service_appointment',
@@ -217,6 +285,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'kia',
     iconName: 'Calendar',
+    initials: 'SA',
+    category: 'kia',
   },
   {
     id: 'kia_vehicle_tracker',
@@ -226,6 +296,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'kia',
     iconName: 'Truck',
+    initials: 'VT',
+    category: 'kia',
   },
   {
     id: 'kia_demo_job_cards',
@@ -235,18 +307,11 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'kia',
     iconName: 'ClipboardList',
+    initials: 'DJC',
+    category: 'kia',
   },
 
-  // ── AM Hyundai Service ──
-  {
-    id: 'hyundai_business_excellence',
-    name: 'Hyundai Business Excellence',
-    description: 'Standard evaluation scoring and workshop excellence reports for Hyundai.',
-    href: '/brands/hyundai/business-excellence',
-    department: 'service',
-    brand: 'hyundai',
-    iconName: 'Award',
-  },
+  // ── AM Hyundai Service & Sales ──
   {
     id: 'hyundai_service_appointment',
     name: 'Hyundai Service Appointment',
@@ -255,6 +320,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'hyundai',
     iconName: 'Calendar',
+    initials: 'HSA',
+    category: 'hyundai',
   },
   {
     id: 'hyundai_warranty_list',
@@ -264,18 +331,9 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'hyundai',
     iconName: 'Sparkles',
+    initials: 'CY',
+    category: 'hyundai',
   },
-  {
-    id: 'hyundai_warranty_claim_list',
-    name: 'Warranty Claims',
-    description: 'Comprehensive database of processed and pending parts replacement claims.',
-    href: '/brands/hyundai/warranty-claim-list',
-    department: 'service',
-    brand: 'hyundai',
-    iconName: 'ShieldAlert',
-  },
-
-  // ── AM Hyundai Sales ──
   {
     id: 'hyundai_proforma',
     name: 'Hyundai Bookings',
@@ -284,6 +342,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'hyundai',
     iconName: 'FileText',
+    initials: 'HB',
+    category: 'hyundai',
   },
   {
     id: 'hyundai_demo_cars_list',
@@ -293,6 +353,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'hyundai',
     iconName: 'Car',
+    initials: 'HD',
+    category: 'hyundai',
   },
   {
     id: 'hyundai_demo_job_cards',
@@ -302,17 +364,43 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'hyundai',
     iconName: 'ClipboardList',
+    initials: 'HJD',
+    category: 'hyundai',
+  },
+  {
+    id: 'hyundai_warranty_claim_list',
+    name: 'Warranty Claims',
+    description: 'Comprehensive database of processed and pending parts replacement claims.',
+    href: '/brands/hyundai/warranty-claim-list',
+    department: 'service',
+    brand: 'hyundai',
+    iconName: 'ShieldAlert',
+    initials: 'WC',
+    category: 'hyundai',
+  },
+  {
+    id: 'hyundai_business_excellence',
+    name: 'Hyundai Business Excellence',
+    description: 'Standard evaluation scoring and workshop excellence reports for Hyundai.',
+    href: '/brands/hyundai/business-excellence',
+    department: 'service',
+    brand: 'hyundai',
+    iconName: 'Award',
+    initials: 'HBE',
+    category: 'hyundai',
   },
 
-  // ── AM Platinum Service ──
+  // ── AM Platinum Service & Sales ──
   {
-    id: 'platinum_business_excellence',
-    name: 'Platinum Business Excellence',
-    description: 'Standard evaluation scoring and workshop excellence reports for AM Platinum.',
-    href: '/brands/platinum/business-excellence',
-    department: 'service',
+    id: 'platinum_proforma',
+    name: 'Platinum Bookings',
+    description: 'Create and print proforma invoices and sales bookings for Platinum vehicles.',
+    href: '/brands/platinum/proforma',
+    department: 'sales',
     brand: 'platinum',
-    iconName: 'Award',
+    iconName: 'FileText',
+    initials: 'PB',
+    category: 'platinum',
   },
   {
     id: 'platinum_service_appointment',
@@ -322,6 +410,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'platinum',
     iconName: 'Calendar',
+    initials: 'PSA',
+    category: 'platinum',
   },
   {
     id: 'platinum_warranty_list',
@@ -331,6 +421,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'platinum',
     iconName: 'Sparkles',
+    initials: 'PCY',
+    category: 'platinum',
   },
   {
     id: 'platinum_warranty_claim_list',
@@ -340,17 +432,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'platinum',
     iconName: 'ShieldAlert',
-  },
-
-  // ── AM Platinum Sales ──
-  {
-    id: 'platinum_proforma',
-    name: 'Platinum Bookings',
-    description: 'Create and print proforma invoices and sales bookings for Platinum vehicles.',
-    href: '/brands/platinum/proforma',
-    department: 'sales',
-    brand: 'platinum',
-    iconName: 'FileText',
+    initials: 'PWC',
+    category: 'platinum',
   },
   {
     id: 'platinum_demo_cars_list',
@@ -360,6 +443,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'platinum',
     iconName: 'Car',
+    initials: 'PD',
+    category: 'platinum',
   },
   {
     id: 'platinum_demo_job_cards',
@@ -369,12 +454,27 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'service',
     brand: 'platinum',
     iconName: 'ClipboardList',
+    initials: 'PJD',
+    category: 'platinum',
+  },
+  {
+    id: 'platinum_business_excellence',
+    name: 'Platinum Business Excellence',
+    description: 'Standard evaluation scoring and workshop excellence reports for AM Platinum.',
+    href: '/brands/platinum/business-excellence',
+    department: 'service',
+    brand: 'platinum',
+    iconName: 'Award',
+    initials: 'PBE',
+    category: 'platinum',
   },
 ]
 
 export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/cockpit',
   '/delegation-tasks',
+  '/call-analysis',
+  '/insurance',
   '/purchase-orders',
   '/petty-cash',
   '/am-finance',
@@ -469,6 +569,15 @@ export function canUserAccessSection(
   // Scrap
   if (href === '/scrap' || href === '/scrap-erp') {
     return canAccessScrapErp(userRole, permissionMap)
+  }
+
+  // Call Analysis + Insurance Analysis — MD + Developer ONLY, and unwidenable.
+  //
+  // Checked with `return`, not a fall-through guard, so no later branch and no permission grant can
+  // re-open them. Both the sidebar and both search surfaces route through here, so this single test
+  // is what makes "no one else can see these at all" true everywhere at once.
+  if (isRestrictedAnalyticsHref(href)) {
+    return canViewRestrictedAnalytics(userRole)
   }
 
   // Petty Cash

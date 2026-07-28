@@ -14,72 +14,102 @@ import {
   canUserAccessSection,
   type SearchSection,
   type DepartmentType,
+  type SectionCategory,
 } from '@/lib/navigation/sections'
 import {
   Search,
-  Gauge,
-  ShoppingCart,
-  Shield,
-  Banknote,
-  Landmark,
-  FileCheck,
-  Users,
-  FileText,
-  BarChart3,
-  Layers,
-  TrendingUp,
-  PhoneCall,
-  Clock,
-  PieChart,
-  Car,
-  Award,
-  Calendar,
-  Truck,
-  ClipboardList,
-  Sparkles,
-  ShieldAlert,
-  HelpCircle,
+  Star,
   CornerDownLeft,
   Loader2,
-  Star,
-  Recycle,
-  HandCoins,
+  X,
+  ArrowRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 
-
-// Dynamic icon mapping helper
-const IconMap: Record<string, React.ComponentType<any>> = {
-  Gauge,
-  ShoppingCart,
-  Shield,
-  Banknote,
-  Landmark,
-  FileCheck,
-  Users,
-  FileText,
-  BarChart3,
-  Layers,
-  TrendingUp,
-  PhoneCall,
-  Clock,
-  PieChart,
-  Car,
-  Award,
-  Calendar,
-  Truck,
-  ClipboardList,
-  Sparkles,
-  ShieldAlert,
-  Recycle,
-  HandCoins,
+interface CategoryMeta {
+  id: SectionCategory
+  title: string
+  description: string
+  avatarBg: string
+  avatarText: string
+  badgeBg: string
+  badgeText: string
+  badgeBorder: string
+  viewAllColor: string
 }
 
-function SectionIcon({ name, className }: { name: string; className?: string }) {
-  const IconComponent = IconMap[name] || HelpCircle
-  return <IconComponent className={className} />
+const CATEGORY_CONFIG: Record<SectionCategory, CategoryMeta> = {
+  common_dashboards: {
+    id: 'common_dashboards',
+    title: 'Common Dashboards',
+    description: 'Shared dashboards used across multiple departments',
+    avatarBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)] border border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    avatarText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)]',
+    badgeText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBorder: 'border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    viewAllColor: 'text-[var(--dashboard-primary)] dark:text-[var(--dashboard-primary-light)]',
+  },
+  general_modules: {
+    id: 'general_modules',
+    title: 'General Modules',
+    description: 'Core business and administrative dashboards',
+    avatarBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)] border border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    avatarText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)]',
+    badgeText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBorder: 'border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    viewAllColor: 'text-[var(--dashboard-primary)] dark:text-[var(--dashboard-primary-light)]',
+  },
+  kia: {
+    id: 'kia',
+    title: 'KIA Dashboards',
+    description: 'KIA-specific business dashboards and reports',
+    avatarBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)] border border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    avatarText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)]',
+    badgeText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBorder: 'border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    viewAllColor: 'text-[var(--dashboard-primary)] dark:text-[var(--dashboard-primary-light)]',
+  },
+  hyundai: {
+    id: 'hyundai',
+    title: 'Hyundai Dashboards',
+    description: 'Hyundai-specific business dashboards and reports',
+    avatarBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)] border border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    avatarText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)]',
+    badgeText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBorder: 'border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    viewAllColor: 'text-[var(--dashboard-primary)] dark:text-[var(--dashboard-primary-light)]',
+  },
+  platinum: {
+    id: 'platinum',
+    title: 'Platinum Dashboards',
+    description: 'Platinum-specific dashboards and reports',
+    avatarBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)] border border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    avatarText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)]',
+    badgeText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBorder: 'border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    viewAllColor: 'text-[var(--dashboard-primary)] dark:text-[var(--dashboard-primary-light)]',
+  },
 }
+
+type FilterOptionId = 'all' | DepartmentType | 'kia' | 'hyundai' | 'platinum' | 'common'
+
+const FILTER_PILLS: { id: FilterOptionId; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'sales', label: 'Sales' },
+  { id: 'service', label: 'Service' },
+  { id: 'finance', label: 'Finance' },
+  { id: 'admin', label: 'Admin' },
+  { id: 'kia', label: 'KIA' },
+  { id: 'hyundai', label: 'Hyundai' },
+  { id: 'platinum', label: 'Platinum' },
+  { id: 'common', label: 'Common' },
+]
 
 interface GlobalSearchDialogProps {
   open: boolean
@@ -89,30 +119,28 @@ interface GlobalSearchDialogProps {
 export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'all' | DepartmentType>('all')
+  const [activeFilter, setActiveFilter] = useState<FilterOptionId>('all')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [navigatingSection, setNavigatingSection] = useState<SearchSection | null>(null)
-  
+
+
   const searchInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const {
     value: favouriteHrefsValue,
-    savePreference: saveFavouriteHrefs,
+    setValue: setFavouriteHrefs,
   } = useUserPreferences<string[]>('sidebar_favourites', [])
-  const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
-  const isEligibleFavouriteHref = (href: string) => {
-    return href.startsWith('/brands/')
-  }
+  const favouriteHrefs = useMemo(() => (Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []), [favouriteHrefsValue])
 
-  const toggleFavourite = async (e: React.MouseEvent, href: string) => {
+  const toggleFavourite = (e: React.MouseEvent, href: string) => {
     e.stopPropagation()
-    if (!isEligibleFavouriteHref(href)) return
-    const next = favouriteHrefs.includes(href)
-      ? favouriteHrefs.filter((item) => item !== href)
-      : [...favouriteHrefs.filter((item) => item !== href), href]
-    await saveFavouriteHrefs(next)
+    if (favouriteHrefs.includes(href)) {
+      setFavouriteHrefs(favouriteHrefs.filter((item) => item !== href))
+    } else {
+      setFavouriteHrefs([...favouriteHrefs, href])
+    }
   }
 
   const { userRole, userBrand, loading: roleLoading } = useUserRole()
@@ -130,7 +158,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
     staleTime: 30 * 60 * 1000,
   })
 
-  // Filter sections that the user is authorized to see
+  // Filter sections authorized for current user
   const authorizedSections = useMemo(() => {
     if (roleLoading) return []
     return ALL_SECTIONS.filter((section) =>
@@ -138,32 +166,67 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
     )
   }, [userRole, userBrand, permissionMap, roleLoading])
 
-  // Filter sections based on search text & selected department tab
+  // Filter sections based on search query & active filter pill
   const filteredSections = useMemo(() => {
     const query = search.toLowerCase().trim()
     return authorizedSections.filter((section) => {
       const matchesSearch =
+        !query ||
         section.name.toLowerCase().includes(query) ||
         section.description.toLowerCase().includes(query) ||
         section.brand.toLowerCase().includes(query) ||
-        section.department.toLowerCase().includes(query)
-      
-      const matchesTab = activeTab === 'all' || section.department === activeTab
-      
-      return matchesSearch && matchesTab
-    })
-  }, [authorizedSections, search, activeTab])
+        section.department.toLowerCase().includes(query) ||
+        (section.initials && section.initials.toLowerCase().includes(query))
 
-  // Reset selected item index on tab/search change
+      let matchesFilter = true
+      if (activeFilter !== 'all') {
+        if (['sales', 'service', 'finance', 'admin'].includes(activeFilter)) {
+          matchesFilter = section.department === activeFilter
+        } else if (['kia', 'hyundai', 'platinum', 'common'].includes(activeFilter)) {
+          matchesFilter = section.brand === activeFilter
+        }
+      }
+
+      return matchesSearch && matchesFilter
+    })
+  }, [authorizedSections, search, activeFilter])
+
+  // Group by category AND sort ALPHABETICALLY (A-Z) inside each category
+  const orderedCategorizedGroups = useMemo(() => {
+    const categories: SectionCategory[] = ['common_dashboards', 'general_modules', 'kia', 'hyundai', 'platinum']
+    const result: { category: SectionCategory; sections: SearchSection[] }[] = []
+
+    categories.forEach((catId) => {
+      const list = filteredSections.filter((section) => {
+        const c = section.category || (section.brand === 'common' ? 'common_dashboards' : (section.brand as SectionCategory))
+        return c === catId
+      })
+
+      if (list.length > 0) {
+        // Sort ALPHABETICALLY by section.name
+        const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name))
+        result.push({ category: catId, sections: sorted })
+      }
+    })
+
+    return result
+  }, [filteredSections])
+
+  // Flat list of visible ordered sections for keyboard navigation (↑↓←→, Enter)
+  const flatOrderedSections = useMemo(() => {
+    return orderedCategorizedGroups.flatMap((group) => group.sections)
+  }, [orderedCategorizedGroups])
+
+  // Reset selected item index on filter/search change
   useEffect(() => {
     setSelectedIndex(0)
-  }, [search, activeTab])
+  }, [search, activeFilter])
 
-  // Reset state when modal is closed/opened
+  // Reset state when modal is opened
   useEffect(() => {
     if (open) {
       setSearch('')
-      setActiveTab('all')
+      setActiveFilter('all')
       setSelectedIndex(0)
       setNavigatingSection(null)
       const timer = setTimeout(() => {
@@ -189,7 +252,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!open || navigatingSection) return // Block input when loading/navigating
+      if (!open || navigatingSection) return
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
@@ -199,7 +262,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
       }
 
       const cols = getColumnsCount()
-      const total = filteredSections.length
+      const total = flatOrderedSections.length
 
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -215,21 +278,20 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
         setSelectedIndex((prev) => Math.max(0, prev - 1))
       } else if (e.key === 'Enter') {
         e.preventDefault()
-        if (filteredSections[selectedIndex]) {
-          handleNavigate(filteredSections[selectedIndex])
+        if (flatOrderedSections[selectedIndex]) {
+          handleNavigate(flatOrderedSections[selectedIndex])
         }
       } else if (e.key === 'Tab') {
-        // Tab key cycles through department filter tabs instead of jumping focuses
         e.preventDefault()
-        const tabs: ('all' | DepartmentType)[] = ['all', 'sales', 'service', 'finance', 'admin']
-        const nextIdx = (tabs.indexOf(activeTab) + (e.shiftKey ? -1 : 1) + tabs.length) % tabs.length
-        setActiveTab(tabs[nextIdx])
+        const pills = FILTER_PILLS.map((p) => p.id)
+        const nextIdx = (pills.indexOf(activeFilter) + (e.shiftKey ? -1 : 1) + pills.length) % pills.length
+        setActiveFilter(pills[nextIdx])
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, filteredSections, selectedIndex, activeTab, navigatingSection, onOpenChange])
+  }, [open, flatOrderedSections, selectedIndex, activeFilter, navigatingSection, onOpenChange])
 
   // Auto-scroll selected element into view
   useEffect(() => {
@@ -247,57 +309,14 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
     router.push(section.href)
   }
 
-  // Visual helper mapping department to visual theme classes
-  const getDeptStyles = (dept: DepartmentType) => {
-    switch (dept) {
-      case 'sales':
-        return {
-          gradient: 'from-rose-500 to-orange-500 dark:from-rose-600 dark:to-orange-600',
-          bgSoft: 'bg-rose-50/70 border-rose-100/80 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400',
-          badge: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
-        }
-      case 'service':
-        return {
-          gradient: 'from-amber-500 to-yellow-500 dark:from-amber-600 dark:to-yellow-600',
-          bgSoft: 'bg-amber-50/70 border-amber-100/80 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400',
-          badge: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-        }
-      case 'finance':
-        return {
-          gradient: 'from-teal-700 to-emerald-600 dark:from-teal-800 dark:to-emerald-700',
-          bgSoft: 'bg-emerald-50/70 border-emerald-100/80 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/30 dark:text-emerald-400',
-          badge: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
-        }
-      case 'admin':
-        return {
-          gradient: 'from-indigo-500 to-violet-500 dark:from-indigo-600 dark:to-violet-600',
-          bgSoft: 'bg-indigo-50/70 border-indigo-100/80 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400',
-          badge: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
-        }
-    }
-  }
 
-  const getBrandBadge = (brand: string) => {
-    switch (brand) {
-      case 'kia':
-        return 'text-red-600 bg-red-50 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/40'
-      case 'hyundai':
-        return 'text-sky-600 bg-sky-50 border-sky-200 dark:bg-sky-950/30 dark:text-sky-400 dark:border-sky-900/40'
-      case 'platinum':
-        return 'text-slate-600 bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-      case 'common':
-        return 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-900/40'
-      default:
-        return 'text-slate-500 bg-slate-50 border-slate-200'
-    }
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[96vw] 2xl:max-w-[1640px] w-full h-[84vh] max-h-[850px] flex flex-col overflow-hidden p-0 border border-slate-200/80 bg-slate-50/95 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 rounded-[28px]">
+      <DialogContent className="max-w-[96vw] 2xl:max-w-[1640px] w-full h-[88vh] max-h-[900px] flex flex-col overflow-hidden p-0 border border-slate-200/80 bg-slate-50/95 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 rounded-[28px]">
         <DialogTitle className="sr-only">Search Sections</DialogTitle>
 
-        {/* Search header area */}
+        {/* ── Search Input Header ── */}
         <div className="relative flex items-center border-b border-slate-200/60 px-6 py-4 dark:border-white/10 shrink-0">
           <Search className="h-5 w-5 text-slate-400 dark:text-slate-500" />
           <input
@@ -306,124 +325,171 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Type to search dashboard sections..."
-            className="w-full bg-transparent pl-3 pr-12 text-base font-semibold text-slate-800 placeholder-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder-slate-500"
+            className="w-full bg-transparent pl-3 pr-10 text-base font-semibold text-slate-800 placeholder-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder-slate-500"
           />
-        </div>
-
-        {/* Tab Filters */}
-        <div className="flex items-center gap-1 border-b border-slate-200/50 bg-slate-100/50 px-6 py-2.5 dark:border-white/5 dark:bg-slate-900/30 shrink-0">
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-3">Filter:</span>
-          {(['all', 'sales', 'service', 'finance', 'admin'] as const).map((tab) => (
+          {search && (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={cn(
-                'rounded-xl px-3 py-1 text-xs font-black capitalize transition-all',
-                activeTab === tab
-                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-sm'
-                  : 'text-slate-500 hover:bg-slate-200/60 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200'
-              )}
+              onClick={() => setSearch('')}
+              className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
             >
-              {tab}
+              <X className="w-4 h-4" />
             </button>
-          ))}
+          )}
         </div>
 
-        {/* Sections Grid View */}
+        {/* ── Filter Pills Bar ── */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/50 bg-slate-100/50 px-6 py-3 dark:border-white/5 dark:bg-slate-900/30 shrink-0">
+          <span className="text-xs font-bold text-slate-500 mr-1 dark:text-slate-400">FILTER:</span>
+          {FILTER_PILLS.map((pill) => {
+            const isActive = activeFilter === pill.id
+            return (
+              <button
+                key={pill.id}
+                onClick={() => setActiveFilter(pill.id)}
+                className={cn(
+                  'rounded-full px-3.5 py-1 text-xs font-bold transition-all border',
+                  isActive
+                    ? 'bg-[#071a2b] border-[#071a2b] text-white shadow-xs dark:bg-blue-600 dark:border-blue-600'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:bg-slate-900 dark:border-white/10 dark:text-slate-400 dark:hover:bg-slate-800'
+                )}
+              >
+                {pill.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ── Categorized Sections View ── */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800"
+          className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800"
         >
-          {filteredSections.length === 0 ? (
+          {flatOrderedSections.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-xs dark:border-white/10 dark:bg-slate-900">
                 <Search className="h-5 w-5 text-slate-300 dark:text-slate-700" />
               </div>
               <p className="mt-4 text-sm font-bold text-slate-800 dark:text-slate-200">No dashboard sections match your query</p>
               <p className="mt-1 text-xs text-slate-400 font-medium">Verify your spelling, filter selection, or permissions.</p>
             </div>
           ) : (
-            <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {filteredSections.map((section, idx) => {
-                const isSelected = idx === selectedIndex
-                const deptStyle = getDeptStyles(section.department)
-                
-                const isFav = favouriteHrefs.includes(section.href)
-                return (
-                  <div
-                    key={section.id}
-                    data-active={isSelected}
-                    onClick={() => handleNavigate(section)}
-                    className={cn(
-                      'group relative flex cursor-pointer items-center gap-2.5 rounded-2xl border p-3 transition-all duration-200 shadow-sm hover:shadow-md',
-                      isSelected
-                        ? 'border-indigo-600 bg-white ring-2 ring-indigo-600/10 dark:border-indigo-500 dark:bg-slate-900 dark:ring-indigo-500/10'
-                        : 'border-slate-200/80 bg-white hover:border-slate-300 dark:border-white/5 dark:bg-slate-900/60 dark:hover:border-white/10'
-                    )}
-                  >
-                    {/* Glowing background hint on select */}
-                    {isSelected && (
-                      <div className="absolute inset-0 -z-10 rounded-2xl bg-indigo-50/10 opacity-70 blur-xl dark:bg-indigo-900/5" />
-                    )}
+            orderedCategorizedGroups.map((group) => {
+              const catMeta = CATEGORY_CONFIG[group.category] || CATEGORY_CONFIG.common_dashboards
+              const sections = group.sections
 
-                    {/* Subtle Tinted Icon Wrapper */}
-                    <div className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border shadow-sm transition-transform group-hover:scale-105',
-                      deptStyle.bgSoft
-                    )}>
-                      <SectionIcon name={section.iconName} className="h-4 w-4" />
-                    </div>
 
-                    {/* Text Details */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center flex-wrap gap-1">
-                        <span className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                          {section.name}
+
+              return (
+                <div
+                  key={group.category}
+                  className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs space-y-3.5 dark:bg-slate-900 dark:border-white/10"
+                >
+                  {/* Category Header */}
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/5">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                          {catMeta.title}
+                        </h3>
+                        <span className="rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 px-2.5 py-0.5 text-xs font-black">
+                          {sections.length}
                         </span>
-                        
-                        {/* Brand badge */}
-                        <span className={cn(
-                          'rounded px-1 py-0.25 text-[9px] font-black uppercase tracking-wider border',
-                          getBrandBadge(section.brand)
-                        )}>
-                          {section.brand}
-                        </span>
-
-                        {/* Custom label/badge if any */}
-                        {section.badge && (
-                          <span className="rounded px-1 py-0.25 text-[9px] font-black uppercase tracking-wider border border-amber-200 bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:border-amber-900/40">
-                            {section.badge}
-                          </span>
-                        )}
                       </div>
+                      <p className="text-xs font-semibold text-slate-400 mt-0.5">
+                        {catMeta.description}
+                      </p>
                     </div>
 
-                    {/* Action Hint / Star */}
-                    <div className="flex items-center gap-1.5 ml-auto">
-                      {isEligibleFavouriteHref(section.href) && (
-                        <button
-                          onClick={(e) => toggleFavourite(e, section.href)}
-                          className={cn(
-                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-all hover:bg-slate-100 dark:hover:bg-slate-800',
-                            isFav ? 'text-amber-500' : 'text-slate-350 hover:text-amber-500'
-                          )}
-                          title={isFav ? 'Remove from favourites' : 'Add to favourites'}
-                        >
-                          <Star className={cn('h-3.5 w-3.5', isFav && 'fill-current')} />
-                        </button>
-                      )}
 
-                      {/* Action Hint */}
-                      {isSelected && (
-                        <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-slate-100 text-[8px] dark:bg-slate-800">
-                          <CornerDownLeft className="h-2.5 w-2.5 text-slate-400" />
-                        </div>
-                      )}
-                    </div>
                   </div>
-                )
-              })}
-            </div>
+
+                  {/* Section Cards Grid (Sorted Alphabetically) */}
+                  <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                    {sections.map((section) => {
+                      const flatIndex = flatOrderedSections.findIndex((s) => s.id === section.id)
+                      const isSelected = flatIndex === selectedIndex
+                      const initials = section.initials || section.name.slice(0, 2).toUpperCase()
+                      const isFav = favouriteHrefs.includes(section.href)
+
+                      return (
+                        <div
+                          key={section.id}
+                          data-active={isSelected}
+                          onClick={() => handleNavigate(section)}
+                          className={cn(
+                            'group relative flex cursor-pointer items-center justify-between rounded-2xl border p-3 transition-all duration-200 shadow-2xs hover:shadow-md',
+                            isSelected
+                              ? 'border-blue-600 bg-white ring-2 ring-blue-600/10 dark:border-blue-500 dark:bg-slate-900 dark:ring-blue-500/10'
+                              : 'border-slate-200/80 bg-white hover:border-slate-300 dark:border-white/5 dark:bg-slate-900/60 dark:hover:border-white/10'
+                          )}
+                        >
+                          <div className="flex items-center gap-3 min-w-0 pr-2">
+                            {/* Avatar Initials Box */}
+                            <div
+                              className={cn(
+                                'flex h-9 w-9 items-center justify-center rounded-xl font-black text-xs shrink-0 select-none transition-transform group-hover:scale-105',
+                                catMeta.avatarBg,
+                                catMeta.avatarText
+                              )}
+                            >
+                              {initials}
+                            </div>
+
+                            {/* Text Details */}
+                            <div className="min-w-0 space-y-0.5">
+                              <h4 className="text-xs font-black text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                {section.name}
+                              </h4>
+                              <div className="flex items-center gap-1">
+                                <span
+                                  className={cn(
+                                    'px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border',
+                                    catMeta.badgeBg,
+                                    catMeta.badgeText,
+                                    catMeta.badgeBorder
+                                  )}
+                                >
+                                  {section.brand.toUpperCase()}
+                                </span>
+                                {section.badge && (
+                                  <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-orange-100 text-orange-700 border border-orange-200 dark:bg-orange-950/40 dark:text-orange-400 dark:border-orange-900/40">
+                                    {section.badge}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Bookmark Star & Enter Indicator */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={(e) => toggleFavourite(e, section.href)}
+                              title={isFav ? 'Remove from bookmarks' : 'Add to bookmarks'}
+                              className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            >
+                              <Star
+                                className={cn(
+                                  'w-3.5 h-3.5 transition-all',
+                                  isFav
+                                    ? 'fill-amber-400 text-amber-400'
+                                    : 'text-slate-300 hover:text-amber-400 dark:text-slate-600 dark:hover:text-amber-400'
+                                )}
+                              />
+                            </button>
+
+                            {isSelected && (
+                              <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-slate-100 text-[8px] dark:bg-slate-800">
+                                <CornerDownLeft className="h-2.5 w-2.5 text-slate-400" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })
           )}
         </div>
 
@@ -431,15 +497,15 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
         <div className="flex items-center justify-between border-t border-slate-200/50 bg-slate-100/50 px-6 py-3.5 dark:border-white/5 dark:bg-slate-900/30 text-[10px] font-bold text-slate-400 shrink-0">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1">
-              <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 shadow-sm dark:border-white/10 dark:bg-slate-850">↑↓←→</span>
+              <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 shadow-xs dark:border-white/10 dark:bg-slate-850">↑↓←→</span>
               to navigate
             </span>
             <span className="flex items-center gap-1">
-              <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 shadow-sm dark:border-white/10 dark:bg-slate-850">Enter</span>
+              <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 shadow-xs dark:border-white/10 dark:bg-slate-850">Enter</span>
               to select
             </span>
             <span className="flex items-center gap-1">
-              <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 shadow-sm dark:border-white/10 dark:bg-slate-850">Tab</span>
+              <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 shadow-xs dark:border-white/10 dark:bg-slate-850">Tab</span>
               to cycle filters
             </span>
           </div>
@@ -448,7 +514,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
           </div>
         </div>
 
-        {/* Sleek executive top progress bar & badge when navigating */}
+        {/* Loading overlay when navigating */}
         {navigatingSection && (
           <div className="absolute top-0 left-0 right-0 z-50 overflow-hidden rounded-t-[28px] bg-slate-900/95 backdrop-blur-md p-3 border-b border-emerald-500/30 flex items-center justify-between animate-in slide-in-from-top-2 duration-200">
             <div className="flex items-center gap-3">
@@ -465,7 +531,6 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
               </div>
             </div>
 
-            {/* Glowing top accent line */}
             <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 animate-pulse" />
           </div>
         )}

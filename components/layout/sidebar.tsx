@@ -16,6 +16,8 @@ import {
   FileCheck,
   Users,
   Recycle,
+  PhoneCall,
+  ShieldCheck,
 } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
 import { useEffect, useMemo, useCallback, useRef } from 'react'
@@ -26,6 +28,7 @@ import { useUserRole } from '@/lib/hooks/use-user-role'
 import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import { canViewBookingPaymentHistory } from '@/lib/kia/booking-payment-history-access'
+import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
@@ -239,6 +242,10 @@ export function Sidebar() {
   const canAccessPettyCash = isPettyCashViewRole(userRole)
   const canAccessAmFinance = isAmFinanceViewRole(userRole)
   const canAccessDelegationTasks = ['ea', 'eba', 'md', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
+  // Call Analysis + Insurance Analysis: MD + Developer only, and deliberately NOT permission-backed.
+  // A permission is grantable from the Access Map, so "only these two roles" would hold exactly until
+  // someone ticked a box. Same constant backs both search surfaces — lib/auth/restricted-analytics.ts.
+  const canAccessRestrictedAnalytics = canViewRestrictedAnalytics(userRole)
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
   // The effective permission map, fetched through React Query so it is CACHED across sidebar remounts.
@@ -472,6 +479,15 @@ export function Sidebar() {
     // Finance — customer vehicle-financing workflow. Deny-by-default (registry), gated purely on the
     // permission snapshot like Group Cockpit: MD/Developer always + explicitly-granted finance roles.
     // if (hasPermission('finance.view')) commonNodes.push({ key: '/finance', label: 'Finance', href: '/finance', icon: HandCoins, external: true, active: pathname.startsWith('/finance') })
+    // Call Analysis — MD + Developer only, role-gated (see lib/callyzer/access.ts).
+    if (canAccessRestrictedAnalytics) commonNodes.push({
+      key: '/call-analysis',
+      label: 'Call Analysis',
+      href: '/call-analysis',
+      icon: PhoneCall,
+      external: true,
+      active: Boolean(pathname?.startsWith('/call-analysis')),
+    })
     if (canAccessAdmin) {
       // Single link — the Admin page exposes all sections (Users, Access, Branch Admins, System,
       // Settings) as in-page tabs, so no sidebar dropdown is needed.
@@ -491,6 +507,16 @@ export function Sidebar() {
         icon: Recycle,
         external: true,
         active: Boolean(pathname?.startsWith('/scrap')),
+      })
+    }
+    if (canAccessRestrictedAnalytics) {
+      commonNodes.push({
+        key: '/insurance',
+        label: 'Insurance Analysis',
+        href: '/insurance',
+        icon: ShieldCheck,
+        external: true,
+        active: Boolean(pathname?.startsWith('/insurance')),
       })
     }
     if (commonNodes.length > 0) groups.push({ key: 'common', label: 'Common', nodes: commonNodes })

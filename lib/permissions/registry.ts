@@ -53,6 +53,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'insurance_analysis',
+    name: 'Insurance Analysis',
+    parentKey: null,
+    description: 'Hyundai and Platinum insurance policy analytics, executive KPIs, revenue, company performance, and dealer-wise breakdowns.',
+    sortOrder: 8,
+    actions: ['view'],
+  },
+  {
     key: 'kia',
     name: 'KIA',
     parentKey: null,
@@ -780,6 +788,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   ca: { href: '/ca' },
   finance: { href: '/finance' },
   scrap_erp: { href: '/scrap-erp' },
+  insurance_analysis: { href: '/insurance' },
   'kia.booking_payment_history': { href: '/brands/kia/booking-payment-history' },
   'kia.business_excellence': { href: '/brands/kia/business-excellence', aliases: ['/brands/kia/business-excellence/executive-dashboard', '/brands/kia/business-excellence/overview'] },
   'kia.service_appointment': { href: '/brands/kia/service-appointment' },

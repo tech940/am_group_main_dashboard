@@ -65,7 +65,12 @@
     "users:deactivate-idle": "node scripts/user-deactivation.mjs",
     "users:deactivate-idle:dry-run": "node scripts/user-deactivation.mjs --dry-run",
     "users:deactivate-idle:scheduler": "node scripts/user-deactivation-scheduler.mjs",
-    "images:optimize-existing": "tsx --tsconfig ./tsconfig.verify.json scripts/optimize-existing-images.ts"
+    "images:optimize-existing": "tsx --tsconfig ./tsconfig.verify.json scripts/optimize-existing-images.ts",
+    "callyzer:migrate": "node scripts/apply-callyzer-migration.mjs",
+    "callyzer:backfill": "node scripts/callyzer-backfill.mjs",
+    "callyzer:sync:scheduler": "node scripts/callyzer-sync-scheduler.mjs",
+    "verify:restricted-analytics": "tsx scripts/verify-restricted-analytics.mjs",
+    "verify:callyzer-alerts": "tsx scripts/verify-callyzer-alerts.mjs"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",
