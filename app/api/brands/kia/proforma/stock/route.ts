@@ -86,7 +86,7 @@ export async function GET(request: Request) {
       if (status === 'AVAILABLE') {
         filters.push("va.id IS NULL AND vt.id IS NULL AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail') AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED')")
       } else if (status === 'ALLOTTED' || status === 'PAYMENT_PENDING') {
-        filters.push("va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered')")
+        filters.push("((va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered')) OR (UPPER(COALESCE(sm.stock_status, '')) = 'ALLOCATED' AND va.id IS NULL AND vt.id IS NULL))")
       } else if (status === 'PAYMENT_OVERDUE') {
         filters.push("va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW()")
       } else if (status === 'PAID_TO_DELIVER') {
@@ -112,7 +112,7 @@ export async function GET(request: Request) {
     // Delivered vehicles have left inventory: hide them from the default stock
     // list + Total Inventory. They remain reachable only via the explicit
     // "Delivered" status filter.
-    const deliveredExpr = "(va.id IS NOT NULL AND kb.status = 'delivered')"
+    const deliveredExpr = "((va.id IS NOT NULL AND kb.status = 'delivered') OR COALESCE(ls.local_status, '') = 'retail')"
     if (status !== 'DELIVERED') {
       filters.push(`NOT ${deliveredExpr}`)
     }
@@ -150,7 +150,7 @@ export async function GET(request: Request) {
                 AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED')
           THEN 1 END
         )::int AS available,
-        COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') THEN 1 END)::int AS payment_pending,
+        COUNT(CASE WHEN (va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered')) OR (UPPER(COALESCE(sm.stock_status, '')) = 'ALLOCATED' AND va.id IS NULL AND vt.id IS NULL) THEN 1 END)::int AS payment_pending,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW() THEN 1 END)::int AS payment_overdue,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'ready_delivery' THEN 1 END)::int AS paid_to_deliver,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'delivered' THEN 1 END)::int AS delivered,

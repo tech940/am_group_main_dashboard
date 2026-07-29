@@ -124,6 +124,7 @@ const brandNavigation: SidebarBrand[] = [
         submenus: [
           { name: 'Demo Job Cards', href: '/brands/hyundai/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/hyundai/demo-cars-list' },
+          { name: 'Discount Approvals', href: '/brands/hyundai/sales/discount-approvals' },
         ],
       },
       {

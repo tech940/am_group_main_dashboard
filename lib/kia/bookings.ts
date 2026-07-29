@@ -731,6 +731,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
         (SELECT count(*)::int FROM kia_bookings kb
           WHERE kb.deleted_at IS NULL
             AND kb.status NOT IN ('draft', 'delivered', 'cancelled')
+            AND (kb.metadata->'idtArrangement'->>'status' IS NULL OR kb.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
             AND (
               -- Path 1: allocated VIN left the DMS (metadata flag set by stock-watcher job)
               (kb.metadata->>'vehicleNotInStock')::boolean IS TRUE
@@ -776,6 +777,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
           FROM kia_bookings
           WHERE deleted_at IS NULL
             AND status NOT IN ('draft', 'delivered', 'cancelled')
+            AND (metadata->'idtArrangement'->>'status' IS NULL OR metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
             AND (
               (metadata->>'vehicleNotInStock')::boolean IS TRUE
               OR (

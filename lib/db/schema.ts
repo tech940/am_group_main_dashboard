@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed'])
+export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed', 'vp'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -2215,6 +2215,31 @@ export const scrapMasterData = pgTable('scrap_master_data', {
   scrapMasterNameCategoryIdx: uniqueIndex('scrap_master_name_category_idx').on(table.category, table.name),
 }))
 
+// Hyundai & Platinum Discount Approvals Table
+export const discountApprovals = pgTable('discount_approvals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  requesterName: text('requester_name').notNull(),
+  branch: text('branch').notNull(), // 'hyundai' or 'platinum'
+  customerId: text('customer_id').notNull(),
+  customerName: text('customer_name'),
+  model: text('model'),
+  variant: text('variant'),
+  color: text('color'),
+  discountAmount: decimal('discount_amount', { precision: 14, scale: 2 }).notNull(),
+  accessoriesAmount: decimal('accessories_amount', { precision: 14, scale: 2 }),
+  tlManager: text('tl_manager'),
+  deliveryDate: date('delivery_date'),
+  reference: text('reference'),
+  status: text('status').default('PENDING').notNull(), // 'PENDING' | 'APPROVED' | 'REJECTED'
+  remarks: text('remarks'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
 
-
-
+export const discountApprovalsEmployees = pgTable('am_group_discount_approvals_employees', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  role: text('role').notNull(), // 'sales_executive' | 'team_leader'
+  branch: text('branch').notNull(), // 'hyundai' | 'platinum'
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})

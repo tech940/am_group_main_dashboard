@@ -61,6 +61,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import { cn } from '@/lib/utils'
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
+type CohortRowUi = {
+  period: string
+  cohortType: string
+  size: number
+  windows: { eligible: number; returned: number; rate: number | null }[]
+}
+
 type InsuranceType = 'hyundai' | 'platinum' | 'kia'
 
 const BRAND_TABS: { id: InsuranceType; label: string; initial: string }[] = [
@@ -80,7 +87,7 @@ type BrandCapabilities = {
   hasRegistration?: boolean; hasCrossDealerHistory?: boolean; hasRollover?: boolean
   hasIdv?: boolean; hasPremiumSplit?: boolean; hasMultiDealer?: boolean; hasCancelledFlag?: boolean
 }
-type DashboardTab = 'overview' | 'revenue' | 'renewals' | 'insurers' | 'executives' | 'vehicles' | 'customers' | 'register' | 'policy-types'
+type DashboardTab = 'overview' | 'revenue' | 'renewals' | 'cohorts' | 'insurers' | 'executives' | 'vehicles' | 'customers' | 'register' | 'policy-types'
 
 const DONUT_COLORS_POLICY_TYPE = ['#2563eb', '#10b981', '#f97316', '#f59e0b', '#8b5cf6']
 const DONUT_COLORS_STATUS = ['#10b981', '#f97316', '#eab308', '#94a3b8']
@@ -432,6 +439,32 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   }, [insuranceType, vehPage, vehSort, appliedYear, appliedStartDate, appliedEndDate, appliedDealerCode,
       appliedSubUser, appliedInsuranceCompany, appliedRmName, appliedPolicyType, appliedModelName,
       appliedFuelType, deferredVehSearch, vehBehaviour, vehCoverStatus, vehFlagOwner, vehFlagSwitched])
+
+  // Cohort retention — "of the vehicles that started with us in period X, how many came back?"
+  // Deliberately does NOT take the page's date filters: a cohort spans years by definition, and a
+  // date window would truncate the very history it exists to measure.
+  const [cohortGrain, setCohortGrain] = useState<'year' | 'month'>('year')
+  const [cohortType, setCohortType] = useState<string>('all')
+
+  const cohortsQueryParams = useMemo(() => {
+    const p = new URLSearchParams({ type: insuranceType })
+    if (appliedDealerCode !== 'all') p.set('dealerCode', appliedDealerCode)
+    if (appliedInsuranceCompany !== 'all') p.set('insuranceCompany', appliedInsuranceCompany)
+    if (appliedModelName !== 'all') p.set('modelName', appliedModelName)
+    if (appliedFuelType !== 'all') p.set('fuelType', appliedFuelType)
+    return p.toString()
+  }, [insuranceType, appliedDealerCode, appliedInsuranceCompany, appliedModelName, appliedFuelType])
+
+  const cohortsQuery = useQuery({
+    queryKey: ['insurance-cohorts', cohortsQueryParams],
+    queryFn: async () => {
+      const res = await fetch(`/api/insurance/cohorts?${cohortsQueryParams}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load cohort retention')
+      return res.json()
+    },
+    enabled: activeTab === 'cohorts',
+    staleTime: 10 * 60 * 1000,
+  })
 
   const vehiclesQuery = useQuery({
     queryKey: ['insurance-vehicles', vehiclesQueryParams],
@@ -969,6 +1002,12 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                 className="rounded-xl px-4 py-2 text-xs font-bold text-slate-600 data-[state=active]:bg-[#071a2b] data-[state=active]:text-white transition-all shadow-none"
               >
                 <Clock className="mr-1.5 h-3.5 w-3.5" /> Renewals & Compliance
+              </TabsTrigger>
+              <TabsTrigger
+                value="cohorts"
+                className="rounded-xl px-4 py-2 text-xs font-bold text-slate-600 data-[state=active]:bg-[#071a2b] data-[state=active]:text-white transition-all shadow-none"
+              >
+                <BarChart3 className="mr-1.5 h-3.5 w-3.5" /> Year-on-Year Retention
               </TabsTrigger>
               <TabsTrigger
                 value="insurers"
@@ -1893,6 +1932,158 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
           </TabsContent>
 
           {/* TAB 8: POLICY REGISTER TABLE */}
+          {/* TAB: YEAR-ON-YEAR RETENTION — cohort matrix, one row per (period x originating type) */}
+          <TabsContent value="cohorts" className="space-y-4">
+            {(() => {
+              const q = cohortsQuery
+              if (q.isError) {
+                return (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center">
+                    <AlertCircle className="mx-auto h-6 w-6 text-rose-500" />
+                    <p className="mt-2 text-[13px] font-bold text-rose-900">Could not load retention</p>
+                    <p className="mt-1 text-[11px] font-medium text-rose-700">{(q.error as Error)?.message}</p>
+                  </div>
+                )
+              }
+              const all: CohortRowUi[] = (cohortGrain === 'year' ? q.data?.byYear : q.data?.byMonth) || []
+              const types: string[] = q.data?.cohortTypes || []
+              const rows = all.filter((r) => cohortType === 'all' || r.cohortType === cohortType)
+              const windowCount: number = q.data?.windowCount || 3
+
+              // Totals across every cohort whose window has actually closed. Cohorts still in flight
+              // are excluded from BOTH sides, so the headline is never diluted by the not-yet-due.
+              const totals = Array.from({ length: windowCount }, (_, i) => {
+                const el = rows.reduce((n, r) => n + (r.windows[i]?.eligible || 0), 0)
+                const rt = rows.reduce((n, r) => n + (r.windows[i]?.returned || 0), 0)
+                return { eligible: el, returned: rt, rate: el ? Math.round((rt / el) * 1000) / 10 : null }
+              })
+
+              const heat = (rate: number | null) => {
+                if (rate === null) return 'bg-slate-50 text-slate-400'
+                if (rate >= 70) return 'bg-emerald-100 text-emerald-800'
+                if (rate >= 55) return 'bg-emerald-50 text-emerald-700'
+                if (rate >= 40) return 'bg-amber-50 text-amber-700'
+                return 'bg-rose-50 text-rose-700'
+              }
+
+              return (
+                <>
+                  <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+                    <ExecutiveKpiCard
+                      title="Vehicles in cohorts"
+                      value={q.isLoading ? '—' : formatNumber(rows.reduce((n, r) => n + r.size, 0))}
+                      trend={q.isLoading ? '' : `${rows.length} cohort${rows.length === 1 ? '' : 's'}`}
+                      trendDirection="neutral" bgColor="bg-slate-800" icon={Car}
+                    />
+                    {totals.map((t, i) => (
+                      <ExecutiveKpiCard
+                        key={i}
+                        title={`Came back — year ${i + 1}`}
+                        value={q.isLoading ? '—' : t.rate === null ? 'n/a' : `${t.rate}%`}
+                        trend={q.isLoading ? '' : t.eligible ? `${formatNumber(t.returned)} of ${formatNumber(t.eligible)} due` : 'no cohort due yet'}
+                        trendDirection={i === 0 ? 'up' : 'neutral'}
+                        bgColor={i === 0 ? 'bg-emerald-600' : i === 1 ? 'bg-indigo-600' : 'bg-violet-600'}
+                        icon={RefreshCw}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-[11px] text-slate-600">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <p>
+                      <span className="font-bold">Measured from each vehicle&apos;s own start date, not the calendar.</span>{' '}
+                      Insurance renews annually, so a car first insured in November is only &quot;due&quot; the following
+                      November. A cohort counts toward a year only once that anniversary (plus {q.data?.graceDays ?? 60} days&apos;
+                      grace) has actually passed — cells still in flight read <em>still open</em> rather than 0%.
+                      Percentages are of vehicles <span className="font-bold">due</span>, never of the whole cohort.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                        {(['year', 'month'] as const).map((g) => (
+                          <button key={g} type="button" onClick={() => setCohortGrain(g)}
+                            className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition-all ${
+                              cohortGrain === g ? 'bg-[#071a2b] text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
+                            {g === 'year' ? 'By year' : 'By month'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                        {['all', ...types].map((t) => (
+                          <button key={t} type="button" onClick={() => setCohortType(t)}
+                            className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition-all ${
+                              cohortType === t ? 'bg-[#071a2b] text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
+                            {t === 'all' ? 'All types' : t}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="ml-auto text-[10px] font-semibold text-slate-400">
+                        Cohort = the period a vehicle&apos;s FIRST policy started
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <Table className="w-full text-[11px]">
+                        <TableHeader className="bg-slate-50">
+                          <TableRow>
+                            <TableHead className="font-bold text-slate-700 text-[11px]">Cohort</TableHead>
+                            <TableHead className="font-bold text-slate-700 text-[11px]">Started as</TableHead>
+                            <TableHead className="font-bold text-slate-700 text-right text-[11px]">Vehicles</TableHead>
+                            {Array.from({ length: windowCount }, (_, i) => (
+                              <TableHead key={i} className="font-bold text-slate-700 text-center text-[11px]">
+                                Year {i + 1}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {q.isLoading ? (
+                            <TableRow><TableCell colSpan={3 + windowCount} className="py-16 text-center">
+                              <Loader2 className="mx-auto h-5 w-5 animate-spin text-slate-300" />
+                            </TableCell></TableRow>
+                          ) : rows.length === 0 ? (
+                            <TableRow><TableCell colSpan={3 + windowCount} className="py-16 text-center text-[12px] font-semibold text-slate-400">
+                              No cohorts for this filter.
+                            </TableCell></TableRow>
+                          ) : rows.map((r) => (
+                            <TableRow key={`${r.period}-${r.cohortType}`} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+                              <TableCell className="font-bold text-slate-900 whitespace-nowrap">{r.period}</TableCell>
+                              <TableCell>
+                                <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                                  /renewal/i.test(r.cohortType) ? 'bg-emerald-100 text-emerald-700'
+                                    : /rollover/i.test(r.cohortType) ? 'bg-violet-100 text-violet-700'
+                                    : 'bg-blue-100 text-blue-700'}`}>{r.cohortType}</span>
+                              </TableCell>
+                              <TableCell className="text-right font-black text-slate-900">{formatNumber(r.size)}</TableCell>
+                              {r.windows.map((w, i) => (
+                                <TableCell key={i} className="text-center">
+                                  {w.rate === null ? (
+                                    <span className="text-[10px] font-semibold text-slate-300" title="This cohort's anniversary has not arrived yet">
+                                      still open
+                                    </span>
+                                  ) : (
+                                    <span className={`inline-block rounded-md px-2 py-1 text-[11px] font-black ${heat(w.rate)}`}
+                                      title={`${w.returned} of ${w.eligible} vehicles that were due came back`}>
+                                      {w.rate}%
+                                      <span className="ml-1 text-[9px] font-semibold opacity-70">{w.returned}/{w.eligible}</span>
+                                    </span>
+                                  )}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
+          </TabsContent>
           <TabsContent value="register" className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative flex-1 max-w-md">

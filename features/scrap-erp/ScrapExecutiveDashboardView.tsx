@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ScrapTransaction } from '@/lib/scrap-erp/types'
 import {
   TrendingUp,
@@ -17,10 +17,13 @@ import {
   Container,
   Filter,
   RotateCcw,
+  ChevronDown,
+  Search,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from '@/components/ui/dropdown-menu'
 
 function formatINR(val: number) {
   return new Intl.NumberFormat('en-IN', {
@@ -64,16 +67,99 @@ export function ScrapExecutiveDashboardView({
   const [appliedEndDate, setAppliedEndDate] = useState<string>('')
   const [activePreset, setActivePreset] = useState<string>('all')
 
+  // Other Filter States
+  const [companyInput, setCompanyInput] = useState<string>('all')
+  const [scrapTypeInput, setScrapTypeInput] = useState<string[]>([])
+  const [locationInput, setLocationInput] = useState<string>('all')
+
+  const [appliedCompany, setAppliedCompany] = useState<string>('all')
+  const [appliedScrapType, setAppliedScrapType] = useState<string[]>([])
+  const [appliedLocation, setAppliedLocation] = useState<string>('all')
+
+  const [scrapTypeSearch, setScrapTypeSearch] = useState<string>('')
+
+  // Dynamic Option lists derived from transactions
+  const companyOptions = useMemo(() => {
+    const names = transactions.map((t) => t.groupName || '').filter(Boolean)
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b))
+  }, [transactions])
+
+  const scrapTypeOptions = useMemo(() => {
+    const names = transactions.map((t) => t.scrapTypeName || '').filter(Boolean)
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b))
+  }, [transactions])
+
+  const locationOptions = useMemo(() => {
+    let list = transactions
+    if (companyInput && companyInput !== 'all') {
+      list = transactions.filter(
+        (t) => (t.groupName || '').trim().toLowerCase() === companyInput.trim().toLowerCase()
+      )
+    }
+    const names = list.map((t) => t.locationName || '').filter(Boolean)
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b))
+  }, [transactions, companyInput])
+
+  // Reset location input if it becomes invalid under the newly selected company
+  useEffect(() => {
+    if (locationInput !== 'all' && !locationOptions.includes(locationInput)) {
+      setLocationInput('all')
+    }
+  }, [companyInput, locationOptions, locationInput])
+
+  const handleToggleScrapType = (type: string) => {
+    setScrapTypeInput((prev) => {
+      if (prev.length === 0) {
+        return scrapTypeOptions.filter((opt) => opt !== type)
+      }
+      if (prev.includes(type)) {
+        const next = prev.filter((t) => t !== type)
+        return next.length === 0 ? ['__none__'] : next
+      } else {
+        const next = prev.filter((t) => t !== '__none__')
+        const final = [...next, type]
+        if (final.length === scrapTypeOptions.length) {
+          return []
+        }
+        return final
+      }
+    })
+  }
+
+  const isScrapTypeChecked = (type: string) => {
+    if (scrapTypeInput.length === 0) return true
+    if (scrapTypeInput.includes('__none__')) return false
+    return scrapTypeInput.includes(type)
+  }
+
+  const getScrapTypeLabel = () => {
+    if (scrapTypeInput.length === 0) return 'All Scrap Types'
+    if (scrapTypeInput.includes('__none__')) return 'No Scrap Types'
+    if (scrapTypeInput.length === 1) return scrapTypeInput[0]
+    return `${scrapTypeInput.length} Types Selected`
+  }
+
   const handleApplyFilter = () => {
     setAppliedStartDate(startDateInput)
     setAppliedEndDate(endDateInput)
+    setAppliedCompany(companyInput)
+    setAppliedScrapType(scrapTypeInput)
+    setAppliedLocation(locationInput)
   }
 
   const handleResetFilter = () => {
     setStartDateInput('')
     setEndDateInput('')
+    setCompanyInput('all')
+    setScrapTypeInput([])
+    setLocationInput('all')
+
     setAppliedStartDate('')
     setAppliedEndDate('')
+    setAppliedCompany('all')
+    setAppliedScrapType([])
+    setAppliedLocation('all')
+
     setActivePreset('all')
   }
 
@@ -83,11 +169,13 @@ export function ScrapExecutiveDashboardView({
     setEndDateInput(end)
   }
 
-  // Active Date-Filtered Transactions (Sorted Date High to Low -> Newest Sale First)
+  // Active Multi-Filtered Transactions (Sorted Date High to Low -> Newest Sale First)
   const activeTxns = useMemo(() => {
     let list = transactions
+
+    // Date filtering
     if (appliedStartDate || appliedEndDate) {
-      list = transactions.filter((t) => {
+      list = list.filter((t) => {
         const d = t.soldDate || t.timestamp || t.createdAt
         if (!d) return false
         const dStr = d.slice(0, 10) // 'YYYY-MM-DD'
@@ -97,12 +185,32 @@ export function ScrapExecutiveDashboardView({
         return true
       })
     }
+
+    // Company (Group) filtering
+    if (appliedCompany && appliedCompany !== 'all') {
+      list = list.filter((t) => (t.groupName || '').trim().toLowerCase() === appliedCompany.trim().toLowerCase())
+    }
+
+    // Scrap Type filtering
+    if (appliedScrapType && appliedScrapType.length > 0) {
+      if (appliedScrapType.includes('__none__')) {
+        list = []
+      } else {
+        list = list.filter((t) => appliedScrapType.includes(t.scrapTypeName || ''))
+      }
+    }
+
+    // Location filtering
+    if (appliedLocation && appliedLocation !== 'all') {
+      list = list.filter((t) => (t.locationName || '').trim().toLowerCase() === appliedLocation.trim().toLowerCase())
+    }
+
     return [...list].sort((a, b) => {
       const dA = new Date(a.soldDate || a.timestamp || a.createdAt || 0).getTime()
       const dB = new Date(b.soldDate || b.timestamp || b.createdAt || 0).getTime()
       return dB - dA
     })
-  }, [transactions, appliedStartDate, appliedEndDate])
+  }, [transactions, appliedStartDate, appliedEndDate, appliedCompany, appliedScrapType, appliedLocation])
 
   // Top Metrics & Analytics Computation
   const metrics = useMemo(() => {
@@ -423,58 +531,150 @@ export function ScrapExecutiveDashboardView({
 
   return (
     <div className="space-y-6">
-      {/* ── EXECUTIVE DATE RANGE FILTER BAR ── */}
+      {/* ── EXECUTIVE OVERVIEW MULTI-FILTER BAR ── */}
       <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
         <CardContent className="p-4">
-          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+          <div className="space-y-4">
             {/* Title & Active Filter Info */}
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-amber-500/10 p-2.5 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                <Calendar className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
-                    Overview Date Range Filter
-                  </h3>
-                  {(appliedStartDate || appliedEndDate) && (
-                    <Badge variant="outline" className="bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 text-[10px] font-black">
-                      Active: {activeTxns.length} of {transactions.length} Sales
-                    </Badge>
-                  )}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-amber-500/10 p-2.5 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                  <Calendar className="h-5 w-5" />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                  {appliedStartDate || appliedEndDate ? (
-                    <span>Showing overview data from <strong className="text-slate-700 dark:text-slate-200">{appliedStartDate || 'Start'}</strong> to <strong className="text-slate-700 dark:text-slate-200">{appliedEndDate || 'Present'}</strong></span>
-                  ) : (
-                    <span>Showing all historical records ({transactions.length} total sales)</span>
-                  )}
-                </p>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                      Overview Dashboard Filters
+                    </h3>
+                    {(appliedStartDate || appliedEndDate || appliedCompany !== 'all' || appliedScrapType.length > 0 || appliedLocation !== 'all') && (
+                      <Badge variant="outline" className="bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 text-[10px] font-black">
+                        Active: {activeTxns.length} of {transactions.length} Sales
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    {appliedStartDate || appliedEndDate || appliedCompany !== 'all' || appliedScrapType.length > 0 || appliedLocation !== 'all' ? (
+                      <span>Showing filtered overview data ({activeTxns.length} matching sales)</span>
+                    ) : (
+                      <span>Showing all historical records ({transactions.length} total sales)</span>
+                    )}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Controls: Presets, Date Inputs & Apply Button */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Quick Preset: All Time */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/60">
-                <button
-                  type="button"
-                  onClick={() => handlePresetClick('all', '', '')}
-                  className={cn(
-                    'px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer',
-                    activePreset === 'all'
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-slate-700'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  )}
+            {/* Filter Selects & Date Controls Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
+              {/* Company Select */}
+              <div className="space-y-1">
+                <span className="text-[10px] font-extrabold uppercase text-slate-400 dark:text-slate-500 block">Company / Group</span>
+                <select
+                  value={companyInput}
+                  onChange={(e) => setCompanyInput(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/95 px-3 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden"
                 >
-                  All Time
-                </button>
+                  <option value="all">All Companies</option>
+                  {companyOptions.map((co) => (
+                    <option key={co} value={co}>{co}</option>
+                  ))}
+                </select>
               </div>
 
-              {/* Start & End Date Inputs */}
-              <div className="flex items-center gap-1.5">
-                <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/90 rounded-xl px-2.5 py-1 border border-slate-200 dark:border-slate-700">
-                  <span className="text-[10px] font-extrabold uppercase text-slate-400">From:</span>
+              {/* Scrap Type Select */}
+              <div className="space-y-1">
+                <span className="text-[10px] font-extrabold uppercase text-slate-400 dark:text-slate-500 block">Scrap Type</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="h-9 w-full flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/95 px-3 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden cursor-pointer"
+                    >
+                      <span className="truncate">{getScrapTypeLabel()}</span>
+                      <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0 ml-1" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-64 rounded-2xl border border-slate-250 bg-white dark:bg-slate-900 p-2.5 shadow-lg z-[100] max-h-80 overflow-y-auto">
+                    <div className="space-y-2 text-xs">
+                      {/* Search Bar */}
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search types..."
+                          value={scrapTypeSearch}
+                          onChange={(e) => setScrapTypeSearch(e.target.value)}
+                          className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-955 pl-8 pr-2 text-xs font-semibold focus:outline-hidden"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+
+                      {/* Quick Actions */}
+                      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-1.5 pt-0.5 px-1">
+                        <button
+                          type="button"
+                          onClick={() => setScrapTypeInput([])}
+                          className="text-[10px] font-extrabold text-amber-600 hover:text-amber-700 dark:text-amber-400"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScrapTypeInput(['__none__'])}
+                          className="text-[10px] font-extrabold text-slate-500 hover:text-slate-650 dark:text-slate-400"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+
+                      {/* Checkbox List */}
+                      <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                        {scrapTypeOptions
+                          .filter((st) => st.toLowerCase().includes(scrapTypeSearch.toLowerCase()))
+                          .map((st) => {
+                            const checked = isScrapTypeChecked(st)
+                            return (
+                              <label
+                                key={st}
+                                className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-80/60 cursor-pointer font-bold text-slate-700 dark:text-slate-200"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => handleToggleScrapType(st)}
+                                  className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                />
+                                <span className="truncate">{st}</span>
+                              </label>
+                            )
+                          })}
+                        {scrapTypeOptions.filter((st) => st.toLowerCase().includes(scrapTypeSearch.toLowerCase())).length === 0 && (
+                          <div className="text-center py-4 text-slate-450 font-bold">No matches found</div>
+                        )}
+                      </div>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              {/* Location Select */}
+              <div className="space-y-1">
+                <span className="text-[10px] font-extrabold uppercase text-slate-400 dark:text-slate-500 block">Location</span>
+                <select
+                  value={locationInput}
+                  onChange={(e) => setLocationInput(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/95 px-3 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden"
+                >
+                  <option value="all">All Locations</option>
+                  {locationOptions.map((loc) => (
+                    <option key={loc} value={loc}>{loc}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date Filters: From & To */}
+              <div className="space-y-1 sm:col-span-2 md:col-span-3 lg:col-span-2 grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 dark:text-slate-500 block">From Date</span>
                   <input
                     type="date"
                     value={startDateInput}
@@ -482,11 +682,11 @@ export function ScrapExecutiveDashboardView({
                       setStartDateInput(e.target.value)
                       setActivePreset('custom')
                     }}
-                    className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden"
+                    className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/95 px-3 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden"
                   />
                 </div>
-                <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/90 rounded-xl px-2.5 py-1 border border-slate-200 dark:border-slate-700">
-                  <span className="text-[10px] font-extrabold uppercase text-slate-400">To:</span>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 dark:text-slate-500 block">To Date</span>
                   <input
                     type="date"
                     value={endDateInput}
@@ -494,33 +694,86 @@ export function ScrapExecutiveDashboardView({
                       setEndDateInput(e.target.value)
                       setActivePreset('custom')
                     }}
-                    className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden"
+                    className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/95 px-3 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden"
                   />
                 </div>
               </div>
+            </div>
 
-              {/* Apply Button */}
-              <button
-                type="button"
-                onClick={handleApplyFilter}
-                className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-black px-4 py-2 rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
-              >
-                <Filter className="h-3.5 w-3.5" />
-                Apply Filter
-              </button>
+            {/* Actions Row */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              {/* Presets */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-extrabold uppercase text-slate-450 dark:text-slate-400">Presets:</span>
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-700/60">
+                  <button
+                    type="button"
+                    onClick={() => handlePresetClick('all', '', '')}
+                    className={cn(
+                      'px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer',
+                      activePreset === 'all'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-slate-700'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    )}
+                  >
+                    All Time
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date().toISOString().slice(0, 10)
+                      handlePresetClick('today', today, today)
+                    }}
+                    className={cn(
+                      'px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer',
+                      activePreset === 'today'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-slate-700'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    )}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const date = new Date()
+                      const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().slice(0, 10)
+                      const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().slice(0, 10)
+                      handlePresetClick('this_month', firstDay, lastDay)
+                    }}
+                    className={cn(
+                      'px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer',
+                      activePreset === 'this_month'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-slate-700'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    )}
+                  >
+                    This Month
+                  </button>
+                </div>
+              </div>
 
-              {/* Reset Button */}
-              {(startDateInput || endDateInput || appliedStartDate || appliedEndDate) && (
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                {(startDateInput || endDateInput || companyInput !== 'all' || scrapTypeInput.length > 0 || locationInput !== 'all' || appliedStartDate || appliedEndDate || appliedCompany !== 'all' || appliedScrapType.length > 0 || appliedLocation !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={handleResetFilter}
+                    className="inline-flex items-center gap-1 bg-slate-150 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-xl transition-all cursor-pointer"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Reset
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={handleResetFilter}
-                  title="Reset Date Filter"
-                  className="inline-flex items-center gap-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold px-3 py-2 rounded-xl transition-all cursor-pointer"
+                  onClick={handleApplyFilter}
+                  className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-black px-4 py-1.5 rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Reset
+                  <Filter className="h-3.5 w-3.5" />
+                  Apply Filters
                 </button>
-              )}
+              </div>
             </div>
           </div>
         </CardContent>

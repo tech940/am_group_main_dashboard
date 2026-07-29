@@ -474,6 +474,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'hyundai.sales.discount_approvals',
+    name: 'Discount Approvals',
+    parentKey: 'hyundai.sales',
+    description: 'AM Hyundai and Platinum discount approval tracking.',
+    sortOrder: 137.5,
+    actions: ['view', 'approve'],
+  },
+  {
     key: 'hyundai.h_promise',
     name: 'H Promise',
     parentKey: 'hyundai',
@@ -810,6 +818,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   'hyundai.proforma': { href: '/brands/hyundai/proforma' },
   'hyundai.warranty_list': { href: '/brands/hyundai/warranty-list' },
   'hyundai.warranty_claim_list': { href: '/brands/hyundai/warranty-claim-list' },
+  'hyundai.sales.discount_approvals': { href: '/brands/hyundai/sales/discount-approvals' },
   'platinum.business_excellence': { href: '/brands/platinum/business-excellence', aliases: ['/brands/platinum/business-excellence/executive-dashboard', '/brands/platinum/business-excellence/overview'] },
   'platinum.service_appointment': { href: '/brands/platinum/service-appointment' },
   'platinum.demo_job_cards': { href: '/brands/platinum/demo-job-cards' },
@@ -855,6 +864,7 @@ export const DEFAULT_VISIBLE_SECTIONS = new Set<string>([
   'kia.sales_report', 'kia.stock_report', 'kia.bookings', 'kia.proforma',
   'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.demo_job_cards',
   'hyundai.demo_cars_list', 'hyundai.proforma', 'hyundai.warranty_list', 'hyundai.warranty_claim_list',
+  'hyundai.sales.discount_approvals',
   'platinum.business_excellence', 'platinum.service_appointment', 'platinum.demo_job_cards',
   'platinum.demo_cars_list', 'platinum.proforma', 'platinum.warranty_list', 'platinum.warranty_claim_list',
   'mg.business_excellence', 'mg.service_appointment', 'mg.demo_job_cards', 'mg.demo_cars_list', 'mg.proforma',
@@ -921,6 +931,7 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   sales_executive: 'Sales Executive',
   sales_manager: 'Sales Manager',
   ed: 'ED',
+  vp: 'VP (Vice President)',
   finance_team: 'Finance Team',
   call_agent: 'Call Agent',
   ca: 'CA',
@@ -1200,6 +1211,12 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ccm: [
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+  ],
+  vp: [
+    ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management', 'hyundai.sales.discount_approvals'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.call_analytics'], ['view']),
+    ...keysForGroups(['am_finance'], ['view']),
   ],
 }
 

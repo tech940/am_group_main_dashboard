@@ -185,6 +185,7 @@ const ROLE_LABELS: Record<string, string> = {
   finance_team: 'Finance Team',
   eba: 'EBA',
   ed: 'ED (Executive Director)',
+  vp: 'VP (Vice President)',
   call_agent: 'Call Agent',
   ca: 'CA',
   // CRM / CRE / CXM / CCM: four roles within one letter of each other, with very different powers

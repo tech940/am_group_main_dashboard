@@ -1015,7 +1015,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const approvedVolume = useMemo(() => {
     if (!data?.rows) return 0
     return data.rows
-      .filter(r => r.managementApproval === 'APPROVED')
+      .filter(r => r.managementApproval === 'APPROVED' && !getPendingStageLabel(r).startsWith('Rejected'))
       .reduce((sum, r) => sum + Number(r.amount || 0), 0)
   }, [data?.rows])
 

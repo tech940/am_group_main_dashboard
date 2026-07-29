@@ -2235,8 +2235,15 @@ export function KiaBookingsClient({
       }
       groups[key].bookings.push(row)
     })
-
     return Object.values(groups).sort((a, b) => b.bookings.length - a.bookings.length)
+  }, [shortageQuery.data?.rows])
+
+  const pendingShortageDemandsCount = useMemo(() => {
+    if (!shortageQuery.data?.rows) return 0
+    return shortageQuery.data.rows.filter((b: any) => {
+      const status = b.metadata?.idtArrangement?.status
+      return status !== 'arranged' && status !== 'cannot_arrange'
+    }).length
   }, [shortageQuery.data?.rows])
   const kpis = data?.kpis || {
     today: 0,
@@ -2968,7 +2975,7 @@ export function KiaBookingsClient({
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">IDT Shortage List</p>
                     <h2 className="text-sm font-extrabold text-[var(--kia-text)]">
-                      {groupedShortages.length} shortage models ({shortageQuery.data?.rows?.length || 0} active demands)
+                      {pendingShortageDemandsCount} shortage models ({shortageQuery.data?.rows?.length || 0} active demands)
                     </h2>
                   </div>
                 </div>
