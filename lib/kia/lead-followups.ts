@@ -6,6 +6,7 @@ import { kiaBookingActivity, kiaBookings, kiaLeadFollowups, users } from '@/lib/
 import type { AppUser } from '@/lib/auth/app-user'
 import { canRevealKiaFollowupPhone } from '@/lib/kia/pii'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
+import { createFinancePayoutForDeliveredBooking } from './bookings'
 
 // The KIA lead follow-up pipeline. A follow-up is a scheduled "next touch" on a booking.
 //
@@ -838,77 +839,107 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
   notInterestedReason?: string | null
   nextDueAt?: string | null
 }) {
-  const [existing] = await db.select().from(kiaLeadFollowups).where(eq(kiaLeadFollowups.id, id)).limit(1)
-  if (!existing) throw new Error('Follow-up not found.')
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(kiaLeadFollowups).where(eq(kiaLeadFollowups.id, id)).limit(1)
+    if (!existing) throw new Error('Follow-up not found.')
 
-  // Reject an unknown outcome rather than silently coercing it to null — a typo used to record a
-  // completed follow-up with no outcome at all, which is invisible in both the pipeline and analytics.
-  const outcome = String(input.outcome || '').trim()
-  if (!outcome) throw new Error('Select the outcome of this follow-up.')
-  if (!OUTCOMES.has(outcome)) throw new Error(`Unknown follow-up outcome "${outcome}".`)
+    // Reject an unknown outcome rather than silently coercing it to null — a typo used to record a
+    // completed follow-up with no outcome at all, which is invisible in both the pipeline and analytics.
+    const outcome = String(input.outcome || '').trim()
+    if (!outcome) throw new Error('Select the outcome of this follow-up.')
+    if (!OUTCOMES.has(outcome)) throw new Error(`Unknown follow-up outcome "${outcome}".`)
 
-  const notes = requireRemarks(input.notes, outcome === 'converted')
+    const notes = requireRemarks(input.notes, outcome === 'converted')
 
-  // "Not Interested" must capture WHY, as a preset (so the analytics dashboard can rank reasons)
-  // plus the mandatory detail already in notes.
-  let notInterestedReason: string | null = null
-  if (outcome === 'not_interested') {
-    notInterestedReason = String(input.notInterestedReason || '').trim()
-    if (!notInterestedReason) throw new Error('Select the customer\'s reason for not proceeding.')
-    if (!NOT_INTERESTED_REASON_SET.has(notInterestedReason)) {
-      throw new Error(`Unknown reason "${notInterestedReason}".`)
+    // "Not Interested" must capture WHY, as a preset (so the analytics dashboard can rank reasons)
+    // plus the mandatory detail already in notes.
+    let notInterestedReason: string | null = null
+    if (outcome === 'not_interested') {
+      notInterestedReason = String(input.notInterestedReason || '').trim()
+      if (!notInterestedReason) throw new Error('Select the customer\'s reason for not proceeding.')
+      if (!NOT_INTERESTED_REASON_SET.has(notInterestedReason)) {
+        throw new Error(`Unknown reason "${notInterestedReason}".`)
+      }
     }
-  }
 
-  await db.update(kiaLeadFollowups).set({
-    status: 'done',
-    outcome,
-    notInterestedReason,
-    notes,
-    completedBy: appUser.id,
-    completedAt: new Date(),
-    updatedAt: new Date(),
-  }).where(eq(kiaLeadFollowups.id, id))
+    await tx.update(kiaLeadFollowups).set({
+      status: 'done',
+      outcome,
+      notInterestedReason,
+      notes,
+      completedBy: appUser.id,
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(kiaLeadFollowups.id, id))
 
-  await db.insert(kiaBookingActivity).values({
-    bookingId: existing.bookingId,
-    activityType: 'followup_completed',
-    title: 'Follow-up completed',
-    description: notInterestedReason
-      ? `Outcome: not interested — ${notInterestedReason.replace(/_/g, ' ')}`
-      : `Outcome: ${outcome.replace(/_/g, ' ')}`,
-    actorUserId: appUser.id,
-    actorName: appUser.fullName,
-    actorRole: appUser.role,
-  })
-
-  // The customer was actually spoken to → keep the journey going: schedule the next touch 7 days
-  // out automatically. An explicit nextDueAt still wins, so a CRE can override the cadence.
-  //
-  // Deliberately NOT for no_answer (that lands in the Not Connected queue for a retry instead),
-  // nor for not_interested / converted (which end the cadence until someone re-engages by hand).
-  // And never past delivery — a delivered booking is done with follow-ups.
-  let next: FollowupRow | null = null
-  const bookingDelivered = await isBookingDelivered(existing.bookingId)
-  const shouldRepeat = !bookingDelivered && (Boolean(input.nextDueAt) || CONTACTED_OUTCOMES.has(outcome))
-
-  if (shouldRepeat) {
-    const dueAt = input.nextDueAt
-      ? parseIstDate(input.nextDueAt)
-      : new Date(Date.now() + FOLLOWUP_REPEAT_DAYS * 24 * 60 * 60 * 1000)
-    next = await createFollowup(appUser, {
+    await tx.insert(kiaBookingActivity).values({
       bookingId: existing.bookingId,
-      dueAt: dueAt.toISOString(),
-      reason: existing.reason,
-      priority: existing.priority,
-      source: outcome === 'rescheduled' ? 'rescheduled' : 'manual',
-      assignedTo: existing.assignedTo,
-      notes: input.nextDueAt
-        ? `Next touch scheduled by ${appUser.fullName} after: ${notes}`.slice(0, 2000)
-        : `Auto-scheduled ${FOLLOWUP_REPEAT_DAYS} days after contact on ${new Date().toISOString().slice(0, 10)}.`,
+      activityType: 'followup_completed',
+      title: 'Follow-up completed',
+      description: notInterestedReason
+        ? `Outcome: not interested — ${notInterestedReason.replace(/_/g, ' ')}`
+        : `Outcome: ${outcome.replace(/_/g, ' ')}`,
+      actorUserId: appUser.id,
+      actorName: appUser.fullName,
+      actorRole: appUser.role,
     })
-  }
-  return { ok: true, next }
+
+    // If the outcome is converted (vehicle delivered), update the booking status to delivered
+    if (outcome === 'converted') {
+      const [before] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, existing.bookingId), isNull(kiaBookings.deletedAt))).limit(1)
+      if (before) {
+        const [booking] = await tx.update(kiaBookings).set({
+          status: 'delivered',
+          deliveredAt: new Date(),
+          updatedBy: appUser.id,
+          updatedAt: new Date()
+        }).where(eq(kiaBookings.id, existing.bookingId)).returning()
+
+        await tx.insert(kiaBookingActivity).values({
+          bookingId: existing.bookingId,
+          activityType: 'delivered',
+          title: 'Vehicle delivered',
+          description: `Vehicle marked delivered via follow-up conversion by ${appUser.fullName}`,
+          actorUserId: appUser.id,
+          actorName: appUser.fullName,
+          actorRole: appUser.role,
+        })
+
+        // Also cancel other pending followups for this booking
+        await cancelKiaBookingFollowups(tx, existing.bookingId, 'vehicle delivered')
+        // And create the finance payout record
+        await createFinancePayoutForDeliveredBooking(tx, booking, appUser)
+      }
+    }
+
+    // The customer was actually spoken to → keep the journey going: schedule the next touch 7 days
+    // out automatically. An explicit nextDueAt still wins, so a CRE can override the cadence.
+    //
+    // Deliberately NOT for no_answer (that lands in the Not Connected queue for a retry instead),
+    // nor for not_interested / converted (which end the cadence until someone re-engages by hand).
+    // And never past delivery — a delivered booking is done with follow-ups.
+    let next: FollowupRow | null = null
+    const bookingDelivered = outcome === 'converted' || await isBookingDelivered(existing.bookingId)
+    const shouldRepeat = !bookingDelivered && (Boolean(input.nextDueAt) || CONTACTED_OUTCOMES.has(outcome))
+
+    if (shouldRepeat) {
+      const dueAt = input.nextDueAt
+        ? parseIstDate(input.nextDueAt)
+        : new Date(Date.now() + FOLLOWUP_REPEAT_DAYS * 24 * 60 * 60 * 1000)
+      next = await createFollowup(appUser, {
+        bookingId: existing.bookingId,
+        dueAt: dueAt.toISOString(),
+        reason: existing.reason,
+        priority: existing.priority,
+        source: outcome === 'rescheduled' ? 'rescheduled' : 'manual',
+        assignedTo: existing.assignedTo,
+        notes: input.nextDueAt
+          ? `Next touch scheduled by ${appUser.fullName} after: ${notes}`.slice(0, 2000)
+          : `Auto-scheduled ${FOLLOWUP_REPEAT_DAYS} days after contact on ${new Date().toISOString().slice(0, 10)}.`,
+      })
+    }
+    return { ok: true, next }
+  })
 }
 
 /** Follow-ups stop at delivery — see cancelKiaBookingFollowups. */

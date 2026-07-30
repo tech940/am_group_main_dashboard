@@ -478,7 +478,7 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     name: 'Discount Approvals',
     parentKey: 'hyundai.sales',
     description: 'AM Hyundai and Platinum discount approval tracking.',
-    sortOrder: 137.5,
+    sortOrder: 137,
     actions: ['view', 'approve'],
   },
   {
@@ -1091,6 +1091,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     // KIA Proforma workflow: final approver — reviews & approves after Sales Manager / GM.
     ...keysForGroups(['kia', 'kia.bookings'], ['view']),
     ...keysForGroups(['kia.proforma'], ['view', 'approve']),
+    ...keysForGroups(['finance'], ['view', 'approve', 'edit']),
   ],
   accounts: [
     ...keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),

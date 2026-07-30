@@ -746,7 +746,7 @@ function BookingMobileCard({
 
   const isRowPending = getKiaBookingStageInfo(row.status, row.proformaApprovalStatus).state === 'pending'
   const isRowOverdue = isRowPending && isKiaBookingWaitLong(row.updatedAt, now)
-  const isRemarkEnabled = isRowOverdue || remarksCount > 0 || (row.stockNotAvailable && normalizedCurrentRole === 'idt')
+  const isRemarkEnabled = true
 
   return (
     <article className="kia-surface-flush kia-lift p-3.5 space-y-3 overflow-hidden" onClick={() => onOpen(row.id)}>
@@ -849,9 +849,7 @@ function BookingMobileCard({
                 ? "text-rose-600 hover:bg-rose-100 bg-rose-50 border-rose-200/80 shadow-2xs"
                 : remarksCount > 0
                   ? "text-indigo-600 hover:bg-indigo-50 bg-indigo-50/50 border-indigo-200/60"
-                  : isRemarkEnabled
-                    ? "text-amber-500 hover:bg-amber-50"
-                    : "text-slate-300 cursor-not-allowed"
+                  : "text-slate-400 hover:bg-slate-50 hover:text-slate-700"
             )}
             onClick={() => {
               if (!onAddRemark) return
@@ -3285,7 +3283,7 @@ export function KiaBookingsClient({
                                   ...(row.idtRemark ? [{ id: '2', text: row.idtRemark, authorName: 'IDT Team', createdAt: '' }] : [])
                                 ]
                             const remarksCount = remarksList.length
-                            const isRemarkEnabled = isRowOverdue || remarksCount > 0 || (row.stockNotAvailable && normalizedCurrentRole === 'idt')
+                            const isRemarkEnabled = true
 
                             return (
                               <div className="relative inline-flex items-center">
@@ -3314,9 +3312,7 @@ export function KiaBookingsClient({
                                       ? "text-rose-600 hover:bg-rose-100 hover:text-rose-700 bg-rose-50 border border-rose-200/80 shadow-2xs"
                                       : remarksCount > 0
                                         ? "text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 bg-indigo-50/50 border border-indigo-200/60"
-                                        : isRemarkEnabled
-                                          ? "text-amber-500 hover:bg-amber-50"
-                                          : "text-slate-200 dark:text-slate-800 cursor-not-allowed"
+                                        : "text-slate-400 hover:bg-slate-50 hover:text-slate-700"
                                   )}
                                 >
                                   <MessageSquare className="h-4 w-4" />

@@ -73,6 +73,8 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Business Excellence', href: '/brands/kia/business-excellence' },
           { name: 'Service Appointment', href: '/brands/kia/service-appointment' },
           { name: 'Vehicle Tracker', href: '/brands/kia/vehicle-tracker' },
+          { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
+          { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
         ],
       },
       {
@@ -85,8 +87,6 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Booking Payment History', href: '/brands/kia/booking-payment-history' },
           { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups' },
-          { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
-          { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
         ],
       },
       // {

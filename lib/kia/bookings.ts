@@ -33,7 +33,7 @@ import {
 } from '@/lib/kia/workflow-access'
 
 type JsonRecord = Record<string, unknown>
-type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 const TEMPORARY_ALLOCATION_HOURS = 72
 const CSD_ALLOCATION_HOURS = 120 // CSD customers get a 5-day payment window
 
@@ -1325,7 +1325,7 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
  * Idempotent via the partial unique index on booking_id — re-delivering, or any retry, updates the
  * snapshot rather than creating a second row. Runs on the delivery `tx` so it rolls back with it.
  */
-async function createFinancePayoutForDeliveredBooking(tx: DbTx, booking: typeof kiaBookings.$inferSelect, appUser: AppUser) {
+export async function createFinancePayoutForDeliveredBooking(tx: DbTx, booking: typeof kiaBookings.$inferSelect, appUser: AppUser) {
   const meta = (booking.metadata || {}) as JsonRecord
   const snapshot = {
     bookingId: booking.id,
