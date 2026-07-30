@@ -23,7 +23,11 @@ import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 // longer say WHICH customer's number someone looked at — only that they loaded the list.
 // Assignment defaults to the booking's sales consultant.
 
-const REASONS = new Set(['callback', 'payment_pending', 'document_pending', 'delivery', 'general'])
+const REASONS = new Set([
+  'callback', 'payment_pending', 'document_pending', 'delivery', 'general',
+  'fake_booking', 'demo_vehicle', 'repeated_booking', 'pending',
+  'followup_call', 'customer_request', 'no_answer', 'payment_delay', 'customer_concern', '__custom__'
+])
 const PRIORITIES = new Set(['low', 'normal', 'high'])
 const OUTCOMES = new Set(['reached', 'no_answer', 'rescheduled', 'not_interested', 'converted', 'done'])
 
@@ -64,9 +68,15 @@ function parseIstDate(value: string | Date): Date {
   return new Date(str)
 }
 
-function requireRemarks(value: unknown): string {
+function requireRemarks(value: unknown, bypass = false): string {
   const notes = String(value ?? '').trim()
-  if (!notes) throw new Error('Remarks are required — record what was discussed with the customer.')
+  if (!notes) {
+    if (bypass) return 'System status update'
+    throw new Error('Remarks are required — record what was discussed with the customer.')
+  }
+  if (bypass) {
+    return notes.slice(0, 2000)
+  }
   const words = notes.split(/\s+/).filter(Boolean).length
   if (words < 10) {
     throw new Error('Remarks must be at least 10 words — record what was discussed with the customer.')
@@ -103,7 +113,7 @@ function istDayBoundaries(base = new Date()) {
  * - `pending` — every other open follow-up, overdue first. The `overdue` flag on each row drives the
  *   red indicator.
  */
-export type FollowupBucket = 'not_connected' | 'customer_concerns' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled'
+export type FollowupBucket = 'not_connected' | 'customer_concerns' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled' | 'delivered'
 
 export type FollowupRow = {
   id: string
@@ -131,6 +141,7 @@ export type FollowupRow = {
   overdue: boolean
   /** Null unless the viewer passes canRevealKiaFollowupPhone. Nulled in toRow(), never in the SQL. */
   customerPhone: string | null
+  remarksCount: number
 }
 
 /** The follow-up's due time has passed — drives the overdue indicator inside the Pending bucket. */
@@ -185,6 +196,7 @@ const displaySelection = {
   bookingNumber: kiaBookings.bookingNumber,
   bookingStatus: kiaBookings.status,
   dealer: kiaBookings.dealerCode,
+  remarksCount: sql<number>`(select count(*)::int from ${kiaBookingActivity} where ${kiaBookingActivity.bookingId} = ${kiaBookings.id})`.as('remarks_count'),
 } as const
 
 function toRow(r: Record<string, unknown>, now: Date, bucket: FollowupBucket, canSeePhone: boolean): FollowupRow {
@@ -216,6 +228,7 @@ function toRow(r: Record<string, unknown>, now: Date, bucket: FollowupBucket, ca
     // THE redaction. Everything below this line reaches the browser, so a role that can't reveal
     // numbers must get null — not a masked string, not the value with a flag: null.
     customerPhone: canSeePhone ? ((r.customerPhone as string) || null) : null,
+    remarksCount: Number(r.remarksCount || 0),
   }
 }
 
@@ -341,6 +354,50 @@ export async function listFollowups(appUser: AppUser, input: {
     )!)
   }
 
+  // Delivered where clause: bookings that are delivered.
+  const deliveredWhere = [
+    isNull(kiaBookings.deletedAt),
+    eq(kiaBookings.status, 'delivered'),
+  ]
+  if (input.mine) {
+    deliveredWhere.push(eq(kiaLeadFollowups.assignedTo, appUser.id))
+  } else if (input.assignedTo && input.assignedTo !== 'all') {
+    deliveredWhere.push(eq(kiaLeadFollowups.assignedTo, input.assignedTo))
+  }
+  if (input.reason && input.reason !== 'all' && REASONS.has(input.reason)) {
+    deliveredWhere.push(eq(kiaLeadFollowups.reason, input.reason))
+  }
+  if (input.rescheduleReason && input.rescheduleReason !== 'all') {
+    const rVal = input.rescheduleReason.trim()
+    deliveredWhere.push(or(
+      eq(kiaLeadFollowups.reason, rVal),
+      eq(kiaLeadFollowups.outcome, rVal),
+      ilike(kiaLeadFollowups.notes, `%${rVal}%`),
+    )!)
+  }
+  if (input.priority && input.priority !== 'all' && PRIORITIES.has(input.priority)) {
+    deliveredWhere.push(eq(kiaLeadFollowups.priority, input.priority))
+  }
+  if (input.model && input.model !== 'all') {
+    deliveredWhere.push(ilike(kiaBookings.model, `%${input.model}%`))
+  }
+  if (allowedDealers && allowedDealers.length) {
+    deliveredWhere.push(or(inArray(kiaLeadFollowups.dealerCode, allowedDealers), inArray(kiaBookings.dealerCode, allowedDealers))!)
+  } else if (input.dealer && input.dealer !== 'all') {
+    deliveredWhere.push(or(eq(kiaLeadFollowups.dealerCode, input.dealer), eq(kiaBookings.dealerCode, input.dealer))!)
+  }
+  if (search) {
+    deliveredWhere.push(or(
+      ilike(kiaBookings.customerName, `%${search}%`),
+      ilike(kiaBookings.customerPhone, `%${search}%`),
+      ilike(kiaBookings.model, `%${search}%`),
+      ilike(kiaBookings.bookingNumber, `%${search}%`),
+      ilike(kiaBookings.consultantName, `%${search}%`),
+      ilike(kiaLeadFollowups.assignedName, `%${search}%`),
+      ilike(kiaLeadFollowups.notes, `%${search}%`),
+    )!)
+  }
+
   // Date range filters logic
   const dateField = input.dateField || 'due_date'
   const dateColumn = dateField === 'booking_date'
@@ -356,14 +413,16 @@ export async function listFollowups(appUser: AppUser, input: {
     start.setHours(0, 0, 0, 0)
     where.push(gte(dateColumn, start))
     cancelledWhere.push(gte(dateColumn, start))
+    deliveredWhere.push(gte(dateColumn, start))
   }
   if (input.endDate) {
     const end = new Date(new Date(input.endDate).setHours(23, 59, 59, 999))
     where.push(lte(dateColumn, end))
     cancelledWhere.push(lte(dateColumn, end))
+    deliveredWhere.push(lte(dateColumn, end))
   }
 
-  const [pending, nextDay, scheduled, notConnected, cancelled, rescheduled, noAnswerRetry, customerConcerns] = await Promise.all([
+  const [pending, nextDay, scheduled, notConnected, cancelled, rescheduled, noAnswerRetry, customerConcerns, delivered] = await Promise.all([
     // Open follow-ups due today and overdue, excluding explicitly rescheduled ones.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
@@ -408,6 +467,7 @@ export async function listFollowups(appUser: AppUser, input: {
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
       .where(and(
         ...where,
+        eq(kiaLeadFollowups.status, 'pending'),
         or(
           eq(kiaLeadFollowups.outcome, 'no_answer'),
           eq(kiaLeadFollowups.reason, 'no_answer'),
@@ -476,6 +536,7 @@ export async function listFollowups(appUser: AppUser, input: {
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
       .where(and(
         ...where,
+        eq(kiaLeadFollowups.status, 'pending'),
         or(
           eq(kiaLeadFollowups.reason, 'customer_concern'),
           eq(kiaLeadFollowups.outcome, 'customer_concern'),
@@ -484,6 +545,15 @@ export async function listFollowups(appUser: AppUser, input: {
       ))
       .orderBy(desc(kiaLeadFollowups.updatedAt), desc(kiaLeadFollowups.createdAt))
       .limit(500),
+    // Delivered: follow-ups for bookings that are delivered
+    db.select(displaySelection)
+      .from(kiaLeadFollowups)
+      .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
+      .where(and(
+        ...deliveredWhere,
+      ))
+      .orderBy(desc(kiaLeadFollowups.dueAt))
+      .limit(300),
   ])
 
   // Decided ONCE, here, from the viewer's role — then every row goes through toRow with it.
@@ -497,6 +567,7 @@ export async function listFollowups(appUser: AppUser, input: {
     ...scheduled.map((r) => toRow(r as Record<string, unknown>, now, 'scheduled', canSeePhone)),
     ...cancelled.map((r) => toRow(r as Record<string, unknown>, now, 'cancelled', canSeePhone)),
     ...rescheduled.map((r) => toRow(r as Record<string, unknown>, now, 'rescheduled', canSeePhone)),
+    ...delivered.map((r) => toRow(r as Record<string, unknown>, now, 'delivered', canSeePhone)),
   ]
   const counts = {
     customer_concerns: customerConcerns.length,
@@ -505,8 +576,9 @@ export async function listFollowups(appUser: AppUser, input: {
     next_day: nextDay.length,
     scheduled: scheduled.length,
     cancelled: cancelled.length,
+    delivered: delivered.length,
     rescheduled: rescheduled.length,
-    overdue: rows.filter((r) => r.overdue && r.bucket !== 'cancelled').length,
+    overdue: rows.filter((r) => r.overdue && r.bucket !== 'cancelled' && r.bucket !== 'delivered').length,
   }
 
   return { rows, counts, now: now.toISOString() }
@@ -712,7 +784,7 @@ export async function updateFollowup(appUser: AppUser, id: string, patch: {
 
   // A reschedule/reassign is a submission too — say why. Without this the communication history has
   // gaps exactly where someone moved the goalposts.
-  const notes = requireRemarks(patch.notes)
+  const notes = requireRemarks(patch.notes, Boolean(patch.reason))
 
   const updates: Record<string, unknown> = { updatedAt: new Date(), notes }
   const activityBits: string[] = []
@@ -775,7 +847,7 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
   if (!outcome) throw new Error('Select the outcome of this follow-up.')
   if (!OUTCOMES.has(outcome)) throw new Error(`Unknown follow-up outcome "${outcome}".`)
 
-  const notes = requireRemarks(input.notes)
+  const notes = requireRemarks(input.notes, outcome === 'converted')
 
   // "Not Interested" must capture WHY, as a preset (so the analytics dashboard can rank reasons)
   // plus the mandatory detail already in notes.
@@ -877,14 +949,23 @@ export async function cancelFollowup(appUser: AppUser, id: string) {
   const [existing] = await db.select({ bookingId: kiaLeadFollowups.bookingId, status: kiaLeadFollowups.status })
     .from(kiaLeadFollowups).where(eq(kiaLeadFollowups.id, id)).limit(1)
   if (!existing) throw new Error('Follow-up not found.')
-  await db.update(kiaLeadFollowups).set({ status: 'cancelled', updatedAt: new Date() }).where(eq(kiaLeadFollowups.id, id))
-  await db.insert(kiaBookingActivity).values({
-    bookingId: existing.bookingId,
-    activityType: 'followup_cancelled',
-    title: 'Follow-up cancelled',
-    actorUserId: appUser.id,
-    actorName: appUser.fullName,
-    actorRole: appUser.role,
+
+  await db.transaction(async (tx) => {
+    // 1. Cancel the follow-up
+    await tx.update(kiaLeadFollowups).set({ status: 'cancelled', updatedAt: new Date() }).where(eq(kiaLeadFollowups.id, id))
+    
+    // 2. Cancel the booking
+    await tx.update(kiaBookings).set({ status: 'cancelled', updatedAt: new Date() }).where(eq(kiaBookings.id, existing.bookingId))
+
+    // 3. Log activity
+    await tx.insert(kiaBookingActivity).values({
+      bookingId: existing.bookingId,
+      activityType: 'followup_cancelled',
+      title: 'Booking & Follow-up cancelled',
+      actorUserId: appUser.id,
+      actorName: appUser.fullName,
+      actorRole: appUser.role,
+    })
   })
   return { ok: true }
 }

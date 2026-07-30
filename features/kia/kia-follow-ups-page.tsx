@@ -46,11 +46,12 @@ type Followup = {
   reason: string; priority: string; notes: string | null; source: string; outcome: string | null
   completedAt: string | null; createdAt: string
   notInterestedReason: string | null
-  bucket: 'not_connected' | 'customer_concerns' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled'
+  bucket: 'not_connected' | 'customer_concerns' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled' | 'delivered'
   overdue: boolean
   customerPhone: string | null
+  remarksCount: number
 }
-type Counts = { not_connected: number; customer_concerns: number; pending: number; next_day: number; scheduled: number; cancelled: number; rescheduled: number; overdue: number }
+type Counts = { not_connected: number; customer_concerns: number; pending: number; next_day: number; scheduled: number; cancelled: number; delivered: number; rescheduled: number; overdue: number }
 type ListResponse = { rows: Followup[]; counts: Counts; now: string }
 type BookingHit = { id: string; customerName: string; model: string; variant: string; bookingNumber: string | null; dealer: string | null; status: string; consultantName: string | null }
 
@@ -113,6 +114,7 @@ const BUCKETS = [
   { key: 'next_day', label: 'Next Day', tone: 'text-indigo-600', hint: 'Due tomorrow' },
   { key: 'scheduled', label: 'Scheduled', tone: 'text-teal-600', hint: 'Future follow-ups' },
   { key: 'cancelled', label: 'Cancelled', tone: 'text-slate-500', hint: 'Cancelled bookings' },
+  { key: 'delivered', label: 'Delivered', tone: 'text-emerald-600', hint: 'Delivered vehicles' },
   { key: 'analytics', label: 'Analytics', tone: 'text-indigo-600', hint: 'Performance & completion metrics' },
 ] as const
 
@@ -546,7 +548,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   }, [data?.rows, alertedIds])
 
   const grouped = useMemo(() => {
-    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], customer_concerns: [], pending: [], next_day: [], scheduled: [], cancelled: [], rescheduled: [] }
+    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], customer_concerns: [], pending: [], next_day: [], scheduled: [], cancelled: [], delivered: [], rescheduled: [] }
     for (const r of data?.rows || []) g[r.bucket].push(r)
     return g
   }, [data])
@@ -1203,11 +1205,6 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                                     {aging.text}
                                   </span>
                                 )}
-                                {typeof actCount === 'number' && actCount > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[9px] font-black bg-slate-100 text-slate-600 border border-slate-200">
-                                    <MessageCircle className="h-2.5 w-2.5" />{actCount}
-                                  </span>
-                                )}
                               </div>
                             </div>
                           </td>
@@ -1253,86 +1250,106 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                             </div>
                           </td>
                           <td className="p-3 text-right pr-6" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1.5">
-                              {canCall && (
+                            <div className="flex flex-col items-end gap-1.5">
+                              {/* Action Buttons Row */}
+                              <div className="flex items-center gap-1.5">
+                                {canCall && (
+                                  <Button
+                                    onClick={() => setCalling(f)}
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600"
+                                    title="Call Customer"
+                                  >
+                                    <Phone className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 <Button
-                                  onClick={() => setCalling(f)}
+                                  onClick={() => setRescheduling(f)}
                                   size="icon"
                                   variant="ghost"
-                                  className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600"
-                                  title="Call Customer"
+                                  className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-amber-600"
+                                  title="Reschedule Follow-up"
                                 >
-                                  <Phone className="h-4 w-4" />
+                                  <Calendar className="h-4 w-4" />
                                 </Button>
-                              )}
-                              <Button
-                                onClick={() => setRescheduling(f)}
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-amber-600"
-                                title="Reschedule Follow-up"
-                              >
-                                <Calendar className="h-4 w-4" />
-                              </Button>
 
-                              <Button
-                                onClick={() => setConcerningFollowup(f)}
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 rounded-lg text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
-                                title="Log Customer Concern"
-                              >
-                                <AlertTriangle className="h-4 w-4 text-amber-500" />
-                              </Button>
+                                <Button
+                                  onClick={() => setConcerningFollowup(f)}
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 rounded-lg text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                                  title="Log Customer Concern"
+                                >
+                                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                </Button>
 
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <button
-                                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-                                    title="Quick Actions"
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                  </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="font-bold w-48 shadow-lg">
-                                  <DropdownMenuItem
-                                    onClick={() => handleQuickStatusAction(f, 'delivered')}
-                                    className="text-emerald-600 focus:text-emerald-700 cursor-pointer flex items-center gap-2"
-                                  >
-                                    <CheckCheck className="h-4 w-4 text-emerald-600" /> Delivered
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleQuickStatusAction(f, 'cancelled')}
-                                    className="text-rose-600 focus:text-rose-700 cursor-pointer flex items-center gap-2"
-                                  >
-                                    <X className="h-4 w-4 text-rose-600" /> Booking Cancelled
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleQuickStatusAction(f, 'fake_booking')}
-                                    className="text-amber-600 focus:text-amber-700 cursor-pointer flex items-center gap-2"
-                                  >
-                                    <AlertTriangle className="h-4 w-4 text-amber-600" /> Fake Booking
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleQuickStatusAction(f, 'pending')}
-                                    className="text-indigo-600 focus:text-indigo-700 cursor-pointer flex items-center gap-2"
-                                  >
-                                    <Timer className="h-4 w-4 text-indigo-600" /> Pending
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleQuickStatusAction(f, 'demo_vehicle')}
-                                    className="text-blue-600 focus:text-blue-700 cursor-pointer flex items-center gap-2"
-                                  >
-                                    <SlidersHorizontal className="h-4 w-4 text-blue-600" /> Demo Vehicle
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleQuickStatusAction(f, 'repeated_booking')}
-                                    className="text-violet-600 focus:text-violet-700 cursor-pointer flex items-center gap-2"
-                                  >
-                                    <Copy className="h-4 w-4 text-violet-600" /> Repeated Booking
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                                      title="Quick Actions"
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="font-bold w-48 shadow-lg">
+                                    <DropdownMenuItem
+                                      onClick={() => handleQuickStatusAction(f, 'delivered')}
+                                      className="text-emerald-600 focus:text-emerald-700 cursor-pointer flex items-center gap-2"
+                                    >
+                                      <CheckCheck className="h-4 w-4 text-emerald-600" /> Delivered
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleQuickStatusAction(f, 'cancelled')}
+                                      className="text-rose-600 focus:text-rose-700 cursor-pointer flex items-center gap-2"
+                                    >
+                                      <X className="h-4 w-4 text-rose-600" /> Booking Cancelled
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleQuickStatusAction(f, 'fake_booking')}
+                                      className="text-amber-600 focus:text-amber-700 cursor-pointer flex items-center gap-2"
+                                    >
+                                      <AlertTriangle className="h-4 w-4 text-amber-600" /> Fake Booking
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleQuickStatusAction(f, 'pending')}
+                                      className="text-indigo-600 focus:text-indigo-700 cursor-pointer flex items-center gap-2"
+                                    >
+                                      <Timer className="h-4 w-4 text-indigo-600" /> Pending
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleQuickStatusAction(f, 'demo_vehicle')}
+                                      className="text-blue-600 focus:text-blue-700 cursor-pointer flex items-center gap-2"
+                                    >
+                                      <SlidersHorizontal className="h-4 w-4 text-blue-600" /> Demo Vehicle
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleQuickStatusAction(f, 'repeated_booking')}
+                                      className="text-violet-600 focus:text-violet-700 cursor-pointer flex items-center gap-2"
+                                    >
+                                      <Copy className="h-4 w-4 text-violet-600" /> Repeated Booking
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                              {/* Remarks Button Trigger */}
+                              <button
+                                onClick={() => {
+                                  setSelectedBookingId(f.bookingId)
+                                  setSidebarTab('remarks')
+                                }}
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-black cursor-pointer transition-all active:scale-95 border",
+                                  (f as any).remarksCount > 0
+                                    ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-100 shadow-xs"
+                                    : "bg-slate-50 hover:bg-slate-100 text-slate-400 border-slate-200"
+                                )}
+                                title="View Remarks Feed"
+                              >
+                                <MessageCircle className="h-3 w-3" />
+                                <span>{(f as any).remarksCount || 0} remarks</span>
+                              </button>
                             </div>
                           </td>
                         </tr>
