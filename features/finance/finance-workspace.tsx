@@ -58,7 +58,7 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
     onError: (e: Error) => setActionError(e.message),
   })
 
-  if (selected) return <FinanceDetail proformaId={selected} canApprove={canApprove} onBack={() => setSelected(null)} />
+  if (selected) return <FinanceDetail proformaId={selected} canApprove={canApprove} currentUserRole={currentUserRole} onBack={() => setSelected(null)} />
 
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-slate-400" /></div>
   if (isError || !data) return <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm font-bold text-rose-700">{(error as Error)?.message || 'Failed to load finance queue.'}</div>

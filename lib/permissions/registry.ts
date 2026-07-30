@@ -306,6 +306,18 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    // Read-only audit trail over kia_vehicle_allocations. Restricted-by-default (not in
+    // DEFAULT_VISIBLE_SECTIONS): it names the user who allocated each vehicle and why it was pulled
+    // back, which is oversight information, not day-to-day booking work. Only 'view' exists because
+    // nothing may edit an audit trail — see app/api/brands/kia/allocation-history/route.ts.
+    key: 'kia.allocation_history',
+    name: 'Vehicle Allocation History',
+    parentKey: 'kia.sales',
+    description: 'AM KIA permanent audit trail of every vehicle allocation and release back to free stock.',
+    sortOrder: 45,
+    actions: ['view'],
+  },
+  {
     key: 'kia.call_center',
     name: 'Call Center',
     parentKey: 'kia.sales',
@@ -807,6 +819,9 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   'kia.sales_performance': { href: '/brands/kia/sales-performance' },
   'kia.call_center': { href: '/brands/kia/call-center' },
   'kia.lead_followups': { href: '/brands/kia/follow-ups' },
+  // Lives as a TAB inside Bookings (the Kia Proforma shell), not as its own sidebar item. The old
+  // standalone route still resolves and redirects here, so existing links keep working.
+  'kia.allocation_history': { href: '/brands/kia/proforma/allocation-history', aliases: ['/brands/kia/allocation-history'] },
   'kia.call_analytics': { href: '/brands/kia/call-analytics' },
   'kia.bookings': { href: '/brands/kia/bookings' },
   'kia.approvals': { href: '/brands/kia/payment-approvals', aliases: ['/brands/kia/vendors'] },
@@ -818,7 +833,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   'hyundai.proforma': { href: '/brands/hyundai/proforma' },
   'hyundai.warranty_list': { href: '/brands/hyundai/warranty-list' },
   'hyundai.warranty_claim_list': { href: '/brands/hyundai/warranty-claim-list' },
-  'hyundai.sales.discount_approvals': { href: '/brands/hyundai/sales/discount-approvals' },
+  'hyundai.sales.discount_approvals': { href: '/brands/hyundai/sales/discount-approvals', aliases: ['/brands/platinum/sales/discount-approvals'] },
   'platinum.business_excellence': { href: '/brands/platinum/business-excellence', aliases: ['/brands/platinum/business-excellence/executive-dashboard', '/brands/platinum/business-excellence/overview'] },
   'platinum.service_appointment': { href: '/brands/platinum/service-appointment' },
   'platinum.demo_job_cards': { href: '/brands/platinum/demo-job-cards' },
@@ -1080,6 +1095,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'am_finance',
     'scrap_erp',
     'kia.booking_payment_history',
+    'kia.allocation_history',
   ], ['view', 'approve']),
   purchase_manager: [
     ...keysForGroups(['purchase_orders'], ['view', 'create', 'edit']),
@@ -1095,6 +1111,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ],
   accounts: [
     ...keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),
+    // Confirms payment against an allocation, so they get the trail of the ones that lapsed.
+    ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.bookings'], ['view', 'edit', 'audit']),
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
@@ -1102,6 +1120,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit', 'approve']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
@@ -1121,6 +1140,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   general_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
@@ -1134,6 +1154,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   sales_head: [
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
@@ -1147,12 +1168,14 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   sales_manager: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   ed: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
@@ -1187,6 +1210,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   // Allotment is gated by ROLE in lib/kia/workflow-access.ts — same reasoning as CRM above.
   idt: [
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+    // IDT is TEMPLATE_ONLY, so this line is the only route to the trail of their own allotments.
+    ...keysForGroups(['kia.allocation_history'], ['view']),
   ],
   // CRE (Customer Relationship Executive): calls customers and owns Booking Follow-ups. Gets the
   // follow-up pipeline and read-only sight of the bookings behind it — deliberately NOT
@@ -1216,6 +1241,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   vp: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management', 'hyundai.sales.discount_approvals'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
   ],

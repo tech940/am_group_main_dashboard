@@ -781,7 +781,7 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
     ORDER BY fiscal_start_year DESC
     LIMIT 5
   ` : sql`
-    WITH ranked AS (
+    WITH ranked_rows AS (
       SELECT
         *,
         ROW_NUMBER() OVER (
@@ -805,7 +805,7 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
     ),
     dedup AS (
       SELECT bill_key, ro_key, bill_date, labour_amt, part_amt
-      FROM ranked
+      FROM ranked_rows
       WHERE row_rank = 1
     ),
     fiscal AS (
@@ -888,7 +888,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
     ORDER BY ranked.revenue DESC, ranked.load DESC, ranked.name ASC
     LIMIT 100
   ` : sql`
-    WITH ranked AS (
+    WITH ranked_rows AS (
       SELECT
         *,
         ROW_NUMBER() OVER (
@@ -914,7 +914,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
     ),
     dedup AS (
       SELECT service_advisor AS name, bill_key, ro_key, labour_amt, part_amt, total_amt
-      FROM ranked
+      FROM ranked_rows
       WHERE row_rank = 1
     ),
     advisor_totals AS (
@@ -975,7 +975,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
 
 async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>, dealerCode: DealerFilter = null) {
   const result = await db.execute(sql`
-    WITH ranked AS (
+    WITH ranked_rows AS (
       SELECT
         *,
         ROW_NUMBER() OVER (
@@ -1002,7 +1002,7 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
     ),
     dedup AS (
       SELECT work_type, service_type, bill_key, ro_key, bill_date, labour_amt, part_amt
-      FROM ranked
+      FROM ranked_rows
       WHERE row_rank = 1
     )
     SELECT
@@ -1131,7 +1131,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
         AND ${cancelledBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
-    ranked AS (
+    ranked_rows AS (
       SELECT
         *,
         ROW_NUMBER() OVER (
@@ -1146,7 +1146,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
     dedup AS (
       SELECT bill_key, bill_no, ro_no, bill_date::text AS bill_date, work_type, service_type,
         advisor, bill_status, labour_amt, part_amt, total_amt
-      FROM ranked
+      FROM ranked_rows
       WHERE row_rank = 1
     )
     SELECT

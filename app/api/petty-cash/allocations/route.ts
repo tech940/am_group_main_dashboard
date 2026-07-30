@@ -11,8 +11,13 @@ export async function GET(request: NextRequest) {
     if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!canAccessPettyCash(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+    // status=all returns the allocation HISTORY (closed rows included) instead of just the one open
+    // float per person. Default stays 'active' so existing callers see no change.
     return NextResponse.json(
-      await listPettyCashAllocations(appUser, { branchId: request.nextUrl.searchParams.get('branchId') }),
+      await listPettyCashAllocations(appUser, {
+        branchId: request.nextUrl.searchParams.get('branchId'),
+        status: request.nextUrl.searchParams.get('status'),
+      }),
     )
   } catch (error) {
     console.error('GET /api/petty-cash/allocations failed:', error)

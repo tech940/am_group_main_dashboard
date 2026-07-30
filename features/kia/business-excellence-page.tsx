@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { RevenueLeakagePanel } from '@/features/business-excellence/revenue-leakage-panel'
 import { MainLayout } from '@/components/layout/main-layout'
 import { formatBusinessFreshness, formatBusinessFreshnessShort } from '@/lib/business-excellence/freshness-format'
 import { Button } from '@/components/ui/button'
@@ -2334,11 +2335,22 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
                           ) : (
-                            <BusinessExecutiveDashboard
-                              dateFilter={appliedDateFilter}
-                              dealerCode={selectedDealerCode}
-                              onDealerChange={handleDealerChange}
-                            />
+                            <div className="space-y-4">
+                              {/* Every dealer at once, on purpose — dealerCode is NOT passed. This is a
+                                  comparison table: its whole value is seeing which branch is the outlier,
+                                  which a single-row view cannot show. The branch selector above still
+                                  scopes the rest of the dashboard. */}
+                              <RevenueLeakagePanel
+                                brand="kia"
+                                startDate={appliedDateFilter?.startDate ?? null}
+                                endDate={appliedDateFilter?.endDate ?? null}
+                              />
+                              <BusinessExecutiveDashboard
+                                dateFilter={appliedDateFilter}
+                                dealerCode={selectedDealerCode}
+                                onDealerChange={handleDealerChange}
+                              />
+                            </div>
                           )
                         ) : isOverviewSheet ? (
                           isApplyingFilter ? (

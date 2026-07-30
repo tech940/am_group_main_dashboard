@@ -3129,7 +3129,13 @@ export function KiaBookingsClient({
               )}
             </section>
           )
-        ) : listQuery.isLoading ? (
+        ) : listQuery.isLoading || listQuery.isPlaceholderData ? (
+          /* isLoading alone is not enough: this query uses keepPreviousData, so on every filter
+             change React Query keeps `isLoading` FALSE and serves the PREVIOUS rows. The table then
+             sat there showing the old result set with no indication it was stale — which reads as
+             "the filter did nothing". isPlaceholderData is true exactly while previous data is being
+             shown for a new key, so this covers first load AND every filter change, without
+             flashing a skeleton on a plain background refetch of the same key. */
           <TableSkeleton columns={8} />
         ) : listQuery.isError ? (
           <EmptyState
@@ -3190,7 +3196,7 @@ export function KiaBookingsClient({
             <Table className="hidden sm:table kia-table">
               <TableHeader>
                 <TableRow>
-                  {['Booking ID', 'Customer', 'Vehicle', 'Dealer', 'Manager', 'Team Leader', 'Status', 'Booking Date', 'Payment', 'Actions'].map((head) => (
+                  {['Booking ID', 'Customer', 'Vehicle', 'Dealer', 'Consultant', 'Team Leader', 'Status', 'Booking Date', 'Payment', 'Actions'].map((head) => (
                     <TableHead key={head} className="h-10 whitespace-nowrap px-3">{head}</TableHead>
                   ))}
                 </TableRow>
@@ -3230,7 +3236,17 @@ export function KiaBookingsClient({
                         {city && <div className="text-[11px] font-medium text-[var(--kia-text-soft)]">{city}</div>}
                       </TableCell>
                       <TableCell className="px-3 py-3">
-                        <div className="text-xs font-bold text-[var(--kia-text)]">{row.managerName || (row.metadata && String(row.metadata.managerName || '')) || '—'}</div>
+                        {/*
+                          Consultant, not Manager. `consultantName` is a real NOT NULL column on
+                          kia_bookings, so it reads straight off the row — unlike managerName/tlName,
+                          which have no column at all and only ever resolve through metadata (that is
+                          why this column used to show the same "SANJEEV KOUL" on nearly every row:
+                          it is the hardcoded form default at :1380 / :1773, not a per-booking value).
+                          The metadata fallback stays only for the blank case: updateKiaBooking
+                          (lib/kia/bookings.ts:1267) writes consultantName with no default, so a PATCH
+                          carrying an empty string can still blank the column.
+                        */}
+                        <div className="text-xs font-bold text-[var(--kia-text)]">{row.consultantName || (row.metadata && String(row.metadata.consultantName || '')) || '—'}</div>
                       </TableCell>
                       <TableCell className="px-3 py-3">
                         <div className="text-xs font-bold text-[var(--kia-text)]">{row.tlName || (row.metadata && String(row.metadata.tlName || '')) || '—'}</div>

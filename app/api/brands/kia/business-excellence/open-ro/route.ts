@@ -68,7 +68,7 @@ function openRoBaseSql(filters: OpenRoFilters) {
         status,
         new_r_o_status,
         ro_sub_status,
-        COALESCE(revised_promise_date_time, promise_date_time) AS promise_date,
+        COALESCE(NULLIF(revised_promise_date_time, ''), NULLIF(promise_date_time, ''))::timestamp AS promise_date,
         promise_date_time,
         revised_promise_date_time,
         mileage,
@@ -115,8 +115,8 @@ function openRoBaseSql(filters: OpenRoFilters) {
         END AS aging_bucket,
         ${kiaServiceCategoryExpression('work_type')} AS service_category,
         CASE
-          WHEN COALESCE(revised_promise_date_time, promise_date_time) IS NOT NULL
-            AND COALESCE(${filters.endDate}::date, CURRENT_DATE) > COALESCE(revised_promise_date_time, promise_date_time)
+          WHEN COALESCE(NULLIF(revised_promise_date_time, ''), NULLIF(promise_date_time, '')) IS NOT NULL
+            AND COALESCE(${filters.endDate}::date, CURRENT_DATE) > COALESCE(NULLIF(revised_promise_date_time, ''), NULLIF(promise_date_time, ''))::timestamp
             THEN 'Delayed'
           ELSE 'On Track'
         END AS delay_status

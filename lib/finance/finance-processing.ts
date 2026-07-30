@@ -353,8 +353,10 @@ export async function markKiaFinanceComplete(proformaId: string, appUser: AppUse
     const [booking] = await db.select({ status: kiaBookings.status, deliveredAt: kiaBookings.deliveredAt, metadata: kiaBookings.metadata })
       .from(kiaBookings).where(eq(kiaBookings.id, processing.bookingId)).limit(1)
     const delivered = Boolean(booking && (booking.status === 'delivered' || booking.deliveredAt))
-    // Completion is now allowed EITHER on delivery OR once Accounts has confirmed payment received.
-    if (!delivered && !bookingPaymentReceived(booking)) {
+    // Completion is now allowed EITHER on delivery OR once Accounts has confirmed payment received,
+    // or if the user is a Finance Head / superuser bypass role.
+    const isBypassRole = ['finance_head', 'admin', 'developer', 'md'].includes(appUser.role)
+    if (!delivered && !bookingPaymentReceived(booking) && !isBypassRole) {
       throw new Error('Financing can be marked complete only after the vehicle is delivered or Accounts has confirmed payment received.')
     }
   }

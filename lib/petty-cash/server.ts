@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import type { AppUser } from '@/lib/auth/app-user'
 import { isBranchValue } from '@/lib/branches'
@@ -554,8 +555,15 @@ export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?:
  * (the dealership, e.g. KIA Jammu / KIA Udhampur) is pulled from the originating
  * request's requestForm so the UI can offer a Location/Dealership filter.
  */
-export async function listPettyCashAllocations(appUser: AppUser, input?: { branchId?: string | null }) {
-  const filters = [getPettyCashAllocationVisibilityFilter(appUser)]
+export async function listPettyCashAllocations(
+  appUser: AppUser,
+  input?: { branchId?: string | null; status?: string | null },
+) {
+  // 'all' switches the list from the single open float to the full allocation HISTORY — which is
+  // the only way to answer "when did this person last get money". Every past allocation is
+  // status='closed', so the default active-only filter hides all of it.
+  const includeInactive = String(input?.status || 'active').toLowerCase() === 'all'
+  const filters = [getPettyCashAllocationVisibilityFilter(appUser, { includeInactive })]
 
   const branchId = input?.branchId
   if (branchId && branchId !== 'all') {
@@ -564,18 +572,40 @@ export async function listPettyCashAllocations(appUser: AppUser, input?: { branc
     filters.push(eq(pettyCashAllocations.branchId, branchId))
   }
 
+  // Two separate joins onto `users`: the recipient AND the person who released the money. Only the
+  // recipient was joined before, so allocatedBy reached the client as a bare UUID and "who
+  // allocated it" was unanswerable in the UI.
+  const allocatedByUser = alias(users, 'allocated_by_user')
+
   const rows = await db
     .select({
       allocation: pettyCashAllocations,
       location: sql<string | null>`${pettyCashRequests.requestForm} ->> 'location'`,
       department: pettyCashRequests.department,
       allocatedToName: users.fullName,
+      allocatedByName: allocatedByUser.fullName,
+      // Spend window per allocation, on expense_date (the date money actually left the tin), not
+      // created_at (when the row was typed in) — 39% of rows differ, by up to 9 days.
+      firstSpendDate: sql<string | null>`(
+        SELECT MIN(e.expense_date)::text FROM petty_cash_expenses e
+        WHERE e.allocation_id = ${pettyCashAllocations.id} AND e.status = 'approved' AND e.deleted_at IS NULL
+      )`,
+      lastSpendDate: sql<string | null>`(
+        SELECT MAX(e.expense_date)::text FROM petty_cash_expenses e
+        WHERE e.allocation_id = ${pettyCashAllocations.id} AND e.status = 'approved' AND e.deleted_at IS NULL
+      )`,
+      spendCount: sql<number>`(
+        SELECT COUNT(*)::int FROM petty_cash_expenses e
+        WHERE e.allocation_id = ${pettyCashAllocations.id} AND e.status = 'approved' AND e.deleted_at IS NULL
+      )`,
     })
     .from(pettyCashAllocations)
     .leftJoin(pettyCashRequests, eq(pettyCashRequests.id, pettyCashAllocations.requestId))
     .leftJoin(users, eq(users.id, pettyCashAllocations.allocatedTo))
+    .leftJoin(allocatedByUser, eq(allocatedByUser.id, pettyCashAllocations.allocatedBy))
     .where(and(...filters))
-    .orderBy(desc(pettyCashAllocations.createdAt))
+    // Newest allocation first — with history switched on, "their last allocation" is now row one.
+    .orderBy(desc(pettyCashAllocations.allocatedAt))
     .limit(200)
 
   return {
@@ -584,8 +614,101 @@ export async function listPettyCashAllocations(appUser: AppUser, input?: { branc
       location: row.location || null,
       department: row.department || null,
       allocatedToName: row.allocatedToName || null,
+      allocatedByName: row.allocatedByName || null,
+      firstSpendDate: row.firstSpendDate || null,
+      lastSpendDate: row.lastSpendDate || null,
+      spendCount: Number(row.spendCount) || 0,
       remainingAmount: toMoney(getRemainingBalance(row.allocation)),
     })),
+  }
+}
+
+/**
+ * Day-by-day spend against ONE allocation: what was spent, on which date, by whom.
+ *
+ * Buckets on `expense_date` — the date the spender says the money went out — because that is what
+ * "spending based on date" means to the people reading it. `created_at` is when the row was keyed
+ * in, and the two disagree on ~39% of live rows (up to 9 days apart).
+ *
+ * Only 'approved' non-deleted expenses count, matching what allocations.spent_amount tracks and the
+ * CA section's rollup (lib/ca/ca-data.ts), so the totals here reconcile with the Spent column.
+ */
+export async function getPettyCashAllocationSpend(appUser: AppUser, allocationId: string) {
+  uuidSchema.parse(allocationId)
+
+  // Authorise via the SAME visibility filter as the list (history included), so this cannot be used
+  // to read an allocation the caller could not already see.
+  const [allocation] = await db
+    .select({
+      allocation: pettyCashAllocations,
+      allocatedToName: users.fullName,
+    })
+    .from(pettyCashAllocations)
+    .leftJoin(users, eq(users.id, pettyCashAllocations.allocatedTo))
+    .where(and(
+      getPettyCashAllocationVisibilityFilter(appUser, { includeInactive: true }),
+      eq(pettyCashAllocations.id, allocationId),
+    ))
+    .limit(1)
+
+  if (!allocation) throw new Error('Forbidden')
+
+  const spenderUser = alias(users, 'spender_user')
+  const rows = await db
+    .select({
+      expenseNumber: pettyCashExpenses.expenseNumber,
+      expenseDate: pettyCashExpenses.expenseDate,
+      amount: pettyCashExpenses.amount,
+      particulars: pettyCashExpenses.particulars,
+      purpose: pettyCashExpenses.purpose,
+      vendorName: pettyCashExpenses.vendorName,
+      createdAt: pettyCashExpenses.createdAt,
+      spentByName: spenderUser.fullName,
+    })
+    .from(pettyCashExpenses)
+    .leftJoin(spenderUser, eq(spenderUser.id, pettyCashExpenses.createdBy))
+    .where(and(
+      eq(pettyCashExpenses.allocationId, allocationId),
+      eq(pettyCashExpenses.status, 'approved'),
+      isNull(pettyCashExpenses.deletedAt),
+    ))
+    .orderBy(desc(pettyCashExpenses.expenseDate), desc(pettyCashExpenses.createdAt))
+    .limit(500)
+
+  // Group into days in JS rather than SQL: the same query then serves both the per-day totals and
+  // the individual lines under each day, in one round trip (the pooler charges ~225ms per query).
+  const byDate = new Map<string, { date: string; total: number; items: typeof entries }>()
+  const entries = rows.map((r) => ({
+    expenseNumber: r.expenseNumber,
+    expenseDate: String(r.expenseDate),
+    amount: toMoney(r.amount),
+    description: r.particulars || r.purpose || '',
+    vendorName: r.vendorName || '',
+    spentByName: r.spentByName || null,
+    // Flags a back-dated entry: the spend date precedes the day it was recorded.
+    recordedAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+  }))
+
+  for (const item of entries) {
+    const bucket = byDate.get(item.expenseDate) || { date: item.expenseDate, total: 0, items: [] }
+    bucket.total += Number(item.amount) || 0
+    bucket.items.push(item)
+    byDate.set(item.expenseDate, bucket)
+  }
+
+  const days = [...byDate.values()]
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .map((d) => ({ ...d, total: toMoney(d.total) }))
+
+  return {
+    allocation: {
+      ...serializeAllocation(allocation.allocation as Record<string, unknown>),
+      allocatedToName: allocation.allocatedToName || null,
+      remainingAmount: toMoney(getRemainingBalance(allocation.allocation)),
+    },
+    days,
+    totalSpent: toMoney(entries.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)),
+    expenseCount: entries.length,
   }
 }
 

@@ -225,6 +225,9 @@ BEGIN
   IF to_regclass('public.am_platinum_service_appointment_resolved_v1') IS NOT NULL THEN
     ALTER VIEW public.am_platinum_service_appointment_resolved_v1 SET (security_invoker = on);
   END IF;
+  IF to_regclass('public.kia_open_ro_yearly') IS NOT NULL THEN
+    ALTER VIEW public.kia_open_ro_yearly SET (security_invoker = on);
+  END IF;
 END $$;
 
 -- ============================================================================

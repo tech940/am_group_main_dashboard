@@ -19,7 +19,7 @@
 // it directly instead of duplicating the role list.
 
 export const BOOKING_PAYMENT_HISTORY_VIEW_ROLES = [
-  'admin', 'developer', 'md', 'ea',
+  'admin', 'developer', 'md', 'ea', 'idt', 'idp',
 ] as const
 
 export function canViewBookingPaymentHistory(role?: string | null, permissionMap?: Record<string, boolean> | null): boolean {

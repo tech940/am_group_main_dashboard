@@ -129,6 +129,7 @@ export const SECTION_MIN_TIER: Partial<Record<string, Tier>> = {
   'kia.stock_report': TIER.LEADERSHIP,
   'kia.sales_performance': TIER.MANAGER,
   'kia.call_analytics': TIER.MANAGER,
+  'kia.allocation_history': TIER.MANAGER,
   'kia.lead_followups': TIER.EMPLOYEE,
   'kia.call_center': TIER.MANAGER,
   user_management: TIER.SUPER_ADMIN,

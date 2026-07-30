@@ -3,25 +3,44 @@ import { db } from '@/lib/db'
 import { discountApprovals } from '@/lib/db/schema'
 import { desc, eq, sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { canAccessBrand } from '@/lib/auth/brand-access'
+import { type BranchValue } from '@/lib/branches'
 
 export const dynamic = 'force-dynamic'
 
 // 1. GET - Fetch all discount approval requests (requires authentication)
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const appUser = await getAuthenticatedAppUser()
     if (!appUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const rows = await db
-      .select()
-      .from(discountApprovals)
-      .orderBy(desc(discountApprovals.createdAt))
+    const { searchParams } = new URL(request.url)
+    const branchParam = searchParams.get('branch')
+
+    let rows
+    if (branchParam) {
+      rows = await db
+        .select()
+        .from(discountApprovals)
+        .where(eq(discountApprovals.branch, branchParam.toLowerCase().trim()))
+        .orderBy(desc(discountApprovals.createdAt))
+    } else {
+      rows = await db
+        .select()
+        .from(discountApprovals)
+        .orderBy(desc(discountApprovals.createdAt))
+    }
+
+    // Filter rows by authorized brand access
+    const allowedRows = rows.filter((row) =>
+      canAccessBrand(appUser, row.branch as BranchValue)
+    )
 
     // Enrich each row with booking details in parallel
     const enrichedRows = await Promise.all(
-      rows.map(async (row) => {
+      allowedRows.map(async (row) => {
         let booking: any = null
         const upperVin = row.customerId.toUpperCase()
         const normalizedBranch = row.branch.toLowerCase()

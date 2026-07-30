@@ -70,7 +70,8 @@
     "callyzer:backfill": "node scripts/callyzer-backfill.mjs",
     "callyzer:sync:scheduler": "node scripts/callyzer-sync-scheduler.mjs",
     "verify:restricted-analytics": "tsx scripts/verify-restricted-analytics.mjs",
-    "verify:callyzer-alerts": "tsx scripts/verify-callyzer-alerts.mjs"
+    "verify:callyzer-alerts": "tsx scripts/verify-callyzer-alerts.mjs",
+    "verify:allocation-history": "tsx scripts/verify-allocation-history.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

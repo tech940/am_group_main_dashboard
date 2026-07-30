@@ -49,6 +49,7 @@ export async function updateSession(request: NextRequest) {
     '/brands/kia/payment-approvals/submit',
     '/brands/kia/approvals/submit',
     '/brands/hyundai/discount-approvals/submit',
+    '/brands/platinum/discount-approvals/submit',
   ]
   const isPublicPath = publicPaths.some(path => request.nextUrl.pathname.startsWith(path))
 

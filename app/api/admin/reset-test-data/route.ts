@@ -64,6 +64,11 @@ export async function POST() {
     await db.transaction(async (tx) => {
       await tx.delete(kiaBookingActivity)
       await tx.delete(kiaVehicleTransfers)
+      // ⚠️ THIS IS THE ONLY THING IN THE APP THAT CAN ERASE THE VEHICLE ALLOCATION HISTORY
+      // (/brands/kia/allocation-history). That trail is meant to be permanent — nothing else deletes
+      // from kia_vehicle_allocations, the allocate/release paths only INSERT and UPDATE. Running this
+      // against production wipes every allocation audit record along with the bookings. The count is
+      // captured in `before` and written to admin_audit_logs below, so a wipe is at least evidenced.
       await tx.delete(kiaVehicleAllocations)
       // Callback requests are a FK child of kia_bookings — must be cleared before the bookings.
       await tx.delete(kiaCallbackRequests)

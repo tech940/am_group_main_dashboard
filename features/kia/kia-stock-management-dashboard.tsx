@@ -183,6 +183,7 @@ type BookingOption = {
   bankName?: string | null
   loanAmount?: string | null
   notes?: string | null
+  deliveryTargetDate?: string | null
   dealerCode?: string | null
   // Present at runtime — the bookings API spreads the full kia_bookings row.
   status?: string | null
@@ -208,7 +209,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const [search, setSearch] = useState('')
   const [dealerCode, setDealerCode] = useState('All')
   const [model, setModel] = useState('All')
-  const [status, setStatus] = useState('All')
+  const [status, setStatus] = useState('AVAILABLE')
   const [page, setPage] = useState(1)
 
   // Custom states
@@ -305,7 +306,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     refetchOnWindowFocus: false,
   })
 
-  const bookingsList = bookingsData?.rows || []
+  const bookingsList = (bookingsData?.rows || []).filter(
+    (b) => !['draft', 'booking_created', 'cancelled'].includes(b.status || '')
+  )
 
   // Single source of truth for "which bookings match this vehicle" — used by BOTH
   // the badge count and the badge drawer so they never disagree.
@@ -457,6 +460,24 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
       // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
       // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
+    },
+    onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
+  })
+
+  const releaseTransferMutation = useMutation({
+    mutationFn: async (vinNumber: string) => {
+      const res = await fetch('/api/brands/kia/stock/transfer/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vinNumber }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Failed to release transfer')
+      return res.json()
+    },
+    onSuccess: () => {
+      toast({ title: 'Transfer released', description: 'The vehicle is back to free stock.', variant: 'success' })
+      queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
@@ -915,7 +936,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
 
           {/* Main Table */}
           {isLoading ? (
-            <PremiumTableSkeleton rows={8} columns={10} />
+            <PremiumTableSkeleton rows={8} columns={11} />
           ) : isError ? (
             <PremiumEmptyState
               illustration="error"
@@ -926,13 +947,13 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             <PremiumEmptyState illustration="garage" title="No stock vehicles found" description="Adjust your search query or filters to browse available inventory." />
           ) : (
             <div className="kia-surface w-full overflow-x-auto">
-              <Table className="kia-table w-full min-w-[900px]">
+              <Table className="kia-table w-full min-w-[950px]">
                 <TableHeader>
-                  <TableRow>
-                    {['STATUS', 'DMS STATUS', 'CAR', 'COLOUR', 'AGE', 'DEALER', 'CUSTOMER', 'TEAM', 'FINANCIER', 'CLOCK', 'ACTIONS'].map((h) => (
-                      <TableHead key={h} className="h-9 whitespace-nowrap px-2 py-2">{h}</TableHead>
-                    ))}
-                  </TableRow>
+                   <TableRow>
+                     {['STATUS', 'DMS STATUS', 'CAR', 'VIN / CHASSIS', 'COLOUR', 'AGE', 'DEALER', 'CUSTOMER', 'TEAM', 'FINANCIER', 'CLOCK', 'ACTIONS'].map((h) => (
+                       <TableHead key={h} className="h-9 whitespace-nowrap px-2 py-2">{h}</TableHead>
+                     ))}
+                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data?.rows.map((row) => (
@@ -962,9 +983,6 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                       <TableCell className="px-2 py-2 align-middle">
                         <div className="font-black text-slate-950 text-[11px] uppercase whitespace-nowrap">{row.model || '-'}</div>
                         <div className="text-[10px] font-bold text-slate-500 max-w-[160px] truncate">{row.variant || '-'}</div>
-                        <code className="mt-0.5 inline-block font-mono text-[9px] bg-slate-100 px-1 py-0.5 rounded border border-slate-200 text-slate-600">
-                          {row.vin_number}
-                        </code>
                         {/* Confirmed booking against this vehicle (allotted) — an unmistakable flag. */}
                         {row.booking_id && (
                           <span
@@ -991,6 +1009,13 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                             </button>
                           )
                         })()}
+                      </TableCell>
+
+                      {/* VIN / CHASSIS */}
+                      <TableCell className="px-2 py-2 align-middle whitespace-nowrap">
+                        <span className="inline-flex items-center rounded-lg bg-indigo-50 border border-indigo-200 px-2.5 py-1 font-mono text-[10.5px] font-extrabold tracking-wider text-indigo-700 shadow-xs dark:bg-indigo-950/40 dark:border-indigo-900/50 dark:text-indigo-400">
+                          {row.vin_number}
+                        </span>
                       </TableCell>
 
                       {/* COLOUR */}
@@ -1041,7 +1066,18 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                           {row.booking_status === 'delivered' ? (
                             <Badge className="rounded-full border border-green-200 bg-green-50 px-3 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-green-700">DELIVERED</Badge>
                           ) : row.transfer_id ? (
-                            <Badge className="rounded-full border border-sky-200 bg-sky-50 px-3 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-sky-700">TRANSFERRED</Badge>
+                            <>
+                              <Badge className="rounded-full border border-sky-200 bg-sky-50 px-3 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-sky-700">TRANSFERRED</Badge>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 rounded-lg border-rose-200 px-2 text-[10px] font-black text-rose-700 hover:bg-rose-50"
+                                disabled={releaseTransferMutation.isPending}
+                                onClick={() => releaseTransferMutation.mutate(row.vin_number)}
+                              >
+                                {releaseTransferMutation.isPending ? 'Releasing...' : 'Release'}
+                              </Button>
+                            </>
                           ) : !row.allocation_id ? (
                             <>
                               <Button 
@@ -2080,10 +2116,17 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                             <FieldValue label="Colour" value={b.color || '—'} />
                             <FieldValue label="Dealer" value={b.dealerCode || '—'} />
                             <FieldValue label="Booking Date" value={fmtDate(b.createdAt)} />
+                            <FieldValue label="Delivery Date" value={fmtDate(b.deliveryTargetDate)} />
                             <FieldValue label="Payment Method" value={paymentMethod(b)} />
                             <FieldValue label="Proforma" value={b.proformaNumber ? `#${b.proformaNumber}` : 'Generated'} />
                             <FieldValue label="Consultant" value={b.consultantName || '—'} />
                           </div>
+                          {b.notes && (
+                            <div className="mt-2.5 rounded-lg bg-[var(--kia-canvas)] p-2.5 border border-[var(--kia-hairline)]">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--kia-text-soft)]">Remarks</p>
+                              <p className="mt-1 text-xs font-semibold text-[var(--kia-text)] whitespace-pre-wrap">{b.notes}</p>
+                            </div>
+                          )}
                           <div className="mt-3 flex justify-end">
                             <Button
                               size="sm"

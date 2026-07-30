@@ -21,5 +21,9 @@ export default async function Page() {
     redirect('/brands/kia/proforma/pending-approval')
   }
 
-  return <KiaProformaPage section="bookings" />
+  // Same flag the [section] route resolves — without it this landing page would omit the
+  // Allocation History tab for everyone, since the prop defaults to false.
+  const allocationHistory = await requirePermission(access.appUser, 'kia.allocation_history.view')
+
+  return <KiaProformaPage section="bookings" canViewAllocationHistory={allocationHistory.allowed} />
 }

@@ -232,6 +232,17 @@ export const ALL_SECTIONS: SearchSection[] = [
     category: 'kia',
   },
   {
+    id: 'kia_allocation_history',
+    name: 'Vehicle Allocation History',
+    description: 'Audit trail of every vehicle allocation: who allotted it, when the countdown expired, and why it went back to free stock.',
+    href: '/brands/kia/proforma/allocation-history',
+    department: 'sales',
+    brand: 'kia',
+    iconName: 'History',
+    initials: 'VAH',
+    category: 'kia',
+  },
+  {
     id: 'kia_call_analytics',
     name: 'Call & Follow-up Analytics',
     description: 'Comprehensive conversion funnels, call metrics, and performance charts.',
@@ -498,6 +509,10 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/brands/kia/follow-ups',
   '/brands/kia/call-analytics',
   '/brands/kia/booking-payment-history',
+  // Reached as a tab inside Bookings; the old standalone path stays allowed because it still
+  // resolves (it redirects to the tab), so a bookmarked link is not blocked by the href allowlist.
+  '/brands/kia/proforma/allocation-history',
+  '/brands/kia/allocation-history',
   '/brands/kia/demo-job-cards',
   '/brands/kia/demo-cars-list',
 

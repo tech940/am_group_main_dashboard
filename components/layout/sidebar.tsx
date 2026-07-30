@@ -162,6 +162,7 @@ const brandNavigation: SidebarBrand[] = [
         submenus: [
           { name: 'Demo Job Cards', href: '/brands/platinum/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/platinum/demo-cars-list' },
+          { name: 'Discount Approvals', href: '/brands/platinum/sales/discount-approvals' },
         ],
       },
       {

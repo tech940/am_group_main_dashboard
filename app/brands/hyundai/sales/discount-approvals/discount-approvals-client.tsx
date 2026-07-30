@@ -92,10 +92,12 @@ type Props = {
     role: string
     fullName: string
     email: string
+    brand: string | null
   }
+  branch?: 'hyundai' | 'platinum'
 }
 
-export function DiscountApprovalsDashboardClient({ currentUser }: Props) {
+export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props) {
   const [data, setData] = useState<DiscountApproval[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -169,7 +171,9 @@ export function DiscountApprovalsDashboardClient({ currentUser }: Props) {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/discount-approvals')
+      // Fetch all discount approvals authorized for the user
+      const url = '/api/discount-approvals'
+      const res = await fetch(url)
       if (!res.ok) {
         throw new Error('Failed to load discount approvals data')
       }
@@ -185,7 +189,7 @@ export function DiscountApprovalsDashboardClient({ currentUser }: Props) {
 
   useEffect(() => {
     fetchSubmissions()
-  }, [])
+  }, [branch])
 
   // Open booking detail drawer
   const openDrawer = async (item: DiscountApproval) => {
@@ -402,18 +406,20 @@ export function DiscountApprovalsDashboardClient({ currentUser }: Props) {
           </div>
 
           {/* Branch selector filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Branch:</span>
-            <select
-              value={branchFilter}
-              onChange={(e) => setBranchFilter(e.target.value as any)}
-              className="h-9 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl px-3 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="all">All Branches</option>
-              <option value="hyundai">AM Hyundai</option>
-              <option value="platinum">AM Platinum</option>
-            </select>
-          </div>
+          {(!branch || ['developer', 'admin', 'md', 'vp', 'general_manager', 'sales_manager'].includes(currentUser.role) || (currentUser.brand && currentUser.brand.includes(','))) && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Branch:</span>
+              <select
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value as any)}
+                className="h-9 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl px-3 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="all">All Branches</option>
+                <option value="hyundai">AM Hyundai</option>
+                <option value="platinum">AM Platinum</option>
+              </select>
+            </div>
+          )}
 
           {/* Show all pending stages checkbox (Awaiting others) */}
           {activeSection === 'pending' && ['sales_manager', 'vp', 'md', 'admin', 'developer'].includes(currentUser.role) && (
@@ -626,18 +632,43 @@ export function DiscountApprovalsDashboardClient({ currentUser }: Props) {
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-[100] animate-in fade-in duration-150">
           <div className="w-full max-w-md bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
             
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-rose-55/10 border-rose-200 text-rose-600 dark:text-rose-500">
-                <X className="h-5 w-5" />
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRequest(null)
+                    setActionStatus(null)
+                    setRemarksInput('')
+                  }}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center border bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 border-rose-200 text-rose-600 dark:text-rose-500 cursor-pointer transition-all active:scale-95"
+                  title="Cancel rejection"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <div>
+                  <h3 className="text-sm font-black uppercase text-slate-800 dark:text-white">
+                    Confirm Discount Rejection
+                  </h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
+                    Request by {selectedRequest.requesterName} for {selectedRequest.customerName || 'Unknown Customer'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-black uppercase text-slate-800 dark:text-white">
-                  Confirm Discount Rejection
-                </h3>
-                <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
-                  Request by {selectedRequest.requesterName} for {selectedRequest.customerName || 'Unknown Customer'}
-                </p>
-              </div>
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRequest(null)
+                  setActionStatus(null)
+                  setRemarksInput('')
+                }}
+                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 transition-all cursor-pointer"
+                title="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
             {/* Request Summary Box */}

@@ -70,7 +70,7 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
   )
 }
 
-export function FinanceDetail({ proformaId, canApprove, onBack }: { proformaId: string; canApprove: boolean; onBack: () => void }) {
+export function FinanceDetail({ proformaId, canApprove, currentUserRole, onBack }: { proformaId: string; canApprove: boolean; currentUserRole?: string; onBack: () => void }) {
   const qc = useQueryClient()
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['finance', 'detail', proformaId], queryFn: () => fetchDetail(proformaId) })
   const bankOptionsQuery = useQuery({ queryKey: ['finance', 'bank-options'], queryFn: fetchBankOptions, staleTime: 30 * 60 * 1000 })
@@ -135,7 +135,8 @@ export function FinanceDetail({ proformaId, canApprove, onBack }: { proformaId: 
   // payment received (paymentReceived is server-derived from booking status 'ready_delivery' / metadata).
   const isDelivered = booking?.status === 'delivered' || Boolean(booking?.deliveredAt)
   const paymentReceived = Boolean(booking?.paymentReceived)
-  const canComplete = isDelivered || paymentReceived
+  const isBypassRole = ['finance_head', 'admin', 'developer', 'md'].includes(currentUserRole || '')
+  const canComplete = isDelivered || paymentReceived || isBypassRole
   const countdown = formatCountdown(processing.expectedCompletionDate, now)
   const busy = mutation.isPending
 

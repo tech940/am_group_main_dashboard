@@ -17,6 +17,7 @@ import {
   kiaActiveServiceCategoryFilter,
   kiaOpenRoActiveStateSql,
   kiaOpenRoDealerFilter,
+  kiaOpenRoPromiseDateSql,
   kiaRoBillingDealerFilter,
 } from '@/lib/kia/business-excellence-contract'
 import {
@@ -314,7 +315,7 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
         work_type,
         service_type,
         status,
-        COALESCE(revised_promise_date_time, promise_date_time) AS promise_date,
+        ${kiaOpenRoPromiseDateSql()} AS promise_date,
         uploaded_at
       FROM kia_open_ro_yearly
       WHERE ${kiaOpenRoActiveStateSql()}
@@ -1154,6 +1155,14 @@ export async function GET(request: Request) {
   } catch (error) {
     timer.finish()
     console.error('Failed to build Business Excellence overview:', error)
-    return NextResponse.json({ error: 'Failed to build Business Excellence overview' }, { status: 500 })
+    // Surface the cause outside production, matching the Hyundai route. Swallowing it meant the
+    // browser only ever saw "Failed to build Business Excellence overview" with no way to tell a
+    // pool stall from a missing column from a bad filter — which cost a whole debugging round trip.
+    const detail = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({
+      error: process.env.NODE_ENV === 'production'
+        ? 'Failed to build Business Excellence overview'
+        : `Failed to build Business Excellence overview: ${detail}`,
+    }, { status: 500 })
   }
 }

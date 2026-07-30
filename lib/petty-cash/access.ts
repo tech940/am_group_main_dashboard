@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { AppUser } from '@/lib/auth/app-user'
 import { hasAllBranchAccess } from '@/lib/branches'
@@ -117,22 +117,40 @@ export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unkno
   return and(...baseFilters, eq(pettyCashExpenses.createdBy, appUser.id))!
 }
 
-export function getPettyCashAllocationVisibilityFilter(appUser: AppUser): SQL<unknown> {
+/**
+ * `includeInactive` widens the filter to closed/cancelled allocations as well.
+ *
+ * ⚠️ It defaults to FALSE and must stay that way. getCurrentPettyCashAllocation relies on this
+ * helper returning only the ONE open allocation (the schema enforces one active row per
+ * branch+recipient); letting closed rows through there would make "your current balance" pick an
+ * arbitrary historical float. Only the allocation HISTORY list passes true — without it there is no
+ * history at all to show, because every past allocation is closed.
+ */
+export function getPettyCashAllocationVisibilityFilter(
+  appUser: AppUser,
+  options?: { includeInactive?: boolean },
+): SQL<unknown> {
+  const activeOnly = options?.includeInactive
+    ? []
+    : [eq(pettyCashAllocations.status, 'active')]
+
   // EA / MD / EBA / Developer (and any 'all' user) see every branch's allocations.
   if (hasPettyCashAllBranchAccess(appUser)) {
-    return eq(pettyCashAllocations.status, 'active')
+    // `and()` of an empty list is undefined, so a lone TRUE keeps the return type honest when the
+    // status predicate is dropped and no other predicate applies to this role.
+    return and(...activeOnly, sql`true`)!
   }
 
   if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'sales_manager') {
     return and(
-      eq(pettyCashAllocations.status, 'active'),
+      ...activeOnly,
       eq(pettyCashAllocations.allocatedTo, appUser.id),
       eq(pettyCashAllocations.branchId, appUser.brand || '')
     )!
   }
 
   return and(
-    eq(pettyCashAllocations.status, 'active'),
+    ...activeOnly,
     eq(pettyCashAllocations.branchId, appUser.brand || '')
   )!
 }

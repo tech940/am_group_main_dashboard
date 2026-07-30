@@ -180,6 +180,18 @@ function nullableText(value: unknown) {
   return normalized || null
 }
 
+/**
+ * KPI-card filters that look like a status but are NOT one — they select a COHORT, and each is
+ * handled by its own branch in the filter builder.
+ *
+ * ⚠️ They must be excluded from the literal `status = ?` branch, because normalizeStatus() falls back
+ * to 'booking_created' for anything it does not recognise. Without this, `status=today` quietly
+ * became "created today AND status = booking_created": the Booked Today card counted 2 and the list
+ * showed 1, because the second booking had already moved to vehicle_allocated. The card and the list
+ * disagreeing is the visible symptom; the silent fallback is the cause.
+ */
+const PSEUDO_STATUS_FILTERS = new Set(['today', 'not_in_stock', 'in_stock'])
+
 function normalizeStatus(value: unknown): KiaBookingStatus {
   const normalized = text(value).toLowerCase()
   return KIA_BOOKING_STATUSES.includes(normalized as KiaBookingStatus) ? normalized as KiaBookingStatus : 'booking_created'
@@ -532,7 +544,7 @@ function listFilters(input: BookingListInput) {
   if (input.unallocated === true || String(input.unallocated).toLowerCase() === 'true') {
     filters.push(sql`
       (
-        kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
+        kia_bookings.status NOT IN ('draft', 'booking_created', 'delivered', 'cancelled')
         AND NOT EXISTS (
           SELECT 1 FROM kia_vehicle_allocations va
           WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
@@ -618,7 +630,12 @@ function listFilters(input: BookingListInput) {
     `)
   } else if (text(input.status) && (text(input.status).toLowerCase() === 'vehicle_allocated' || text(input.status).toLowerCase() === 'payment_pending')) {
     filters.push(inArray(kiaBookings.status, ['vehicle_allocated', 'transferring']))
-  } else if (text(input.status) && text(input.status).toLowerCase() !== 'all' && text(input.status).toLowerCase() !== 'all_with_delivered') {
+  } else if (
+    text(input.status) &&
+    !PSEUDO_STATUS_FILTERS.has(text(input.status).toLowerCase()) &&
+    text(input.status).toLowerCase() !== 'all' &&
+    text(input.status).toLowerCase() !== 'all_with_delivered'
+  ) {
     filters.push(eq(kiaBookings.status, normalizeStatus(input.status)))
   } else if (!input.status || text(input.status).toLowerCase() === 'all') {
     // Active CRM list view excludes delivered bookings so delivered bookings reside in the Delivered section tab
@@ -1690,6 +1707,10 @@ export async function allotKiaBookingVehicle(
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
 
+    if (['draft', 'booking_created', 'cancelled'].includes(booking.status)) {
+      throw new Error('A vehicle cannot be allotted to a booking without a generated proforma.')
+    }
+
     // #1 Strict model + variant lock: only a vehicle whose model AND variant match the one selected on
     // the booking may be allotted.
     assertKiaVehicleMatchesBooking(vehicle, { model: text(booking.model), variant: text(booking.variant) })
@@ -2445,5 +2466,91 @@ export async function createKiaBookingFinanceDraft(id: string, appUser: AppUser)
     })
 
     return updated
+  })
+}
+
+export async function releaseKiaStockTransfer(vinNumber: string, appUser: AppUser) {
+  if (!canAllotKiaVehicle(appUser.role)) {
+    throw new Error('You are not allowed to release transfers.')
+  }
+  const normalizedVin = text(vinNumber).toUpperCase()
+  if (!normalizedVin) throw new Error('VIN is required')
+
+  return db.transaction(async (tx) => {
+    // 1. Find the active transfer for this VIN (status is Transferred or requested)
+    const [activeTransfer] = await tx
+      .select()
+      .from(kiaVehicleTransfers)
+      .where(
+        and(
+          eq(kiaVehicleTransfers.vinNumber, normalizedVin),
+          inArray(kiaVehicleTransfers.transferStatus, ['Transferred', 'requested', 'Transferred', 'requested']) // handle potential case mismatch
+        )
+      )
+      .limit(1)
+
+    if (!activeTransfer) {
+      throw new Error('No active transfer found for this VIN.')
+    }
+
+    // 2. Update the transfer status to 'Cancelled' (so it's no longer active)
+    await tx
+      .update(kiaVehicleTransfers)
+      .set({
+        transferStatus: 'Cancelled',
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(kiaVehicleTransfers.id, activeTransfer.id))
+
+    // 3. If there is a booking linked to this transfer, revert its allocation and status
+    if (activeTransfer.bookingId) {
+      // Find the booking
+      const [booking] = await tx
+        .select()
+        .from(kiaBookings)
+        .where(eq(kiaBookings.id, activeTransfer.bookingId))
+        .limit(1)
+
+      if (booking) {
+        // Release the VIN allocation from this booking
+        await tx
+          .update(kiaVehicleAllocations)
+          .set({
+            releasedAt: new Date(),
+            releasedBy: appUser.id,
+            releaseReason: 'Transfer cancelled/released',
+          })
+          .where(
+            and(
+              eq(kiaVehicleAllocations.bookingId, activeTransfer.bookingId),
+              eq(kiaVehicleAllocations.vinNumber, normalizedVin),
+              isNull(kiaVehicleAllocations.releasedAt)
+            )
+          )
+
+        // Reset the booking's allocated VIN and revert status to 'proforma_generated'
+        await tx
+          .update(kiaBookings)
+          .set({
+            allocatedVin: null,
+            status: 'proforma_generated', // Return to waiting allocation
+            updatedBy: appUser.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(kiaBookings.id, activeTransfer.bookingId))
+
+        // Log activity
+        await addActivity(tx, {
+          bookingId: activeTransfer.bookingId,
+          type: 'transfer',
+          title: 'Transfer cancelled & VIN released',
+          description: `Transfer to ${activeTransfer.toDealerCode} was cancelled. VIN ${normalizedVin} is released.`,
+          appUser,
+        })
+      }
+    }
+
+    return { vinNumber: normalizedVin, transferId: activeTransfer.id }
   })
 }

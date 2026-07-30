@@ -50,14 +50,47 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'No matching booking record found' }, { status: 404 })
       }
 
+      // 3. Search delivery_date & consultant_name in hyundai_sales_report
+      let deliveryDate: string | null = null
+      let salesConsultantName: string | null = null
+      const targetOrderRef = booking.order_ref_no || ''
+      const targetCustomerId = booking.customer_id || ''
+      const salesQueryStr = `
+        SELECT delivery_date, consultant_name 
+        FROM hyundai_sales_report 
+        WHERE (
+          UPPER(vin_number) = '${upperVin.replace(/'/g, "''")}' OR 
+          UPPER(order_ref_no) = '${upperVin.replace(/'/g, "''")}' OR
+          UPPER(customerid) = '${upperVin.replace(/'/g, "''")}'
+          ${targetOrderRef ? `OR UPPER(order_ref_no) = '${targetOrderRef.toUpperCase().replace(/'/g, "''")}'` : ''}
+          ${targetCustomerId ? `OR UPPER(customerid) = '${targetCustomerId.toUpperCase().replace(/'/g, "''")}'` : ''}
+          ${targetCustomerId ? `OR UPPER(vin_number) = '${targetCustomerId.toUpperCase().replace(/'/g, "''")}'` : ''}
+        ) AND delivery_date IS NOT NULL
+        LIMIT 1
+      `
+      const salesRowResult = await db.execute(sql.raw(salesQueryStr))
+      if (salesRowResult.length > 0) {
+        const row = salesRowResult[0] as { delivery_date?: any; consultant_name?: string }
+        const rawDate = row.delivery_date
+        salesConsultantName = row.consultant_name || null
+        if (rawDate) {
+          try {
+            deliveryDate = new Date(rawDate).toISOString().slice(0, 10)
+          } catch {
+            deliveryDate = null
+          }
+        }
+      }
+
       return NextResponse.json({
         customerName: booking.name_of_the_customer || '',
         model: booking.model || '',
         variant: booking.variant || '',
         color: booking.color || '',
-        consultantName: booking.consultant_name || '',
+        consultantName: salesConsultantName || booking.consultant_name || '',
         tlManager: booking.team_leader || '',
         amountReceived: booking.amount_received ? Number(booking.amount_received) : 0,
+        deliveryDate,
         rawData: booking,
       })
     } else if (normalizedBranch === 'platinum') {
@@ -74,14 +107,47 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'No matching booking record found' }, { status: 404 })
       }
 
+      // Search delivery_date & consultant_name in am_platinum_sales_report
+      let deliveryDate: string | null = null
+      let salesConsultantName: string | null = null
+      const targetOrderRef = booking.order_ref_no || ''
+      const targetCustomerId = booking.customer_id || ''
+      const salesQueryStr = `
+        SELECT delivery_date, consultant_name 
+        FROM am_platinum_sales_report 
+        WHERE (
+          UPPER(vin_number) = '${upperVin.replace(/'/g, "''")}' OR 
+          UPPER(order_ref_no) = '${upperVin.replace(/'/g, "''")}' OR
+          UPPER(customerid) = '${upperVin.replace(/'/g, "''")}'
+          ${targetOrderRef ? `OR UPPER(order_ref_no) = '${targetOrderRef.toUpperCase().replace(/'/g, "''")}'` : ''}
+          ${targetCustomerId ? `OR UPPER(customerid) = '${targetCustomerId.toUpperCase().replace(/'/g, "''")}'` : ''}
+          ${targetCustomerId ? `OR UPPER(vin_number) = '${targetCustomerId.toUpperCase().replace(/'/g, "''")}'` : ''}
+        ) AND delivery_date IS NOT NULL
+        LIMIT 1
+      `
+      const salesRowResult = await db.execute(sql.raw(salesQueryStr))
+      if (salesRowResult.length > 0) {
+        const row = salesRowResult[0] as { delivery_date?: any; consultant_name?: string }
+        const rawDate = row.delivery_date
+        salesConsultantName = row.consultant_name || null
+        if (rawDate) {
+          try {
+            deliveryDate = new Date(rawDate).toISOString().slice(0, 10)
+          } catch {
+            deliveryDate = null
+          }
+        }
+      }
+
       return NextResponse.json({
         customerName: booking.name_of_the_customer || '',
         model: booking.model || '',
         variant: booking.variant || '',
         color: booking.color || '',
-        consultantName: booking.consultant_name || '',
+        consultantName: salesConsultantName || booking.consultant_name || '',
         tlManager: booking.team_leader || '',
         amountReceived: booking.amount_received ? Number(booking.amount_received) : 0,
+        deliveryDate,
         rawData: booking,
       })
     } else {

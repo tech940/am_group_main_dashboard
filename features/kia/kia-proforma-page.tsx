@@ -35,6 +35,7 @@ import {
   Columns3,
   FileText,
   Filter,
+  History,
   Loader2,
   Pencil,
   RotateCcw,
@@ -47,6 +48,7 @@ import {
 } from 'lucide-react'
 import { KiaBookingsClient } from '@/app/brands/kia/bookings/kia-bookings-client'
 import { KiaStockManagementDashboard } from './kia-stock-management-dashboard'
+import { AllocationHistoryPage } from './allocation-history-page'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -80,6 +82,7 @@ import {
 
 export type KiaProformaSection =
   | 'bookings'
+  | 'allocation-history'
   | 'stock'
   | 'generate'
   | 'all'
@@ -536,6 +539,11 @@ function useProformas(mode: string, enabled = true) {
 
 const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: string; approverOnly?: boolean; hideFromNav?: boolean }[] = [
   { section: 'bookings', label: 'Booking CRM', href: '/brands/kia/proforma/bookings' },
+  // Sits next to Booking CRM because it is the audit trail OF those bookings' allocations. Unlike
+  // every other tab here (gated by role via canAccessKiaSection), visibility is decided by the
+  // kia.allocation_history.view PERMISSION, resolved on the server and passed in as
+  // canViewAllocationHistory — so the tab and the route guard can never disagree.
+  { section: 'allocation-history', label: 'Allocation History', href: '/brands/kia/proforma/allocation-history' },
   { section: 'pending-approval', label: 'Pending Proforma', href: '/brands/kia/proforma/pending-approval', approverOnly: true },
   { section: 'stock', label: 'Stock', href: '/brands/kia/proforma/stock' },
   { section: 'generate', label: 'Generate Proforma', href: '/brands/kia/proforma/generate', hideFromNav: true },
@@ -661,16 +669,19 @@ function ModuleHeader({
   profile,
   isApprover,
   currentUserRole,
+  canViewAllocationHistory,
   onPricesImported,
 }: {
   section: KiaProformaSection
   profile?: KiaProfile | null
   isApprover: boolean
   currentUserRole: string
+  canViewAllocationHistory: boolean
   onPricesImported: () => void
 }) {
   const titles: Record<KiaProformaSection, { title: string; subtitle: string; icon: typeof ClipboardList }> = {
     bookings: { title: 'Booking CRM', subtitle: 'Manage customer bookings, stock allocations, and finance workflows.', icon: ClipboardList },
+    'allocation-history': { title: 'Vehicle Allocation History', subtitle: 'Permanent audit trail of every vehicle allocation and release back to free stock.', icon: History },
     stock: { title: 'Stock', subtitle: 'Approved bookings, stock matching, VIN reservation, and accounts payment follow-up.', icon: ClipboardList },
     generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: FileText },
     all: { title: 'Proformas', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: Columns3 },
@@ -683,6 +694,9 @@ function ModuleHeader({
   const navItems = PROFORMA_NAV_ITEMS
     .filter((item) => !item.hideFromNav && canAccessKiaSection(item.section, currentUserRole, isApprover))
     .filter((item) => item.section !== 'bookings' || canSeeBookingsNav(currentUserRole))
+    // Permission-gated, not role-gated: the server resolved kia.allocation_history.view and passed
+    // the answer down. Showing a tab whose route then 403s is the exact desync this avoids.
+    .filter((item) => item.section !== 'allocation-history' || canViewAllocationHistory)
   return (
     <Reveal>
       <section className="kia-surface relative overflow-hidden p-5">
@@ -2894,7 +2908,14 @@ function useBookingPrefill(bookingId: string | null) {
   return { prefill, loading }
 }
 
-export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
+export function KiaProformaPage({
+  section,
+  canViewAllocationHistory = false,
+}: {
+  section: KiaProformaSection
+  /** Resolved server-side from kia.allocation_history.view; decides whether that tab is offered. */
+  canViewAllocationHistory?: boolean
+}) {
   const searchParams = useSearchParams()
   const bookingId = searchParams.get('bookingId')
   const clientSearchParams = useMemo<Record<string, string>>(() => Object.fromEntries(searchParams.entries()), [searchParams])
@@ -2920,11 +2941,12 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
   return (
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
       <div className="kia-proforma-shell kia-premium space-y-5">
-        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} onPricesImported={reload} />
+        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} canViewAllocationHistory={canViewAllocationHistory} onPricesImported={reload} />
         {/* Hand the already-loaded options down so the bookings client does NOT fire its own second
             /api/brands/kia/proforma/options request (its query is gated on `!priceOptions`). The
             standalone /brands/kia/bookings page passes no prop and keeps fetching for itself. */}
         {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} priceOptions={options} currentUserRole={options.currentUser.role} currentUserName={options.currentUser.fullName} />}
+        {section === 'allocation-history' && <AllocationHistoryPage embedded />}
         {section === 'stock' && <KiaStockManagementDashboard currentUserRole={options.currentUser.role} />}
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} bookingPrefill={bookingPrefill} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}

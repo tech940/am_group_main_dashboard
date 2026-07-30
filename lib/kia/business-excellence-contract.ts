@@ -114,6 +114,33 @@ export function kiaComplaintDealerFilter(dealerCode: KiaBusinessExcellenceDealer
   return dealerInListFilter(codes, [`${alias}dealer_code`])
 }
 
+/**
+ * Promise date from kia_open_ro_yearly, as a real timestamp.
+ *
+ * ⚠️ `promise_date_time` and `revised_promise_date_time` are TEXT, not timestamps. Two bugs came out
+ * of that, both of which took the whole Business Excellence overview down with a 500:
+ *
+ *   1. Comparing the raw column to a date  ->  42883 "operator does not exist: date > text"
+ *   2. TO_TIMESTAMP(v, 'DD/MM/YYYY HH24:MI:SS')  ->  22008 "date/time field value out of range:
+ *      2026-07-27". The feed actually holds ISO 'YYYY-MM-DD', not the day-first format that cast
+ *      assumed, so it threw on EVERY populated row.
+ *
+ * This accepts either shape and yields NULL for anything else, so a future feed change degrades to
+ * "no promise date" instead of a broken section. Verified against the live table.
+ */
+export function kiaOpenRoPromiseDateSql(alias = '') {
+  const value = sql.raw(
+    `COALESCE(NULLIF(${alias}revised_promise_date_time, ''), NULLIF(${alias}promise_date_time, ''))`,
+  )
+  return sql`
+    CASE
+      WHEN ${value} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN LEFT(${value}, 10)::timestamp
+      WHEN ${value} ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_TIMESTAMP(${value}, 'DD/MM/YYYY HH24:MI:SS')
+      ELSE NULL
+    END
+  `
+}
+
 export function kiaOpenRoActiveStateSql(alias = '') {
   return sql`
     LOWER(TRIM(COALESCE(${sql.raw(`${alias}status`)}::text, ''))) IN ('open', 'close', 'closed')

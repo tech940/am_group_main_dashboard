@@ -26,7 +26,9 @@ export default async function DiscountApprovalsDashboardPage() {
         role: access.appUser.role,
         fullName: access.appUser.fullName,
         email: access.appUser.email,
+        brand: access.appUser.brand,
       }}
+      branch="hyundai"
     />
   )
 }

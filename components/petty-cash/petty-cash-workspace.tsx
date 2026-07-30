@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils'
 import { RequestFormDialog } from './pc-request-form'
 import { ExpenseFormDialog } from './pc-expense-form'
 import { PettyCashDetailDialog, type DetailTarget } from './pc-detail-dialog'
+import { AllocationSpendDialog } from './pc-allocation-spend-dialog'
 import { PettyCashStatusBoard } from './petty-cash-status-board'
 import {
   BalanceMeter,
@@ -80,6 +81,12 @@ type PettyCashAllocationRow = {
   location?: string | null
   department?: string | null
   allocatedToName?: string | null
+  /** Who released the money — joined server-side; before this it was a bare UUID and unusable. */
+  allocatedByName?: string | null
+  /** Spend window against this allocation, on expense_date (approved, non-deleted only). */
+  firstSpendDate?: string | null
+  lastSpendDate?: string | null
+  spendCount?: number
   allocatedAt?: string
   allocated_at?: string
   createdAt?: string
@@ -87,6 +94,19 @@ type PettyCashAllocationRow = {
 }
 
 // Only the Branch Admin (branch_admin) or Sales Manager (sales_manager) may submit petty cash requests / expenses.
+/**
+ * Renders a plain `expense_date` (YYYY-MM-DD, no time, no zone) as a short day.
+ *
+ * Deliberately NOT formatDateTime: that parses through `new Date()` and appends " IST", which on a
+ * bare date string means midnight UTC and can render the previous day in India.
+ */
+const formatSpendDate = (value?: string | null) => {
+  if (!value) return '—'
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short' }).format(date)
+}
+
 const isCreatorRole = (role: string) => role === 'branch_admin' || role === 'sales_manager'
 const isApproverRole = (role: string) => role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts' || role === 'ed'
 const isExpenseFeedRole = (role: string) => isApproverRole(role) || role === 'developer' || role === 'manager' || role === 'general_manager'
@@ -168,6 +188,10 @@ export function PettyCashWorkspace() {
   const [allocations, setAllocations] = useState<PettyCashAllocationRow[]>([])
   const [allocationsLoading, setAllocationsLoading] = useState(false)
   const [allocationLocationFilter, setAllocationLocationFilter] = useState('all')
+  // 'active' = the single open float per person (the old, only behaviour). 'all' = full history,
+  // which is the only way to see when someone PREVIOUSLY got money — past allocations are closed.
+  const [allocationStatusFilter, setAllocationStatusFilter] = useState('active')
+  const [spendAllocationId, setSpendAllocationId] = useState<string | null>(null)
   const [allocationDepartmentFilter, setAllocationDepartmentFilter] = useState('all')
   const [ledgerLocationFilter, setLedgerLocationFilter] = useState('all')
 
@@ -184,10 +208,13 @@ export function PettyCashWorkspace() {
     }
   }, [])
 
-  const loadAllocations = useCallback(async () => {
+  const loadAllocations = useCallback(async (status: string = 'active') => {
     setAllocationsLoading(true)
     try {
-      const data = await fetchJson<{ allocations: PettyCashAllocationRow[] }>('/api/petty-cash/allocations', 'allocations')
+      const data = await fetchJson<{ allocations: PettyCashAllocationRow[] }>(
+        `/api/petty-cash/allocations?status=${encodeURIComponent(status)}`,
+        'allocations',
+      )
       setAllocations(data.allocations || [])
     } catch {
       setAllocations([])
@@ -396,8 +423,8 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
   // Reviewers (EA/MD/EBA/Developer) get the cross-branch allocations feed — powers
   // both the Allocations tab and the overview aggregate KPIs.
   useEffect(() => {
-    if (canReviewQueue) void loadAllocations()
-  }, [canReviewQueue, loadAllocations])
+    if (canReviewQueue) void loadAllocations(allocationStatusFilter)
+  }, [canReviewQueue, loadAllocations, allocationStatusFilter])
 
   /* ---- mutations ---- */
   const submitRequest = useCallback(async () => {
@@ -776,11 +803,30 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
       {activeTab === 'allocations' && (
         <SectionCard
           title="Allocations"
-          subtitle="Active petty cash allocations across every branch and dealership"
+          subtitle={allocationStatusFilter === 'all'
+            ? 'Every allocation ever made — newest first. Click a row for its day-by-day spend.'
+            : 'Currently open allocations. Switch to All to see past allocations and when they were made.'}
           icon={Banknote}
           iconTone="blue"
           toolbar={(
             <div className="flex flex-wrap items-center gap-2">
+              {/* Binary toggle rather than a PillFilter: that component always injects its own
+                  "all" option and takes plain strings, which cannot express two named modes. */}
+              <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                {([['active', 'Open only'], ['all', 'All (incl. past)']] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setAllocationStatusFilter(key)}
+                    className={cn(
+                      'rounded-lg px-3 py-1.5 text-xs font-bold transition-colors',
+                      allocationStatusFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <PillFilter label="Location" allLabel="All Locations" value={allocationLocationFilter} options={allocationLocationOptions} onChange={setAllocationLocationFilter} />
               <PillFilter label="Department" allLabel="All Departments" value={allocationDepartmentFilter} options={allocationDepartmentOptions} onChange={setAllocationDepartmentFilter} />
             </div>
@@ -790,8 +836,16 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
             rows={visibleAllocations}
             loading={allocationsLoading}
             rowKey={(allocation) => allocation.id}
-            empty={<EmptyState icon={Banknote} title="No active allocations" description="Active allocations across branches and dealerships will appear here." />}
+            onRowClick={(allocation) => setSpendAllocationId(allocation.id)}
+            empty={<EmptyState icon={Banknote} title="No allocations" description="Allocations across branches and dealerships will appear here." />}
             columns={[
+              { header: 'Allocated To', cell: (allocation) => <span className="font-bold text-slate-800">{allocation.allocatedToName || '—'}</span> },
+              { header: 'Allocated On', cell: (allocation) => (
+                <span className="whitespace-nowrap text-xs font-semibold text-slate-600">
+                  {formatDateTime(allocation.allocatedAt || allocation.allocated_at || allocation.createdAt || allocation.created_at)}
+                </span>
+              ) },
+              { header: 'Allocated By', cell: (allocation) => <span className="text-slate-600">{allocation.allocatedByName || '—'}</span> },
               { header: 'Branch', cell: (allocation) => <span className="font-bold text-slate-800">{getBranchLabel(normalizeBranchId(allocation))}</span> },
               { header: 'Location', cell: (allocation) => <span className="font-semibold text-slate-700">{allocation.location || '—'}</span> },
               { header: 'Department', cell: (allocation) => <DepartmentBadge department={allocation.department} /> },
@@ -806,8 +860,21 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
                   </span>
                 )
               }},
+              { header: 'Spending', cell: (allocation) => {
+                const count = Number(allocation.spendCount || 0)
+                if (!count) return <span className="text-xs font-semibold text-slate-400">not spent yet</span>
+                const first = formatSpendDate(allocation.firstSpendDate)
+                const last = formatSpendDate(allocation.lastSpendDate)
+                return (
+                  <span className="whitespace-nowrap text-xs font-semibold text-slate-600">
+                    {count} {count === 1 ? 'entry' : 'entries'}
+                    <span className="block text-[10px] font-medium text-slate-400">
+                      {first === last ? last : first + ' → ' + last}
+                    </span>
+                  </span>
+                )
+              } },
               { header: 'Status', cell: (allocation) => <StatusPill status={allocation.status} /> },
-              { header: 'Allocated To', cell: (allocation) => <span className="text-slate-600">{allocation.allocatedToName || '—'}</span> },
             ]}
           />
         </SectionCard>
@@ -842,6 +909,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
       )}
 
       {/* Dialogs */}
+      <AllocationSpendDialog allocationId={spendAllocationId} onClose={() => setSpendAllocationId(null)} />
       <RequestFormDialog
         open={requestDialogOpen}
         onOpenChange={setRequestDialogOpen}

@@ -10,6 +10,7 @@ export const metadata = {
 
 const SECTION_MAP: Record<string, KiaProformaSection> = {
   bookings: 'bookings',
+  'allocation-history': 'allocation-history',
   stock: 'stock',
   generate: 'generate',
   'all-proforma-details': 'all',
@@ -27,7 +28,15 @@ export default async function Page({ params }: { params: Promise<{ section: stri
   if (!resolved) redirect('/brands/kia/proforma/bookings')
   // Every proforma view (incl. the internal "bookings" tab) is gated by kia.proforma.view so the
   // Access Map "Proforma" toggle governs the whole module; only the approval queue needs approve.
-  const permissionKey = resolved === 'pending-approval' ? 'kia.proforma.approve' : 'kia.proforma.view'
+  //
+  // Allocation History is the exception: it is an AUDIT view naming who allocated each vehicle and
+  // why it was pulled back, so it keeps its own narrower kia.allocation_history.view key rather than
+  // riding on kia.proforma.view (which is broadly granted, and would hand it to every sales exec).
+  const permissionKey = resolved === 'pending-approval'
+    ? 'kia.proforma.approve'
+    : resolved === 'allocation-history'
+      ? 'kia.allocation_history.view'
+      : 'kia.proforma.view'
   const permission = await requirePermission(access.appUser, permissionKey)
   if (!permission.allowed) forbidden()
 
@@ -35,5 +44,11 @@ export default async function Page({ params }: { params: Promise<{ section: stri
     redirect('/brands/kia/proforma/pending-approval')
   }
 
-  return <KiaProformaPage section={resolved} />
+  // Resolved once here and passed down so the nav tab and this route guard share one answer — a tab
+  // that renders for someone the guard then forbids is the desync we are avoiding.
+  const allocationHistory = resolved === 'allocation-history'
+    ? permission
+    : await requirePermission(access.appUser, 'kia.allocation_history.view')
+
+  return <KiaProformaPage section={resolved} canViewAllocationHistory={allocationHistory.allowed} />
 }

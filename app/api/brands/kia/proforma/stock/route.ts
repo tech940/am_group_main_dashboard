@@ -112,7 +112,7 @@ export async function GET(request: Request) {
     // Delivered vehicles have left inventory: hide them from the default stock
     // list + Total Inventory. They remain reachable only via the explicit
     // "Delivered" status filter.
-    const deliveredExpr = "((va.id IS NOT NULL AND kb.status = 'delivered') OR COALESCE(ls.local_status, '') = 'retail')"
+    const deliveredExpr = "((va.id IS NOT NULL AND kb.status = 'delivered') OR (COALESCE(ls.local_status, '') = 'retail' AND COALESCE(kb.status, '') != 'ready_delivery'))"
     if (status !== 'DELIVERED') {
       filters.push(`NOT ${deliveredExpr}`)
     }
