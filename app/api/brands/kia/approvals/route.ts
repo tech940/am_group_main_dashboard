@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { kiaApprovalRequests } from '@/lib/db/schema'
+import { kiaApprovalRequests, glAccounts } from '@/lib/db/schema'
+import { asc, eq, or } from 'drizzle-orm'
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,8 +38,32 @@ export async function POST(request: NextRequest) {
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       return NextResponse.json({ error: 'A valid amount greater than 0 is required' }, { status: 400 })
     }
-    if (!glAccountId) {
-      return NextResponse.json({ error: 'GL Account is required' }, { status: 400 })
+
+    // Resolve GL Account: if missing, unmapped, or invalid UUID, fallback gracefully
+    let finalGlAccountId: string | null = null
+    if (glAccountId && typeof glAccountId === 'string' && glAccountId.trim()) {
+      const trimmed = glAccountId.trim()
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
+      if (isUuid) {
+        finalGlAccountId = trimmed
+      }
+    }
+
+    if (!finalGlAccountId) {
+      try {
+        const fallbackGl = await db
+          .select({ id: glAccounts.id })
+          .from(glAccounts)
+          .where(or(eq(glAccounts.appliesTo, 'both'), eq(glAccounts.appliesTo, 'kia')))
+          .orderBy(asc(glAccounts.glCode))
+          .limit(1)
+
+        if (fallbackGl.length > 0) {
+          finalGlAccountId = fallbackGl[0].id
+        }
+      } catch (e) {
+        console.warn('Fallback GL Account query error:', e)
+      }
     }
 
     const [inserted] = await db
@@ -69,7 +94,7 @@ export async function POST(request: NextRequest) {
         managementApproval: '',
         managementRemarks: '',
         emailSendStatus: 'Mail Sent',
-        glAccountId: glAccountId,
+        glAccountId: finalGlAccountId,
         gst: gst?.trim() || null,
       })
       .returning()

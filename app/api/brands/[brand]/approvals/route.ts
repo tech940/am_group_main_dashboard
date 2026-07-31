@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { kiaApprovalRequests, approvalsCommonData } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { kiaApprovalRequests, approvalsCommonData, glAccounts } from '@/lib/db/schema'
+import { and, asc, eq, or } from 'drizzle-orm'
 import { validateEmailDomain } from '@/lib/email-validator'
 
 export async function POST(
@@ -50,8 +50,32 @@ export async function POST(
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       return NextResponse.json({ error: 'A valid amount greater than 0 is required' }, { status: 400 })
     }
-    if (!glAccountId) {
-      return NextResponse.json({ error: 'GL Account is required' }, { status: 400 })
+
+    // Resolve GL Account: if missing, unmapped, or invalid UUID, fallback gracefully
+    let finalGlAccountId: string | null = null
+    if (glAccountId && typeof glAccountId === 'string' && glAccountId.trim()) {
+      const trimmed = glAccountId.trim()
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
+      if (isUuid) {
+        finalGlAccountId = trimmed
+      }
+    }
+
+    if (!finalGlAccountId) {
+      try {
+        const fallbackGl = await db
+          .select({ id: glAccounts.id })
+          .from(glAccounts)
+          .where(or(eq(glAccounts.appliesTo, 'both'), eq(glAccounts.appliesTo, normalizedBrand)))
+          .orderBy(asc(glAccounts.glCode))
+          .limit(1)
+
+        if (fallbackGl.length > 0) {
+          finalGlAccountId = fallbackGl[0].id
+        }
+      } catch (e) {
+        console.warn('Fallback GL Account query error:', e)
+      }
     }
 
     // Auto-save new vendor to common list if it doesn't already exist
@@ -112,7 +136,7 @@ export async function POST(
         managementRemarks: '',
         emailSendStatus: 'Mail Sent',
         brand: normalizedBrand,
-        glAccountId: glAccountId,
+        glAccountId: finalGlAccountId,
         gst: gst?.trim() || null,
       })
       .returning()

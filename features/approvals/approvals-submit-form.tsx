@@ -507,7 +507,14 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
       return setErrorMsg('Please enter a valid amount greater than 0.')
     }
     if (!form.typeOfPayment) return setErrorMsg('Payment Type is required.')
-    if (!form.glAccountId) return setErrorMsg('GL Account is required.')
+    
+    // Auto-assign fallback GL Account if not set
+    if (!form.glAccountId && glAccounts.length > 0) {
+      const fallback = glAccounts.find(g => g.glName.toLowerCase().includes('other') || g.glCode === 'GL-999') || glAccounts[0]
+      if (fallback) {
+        setForm(prev => ({ ...prev, glAccountId: fallback.id }))
+      }
+    }
 
     if (brand === 'kia' && !form.uploadBillUrl1 && !form.uploadBillUrl2) {
       setShowConfirmSubmit(true)
@@ -913,6 +920,24 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 >
                   <option value="">Choose Payment Type / भुगतान प्रकार चुनें</option>
                   {PAYMENT_TYPE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
+                  GL Account / जीएल खाता <span className="text-slate-400 font-normal">(Auto-Assigned / Optional)</span>
+                </label>
+                <select
+                  value={form.glAccountId}
+                  onChange={e => handleTextChange('glAccountId', e.target.value)}
+                  className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer appearance-none"
+                >
+                  <option value="">Auto-Assigned / Unassigned GL Account (स्वचालित रूप से असाइन)</option>
+                  {glAccounts.map(g => (
+                    <option key={g.id} value={g.id}>
+                      {g.glCode} - {g.glName} ({g.tallyGroup})
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
