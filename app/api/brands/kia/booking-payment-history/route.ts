@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { canViewBookingPaymentHistory } from '@/lib/kia/booking-payment-history-access'
+import { isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 import { getKiaBookingPaymentHistory } from '@/lib/kia/receipt-report'
 
@@ -12,8 +13,10 @@ export async function GET(request: Request) {
   if (accessResponse) return accessResponse
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  // Hardcoded role allowlist (NOT a permission) — same single source of truth as the page + sidebar.
-  if (!canViewBookingPaymentHistory(appUser.role)) {
+  // Role allowlist OR an explicit Access-Map grant — must match app/brands/kia/booking-payment-history/page.tsx
+  // exactly, or the page renders and every fetch behind it 403s.
+  if (!canViewBookingPaymentHistory(appUser.role)
+    && !(await isPermissionExplicitlyAllowed(appUser, 'kia.booking_payment_history.view'))) {
     return NextResponse.json({ error: 'You do not have access to booking payment history.' }, { status: 403 })
   }
 

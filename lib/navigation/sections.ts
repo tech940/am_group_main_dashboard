@@ -275,6 +275,17 @@ export const ALL_SECTIONS: SearchSection[] = [
     initials: 'DCL',
     category: 'kia',
   },
+  {
+    id: 'testing_social_media_leads',
+    name: 'Testing - Social Media Leads',
+    description: 'CRE social media leads management and follow-up pipeline.',
+    href: '/social-media-leads',
+    department: 'sales',
+    brand: 'kia',
+    iconName: 'MessageCircle',
+    initials: 'SML',
+    category: 'kia',
+  },
 
   // ── AM KIA Service ──
   {
@@ -581,6 +592,11 @@ export function canUserAccessSection(
     return canViewBookingPaymentHistory(userRole, permissionMap)
   }
 
+  // Testing - Social Media Leads
+  if (href === '/social-media-leads') {
+    return ['md', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
+  }
+
   // Scrap
   if (href === '/scrap' || href === '/scrap-erp') {
     return canAccessScrapErp(userRole, permissionMap)
@@ -617,7 +633,9 @@ export function canUserAccessSection(
 
   // Admin Panel
   if (href.startsWith('/admin')) {
-    return userRole === 'admin' || userRole === 'developer'
+    // Must match app/admin/page.tsx, which gates on isSuperAdminRole (developer || md). Listing
+  // 'admin' here let that role find /admin in search and then be forbidden by the page.
+  return isSuperAdminRole(userRole)
   }
 
   // 4. Standard Permission Keys

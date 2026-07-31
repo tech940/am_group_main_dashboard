@@ -6,7 +6,7 @@ import {
   CheckCircle,
   AlertCircle,
   User,
-  DollarSign,
+  IndianRupee,
   Layers,
   ArrowRight,
   ChevronDown,
@@ -403,10 +403,10 @@ export default function PlatinumDiscountApprovalSubmitPage() {
               {/* Discount Amount */}
               <div className="space-y-2">
                 <label htmlFor="discountAmount" className="text-xs font-black uppercase tracking-wider text-slate-550 block">
-                  Discount Amount (INR) <span className="text-rose-500">*</span>
+                  Discount Amount (₹) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <input
                     type="number"
                     id="discountAmount"
@@ -423,7 +423,7 @@ export default function PlatinumDiscountApprovalSubmitPage() {
               {/* Accessories Amount */}
               <div className="space-y-2">
                 <label htmlFor="accessoriesAmount" className="text-xs font-black uppercase tracking-wider text-slate-550 block">
-                  Accessories Amount (INR)
+                  Accessories Amount (₹)
                 </label>
                 <div className="relative">
                   <Layers className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -494,38 +494,6 @@ export default function PlatinumDiscountApprovalSubmitPage() {
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
                   className="w-full h-11 bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#002c5f] focus:ring-1 focus:ring-[#002c5f] rounded-xl px-3.5 text-sm text-slate-900 placeholder-slate-400 transition-all outline-hidden font-bold"
-                />
-              </div>
-            </div>
-
-            {/* Dates in one row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Autofetched Delivery Date (Read-only) */}
-              <div className="space-y-2">
-                <label htmlFor="fetchedDeliveryDate" className="text-xs font-black uppercase tracking-wider text-slate-550 block">
-                  Delivery Date
-                </label>
-                <input
-                  type="text"
-                  id="fetchedDeliveryDate"
-                  readOnly
-                  placeholder="Not Available"
-                  value={fetchedDeliveryDate}
-                  className="w-full h-11 bg-slate-100 border border-slate-250 rounded-xl px-3.5 text-sm text-slate-550 outline-hidden cursor-not-allowed font-bold"
-                />
-              </div>
-
-              {/* Manual Delivery Date (Editable) */}
-              <div className="space-y-2">
-                <label htmlFor="manualDeliveryDate" className="text-xs font-black uppercase tracking-wider text-slate-550 block">
-                  Manual Delivery Date
-                </label>
-                <input
-                  type="date"
-                  id="manualDeliveryDate"
-                  value={manualDeliveryDate}
-                  onChange={(e) => setManualDeliveryDate(e.target.value)}
-                  className="w-full h-11 bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#002c5f] focus:ring-1 focus:ring-[#002c5f] rounded-xl px-3 text-sm text-slate-900 transition-all outline-hidden font-bold"
                 />
               </div>
             </div>

@@ -87,6 +87,7 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Booking Payment History', href: '/brands/kia/booking-payment-history' },
           { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups' },
+          { name: 'Testing - Social Media Leads', href: '/social-media-leads' },
         ],
       },
       // {
@@ -341,6 +342,10 @@ export function Sidebar() {
     // Scrap
     if (href === '/scrap' || href === '/scrap-erp') {
       return canAccessScrapErp(userRole, permissionMap)
+    }
+    // Testing - Social Media Leads: Gated ONLY to MD and Developer
+    if (href === '/social-media-leads') {
+      return ['md', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
     }
     // Everything else is gated by the user's effective permissions. Brand users are no longer
     // auto-granted their whole brand here, so a per-section Deny — and restricted-role defaults

@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed', 'vp'])
+export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed', 'vp', 'assistant_manager'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -2243,3 +2243,34 @@ export const discountApprovalsEmployees = pgTable('am_group_discount_approvals_e
   branch: text('branch').notNull(), // 'hyundai' | 'platinum'
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
+
+// Social Media Leads Table
+export const socialMediaLeads = pgTable('social_media_leads', {
+  id: bigint('id', { mode: 'number' }).primaryKey(),
+  rowHash: text('row_hash'),
+  conversationName: text('conversation_name'),
+  customerName: text('customer_name'),
+  customer: text('customer'),
+  ownername: text('ownername'),
+  phoneNum: text('phone_num'),
+  phoneNo: text('phone_no'),
+  fullPhoneNumber: text('full_phone_number'),
+  userId: text('user_id'),
+  source: text('source'),
+  leadSource: text('lead_source'),
+  enquirySource: text('enquiry_source'),
+  model: text('model'),
+  variant: text('variant'),
+  colour: text('colour'),
+  dealerCode: text('dealer_code'),
+  city: text('city'),
+  location: text('location'),
+  creRemark: text('cre_remark'),
+  kecRemark: text('kec_remark'),
+  followupStatus: text('followup_status'),
+  status: text('status'),
+  createdAt: text('created_at'),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+})
+

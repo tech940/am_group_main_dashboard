@@ -42,7 +42,7 @@ type DiscountApproval = {
   tlManager: string | null
   deliveryDate: string | null
   reference: string | null
-  status: 'PENDING_SM' | 'PENDING_VP' | 'PENDING_MD' | 'APPROVED' | 'REJECTED'
+  status: 'PENDING_SM' | 'PENDING_VP' | 'PENDING_GSM' | 'PENDING_MD' | 'APPROVED' | 'REJECTED'
   remarks: string | null
   createdAt: string
   updatedAt: string
@@ -155,14 +155,25 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
     }
   }
 
-  // Stage check helper
+  // Stage check helper (Strict stage clearing: no approval button until previous stage is cleared)
   const canUserApprove = (item: DiscountApproval) => {
-    const role = currentUser.role
-    if (['developer', 'admin', 'md'].includes(role)) {
-      return ['PENDING_SM', 'PENDING_VP', 'PENDING_MD'].includes(item.status)
+    const role = (currentUser.role || '').toLowerCase()
+    
+    // Stage 1: Sales Manager
+    if (item.status === 'PENDING_SM') {
+      return role === 'sales_manager' || role === 'admin' || role === 'developer'
     }
-    if (item.status === 'PENDING_SM' && role === 'sales_manager') return true
-    if (item.status === 'PENDING_VP' && role === 'vp') return true
+    
+    // Stage 2: General Sales Manager (or legacy VP)
+    if (item.status === 'PENDING_GSM' || item.status === 'PENDING_VP') {
+      return role === 'general_manager' || role === 'vp' || role === 'admin' || role === 'developer'
+    }
+
+    // Stage 3: MD
+    if (item.status === 'PENDING_MD') {
+      return role === 'md' || role === 'admin' || role === 'developer'
+    }
+
     return false
   }
 
@@ -275,15 +286,15 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
 
     let matchesSection = true
     if (activeSection === 'pending') {
-      const isPending = ['PENDING_SM', 'PENDING_VP', 'PENDING_MD'].includes(item.status)
+      const isPending = ['PENDING_SM', 'PENDING_VP', 'PENDING_GSM', 'PENDING_MD'].includes(item.status)
       if (!isPending) return false
 
       if (!showAllPending) {
-        const role = currentUser.role
+        const role = (currentUser.role || '').toLowerCase()
         if (role === 'sales_manager') {
           matchesSection = item.status === 'PENDING_SM'
-        } else if (role === 'vp') {
-          matchesSection = item.status === 'PENDING_VP'
+        } else if (role === 'general_manager' || role === 'vp') {
+          matchesSection = item.status === 'PENDING_GSM' || item.status === 'PENDING_VP'
         } else if (['md', 'admin', 'developer'].includes(role)) {
           matchesSection = item.status === 'PENDING_MD'
         }
@@ -299,7 +310,7 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
 
   // Aggregated Stats
   const totalCount = data.length
-  const pendingCount = data.filter((item) => ['PENDING_SM', 'PENDING_VP', 'PENDING_MD'].includes(item.status)).length
+  const pendingCount = data.filter((item) => ['PENDING_SM', 'PENDING_VP', 'PENDING_GSM', 'PENDING_MD'].includes(item.status)).length
   const approvedCount = data.filter((item) => item.status === 'APPROVED').length
   const rejectedCount = data.filter((item) => item.status === 'REJECTED').length
 
@@ -553,7 +564,7 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                           <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
                             item.status === 'PENDING_SM'
                               ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-450 border border-amber-200 dark:border-amber-900/30'
-                              : item.status === 'PENDING_VP'
+                              : item.status === 'PENDING_VP' || item.status === 'PENDING_GSM'
                               ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900/30'
                               : item.status === 'PENDING_MD'
                               ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/30'
@@ -562,7 +573,7 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                               : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-450 border border-rose-250 dark:border-rose-900/30'
                           }`}>
                             {item.status === 'PENDING_SM' ? 'Pending Sales Manager' :
-                             item.status === 'PENDING_VP' ? 'Pending VP' :
+                             item.status === 'PENDING_VP' || item.status === 'PENDING_GSM' ? 'Pending General Sales Manager' :
                              item.status === 'PENDING_MD' ? 'Pending MD' :
                              item.status}
                           </span>
@@ -611,7 +622,7 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                               <span className="text-[10px] font-bold text-slate-400 dark:text-slate-650 block pr-2">Reviewed</span>
                             ) : (
                               <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block pr-2">
-                                Awaiting {item.status === 'PENDING_SM' ? 'SM' : item.status === 'PENDING_VP' ? 'VP' : 'MD'}
+                                Awaiting {item.status === 'PENDING_SM' ? 'Sales Manager' : (item.status === 'PENDING_VP' || item.status === 'PENDING_GSM') ? 'General Sales Manager' : 'MD'}
                               </span>
                             )}
                           </div>
@@ -783,11 +794,11 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                       drawerItem.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                       drawerItem.status === 'REJECTED' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                       drawerItem.status === 'PENDING_SM' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                      drawerItem.status === 'PENDING_VP' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
+                      drawerItem.status === 'PENDING_VP' || drawerItem.status === 'PENDING_GSM' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
                       'bg-blue-50 text-blue-700 border border-blue-200'
                     }`}>
                       {drawerItem.status === 'PENDING_SM' ? 'Pending Sales Manager' :
-                       drawerItem.status === 'PENDING_VP' ? 'Pending VP' :
+                       drawerItem.status === 'PENDING_VP' || drawerItem.status === 'PENDING_GSM' ? 'Pending General Sales Manager' :
                        drawerItem.status === 'PENDING_MD' ? 'Pending MD' :
                        drawerItem.status}
                     </span>

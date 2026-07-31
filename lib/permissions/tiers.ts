@@ -23,7 +23,7 @@ import {
 
 export const TIER = {
   EMPLOYEE: 0, // front-line
-  SUPERVISOR: 1, // reserved rung (no role maps here yet)
+  SUPERVISOR: 1, // Assistant Manager — above front-line, below a full Manager
   MANAGER: 2,
   HEAD: 3, // GM / department head
   LEADERSHIP: 4, // global-access
@@ -62,6 +62,10 @@ export const ROLE_PROFILE: Record<PermissionRole, RoleProfile> = {
   service_general_manager: { tier: TIER.HEAD, family: 'tracked', track: 'service' }, // "General Service Manager"
   // Manager
   manager: { tier: TIER.MANAGER, family: 'tracked', track: 'branch' }, // generalist branch manager
+  // Supervisor rung on the generalist track, so its bundle is the union of BRANCH-track roles at
+  // tier <= 1 — i.e. `viewer` plus itself. Putting it at MANAGER instead would inherit `manager`'s
+  // whole template (same track, same tier) and hand an Assistant Manager approve + audit rights.
+  assistant_manager: { tier: TIER.SUPERVISOR, family: 'tracked', track: 'branch' },
   sales_manager: { tier: TIER.MANAGER, family: 'tracked', track: 'sales' },
   // Employee (front-line)
   viewer: { tier: TIER.EMPLOYEE, family: 'tracked', track: 'branch' }, // generalist "Employee"

@@ -18,8 +18,10 @@
 // This module is intentionally CLIENT-SAFE (no server-only imports) so the client sidebar can import
 // it directly instead of duplicating the role list.
 
+// 'idp' was a typo — no such value exists in the role enum, so it admitted nobody. The intended
+// role is 'edp' (Electronic Data Processing), which sits alongside idt in the booking pipeline.
 export const BOOKING_PAYMENT_HISTORY_VIEW_ROLES = [
-  'admin', 'developer', 'md', 'ea', 'idt', 'idp',
+  'admin', 'developer', 'md', 'ea', 'idt', 'edp',
 ] as const
 
 export function canViewBookingPaymentHistory(role?: string | null, permissionMap?: Record<string, boolean> | null): boolean {

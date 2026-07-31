@@ -50,6 +50,12 @@ const EXCEPTIONS: Record<string, { reason: string; requireToken?: string }> = {
   scrap_erp: { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canAccessScrapErp' },
   // Booking Payment History uses custom role & permission guard (MD/EA/Developer default).
   'kia.booking_payment_history': { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canViewBookingPaymentHistory' },
+  // Insurance Analysis is DELIBERATELY un-grantable: lib/auth/restricted-analytics.ts hardcodes
+  // MD+Developer because the section carries whole-book premium data and unmasked customer detail,
+  // and a permission key "would hold exactly until someone ticked a box". The registry row exists
+  // only so the sidebar/search can map the href — no Access-Map grant will ever open it.
+  // ⚠️ That makes the Access-Map row MISLEADING, not broken. See section 6 below.
+  insurance_analysis: { reason: 'hardcoded MD/Developer gate, not grantable', requireToken: 'isSuperAdminRole' },
 }
 
 console.log('\n=== Guard parity (sidebar visibility ↔ page guard) ===\n')
@@ -92,6 +98,68 @@ assert(
   'sidebar no longer uses the leaky "(canAccessX || permissionMap) && hasPermission" idiom',
   !sidebar.includes('|| permissionMap) && hasPermission'),
 )
+
+// -- 4) The check that would have caught the regression fixed on 2026-07-31 ----------------------
+// Every ROLE-gated section that is ALSO grantable in the Access Map must honour an explicit grant.
+// Section 2 above only asserted that a helper NAME appeared somewhere in the concatenated pages, so
+// `canAccessScrapErp(role)` passed while silently dropping its permissionMap argument: the sidebar
+// showed the link off the permission map and the page bounced the user to "access restricted".
+//
+// The rule now: a grantable, role-gated section must reference its own `.view` key in the page AND
+// in any API route that applies the same role gate — a page that renders while its own API 403s is
+// the same broken trip for the user.
+console.log('\n4) Grantable role-gated sections honour an explicit Access-Map grant (page AND api):')
+
+const apiFiles = walk(join(ROOT, 'app/api'))
+const allApi = apiFiles.map((f) => readFileSync(f, 'utf8')).join('\n')
+const allCode = allPages + '\n' + allApi
+
+// section key -> the role-gate token that guards it
+const ROLE_GATED_GRANTABLE: Record<string, string> = {
+  scrap_erp: 'canAccessScrapErp',
+  'kia.booking_payment_history': 'canViewBookingPaymentHistory',
+  ca: 'isCaViewRole',
+  am_finance: 'canAccessAmFinance',
+  petty_cash: 'canAccessPettyCash',
+  delegation_tasks: 'delegation_tasks.view',
+}
+
+for (const [key, token] of Object.entries(ROLE_GATED_GRANTABLE)) {
+  assert(`${key}: is grantable (a '${key}.view' permission exists)`, permissionKeys.has(`${key}.view`))
+  assert(
+    `${key}: the '${token}' role gate is paired with an explicit-grant escape hatch`,
+    allCode.includes('isPermissionExplicitlyAllowed') && allCode.includes(`'${key}.view'`),
+    `an Access-Map grant of ${key}.view would be silently ignored by the ${token} gate`,
+  )
+}
+
+for (const file of apiFiles) {
+  const body = readFileSync(file, 'utf8')
+  for (const [key, token] of Object.entries(ROLE_GATED_GRANTABLE)) {
+    if (!body.includes(token + '(')) continue
+    assert(
+      `${file.replace(ROOT, '').replace(/\\/g, '/')}: role-gates ${key} and honours the grant`,
+      body.includes('isPermissionExplicitlyAllowed'),
+      'this API would 403 a user its own page just admitted',
+    )
+  }
+}
+
+console.log('\n5) /admin is gated identically by the page, the sidebar and the search registry:')
+const sectionsRegistry = readFileSync(join(ROOT, 'lib/navigation/sections.ts'), 'utf8')
+assert(
+  'search registry gates /admin on isSuperAdminRole (same test as app/admin/page.tsx)',
+  !sectionsRegistry.includes("userRole === 'admin' || userRole === 'developer'"),
+  "the registry admitted role 'admin' to /admin, which the page then forbids",
+)
+
+console.log('\n6) Sections that can NEVER be granted are not silently offered in the Access Map:')
+// Not a failure — a standing reminder. These render as tickable rows that do nothing, because the
+// product decision is a hardcoded role gate. Either lock the row in the Access Map UI or accept it.
+for (const [key, exception] of Object.entries(EXCEPTIONS)) {
+  if (!exception.reason.includes('not grantable')) continue
+  console.log(`  [NOTE] ${key}: tickable in Admin -> Access but ${exception.reason} — a grant here is inert by design`)
+}
 
 console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===\n`)
 process.exit(failures === 0 ? 0 : 1)

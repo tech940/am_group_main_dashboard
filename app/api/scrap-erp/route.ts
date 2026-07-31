@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
+import { isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
 import { ScrapTransaction } from '@/lib/scrap-erp/types'
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
@@ -79,7 +80,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   logToFile(`GET /api/scrap-erp: User authenticated. Email: ${appUser.email}, Role: ${appUser.role}`)
-  if (!canAccessScrapErp(appUser.role)) {
+  // Must mirror app/scrap/page.tsx exactly — a page that renders while its own API 403s is the
+  // same broken experience as a link that leads to "access restricted".
+  if (!canAccessScrapErp(appUser.role) && !(await isPermissionExplicitlyAllowed(appUser, 'scrap_erp.view'))) {
     logToFile(`GET /api/scrap-erp: Forbidden. Role ${appUser.role} does not have access`)
     return NextResponse.json({ error: 'You do not have access to Scrap ERP.' }, { status: 403 })
   }

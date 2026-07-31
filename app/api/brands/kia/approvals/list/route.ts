@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { canAccessBrand } from '@/lib/auth/brand-access'
+import { canAccessDealer } from '@/lib/auth/dealer-scope'
+import { isSuperAdminRole, hasGlobalAccessRole } from '@/lib/auth/roles'
+import { hasAllBranchAccess, type BranchValue } from '@/lib/branches'
 import { db } from '@/lib/db'
 import { glAccounts, kiaApprovalRequests } from '@/lib/db/schema'
 import { desc, eq } from 'drizzle-orm'
@@ -13,7 +17,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const rows = await db
+    const rawRows = await db
       .select({
         id: kiaApprovalRequests.id,
         email: kiaApprovalRequests.email,
@@ -62,7 +66,26 @@ export async function GET(request: NextRequest) {
       .leftJoin(glAccounts, eq(kiaApprovalRequests.glAccountId, glAccounts.id))
       .orderBy(desc(kiaApprovalRequests.createdAt))
 
-    console.log('Payment Approvals list fetched rows:', rows.length)
+    // Enforce branchwise and dealer scoping
+    const isUnrestricted =
+      isSuperAdminRole(appUser.role) ||
+      hasGlobalAccessRole(appUser.role) ||
+      hasAllBranchAccess(appUser.brand)
+
+    const rows = isUnrestricted
+      ? rawRows
+      : rawRows.filter((row) => {
+          const rowBrand = (row.brand || 'kia').toLowerCase() as BranchValue
+          // Check if user has access to the row's brand
+          if (!canAccessBrand(appUser, rowBrand)) return false
+
+          // Check if user is restricted to specific dealer/branch code or location
+          if (row.dealerCode && !canAccessDealer(appUser, rowBrand, row.dealerCode)) return false
+
+          return true
+        })
+
+    console.log('Payment Approvals list fetched rows:', rows.length, 'out of', rawRows.length)
 
     return NextResponse.json({ rows })
   } catch (error) {

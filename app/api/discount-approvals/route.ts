@@ -214,15 +214,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Request has already been processed' }, { status: 400 })
     }
 
-    // 3. Validate stage authorization
+    // 3. Validate stage authorization (Strict stage clearing: only active stage role or superadmin can act)
     let allowed = false
-    const role = appUser.role
+    const role = (appUser.role || '').toLowerCase()
 
-    if (role === 'developer' || role === 'admin' || role === 'md') {
+    if (role === 'developer' || role === 'admin') {
       allowed = true
     } else if (reqItem.status === 'PENDING_SM' && role === 'sales_manager') {
       allowed = true
-    } else if (reqItem.status === 'PENDING_VP' && role === 'vp') {
+    } else if ((reqItem.status === 'PENDING_VP' || reqItem.status === 'PENDING_GSM') && (role === 'general_manager' || role === 'vp')) {
+      allowed = true
+    } else if (reqItem.status === 'PENDING_MD' && role === 'md') {
       allowed = true
     }
 
@@ -234,8 +236,8 @@ export async function PATCH(request: NextRequest) {
     let nextStatus = 'REJECTED'
     if (status === 'APPROVED') {
       if (reqItem.status === 'PENDING_SM') {
-        nextStatus = 'PENDING_VP'
-      } else if (reqItem.status === 'PENDING_VP') {
+        nextStatus = 'PENDING_GSM'
+      } else if (reqItem.status === 'PENDING_VP' || reqItem.status === 'PENDING_GSM') {
         nextStatus = 'PENDING_MD'
       } else if (reqItem.status === 'PENDING_MD') {
         nextStatus = 'APPROVED'

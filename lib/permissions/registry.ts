@@ -945,6 +945,7 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   sales_head: 'Sales Head',
   sales_executive: 'Sales Executive',
   sales_manager: 'Sales Manager',
+  assistant_manager: 'Assistant Manager (Sales + Service)',
   ed: 'ED',
   vp: 'VP (Vice President)',
   finance_team: 'Finance Team',
@@ -1116,6 +1117,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.bookings'], ['view', 'edit', 'audit']),
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.approvals'], ['view']),
   ],
   manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit', 'approve']),
@@ -1171,6 +1173,24 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
+  ],
+  // Assistant Manager: a BRANCH GENERALIST who oversees both Sales and Service for the branches
+  // they are assigned to. Deliberately view/create/edit with NO approve and NO audit — that is the
+  // whole distinction from `manager`, which is otherwise the same shape one tier up.
+  //
+  // Listing every brand is correct, not sloppy: constrainSnapshotToBranch zeroes the brand-prefixed
+  // keys outside the user's own `users.brand`, and `users.dealers` narrows further to named branch
+  // codes via getUserDealerScope. Both axes are applied on top of this template, so one list serves
+  // an assistant manager at any brand.
+  assistant_manager: [
+    ...keysForGroups([
+      'kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment',
+      'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma',
+      'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg',
+    ], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['petty_cash'], ['view']),
   ],
   ed: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management'], ['view', 'create', 'edit', 'approve', 'audit']),
