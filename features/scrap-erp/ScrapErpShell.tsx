@@ -32,12 +32,10 @@ import {
   Table as TableIcon,
   BarChart3,
   Settings,
-  Coins,
 } from 'lucide-react'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 import { Badge } from '@/components/ui/badge'
 import { ScrapExecutiveDashboardView } from './ScrapExecutiveDashboardView'
-import { ScrapDistributionView } from './ScrapDistributionView'
 import { ScrapEntryFormView } from './ScrapEntryFormView'
 import { ScrapRecordGridView } from './ScrapRecordGridView'
 import { ScrapMasterDataManager } from './ScrapMasterDataManager'
@@ -50,10 +48,14 @@ import { cn } from '@/lib/utils'
 export function ScrapErpShell() {
   const { userRole } = useUserRole()
   const roleLower = String(userRole || '').trim().toLowerCase()
-  const canAccessDistribution = ['eba', 'md', 'developer'].includes(roleLower)
 
+  // The standalone Distribution tab was REMOVED (owner decision, 2026-07-31): the shareholder split
+  // is now captured at source in the Scrap Entry form, which shows the live per-shareholder
+  // breakdown as the total is typed and records who took the cash in "Payment Handover To".
+  // A second, after-the-fact place to mark rows distributed was duplicate bookkeeping — and it was
+  // the control that used to wipe stated totals (see the calculation audit).
   const [activeModule, setActiveModule] = useState<
-    'dashboard' | 'distribution' | 'entry' | 'grid' | 'masters' | 'reports'
+    'dashboard' | 'entry' | 'grid' | 'masters' | 'reports'
   >('dashboard')
 
   // Master Data State
@@ -66,16 +68,11 @@ export function ScrapErpShell() {
   const [paymentModes, setPaymentModes] = useState<ScrapPaymentMode[]>(DEFAULT_SCRAP_PAYMENT_MODES)
   const [handoverUsers, setHandoverUsers] = useState<ScrapHandoverUser[]>(DEFAULT_SCRAP_HANDOVER_USERS)
 
-  // Transactions State — strip any stale isDistributed from pre-July records (distribution starts 1 July 2026)
+  // Seed state only — the /api/scrap-erp fetch below replaces this on mount. (It used to strip stale
+  // isDistributed flags off pre-July mock rows to keep the old Distribution tab honest; with that tab
+  // gone the normalisation had no consumer.)
   const [transactions, setTransactions] = useState<ScrapTransaction[]>(() =>
-    INITIAL_SCRAP_TRANSACTIONS.map((t) => {
-      const dateStr = (t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
-      if (dateStr < '2026-07-01' && (t as unknown as { isDistributed?: boolean }).isDistributed) {
-        const { isDistributed: _d, distributedAt: _da, distributedBy: _db, ...rest } = t as ScrapTransaction & { isDistributed?: boolean; distributedAt?: string; distributedBy?: string }
-        return rest
-      }
-      return { ...t }
-    })
+    INITIAL_SCRAP_TRANSACTIONS.map((t) => ({ ...t }))
   )
   const [insights] = useState<ScrapAiInsight[]>(DEFAULT_AI_INSIGHTS)
 
@@ -242,33 +239,6 @@ export function ScrapErpShell() {
     setDrilldownRows(filtered)
   }
 
-  const handleToggleDistribution = (
-    id: string,
-    currentStatus: boolean,
-    customPayload?: Partial<ScrapTransaction>
-  ) => {
-    const nextStatus = !currentStatus
-    const defaultPayload = {
-      isDistributed: nextStatus,
-      distributedAt: nextStatus ? new Date().toISOString() : undefined,
-    }
-    const payload = customPayload || defaultPayload
-
-    setTransactions((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, ...payload } : t))
-    )
-    fetch('/api/scrap-erp', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id,
-        ...payload,
-      }),
-    }).catch((err) => {
-      console.error('Failed to update distribution status:', err)
-    })
-  }
-
   return (
     <div className="space-y-6">
       {/* Top Module Tabs Bar */}
@@ -276,7 +246,6 @@ export function ScrapErpShell() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
           {[
             { key: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard },
-            ...(canAccessDistribution ? [{ key: 'distribution', label: 'Distribution', icon: Coins }] : []),
             { key: 'entry', label: editingTxn ? `Editing #${editingTxn.transactionNumber}` : 'Scrap Entry', icon: PlusCircle },
             { key: 'grid', label: 'Record Grid', icon: TableIcon, count: filteredTransactions.length },
             { key: 'reports', label: 'Reports Hub', icon: BarChart3 },
@@ -326,15 +295,6 @@ export function ScrapErpShell() {
         <ScrapExecutiveDashboardView
           transactions={filteredTransactions}
           onDrilldown={handleOpenDrilldown}
-        />
-      )}
-
-      {activeModule === 'distribution' && canAccessDistribution && (
-        <ScrapDistributionView
-          transactions={filteredTransactions}
-          handoverUsers={handoverUsers}
-          onDrilldown={handleOpenDrilldown}
-          onToggleDistribution={handleToggleDistribution}
         />
       )}
 

@@ -40,16 +40,69 @@ function formatCompanyName(name: string) {
 }
 
 // Scrap Type Aging Threshold Configuration
+/**
+ * Formats a Date as YYYY-MM-DD in the VIEWER'S LOCAL calendar.
+ *
+ * `new Date(y, m, 1).toISOString()` is wrong for this: the constructor builds local midnight, and
+ * toISOString converts to UTC — which in IST (+05:30) rolls back to the previous day. The "This
+ * Month" preset was therefore producing 2026-06-30 .. 2026-07-30 instead of 2026-07-01 .. 2026-07-31,
+ * silently pulling one extra June day in and dropping the last day of July.
+ */
+function toLocalIsoDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * Buckets for the "days since last sold, per location" heatmap.
+ *
+ * ⚠️ THESE ARE ITEM CATEGORIES, SO THEY MUST BE MATCHED AGAINST THE ITEM — see matchesAgingBucket.
+ * They were previously matched against `scrapTypeName`, which only ever holds three values
+ * (SCRAP / USED OIL / OLD BATTERIES). Six of the eight columns therefore matched NOTHING and read
+ * "never" for every location, while 185 rows collapsed into one undifferentiated column. The item
+ * name (`description`, from the register's SCRAP ITEM NAME) is where the real categories live.
+ *
+ * 'GATTA' sits under CARDBOARD: it is the Hindi term for cardboard, and the rates agree
+ * (GATTA Rs 12.89/kg vs CARDBOARD Rs 13.42/kg) — 38 rows that were previously uncategorised.
+ *
+ * OTHER is a genuine catch-all, not an alias list: it collects whatever matches no bucket above
+ * (FILTER, RADIATOR, WASTE, BUILDING WASTE MATERIAL …) so no item is invisible on this table.
+ */
 const SCRAP_AGING_CONFIG = [
   { key: 'USED OIL', label: 'USED OIL', threshold: 30, aliases: ['USED OIL', 'OIL'] },
-  { key: 'CARDBOARD', label: 'CARDBOARD', threshold: 45, aliases: ['CARDBOARD', 'BOXES'] },
+  { key: 'CARDBOARD', label: 'CARDBOARD', threshold: 45, aliases: ['CARDBOARD', 'BOXES', 'GATTA', 'CARTON'] },
   { key: 'IRON', label: 'IRON', threshold: 60, aliases: ['IRON', 'STEEL', 'METAL'] },
   { key: 'WASTAGE PLASTIC', label: 'WASTAGE PLASTIC', threshold: 60, aliases: ['WASTAGE PLASTIC', 'PLASTIC', 'BUMPER'] },
   { key: 'OLD BATTERIES', label: 'OLD BATTERIES', threshold: 60, aliases: ['OLD BATTERIES', 'BATTERY', 'BATTERIES'] },
   { key: 'EMPTY BARREL', label: 'EMPTY BARREL', threshold: 90, aliases: ['EMPTY BARREL', 'BARREL', 'DRUM'] },
-  { key: 'ALUMINIUM', label: 'ALUMINIUM', threshold: 90, aliases: ['ALUMINIUM', 'ALUMINUM'] },
+  { key: 'ALUMINIUM', label: 'ALUMINIUM', threshold: 90, aliases: ['ALUMINIUM', 'ALLUMINIUM', 'ALUMINUM'] },
   { key: 'BLACK PLASTIC', label: 'BLACK PLASTIC', threshold: 90, aliases: ['BLACK PLASTIC'] },
+  { key: 'OTHER', label: 'OTHER', threshold: 45, aliases: [] },
 ]
+
+/** The text the buckets are named after: the ITEM, falling back to the type if none was recorded. */
+function agingItemText(t: ScrapTransaction): string {
+  return String(t.description || t.scrapTypeName || '').toUpperCase()
+}
+
+/**
+ * A row can legitimately land in SEVERAL buckets — an entry described
+ * "BLACK PLASTIC,BUMPER P,IRON" really did move iron AND black plastic AND bumper, and "days since
+ * we last sold iron here" should count it. Only OTHER is exclusive, by construction.
+ */
+function matchesAgingBucket(t: ScrapTransaction, cfg: { key: string; aliases: string[] }): boolean {
+  const text = agingItemText(t)
+  if (cfg.key === 'OTHER') {
+    return !SCRAP_AGING_CONFIG.some((c) => c.key !== 'OTHER' && c.aliases.some((a) => text.includes(a)))
+  }
+  return cfg.aliases.some((a) => text.includes(a))
+}
+
+/** Whole days between two YYYY-MM-DD calendar dates. */
+function daysBetweenIso(fromIso: string, toIso: string): number {
+  const at = (v: string) => Date.UTC(Number(v.slice(0, 4)), Number(v.slice(5, 7)) - 1, Number(v.slice(8, 10)))
+  return Math.max(0, Math.round((at(toIso) - at(fromIso)) / 86400000))
+}
 
 export function ScrapExecutiveDashboardView({
   transactions,
@@ -240,13 +293,17 @@ export function ScrapExecutiveDashboardView({
       const wt = Number(t.weightQty || 0)
       const pm = (t.paymentModeName || '').toLowerCase()
       
-      // Payment Mode Breakdown calculations only start from July 2026
-      const dateStr = (t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
-      if (dateStr >= '2026-07-01') {
-        if (pm.includes('cash')) cash += amt
-        else if (pm.includes('cheque')) cheque += amt
-        else online += amt
-      }
+      // Payment Mode Breakdown covers the SAME rows as Total Revenue above it.
+      //
+      // This used to be gated to `dateStr >= '2026-07-01'`. The gate never actually fired, because
+      // soldDate reached this component as "Thu Jul 30" and 'T' > '2' made every comparison true —
+      // so the card had always shown the full-period figure. Repairing the date format (see
+      // toIsoDate in app/api/scrap-erp/route.ts) would have silently switched it to a July-only
+      // number sitting directly beneath a full-period Total Revenue, with no label saying so.
+      // The three buckets must partition whatever Total Revenue counts, so the gate is gone.
+      if (pm.includes('cash')) cash += amt
+      else if (pm.includes('cheque')) cheque += amt
+      else online += amt
 
       // Location Breakdown
       const locName = t.locationName || 'Other Location'
@@ -347,11 +404,14 @@ export function ScrapExecutiveDashboardView({
       const monthLabel = dt.toLocaleString('en-IN', { month: 'long', year: 'numeric' })
       const monthShort = dt.toLocaleString('en-IN', { month: 'short' })
 
-      const unitUpper = (t.unit || '').toUpperCase()
-      let barrelQty = Number(t.weightQty || 0)
-      if (unitUpper === 'LTR' || unitUpper === 'LITER') {
-        barrelQty = Math.max(1, Math.round(barrelQty / 200))
-      }
+      // Used oil is recorded in BARRELS, not litres — the register's quantities are 1..10 and the
+      // implied price is ~Rs 10,269 per unit, which is a barrel rate. The old code divided by 200
+      // and clamped with Math.max(1, ...), so every row collapsed to exactly 1 and the "barrels"
+      // figure degenerated into a transaction count: 85 shown against a true 176 (-52%).
+      //
+      // The clamp+round also ran PER ROW before summing, so even with genuine litre data three
+      // 300L sales (4.5 barrels) would have reported 6. Quantity is now taken as recorded.
+      const barrelQty = Number(t.weightQty || 0)
 
       if (!companyMonthMap[company]) companyMonthMap[company] = {}
       if (!companyMonthMap[company][monthLabel]) {
@@ -477,6 +537,9 @@ export function ScrapExecutiveDashboardView({
       new Set(sourceTxns.map((t) => t.locationName).filter(Boolean))
     ).sort()
 
+    // One "today" for the whole matrix — it used to call new Date() inside every cell.
+    const todayIso = toLocalIsoDate(new Date())
+
     const rows = locNames.map((locName) => {
       const locTxns = sourceTxns.filter((t) => t.locationName === locName)
 
@@ -491,30 +554,31 @@ export function ScrapExecutiveDashboardView({
       > = {}
 
       SCRAP_AGING_CONFIG.forEach((cfg) => {
-        const matchingTxns = locTxns.filter((t) => {
-          const typeUpper = (t.scrapTypeName || '').toUpperCase()
-          return cfg.aliases.some((alias) => typeUpper.includes(alias))
-        })
+        // Matched on the ITEM, not the 3-value scrap type — see matchesAgingBucket.
+        const matchingTxns = locTxns.filter((t) => matchesAgingBucket(t, cfg))
 
         if (!matchingTxns.length) {
           cellData[cfg.key] = { days: null, lastDateStr: null, status: 'never', txns: [] }
           return
         }
 
-        const sorted = [...matchingTxns].sort((a, b) => {
-          const dA = new Date(a.soldDate || a.timestamp || a.createdAt).getTime()
-          const dB = new Date(b.soldDate || b.timestamp || b.createdAt).getTime()
-          return dB - dA
-        })
+        // soldDate is a plain YYYY-MM-DD calendar date, so sort and subtract it AS a calendar date.
+        // Routing it through `new Date()` mixed a UTC-midnight instant with a local "now", which
+        // shifted the answer by a day either side of midnight.
+        const isoOf = (t: ScrapTransaction) => String(t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
+        const sorted = [...matchingTxns].sort((a, b) => (isoOf(a) < isoOf(b) ? 1 : -1))
 
         const latest = sorted[0]
-        const latestDate = new Date(latest.soldDate || latest.timestamp || latest.createdAt)
-        const diffMs = new Date().getTime() - latestDate.getTime()
-        const days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
-        const lastDateStr = latestDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        const latestIso = isoOf(latest)
+        const days = latestIso ? daysBetweenIso(latestIso, todayIso) : null
+        const lastDateStr = latestIso
+          ? new Date(`${latestIso}T12:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : null
 
         let status: 'on_schedule' | 'overdue' | 'investigate' | 'never' = 'on_schedule'
-        if (days > cfg.threshold * 2) {
+        if (days === null) {
+          status = 'never'
+        } else if (days > cfg.threshold * 2) {
           status = 'investigate'
         } else if (days > cfg.threshold) {
           status = 'overdue'
@@ -721,7 +785,7 @@ export function ScrapExecutiveDashboardView({
                   <button
                     type="button"
                     onClick={() => {
-                      const today = new Date().toISOString().slice(0, 10)
+                      const today = toLocalIsoDate(new Date())
                       handlePresetClick('today', today, today)
                     }}
                     className={cn(
@@ -737,8 +801,8 @@ export function ScrapExecutiveDashboardView({
                     type="button"
                     onClick={() => {
                       const date = new Date()
-                      const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().slice(0, 10)
-                      const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().slice(0, 10)
+                      const firstDay = toLocalIsoDate(new Date(date.getFullYear(), date.getMonth(), 1))
+                      const lastDay = toLocalIsoDate(new Date(date.getFullYear(), date.getMonth() + 1, 0))
                       handlePresetClick('this_month', firstDay, lastDay)
                     }}
                     className={cn(

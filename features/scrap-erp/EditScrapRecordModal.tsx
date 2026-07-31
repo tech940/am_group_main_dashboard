@@ -106,7 +106,12 @@ export function EditScrapRecordModal({
   // Recalculate valuations dynamically
   const wt = parseFloat(weightQty) || 0
   const rate = parseFloat(ratePerUnit) || 0
-  const calculatedTotal = Math.round(wt * rate * 100) / 100
+  // Mirrors ScrapEntryFormView: derive only when both inputs exist, else keep the stored total.
+  // Without this, editing any field on a record whose total is stated directly (no qty/rate) wrote
+  // a zero over real money.
+  const calculatedTotal = (wt > 0 && rate > 0)
+    ? Math.round(wt * rate * 100) / 100
+    : Math.round(Number(transaction?.calculatedTotal || 0) * 100) / 100
   const amountReceived = amountReceivedInput !== '' ? parseFloat(amountReceivedInput) : calculatedTotal
   const outstandingAmount = Math.max(0, calculatedTotal - (amountReceived || 0))
 
@@ -362,6 +367,7 @@ export function EditScrapRecordModal({
                 <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Amount Received (₹)</Label>
                 <Input
                   type="number"
+                  step="0.01"
                   value={amountReceivedInput}
                   onChange={(e) => setAmountReceivedInput(e.target.value)}
                   className="h-9 rounded-xl text-xs font-black text-emerald-700 border-slate-300 dark:border-slate-700"

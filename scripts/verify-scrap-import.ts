@@ -29,18 +29,20 @@ const money = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.01
 
 // Every figure below was reconciled against the source workbook before the load.
-const EXPECTED_TOTAL = 3362996.58
-const EXPECTED_ROWS = 265
-const EXPECTED_MD_ROWS = 69
-const EXPECTED_MD_TOTAL = 826750.50
+// Reconciled against `overall scrap....xlsx` (2026-07-31 re-issue): 272 rows, 28 Mar - 31 Jul.
+const EXPECTED_TOTAL = 3514522.58
+const EXPECTED_ROWS = 272
+const EXPECTED_MD_ROWS = 76
+const EXPECTED_MD_TOTAL = 978276.50
+const EXPECTED_LAST_DATE = '2026-07-31'
 const EXPECTED_COMPANIES: Record<string, { rows: number; amt: number; displayName: string }> = {
   JAM: { rows: 77, amt: 1443605.00, displayName: 'JAMMU AUTOMART' },
-  PLATINUM: { rows: 55, amt: 706213.50, displayName: 'PLATINUM AUTO' },
+  PLATINUM: { rows: 59, amt: 849213.50, displayName: 'PLATINUM AUTO' },
   'SMAM TATA': { rows: 39, amt: 395407.00, displayName: 'SMAM TATA' },
   DIAMOND: { rows: 42, amt: 346719.00, displayName: 'DIAMOND HONDA' },
   'AM KIA': { rows: 19, amt: 225839.08, displayName: 'AM KIA' },
   MG: { rows: 12, amt: 105932.00, displayName: 'AM MG' },
-  BAJAJ: { rows: 16, amt: 92901.00, displayName: 'AM BAJAJ' },
+  BAJAJ: { rows: 19, amt: 101427.00, displayName: 'AM BAJAJ' },
   KTM: { rows: 5, amt: 46380.00, displayName: 'AM KTM' },
 }
 
@@ -60,14 +62,15 @@ async function main() {
     ok('sum(calculated_total)', near(Number(k.tot), EXPECTED_TOTAL), `Rs ${money(Number(k.tot))}`)
     ok('sum(amount_received) equals the total', near(Number(k.recv), EXPECTED_TOTAL), `Rs ${money(Number(k.recv))}`)
     ok('sum(outstanding_amount) is zero', near(Number(k.out), 0), `Rs ${money(Number(k.out))}`)
-    ok('date range', k.lo === '2026-03-28' && k.hi === '2026-07-30', `${k.lo} .. ${k.hi} (${k.days} days)`)
+    ok('date range', k.lo === '2026-03-28' && k.hi === EXPECTED_LAST_DATE, `${k.lo} .. ${k.hi} (${k.days} days)`)
 
     const [t] = await sql<{ n: number; lo: string; hi: string; dupes: number }[]>`
       SELECT COUNT(DISTINCT transaction_number)::int n, MIN(transaction_number) lo, MAX(transaction_number) hi,
              (COUNT(*) - COUNT(DISTINCT transaction_number))::int dupes
       FROM scrap_transactions`
     ok('transaction numbers are unique', t.dupes === 0 && t.n === EXPECTED_ROWS, `${t.n} distinct, ${t.dupes} dupes`)
-    ok('transaction numbering is contiguous', t.lo === 'SCRAP-2026-0001' && t.hi === `SCRAP-2026-0${EXPECTED_ROWS}`, `${t.lo} .. ${t.hi}`)
+    ok('transaction numbering is contiguous',
+      t.lo === 'SCRAP-2026-0001' && t.hi === `SCRAP-2026-${String(EXPECTED_ROWS).padStart(4, '0')}`, `${t.lo} .. ${t.hi}`)
 
     const modes = await sql<{ payment_mode_name: string; n: number }[]>`
       SELECT payment_mode_name, COUNT(*)::int n FROM scrap_transactions GROUP BY 1`
@@ -107,7 +110,7 @@ async function main() {
     // TRAP 2 — the six "30-07-206" rows must exist as 2026-07-30, not be dropped or dated in year 206.
     const [lastDay] = await sql<{ n: number }[]>`
       SELECT COUNT(*)::int n FROM scrap_transactions WHERE sold_date = '2026-07-30'`
-    ok('the mistyped "30-07-206" rows landed on 2026-07-30', lastDay.n >= 6, `${lastDay.n} rows on the last day`)
+    ok('the mistyped "30-07-206" rows landed on 2026-07-30', lastDay.n >= 6, `${lastDay.n} rows on 30 Jul`)
     const [badYear] = await sql<{ n: number }[]>`
       SELECT COUNT(*)::int n FROM scrap_transactions WHERE sold_date < '2026-01-01' OR sold_date > '2026-12-31'`
     ok('no row escaped into a nonsense year', badYear.n === 0, `${badYear.n} out-of-range`)

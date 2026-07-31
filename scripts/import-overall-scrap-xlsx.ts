@@ -232,6 +232,21 @@ function parseWorkbook(path: string) {
     const cell = (k: string) => (colOf[k] === undefined ? '' : r[colOf[k]])
     if (r.every((c) => c === undefined || c === null || String(c).trim() === '')) continue
 
+    /**
+     * Skip footer/summary rows silently instead of failing the import.
+     *
+     * The register carries running-total formulas BELOW the data (e.g. a grand total and a
+     * variance-vs-last-issue cell), in a column outside the 12 data columns. The all-blank guard
+     * above does not catch them, so they used to land in `failures` — and because --apply refuses to
+     * run with any failure, a perfectly good sheet became unimportable.
+     *
+     * The test: a real record always carries at least one of DATE / DEALER / TOTAL. A row with none
+     * of them is not a broken record, it is not a record at all.
+     */
+    const looksLikeRecord = ['date', 'dealer', 'total', 'location', 'vendor', 'item']
+      .some((k) => String(cell(k) ?? '').trim() !== '')
+    if (!looksLikeRecord) continue
+
     const soldDate = excelDate(cell('date'))
     const total = toNumber(cell('total'))
     const dealerRaw = clean(cell('dealer'))

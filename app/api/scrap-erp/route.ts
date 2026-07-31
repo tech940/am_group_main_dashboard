@@ -10,8 +10,26 @@ const DISTRIBUTION_START_DATE = '2026-07-01'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * `sold_date` is a Postgres DATE, and the driver hands it back as a **JS Date object**, not a
+ * string. `String(dateObj).slice(0, 10)` therefore produced "Thu Jul 30" — a weekday with no year —
+ * on every single row, which silently broke three things at once:
+ *   • the grid's Date column and the CSV Date column displayed "Thu Jul 30"
+ *   • every date-range filter returned ZERO rows, because "Thu Jul 30" <= "2026-07-31" is false
+ *   • every July-window test passed, because "Thu Jul 30" >= "2026-07-01" is true ('T' > '2') —
+ *     so all 265 records counted as in the distribution window instead of the real 49.
+ *
+ * toISOString() is the correct read (the sibling timestamp fields on the next lines already use it).
+ * The String() branch is kept only for the case where the driver is configured to return text.
+ */
+function toIsoDate(value: unknown): string {
+  if (!value) return ''
+  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  return String(value).slice(0, 10)
+}
+
 function mapDbRowToTransaction(row: any): ScrapTransaction {
-  const soldDate = row.sold_date ? String(row.sold_date).slice(0, 10) : ''
+  const soldDate = toIsoDate(row.sold_date)
   const timestamp = row.timestamp ? new Date(row.timestamp).toISOString() : new Date().toISOString()
   const createdAt = row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString()
   const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString()
@@ -246,20 +264,77 @@ export async function PUT(request: Request) {
     }
 
     const existing = existingRes[0]
-    const existingDateStr = (existing.sold_date || existing.timestamp || existing.created_at || '').toString().slice(0, 10)
-    const isPreJuly = existingDateStr < DISTRIBUTION_START_DATE
+    // Same DATE-object trap as mapDbRowToTransaction — see toIsoDate. Without it every row read as
+    // "Thu Jul 30" and `isPreJuly` was permanently false.
+    const existingDateStr = toIsoDate(existing.sold_date) || toIsoDate(existing.timestamp) || toIsoDate(existing.created_at)
+    const isPreJuly = Boolean(existingDateStr) && existingDateStr < DISTRIBUTION_START_DATE
 
     const weightQty = body.weightQty !== undefined ? Number(body.weightQty) : Number(existing.weight_qty || 0)
     const ratePerUnit = body.ratePerUnit !== undefined ? Number(body.ratePerUnit) : Number(existing.rate_per_unit || 0)
-    const calculatedTotal = Math.round(weightQty * ratePerUnit * 100) / 100
+
+    /**
+     * ⚠️ THE TOTAL IS AUTHORITATIVE INPUT, NOT A DERIVED VALUE.
+     *
+     * This used to be an unconditional `round(weightQty * ratePerUnit, 2)`, which DESTROYED money:
+     * 12 live rows carry a total stated directly on the source register with no qty or rate
+     * (Rs 92,994 in all), so any save recomputed them to ZERO while amount_received kept its real
+     * value. It was silent — outstanding clamps at 0 and status stayed COMPLETED.
+     *
+     * Worse, it did not need an edit form: the Distribution tab's one-click "mark distributed" PUTs
+     * only { id, isDistributed }, the qty/rate fell back to the existing zeros, and the total was
+     * wiped anyway.
+     *
+     * Order of precedence: an explicit total from the client, else qty x rate when BOTH are present,
+     * else keep whatever is already stored. The last branch is what protects those 12 rows.
+     */
+    const derivedTotal = Math.round(weightQty * ratePerUnit * 100) / 100
+    const calculatedTotal = body.calculatedTotal !== undefined
+      ? Math.round(Number(body.calculatedTotal) * 100) / 100
+      : (weightQty > 0 && ratePerUnit > 0)
+        ? derivedTotal
+        : Math.round(Number(existing.calculated_total || 0) * 100) / 100
+
     const amountReceived = body.amountReceived !== undefined ? Number(body.amountReceived) : Math.round(Number(existing.amount_received || 0) * 100) / 100
-    const outstandingAmount = Math.max(0, calculatedTotal - amountReceived)
+    // Rounded, unlike before: the raw subtraction produced IEEE residue such as 0.0999999999985.
+    const outstandingAmount = Math.max(0, Math.round((calculatedTotal - amountReceived) * 100) / 100)
     const status = outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED'
 
     const isDistributed = isPreJuly ? false : (body.isDistributed !== undefined ? Boolean(body.isDistributed) : Boolean(existing.is_distributed))
     const sentToAccounts = body.sentToAccounts !== undefined ? Boolean(body.sentToAccounts) : Boolean(existing.sent_to_accounts)
     const paymentHandoverToName = body.paymentHandoverToName !== undefined ? String(body.paymentHandoverToName) : String(existing.payment_handover_to_name || '')
     const accountsNote = body.accountsNote !== undefined ? String(body.accountsNote) : String(existing.accounts_note || '')
+
+    /**
+     * The SET list used to cover ONLY the money + workflow columns, so every descriptive edit was
+     * silently discarded: change a vendor, get "updated successfully", see it in the UI, and find
+     * the old value again on the next refresh. sold_to, location_name, department_name,
+     * scrap_type_name, description, remarks, group_name, unit, payment_mode_name and sold_date were
+     * all sent by the entry form and none were written.
+     *
+     * Each is applied ONLY when the request actually carries it, so a partial PUT (the Distribution
+     * tab sends just { id, isDistributed }) still cannot clobber a field it never mentioned.
+     */
+    const q = (v: unknown) => `'${String(v ?? '').replace(/'/g, "''")}'`
+    const textUpdates: string[] = []
+    const TEXT_FIELDS: Array<[string, string]> = [
+      ['groupName', 'group_name'],
+      ['locationName', 'location_name'],
+      ['departmentName', 'department_name'],
+      ['scrapTypeName', 'scrap_type_name'],
+      ['unit', 'unit'],
+      ['description', 'description'],
+      ['soldTo', 'sold_to'],
+      ['soldByName', 'sold_by_name'],
+      ['paymentModeName', 'payment_mode_name'],
+      ['remarks', 'remarks'],
+    ]
+    for (const [bodyKey, column] of TEXT_FIELDS) {
+      if (body[bodyKey] !== undefined) textUpdates.push(`${column} = ${q(body[bodyKey])}`)
+    }
+    if (body.soldDate !== undefined) {
+      const d = toIsoDate(body.soldDate) || String(body.soldDate).slice(0, 10)
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) textUpdates.push(`sold_date = ${q(d)}`)
+    }
 
     const updatedRes = await db.execute(sql.raw(`
       UPDATE scrap_transactions
@@ -274,6 +349,7 @@ export async function PUT(request: Request) {
         sent_to_accounts = ${sentToAccounts ? 'TRUE' : 'FALSE'},
         payment_handover_to_name = '${paymentHandoverToName.replace(/'/g, "''")}',
         accounts_note = '${accountsNote.replace(/'/g, "''")}',
+        ${textUpdates.length ? `${textUpdates.join(',\n        ')},` : ''}
         ${body.accountsReceivedAt ? `accounts_received_at = '${new Date(body.accountsReceivedAt).toISOString()}',` : ''}
         updated_at = NOW()
       WHERE ${whereClause}

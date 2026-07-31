@@ -63,7 +63,12 @@ export function ScrapRecordGridView({
 
   const handleApplyPreset = (preset: 'all' | 'today' | 'month' | '30days') => {
     setDatePreset(preset)
-    const today = new Date().toISOString().split('T')[0]
+    // Local calendar, NOT toISOString(): the latter converts to UTC, which in IST (+05:30) rolls
+    // every boundary back a day — "This Month" resolved to 30 Jun .. 30 Jul instead of 1 .. 31 Jul,
+    // and "Today" pointed at yesterday for anyone loading the page before 05:30 IST.
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const localIso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    const today = localIso(new Date())
     if (preset === 'all') {
       setStartDate('')
       setEndDate('')
@@ -72,13 +77,12 @@ export function ScrapRecordGridView({
       setEndDate(today)
     } else if (preset === 'month') {
       const d = new Date()
-      const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
-      setStartDate(firstDay)
+      setStartDate(localIso(new Date(d.getFullYear(), d.getMonth(), 1)))
       setEndDate(today)
     } else if (preset === '30days') {
       const d = new Date()
       d.setDate(d.getDate() - 30)
-      setStartDate(d.toISOString().split('T')[0])
+      setStartDate(localIso(d))
       setEndDate(today)
     }
     setPage(1)

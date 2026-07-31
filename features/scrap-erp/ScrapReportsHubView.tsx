@@ -144,7 +144,9 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
         unit: string
         totalAmount: number
         totalWeight: number
-        monthData: Record<string, { amount: number; weight: number; count: number }>
+        ratedAmount?: number
+        // ratedAmount = the slice of `amount` that has weight behind it, used as the rate numerator.
+        monthData: Record<string, { amount: number; weight: number; count: number; ratedAmount: number }>
       }
     > = {}
 
@@ -178,12 +180,21 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
       typeUnitMap[key].totalWeight += wt
 
       if (!typeUnitMap[key].monthData[monthShort]) {
-        typeUnitMap[key].monthData[monthShort] = { amount: 0, weight: 0, count: 0 }
+        typeUnitMap[key].monthData[monthShort] = { amount: 0, weight: 0, count: 0, ratedAmount: 0 }
       }
 
       typeUnitMap[key].monthData[monthShort].amount += amt
       typeUnitMap[key].monthData[monthShort].weight += wt
       typeUnitMap[key].monthData[monthShort].count += 1
+      // An average RATE must divide value by the weight that value was actually earned on. Rows
+      // sold at a stated total (no weight recorded) contribute money to the numerator and nothing
+      // to the denominator, which inflates the rate — July SCRAP read Rs 25.34/Kg against a true
+      // Rs 19.16/Kg (+32.3%). `ratedAmount` tracks only the value that has weight behind it, so
+      // the rate is honest; `amount` stays the full revenue for the value columns.
+      if (wt > 0) {
+        typeUnitMap[key].monthData[monthShort].ratedAmount += amt
+        typeUnitMap[key].ratedAmount = (typeUnitMap[key].ratedAmount || 0) + amt
+      }
     })
 
     const availableMonths = Array.from(monthSet).sort(
@@ -193,7 +204,7 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
 
     const rows = Object.values(typeUnitMap)
       .map((item) => {
-        const overallAvgRate = item.totalWeight > 0 ? item.totalAmount / item.totalWeight : 0
+        const overallAvgRate = item.totalWeight > 0 ? (item.ratedAmount || 0) / item.totalWeight : 0
 
         const monthAvgRates: Record<
           string,
@@ -201,8 +212,8 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
         > = {}
 
         monthColumns.forEach((m) => {
-          const mData = item.monthData[m] || { amount: 0, weight: 0, count: 0 }
-          const avgRate = mData.weight > 0 ? mData.amount / mData.weight : 0
+          const mData = item.monthData[m] || { amount: 0, weight: 0, count: 0, ratedAmount: 0 }
+          const avgRate = mData.weight > 0 ? (mData.ratedAmount || 0) / mData.weight : 0
           monthAvgRates[m] = {
             avgRate,
             totalAmount: mData.amount,

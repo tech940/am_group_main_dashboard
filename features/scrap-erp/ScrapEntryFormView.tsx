@@ -15,6 +15,7 @@ import {
   ScrapGroup,
   ScrapFormAttachment,
 } from '@/lib/scrap-erp/types'
+import { getCompanyShareConfig } from '@/lib/scrap-erp/distribution'
 import {
   Building2,
   Layers,
@@ -25,6 +26,7 @@ import {
   ArrowRight,
   Scale,
   Calculator,
+  Coins,
   FileText,
   FileCheck,
   ImageIcon,
@@ -79,6 +81,33 @@ interface SavedDraftItem {
 
 const DRAFTS_STORAGE_KEY = 'scrap_erp_saved_drafts_v3'
 
+const UNIT_TYPE_OPTIONS = ['Pieces', 'Kg', 'Litres', 'GST']
+
+const PRESET_VENDORS = [
+  'ABDULLAH',
+  'AGGARWAL TRADERS',
+  'ANIRUDH YADAV',
+  'ANUDH VENDOR',
+  'ARJUN SINGH',
+  'DEEPAK',
+  'GURUCHARAN SINGH',
+  'HETAN MAHAJAN',
+  'HIMANSHU GUPTA',
+  'KAKA RAM',
+  'KAREEM TRADERS',
+  'KHAJURIA TRADERS',
+  'LOCAL SHOP-MONALISA',
+  'LOCAL VENDOR',
+  'MALIK TRADING',
+  'MO TRADERS',
+  'MUKESH VENDOR',
+  'MUKESH-AMBARSAR',
+  'random local vebdor',
+  'VARINDER',
+  'VIKAS TRADERS',
+  'VISHAL',
+]
+
 export function ScrapEntryFormView({
   groups = [],
   locations,
@@ -125,8 +154,10 @@ export function ScrapEntryFormView({
   const [descriptionInput, setDescriptionInput] = useState<string>('')
   const [weightQty, setWeightQty] = useState<string>('')
   const [ratePerUnit, setRatePerUnit] = useState<string>('')
+  const [randomWasteAmount, setRandomWasteAmount] = useState<string>('')
   const [amountReceivedInput, setAmountReceivedInput] = useState<string>('')
   const [soldTo, setSoldTo] = useState<string>('')
+  const [customVendorName, setCustomVendorName] = useState<string>('')
   const [soldDate, setSoldDate] = useState<string>(new Date().toISOString().split('T')[0])
   const [selectedPaymentModeId, setSelectedPaymentModeId] = useState<string>(paymentModes[0]?.id || '')
   const [selectedHandoverUserId, setSelectedHandoverUserId] = useState<string>(handoverUsers[0]?.id || '')
@@ -264,28 +295,56 @@ export function ScrapEntryFormView({
     }
   }, [groups, locations, departments, scrapTypes, paymentModes, handoverUsers])
 
-  // Available Description Options (includes master descriptions, scrap types, and current draft/initialData value)
-  const availableDescriptionOptions = useMemo(() => {
-    const set = new Set<string>()
-    descriptions.forEach((d) => {
-      if (d.name) set.add(d.name)
-    })
-    scrapTypes.forEach((st) => {
-      if (st.name) set.add(st.name)
-    })
-    if (descriptionInput && descriptionInput.trim()) {
-      set.add(descriptionInput.trim())
-    }
-    return Array.from(set)
-  }, [descriptions, scrapTypes, descriptionInput])
+  // Available Description Options (Strictly Pieces, Kg, Litres, GST)
+  const availableDescriptionOptions = UNIT_TYPE_OPTIONS
+
   const wt = parseFloat(weightQty) || 0
   const rate = parseFloat(ratePerUnit) || 0
-  const calculatedTotal = Math.round(wt * rate * 100) / 100
+
+  // Derived valuation from Weight x Rate
+  const derivedTotal = Math.round(wt * rate * 100) / 100
+
+  // Random waste amount logic: user typed value OR derived total from Weight x Rate
+  const calculatedTotal = randomWasteAmount !== ''
+    ? (parseFloat(randomWasteAmount) || 0)
+    : (wt > 0 && rate > 0
+        ? derivedTotal
+        : Math.round(Number(initialData?.calculatedTotal || 0) * 100) / 100)
 
   const amountReceived = amountReceivedInput !== '' ? parseFloat(amountReceivedInput) : calculatedTotal
   const outstandingAmount = Math.max(0, calculatedTotal - (amountReceived || 0))
 
   const selectedType = scrapTypes.find((t) => t.id === selectedTypeId) || scrapTypes[0]
+
+  // Active Unit Label derived from Description / Unit Type dropdown selection if chosen, otherwise fallback to Category default unit
+  const activeUnitLabel = useMemo(() => {
+    if (descriptionInput && descriptionInput.trim()) {
+      const d = descriptionInput.trim().toLowerCase()
+      if (d === 'pieces' || d === 'pcs' || d === 'piece') return 'Pcs'
+      if (d === 'kg' || d === 'kgs' || d === 'kilograms') return 'Kg'
+      if (d === 'litres' || d === 'ltr' || d === 'liters') return 'Ltr'
+      if (d === 'gst') return 'GST'
+      return descriptionInput.trim()
+    }
+    return selectedType?.unit || 'Kg'
+  }, [descriptionInput, selectedType])
+
+  // Dynamic automatic company distribution calculation for Disposal Valuation Summary
+  const selectedGroupObj = groups.find((g) => g.id === selectedGroupId)
+  const companyName = selectedGroupObj?.name || 'JAMMU AUTOMART'
+  const { displayName: groupDisplayName, shares: companyShares } = useMemo(() => {
+    return getCompanyShareConfig(companyName)
+  }, [companyName])
+
+  const companyDistBreakdown = useMemo(() => {
+    const total = calculatedTotal || 0
+    return [
+      { name: 'Sanjay Mahajan', pct: companyShares.sanjay || 0, amt: (total * (companyShares.sanjay || 0)) / 100, color: '#0284c7' },
+      { name: 'Ankur Mahajan', pct: companyShares.ankur || 0, amt: (total * (companyShares.ankur || 0)) / 100, color: '#16a34a' },
+      { name: 'Sanjeev Mahajan', pct: companyShares.sanjeev || 0, amt: (total * (companyShares.sanjeev || 0)) / 100, color: '#d97706' },
+      { name: 'Tarun Mahajan', pct: companyShares.tarun || 0, amt: (total * (companyShares.tarun || 0)) / 100, color: '#8b5cf6' },
+    ].filter((s) => s.pct > 0)
+  }, [calculatedTotal, companyShares])
 
   const readFileAsDataUrl = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -536,7 +595,7 @@ export function ScrapEntryFormView({
         departmentName: selectedDeptObj?.name || 'SERVICE',
         scrapTypeId: selectedTypeId,
         scrapTypeName: selectedType?.name || 'PLASTIC',
-        unit: selectedType?.unit || 'Kg',
+        unit: activeUnitLabel,
         description: descriptionInput || selectedType?.name || 'Scrap Material',
         weightQty: wt,
         ratePerUnit: rate,
@@ -763,10 +822,10 @@ export function ScrapEntryFormView({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-black text-slate-800 dark:text-slate-200">
-                    Weight Qty ({selectedType.unit})
+                    Weight / Qty ({activeUnitLabel})
                   </Label>
                   <Input
                     type="number"
@@ -780,7 +839,7 @@ export function ScrapEntryFormView({
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-black text-slate-800 dark:text-slate-200">
-                    Rate / {selectedType.unit} (₹)
+                    Rate / {activeUnitLabel} (₹)
                   </Label>
                   <Input
                     type="number"
@@ -789,6 +848,20 @@ export function ScrapEntryFormView({
                     value={ratePerUnit}
                     onChange={(e) => setRatePerUnit(e.target.value)}
                     className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-black text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-black text-amber-700 dark:text-amber-400">
+                    Random waste amount (₹)
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder={wt > 0 && rate > 0 ? `Auto: ₹${derivedTotal}` : 'Manual Waste Amount'}
+                    value={randomWasteAmount}
+                    onChange={(e) => setRandomWasteAmount(e.target.value)}
+                    className="h-10 rounded-xl border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/40 text-xs font-black text-amber-900 dark:text-amber-100"
                   />
                 </div>
 
@@ -823,6 +896,7 @@ export function ScrapEntryFormView({
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Amount Received (₹)</Label>
                 <Input
                   type="number"
+                  step="0.01"
                   placeholder={`Default: ₹${calculatedTotal}`}
                   value={amountReceivedInput}
                   onChange={(e) => setAmountReceivedInput(e.target.value)}
@@ -840,15 +914,46 @@ export function ScrapEntryFormView({
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Sold To (Buyer Name / Vendor)</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Kareem Traders (Optional)"
-                  value={soldTo}
-                  onChange={(e) => setSoldTo(e.target.value)}
-                  className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
-                />
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-black text-slate-800 dark:text-slate-200">
+                  Sold To (Buyer Name / Vendor)
+                </Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <select
+                    value={PRESET_VENDORS.includes(soldTo) ? soldTo : soldTo ? 'OTHER' : ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val === 'OTHER') {
+                        setSoldTo(customVendorName || '')
+                      } else {
+                        setSoldTo(val)
+                        setCustomVendorName('')
+                      }
+                    }}
+                    className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
+                  >
+                    <option value="">Select Vendor from List...</option>
+                    {PRESET_VENDORS.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                    <option value="OTHER">+ Enter Vendor Manually...</option>
+                  </select>
+
+                  {(!PRESET_VENDORS.includes(soldTo) || soldTo === 'OTHER') && (
+                    <Input
+                      type="text"
+                      placeholder="Type custom vendor name..."
+                      value={PRESET_VENDORS.includes(soldTo) ? customVendorName : soldTo}
+                      onChange={(e) => {
+                        setCustomVendorName(e.target.value)
+                        setSoldTo(e.target.value)
+                      }}
+                      className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                    />
+                  )}
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -909,11 +1014,11 @@ export function ScrapEntryFormView({
               <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-600 dark:text-slate-400 font-bold">Material Quantity:</span>
                 <span className="font-black text-slate-900 dark:text-slate-100">
-                  {wt.toLocaleString('en-IN')} {selectedType.unit}
+                  {wt.toLocaleString('en-IN')} {activeUnitLabel}
                 </span>
               </div>
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-600 dark:text-slate-400 font-bold">Rate per {selectedType.unit}:</span>
+                <span className="text-slate-600 dark:text-slate-400 font-bold">Rate per {activeUnitLabel}:</span>
                 <span className="font-black text-slate-900 dark:text-slate-100">₹{rate.toFixed(2)}</span>
               </div>
               <div className="border-t border-emerald-200/60 dark:border-emerald-900 pt-2 flex justify-between items-center text-sm">
@@ -934,6 +1039,33 @@ export function ScrapEntryFormView({
                   <span>₹{outstandingAmount.toLocaleString('en-IN')}</span>
                 </div>
               )}
+
+              {/* Automatic Company Shareholder Distribution Breakdown */}
+              <div className="border-t border-emerald-200/70 dark:border-emerald-900 pt-3 mt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                    <Coins className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                    {groupDisplayName} Auto Distribution
+                  </span>
+                  <Badge className="bg-emerald-600 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-md">
+                    Auto-Split
+                  </Badge>
+                </div>
+
+                <div className="space-y-1.5 bg-white/80 dark:bg-slate-900/80 rounded-xl p-3 border border-emerald-200/80 dark:border-emerald-900/50 shadow-2xs">
+                  {companyDistBreakdown.map((item) => (
+                    <div key={item.name} className="flex justify-between items-center text-xs">
+                      <span className="font-extrabold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                        {item.name} ({item.pct}%):
+                      </span>
+                      <span className="font-black text-slate-900 dark:text-slate-100 font-mono">
+                        ₹{item.amt.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </Card>
 
