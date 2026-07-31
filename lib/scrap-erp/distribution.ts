@@ -58,6 +58,18 @@ export const COMPANY_SHARE_CONFIGS: CompanyShareConfig[] = [
     displayName: 'AM KTM',
     shares: { sanjay: 50, sanjeev: 50, ankur: 0, tarun: 0 },
   },
+  // AM KIA was previously falling through to DEFAULT_COMPANY_SHARE — the same 50/50 numbers, but
+  // arrived at silently, so nobody could tell an intended split from an unconfigured company.
+  // Declared explicitly (confirmed with the owner) on ~Rs 2.26L of annual scrap revenue.
+  //
+  // Appended LAST on purpose: getCompanyShareConfig below matches with `upper.includes(key)` in
+  // array order, so an early entry with a short key shadows later ones. 'KIA' collides with nothing
+  // above it, and putting it here guarantees it cannot capture another company's name.
+  {
+    matchKeys: ['AM KIA', 'KIA'],
+    displayName: 'AM KIA',
+    shares: { sanjay: 50, ankur: 50, sanjeev: 0, tarun: 0 },
+  },
 ]
 
 export const DEFAULT_COMPANY_SHARE: Record<ShareholderKey, number> = {

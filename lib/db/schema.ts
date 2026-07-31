@@ -2228,10 +2228,13 @@ export const discountApprovals = pgTable('discount_approvals', {
   discountAmount: decimal('discount_amount', { precision: 14, scale: 2 }).notNull(),
   accessoriesAmount: decimal('accessories_amount', { precision: 14, scale: 2 }),
   tlManager: text('tl_manager'),
+  teleDate: date('tele_date'),
+  insuranceType: text('insurance_type'), // 'In House' | 'Out House'
   deliveryDate: date('delivery_date'),
   reference: text('reference'),
-  status: text('status').default('PENDING').notNull(), // 'PENDING' | 'APPROVED' | 'REJECTED'
+  status: text('status').default('PENDING').notNull(), // 'PENDING_GSM' | 'PENDING_VP' | 'PENDING_MD' | 'APPROVED' | 'REJECTED'
   remarks: text('remarks'),
+  history: jsonb('history').$type<any[]>().default([]).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })

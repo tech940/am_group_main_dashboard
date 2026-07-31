@@ -8,9 +8,27 @@ import { type BranchValue } from '@/lib/branches'
 
 export const dynamic = 'force-dynamic'
 
+let isSchemaMigrated = false
+
+async function ensureSchema() {
+  if (isSchemaMigrated) return
+  try {
+    await db.execute(sql.raw(`
+      ALTER TABLE discount_approvals ADD COLUMN IF NOT EXISTS tele_date date;
+      ALTER TABLE discount_approvals ADD COLUMN IF NOT EXISTS insurance_type text;
+      ALTER TABLE discount_approvals ADD COLUMN IF NOT EXISTS history jsonb DEFAULT '[]'::jsonb;
+    `))
+    isSchemaMigrated = true
+  } catch (err) {
+    console.error('Auto migration warning for discount_approvals:', err)
+  }
+}
+
 // 1. GET - Fetch all discount approval requests (requires authentication)
 export async function GET(request: NextRequest) {
   try {
+    await ensureSchema()
+
     const appUser = await getAuthenticatedAppUser()
     if (!appUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -96,6 +114,7 @@ export async function GET(request: NextRequest) {
 // 2. POST - Public submission of a discount approval request (no auth required)
 export async function POST(request: NextRequest) {
   try {
+    await ensureSchema()
     const body = await request.json()
     const {
       requesterName,
@@ -108,12 +127,13 @@ export async function POST(request: NextRequest) {
       discountAmount,
       accessoriesAmount,
       tlManager,
-      deliveryDate,
+      teleDate,
+      insuranceType,
       reference,
     } = body
 
-    if (!requesterName || !branch || !customerId || !discountAmount) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    if (!requesterName || !branch || !customerId || !discountAmount || !teleDate || !insuranceType) {
+      return NextResponse.json({ error: 'Missing required fields (Tele Date & Insurance Type are required)' }, { status: 400 })
     }
 
     // Auto-learn new employees/managers
@@ -153,9 +173,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const initialHistory = [{
+      action: 'SUBMITTED',
+      actorName: reqName,
+      actorRole: 'Sales Executive',
+      timestamp: new Date().toISOString(),
+      previousStatus: null,
+      newStatus: 'PENDING_GSM',
+      remarks: 'Discount approval request submitted',
+    }]
+
     const newApproval = await db.insert(discountApprovals).values({
-      requesterName: String(requesterName).trim(),
-      branch: String(branch).trim().toLowerCase(),
+      requesterName: reqName,
+      branch: normalizedBranch,
       customerId: String(customerId).trim(),
       customerName: customerName ? String(customerName).trim() : null,
       model: model ? String(model).trim() : null,
@@ -164,9 +194,11 @@ export async function POST(request: NextRequest) {
       discountAmount: String(discountAmount),
       accessoriesAmount: accessoriesAmount ? String(accessoriesAmount) : null,
       tlManager: tlManager ? String(tlManager).trim() : null,
-      deliveryDate: deliveryDate || null,
+      teleDate: String(teleDate).trim(),
+      insuranceType: String(insuranceType).trim(),
       reference: reference ? String(reference).trim() : null,
-      status: 'PENDING_SM',
+      status: 'PENDING_GSM',
+      history: initialHistory,
     }).returning()
 
     return NextResponse.json({
@@ -182,6 +214,7 @@ export async function POST(request: NextRequest) {
 // 3. PATCH - Update status of a discount approval request (requires authentication)
 export async function PATCH(request: NextRequest) {
   try {
+    await ensureSchema()
     const appUser = await getAuthenticatedAppUser()
     if (!appUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -214,15 +247,15 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Request has already been processed' }, { status: 400 })
     }
 
-    // 3. Validate stage authorization (Strict stage clearing: only active stage role or superadmin can act)
+    // 3. Validate stage authorization
+    // Rule: Either General Sales Manager OR VP can approve Stage 1 (PENDING_GSM / PENDING_VP / PENDING_SM) -> sends straight to MD (PENDING_MD)!
+    // Stage 2: MD (PENDING_MD) -> approves to APPROVED!
     let allowed = false
     const role = (appUser.role || '').toLowerCase()
 
     if (role === 'developer' || role === 'admin') {
       allowed = true
-    } else if (reqItem.status === 'PENDING_SM' && role === 'sales_manager') {
-      allowed = true
-    } else if ((reqItem.status === 'PENDING_VP' || reqItem.status === 'PENDING_GSM') && (role === 'general_manager' || role === 'vp')) {
+    } else if (['PENDING_GSM', 'PENDING_VP', 'PENDING_SM'].includes(reqItem.status) && (role === 'general_manager' || role === 'vp')) {
       allowed = true
     } else if (reqItem.status === 'PENDING_MD' && role === 'md') {
       allowed = true
@@ -235,9 +268,7 @@ export async function PATCH(request: NextRequest) {
     // 4. Compute next status
     let nextStatus = 'REJECTED'
     if (status === 'APPROVED') {
-      if (reqItem.status === 'PENDING_SM') {
-        nextStatus = 'PENDING_GSM'
-      } else if (reqItem.status === 'PENDING_VP' || reqItem.status === 'PENDING_GSM') {
+      if (['PENDING_GSM', 'PENDING_VP', 'PENDING_SM'].includes(reqItem.status)) {
         nextStatus = 'PENDING_MD'
       } else if (reqItem.status === 'PENDING_MD') {
         nextStatus = 'APPROVED'
@@ -248,12 +279,34 @@ export async function PATCH(request: NextRequest) {
       nextStatus = 'REJECTED'
     }
 
-    // 5. Update request
+    // 5. Append Activity Log
+    const actorRoleLabel =
+      role === 'general_manager' ? 'General Sales Manager' :
+      role === 'vp' ? 'Vice President' :
+      role === 'md' ? 'Managing Director (MD)' :
+      role === 'admin' || role === 'developer' ? 'Super Admin' :
+      role.toUpperCase()
+
+    const newHistoryEntry = {
+      action: status,
+      actorName: appUser.fullName || appUser.email || 'System User',
+      actorRole: actorRoleLabel,
+      timestamp: new Date().toISOString(),
+      previousStatus: reqItem.status,
+      newStatus: nextStatus,
+      remarks: remarks ? String(remarks).trim() : null,
+    }
+
+    const existingHistory = Array.isArray(reqItem.history) ? reqItem.history : []
+    const updatedHistory = [...existingHistory, newHistoryEntry]
+
+    // 6. Update request
     const updated = await db
       .update(discountApprovals)
       .set({
         status: nextStatus,
         remarks: remarks ? String(remarks).trim() : null,
+        history: updatedHistory,
         updatedAt: new Date(),
       })
       .where(eq(discountApprovals.id, id))

@@ -45,3 +45,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Database dumps written by scripts/import-overall-scrap-xlsx.ts --apply.
+# Full table contents (business financial data) — keep them local, never commit.
+scripts/backups/

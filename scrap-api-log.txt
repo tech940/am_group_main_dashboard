@@ -213,3 +213,6 @@
 [2026-07-29T10:21:28.644Z] ENV DATABASE_URL: postgresql://postgres.crreoeautoqzcgtlwlsd:%40Sahilkatoch1998@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true
 [2026-07-29T10:21:28.651Z] GET /api/scrap-erp: User authenticated. Email: sahil.katoch@gmail.com, Role: developer
 [2026-07-29T10:21:30.988Z] GET /api/scrap-erp success. Total mapped: 244
+[2026-07-31T06:18:46.518Z] GET /api/scrap-erp called
+[2026-07-31T06:18:46.519Z] ENV DATABASE_URL: postgresql://postgres.crreoeautoqzcgtlwlsd:%40Sahilkatoch1998@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true
+[2026-07-31T06:18:46.535Z] GET /api/scrap-erp: Unauthorized

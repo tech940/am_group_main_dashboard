@@ -71,7 +71,10 @@
     "callyzer:sync:scheduler": "node scripts/callyzer-sync-scheduler.mjs",
     "verify:restricted-analytics": "tsx scripts/verify-restricted-analytics.mjs",
     "verify:callyzer-alerts": "tsx scripts/verify-callyzer-alerts.mjs",
-    "verify:allocation-history": "tsx scripts/verify-allocation-history.ts"
+    "verify:allocation-history": "tsx scripts/verify-allocation-history.ts",
+    "scrap:import": "tsx scripts/import-overall-scrap-xlsx.ts",
+    "scrap:restore": "tsx scripts/restore-scrap-backup.ts",
+    "verify:scrap-import": "tsx scripts/verify-scrap-import.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

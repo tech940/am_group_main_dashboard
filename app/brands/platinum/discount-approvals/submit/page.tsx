@@ -10,6 +10,8 @@ import {
   Layers,
   ArrowRight,
   ChevronDown,
+  Calendar,
+  ShieldCheck,
 } from 'lucide-react'
 
 export default function PlatinumDiscountApprovalSubmitPage() {
@@ -23,6 +25,8 @@ export default function PlatinumDiscountApprovalSubmitPage() {
   const [accessoriesAmount, setAccessoriesAmount] = useState('')
   const [fetchedDeliveryDate, setFetchedDeliveryDate] = useState('')
   const [manualDeliveryDate, setManualDeliveryDate] = useState('')
+  const [teleDate, setTeleDate] = useState(new Date().toISOString().split('T')[0])
+  const [insuranceType, setInsuranceType] = useState<'In House' | 'Out House' | ''>('')
   const [reference, setReference] = useState('')
 
   const [executives, setExecutives] = useState<string[]>([])
@@ -135,9 +139,9 @@ export default function PlatinumDiscountApprovalSubmitPage() {
     const finalRequesterName = selectedExecutive === 'Other' ? otherExecutiveName : selectedExecutive
     const finalTlManager = selectedTL === 'Other' ? otherTLName : selectedTL
 
-    if (!finalRequesterName.trim() || !customerId.trim() || !discountAmount.trim()) {
+    if (!finalRequesterName.trim() || !customerId.trim() || !discountAmount.trim() || !teleDate.trim() || !insuranceType) {
       setSubmitStatus('error')
-      setSubmitMessage('Please fill all required fields.')
+      setSubmitMessage('Please fill all mandatory fields (Executive, Booking/VIN, Discount Amount, Tele Date, Insurance Type).')
       return
     }
 
@@ -160,6 +164,8 @@ export default function PlatinumDiscountApprovalSubmitPage() {
           discountAmount: Number(discountAmount),
           accessoriesAmount: accessoriesAmount ? Number(accessoriesAmount) : null,
           tlManager: finalTlManager,
+          teleDate,
+          insuranceType,
           deliveryDate: manualDeliveryDate || fetchedDeliveryDate || null,
           reference,
         }),
@@ -394,6 +400,51 @@ export default function PlatinumDiscountApprovalSubmitPage() {
                     placeholder="Enter vehicle color manually"
                     className="w-full h-8 bg-transparent border-b border-slate-200 focus:border-[#002c5f] text-slate-800 placeholder-slate-400 outline-hidden transition-all font-bold"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* Tele Date & Insurance Type (Both Mandatory) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Tele Date */}
+              <div className="space-y-2">
+                <label htmlFor="teleDate" className="text-xs font-black uppercase tracking-wider text-slate-550 block">
+                  Tele Date <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="date"
+                    id="teleDate"
+                    required
+                    value={teleDate}
+                    onChange={(e) => setTeleDate(e.target.value)}
+                    className="w-full h-11 bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#002c5f] focus:ring-1 focus:ring-[#002c5f] rounded-xl pl-9 pr-4 text-sm text-slate-900 transition-all outline-hidden font-bold cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Insurance Type */}
+              <div className="space-y-2">
+                <label htmlFor="insuranceType" className="text-xs font-black uppercase tracking-wider text-slate-550 block">
+                  Insurance Type <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  <select
+                    id="insuranceType"
+                    required
+                    value={insuranceType}
+                    onChange={(e) => setInsuranceType(e.target.value as 'In House' | 'Out House')}
+                    className="w-full h-11 bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#002c5f] focus:ring-1 focus:ring-[#002c5f] rounded-xl pl-9 pr-10 text-sm text-slate-900 transition-all outline-hidden font-bold appearance-none cursor-pointer"
+                  >
+                    <option value="">Select Insurance Type *</option>
+                    <option value="In House">In House</option>
+                    <option value="Out House">Out House</option>
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <ChevronDown className="h-4 w-4" />
+                  </div>
                 </div>
               </div>
             </div>

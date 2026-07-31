@@ -1,32 +1,37 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { MainLayout } from '@/components/layout/main-layout'
 import {
+  Search,
+  Filter,
+  CheckCircle,
+  XCircle,
+  IndianRupee,
+  FileText,
+  User,
+  Building2,
+  Calendar as CalendarIcon,
+  MessageSquare,
+  ChevronDown,
+  Loader2,
   Check,
   X,
-  Search,
-  Building2,
-  Sparkles,
-  Clock,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  MessageSquare,
   RefreshCw,
-  FileText,
-  ChevronRight,
-  Phone,
-  Calendar,
-  CreditCard,
-  MapPin,
-  User,
-  Car,
-  Banknote,
-  Tag,
   Hash,
+  Car,
+  Tag,
+  CreditCard,
+  Banknote,
+  MapPin,
+  Layers,
+  Download,
+  ShieldCheck,
+  BarChart3,
+  TrendingUp,
+  History,
+  RotateCcw,
 } from 'lucide-react'
-import { MainLayout } from '@/components/layout/main-layout'
-import { Badge } from '@/components/ui/badge'
 
 type DiscountApproval = {
   id: string
@@ -40,10 +45,21 @@ type DiscountApproval = {
   discountAmount: string
   accessoriesAmount: string | null
   tlManager: string | null
+  teleDate?: string | null
+  insuranceType?: string | null
   deliveryDate: string | null
   reference: string | null
   status: 'PENDING_SM' | 'PENDING_VP' | 'PENDING_GSM' | 'PENDING_MD' | 'APPROVED' | 'REJECTED'
   remarks: string | null
+  history?: Array<{
+    action: string
+    actorName: string
+    actorRole: string
+    timestamp: string
+    previousStatus: string | null
+    newStatus: string
+    remarks: string | null
+  }> | null
   createdAt: string
   updatedAt: string
   bookingData?: BookingRawData | null
@@ -83,7 +99,6 @@ type BookingRawData = {
   approved_loan_amount?: number | string | null
   pan_number?: string | null
   dealer_code?: string | null
-  [key: string]: unknown
 }
 
 type Props = {
@@ -102,11 +117,22 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Filters & Search
-  const [searchTerm, setSearchTerm] = useState('')
-  const [branchFilter, setBranchFilter] = useState<'all' | 'hyundai' | 'platinum'>('all')
+  // Staged Filter State (inputs before clicking Apply)
+  const [stagedSearchTerm, setStagedSearchTerm] = useState('')
+  const [stagedBranchFilter, setStagedBranchFilter] = useState<'all' | 'hyundai' | 'platinum'>('all')
+  const [stagedSelectedMonth, setStagedSelectedMonth] = useState<string>('all') // Month-wise format: "YYYY-MM" or "all"
+  const [stagedInsuranceFilter, setStagedInsuranceFilter] = useState<'all' | 'In House' | 'Out House'>('all')
+
+  // Applied Filter State (only updated on clicking Apply Filters)
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState('')
+  const [appliedBranchFilter, setAppliedBranchFilter] = useState<'all' | 'hyundai' | 'platinum'>('all')
+  const [appliedSelectedMonth, setAppliedSelectedMonth] = useState<string>('all')
+  const [appliedInsuranceFilter, setAppliedInsuranceFilter] = useState<'all' | 'In House' | 'Out House'>('all')
+
+  // Section Tabs & Toggles
   const [activeSection, setActiveSection] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending')
   const [showAllPending, setShowAllPending] = useState(false)
+  const [showDeepAnalysis, setShowDeepAnalysis] = useState(false)
 
   // Approval Dialog/Inline action state
   const [selectedRequest, setSelectedRequest] = useState<DiscountApproval | null>(null)
@@ -122,7 +148,28 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
   // Direct Inline loading state
   const [inlineSubmittingId, setInlineSubmittingId] = useState<string | null>(null)
 
-  // Handle direct approve (without dialog modal)
+  // Apply Staged Filters Action
+  const handleApplyFilters = () => {
+    setAppliedSearchTerm(stagedSearchTerm)
+    setAppliedBranchFilter(stagedBranchFilter)
+    setAppliedSelectedMonth(stagedSelectedMonth)
+    setAppliedInsuranceFilter(stagedInsuranceFilter)
+  }
+
+  // Reset Filters Action
+  const handleResetFilters = () => {
+    setStagedSearchTerm('')
+    setStagedBranchFilter('all')
+    setStagedSelectedMonth('all')
+    setStagedInsuranceFilter('all')
+
+    setAppliedSearchTerm('')
+    setAppliedBranchFilter('all')
+    setAppliedSelectedMonth('all')
+    setAppliedInsuranceFilter('all')
+  }
+
+  // Handle direct approve
   const handleDirectApprove = async (item: DiscountApproval) => {
     setInlineSubmittingId(item.id)
     try {
@@ -155,21 +202,18 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
     }
   }
 
-  // Stage check helper (Strict stage clearing: no approval button until previous stage is cleared)
+  // Unified 2-Stage Approval Check:
+  // Stage 1: GSM OR VP (either can approve Stage 1 -> moves to PENDING_MD immediately)
+  // Stage 2: MD (actionable only when PENDING_MD -> moves to APPROVED)
   const canUserApprove = (item: DiscountApproval) => {
     const role = (currentUser.role || '').toLowerCase()
     
-    // Stage 1: Sales Manager
-    if (item.status === 'PENDING_SM') {
-      return role === 'sales_manager' || role === 'admin' || role === 'developer'
-    }
-    
-    // Stage 2: General Sales Manager (or legacy VP)
-    if (item.status === 'PENDING_GSM' || item.status === 'PENDING_VP') {
+    // Stage 1: General Sales Manager OR Vice President
+    if (['PENDING_GSM', 'PENDING_VP', 'PENDING_SM'].includes(item.status)) {
       return role === 'general_manager' || role === 'vp' || role === 'admin' || role === 'developer'
     }
-
-    // Stage 3: MD
+    
+    // Stage 2: MD (actionable ONLY after Stage 1 clears)
     if (item.status === 'PENDING_MD') {
       return role === 'md' || role === 'admin' || role === 'developer'
     }
@@ -182,7 +226,6 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
     setLoading(true)
     setError('')
     try {
-      // Fetch all discount approvals authorized for the user
       const url = '/api/discount-approvals'
       const res = await fetch(url)
       if (!res.ok) {
@@ -233,7 +276,7 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
     setDrawerBooking(null)
   }
 
-  // Handle action (Approve/Reject)
+  // Handle action (Approve/Reject) modal submit
   const handleActionSubmit = async () => {
     if (!selectedRequest || !actionStatus) return
 
@@ -260,8 +303,6 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
       setData((prev) =>
         prev.map((item) => (item.id === selectedRequest.id ? result.data : item))
       )
-      
-      // Close dialog
       setSelectedRequest(null)
       setActionStatus(null)
       setRemarksInput('')
@@ -273,16 +314,28 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
     }
   }
 
-  // Filtered entries
+  // Filtered entries based strictly on APPLIED filters
   const filteredData = data.filter((item) => {
     const matchesSearch =
-      (item.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.customerId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.requesterName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.tlManager || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.model || '').toLowerCase().includes(searchTerm.toLowerCase())
+      !appliedSearchTerm ||
+      (item.customerName || '').toLowerCase().includes(appliedSearchTerm.toLowerCase()) ||
+      (item.customerId || '').toLowerCase().includes(appliedSearchTerm.toLowerCase()) ||
+      (item.requesterName || '').toLowerCase().includes(appliedSearchTerm.toLowerCase()) ||
+      (item.tlManager || '').toLowerCase().includes(appliedSearchTerm.toLowerCase()) ||
+      (item.model || '').toLowerCase().includes(appliedSearchTerm.toLowerCase())
 
-    const matchesBranch = branchFilter === 'all' || item.branch === branchFilter
+    const matchesBranch = appliedBranchFilter === 'all' || item.branch === appliedBranchFilter
+
+    // Month-wise Date filter (Tele Date or CreatedAt)
+    const matchesMonth = (() => {
+      if (!appliedSelectedMonth || appliedSelectedMonth === 'all') return true
+      const itemDate = item.teleDate || item.createdAt.substring(0, 10)
+      if (!itemDate) return true
+      return itemDate.substring(0, 7) === appliedSelectedMonth
+    })()
+
+    // Insurance Type filter
+    const matchesInsurance = appliedInsuranceFilter === 'all' || item.insuranceType === appliedInsuranceFilter
 
     let matchesSection = true
     if (activeSection === 'pending') {
@@ -291,10 +344,8 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
 
       if (!showAllPending) {
         const role = (currentUser.role || '').toLowerCase()
-        if (role === 'sales_manager') {
-          matchesSection = item.status === 'PENDING_SM'
-        } else if (role === 'general_manager' || role === 'vp') {
-          matchesSection = item.status === 'PENDING_GSM' || item.status === 'PENDING_VP'
+        if (role === 'general_manager' || role === 'vp') {
+          matchesSection = item.status === 'PENDING_GSM' || item.status === 'PENDING_VP' || item.status === 'PENDING_SM'
         } else if (['md', 'admin', 'developer'].includes(role)) {
           matchesSection = item.status === 'PENDING_MD'
         }
@@ -305,17 +356,106 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
       matchesSection = item.status === 'REJECTED'
     }
 
-    return matchesSearch && matchesBranch && matchesSection
+    return matchesSearch && matchesBranch && matchesMonth && matchesInsurance && matchesSection
   })
 
-  // Aggregated Stats
+  // Export to Excel / CSV function
+  const handleExportExcel = () => {
+    if (!filteredData.length) {
+      alert('No records available to export.')
+      return
+    }
+
+    const headers = [
+      'ID',
+      'Tele Date',
+      'Requester (Sales Exec)',
+      'TL / Manager',
+      'Branch',
+      'Customer ID / VIN',
+      'Customer Name',
+      'Model',
+      'Variant',
+      'Color',
+      'Insurance Type',
+      'Discount Amount (INR)',
+      'Accessories Amount (INR)',
+      'Status',
+      'Remarks',
+      'Submitted At',
+    ]
+
+    const rows = filteredData.map((item) => [
+      item.id,
+      item.teleDate || formatDate(item.createdAt),
+      `"${(item.requesterName || '').replace(/"/g, '""')}"`,
+      `"${(item.tlManager || '—').replace(/"/g, '""')}"`,
+      item.branch.toUpperCase(),
+      `"${(item.customerId || '').replace(/"/g, '""')}"`,
+      `"${(item.customerName || '—').replace(/"/g, '""')}"`,
+      `"${(item.model || '—').replace(/"/g, '""')}"`,
+      `"${(item.variant || '—').replace(/"/g, '""')}"`,
+      `"${(item.color || '—').replace(/"/g, '""')}"`,
+      `"${(item.insuranceType || '—').replace(/"/g, '""')}"`,
+      item.discountAmount,
+      item.accessoriesAmount || 0,
+      item.status,
+      `"${(item.remarks || '').replace(/"/g, '""')}"`,
+      item.createdAt,
+    ])
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `discount_approvals_export_${new Date().toISOString().substring(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  // Aggregated Stats & Deep Analysis Metrics
   const totalCount = data.length
   const pendingCount = data.filter((item) => ['PENDING_SM', 'PENDING_VP', 'PENDING_GSM', 'PENDING_MD'].includes(item.status)).length
   const approvedCount = data.filter((item) => item.status === 'APPROVED').length
   const rejectedCount = data.filter((item) => item.status === 'REJECTED').length
 
-  // Currency formatting
-  const formatCurrency = (val: string | null) => {
+  const totalDiscountVal = data.reduce((acc, item) => acc + (Number(item.discountAmount) || 0), 0)
+  const totalAccVal = data.reduce((acc, item) => acc + (Number(item.accessoriesAmount) || 0), 0)
+  const approvedDiscountVal = data.filter((item) => item.status === 'APPROVED').reduce((acc, item) => acc + (Number(item.discountAmount) || 0), 0)
+  const avgDiscountVal = totalCount > 0 ? Math.round(totalDiscountVal / totalCount) : 0
+
+  // Insurance breakdown
+  const inHouseList = data.filter((item) => item.insuranceType === 'In House')
+  const outHouseList = data.filter((item) => item.insuranceType === 'Out House')
+  const inHouseDiscountVal = inHouseList.reduce((acc, item) => acc + (Number(item.discountAmount) || 0), 0)
+  const outHouseDiscountVal = outHouseList.reduce((acc, item) => acc + (Number(item.discountAmount) || 0), 0)
+
+  // Model-wise breakdown
+  const modelMap: Record<string, { count: number; totalDiscount: number }> = {}
+  data.forEach((item) => {
+    const m = (item.model || 'Unknown').toUpperCase().trim()
+    if (!modelMap[m]) modelMap[m] = { count: 0, totalDiscount: 0 }
+    modelMap[m].count += 1
+    modelMap[m].totalDiscount += Number(item.discountAmount) || 0
+  })
+  const topModels = Object.entries(modelMap)
+    .map(([model, meta]) => ({ model, ...meta }))
+    .sort((a, b) => b.totalDiscount - a.totalDiscount)
+    .slice(0, 5)
+
+  // Extract unique months for Month-wise filter dropdown
+  const monthOptions = Array.from(
+    new Set(
+      data
+        .map((item) => (item.teleDate || item.createdAt.substring(0, 10)).substring(0, 7))
+        .filter(Boolean)
+    )
+  ).sort((a, b) => b.localeCompare(a))
+
+  // Currency formatting helper
+  const formatCurrency = (val: string | number | null) => {
     if (!val) return '—'
     const num = Number(val)
     if (isNaN(num)) return '—'
@@ -326,479 +466,623 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
     }).format(num)
   }
 
-  // Date formatting
+  // Date formatting helper
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '—'
     try {
-      const date = new Date(dateStr)
-      return date.toLocaleDateString('en-IN', {
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return dateStr
+      return new Intl.DateTimeFormat('en-IN', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
-      })
+      }).format(d)
     } catch {
       return dateStr
     }
   }
 
+  const formatMonthLabel = (monthStr: string) => {
+    if (!monthStr || monthStr === 'all') return 'All Months'
+    try {
+      const [year, month] = monthStr.split('-')
+      const d = new Date(Number(year), Number(month) - 1, 1)
+      return new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric' }).format(d)
+    } catch {
+      return monthStr
+    }
+  }
+
+  const hasFilterChanges =
+    stagedSearchTerm !== appliedSearchTerm ||
+    stagedBranchFilter !== appliedBranchFilter ||
+    stagedSelectedMonth !== appliedSelectedMonth ||
+    stagedInsuranceFilter !== appliedInsuranceFilter
+
+  const hasActiveFilters =
+    Boolean(appliedSearchTerm) ||
+    appliedBranchFilter !== 'all' ||
+    appliedSelectedMonth !== 'all' ||
+    appliedInsuranceFilter !== 'all'
+
   return (
-    <MainLayout
-      title="Discount Approvals"
-      subtitle="Review and process discount authorization requests submitted by Sales Consultants"
-    >
-      <div className="space-y-6">
-        
-        {/* Stats Row */}
-        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-          
-          {/* Total Requests Card */}
-          <div className="bg-white dark:bg-slate-950 rounded-3xl border border-slate-100 dark:border-slate-800/80 shadow-[0_15px_40px_rgba(15,23,42,0.04)] p-5 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-              <FileText className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Total Requests</span>
-              <span className="text-2xl font-black text-slate-900 dark:text-white">{totalCount}</span>
-              <span className="text-[10px] font-semibold text-slate-400 block -mt-0.5">All time</span>
-            </div>
-          </div>
-
-          {/* Pending Reviews Card */}
-          <div className="bg-white dark:bg-slate-950 rounded-3xl border border-slate-100 dark:border-slate-800/80 shadow-[0_15px_40px_rgba(15,23,42,0.04)] p-5 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 dark:bg-amber-500/10 text-amber-500 dark:text-amber-400">
-              <Clock className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-550 block">Pending Review</span>
-              <span className="text-2xl font-black text-amber-600 dark:text-amber-400">{pendingCount}</span>
-              <span className="text-[10px] font-semibold text-slate-400 block -mt-0.5">Awaiting action</span>
-            </div>
-          </div>
-
-          {/* Approved Card */}
-          <div className="bg-white dark:bg-slate-950 rounded-3xl border border-slate-100 dark:border-slate-800/80 shadow-[0_15px_40px_rgba(15,23,42,0.04)] p-5 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-450">
-              <CheckCircle2 className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-555 block">Approved Requests</span>
-              <span className="text-2xl font-black text-emerald-700 dark:text-emerald-450">{approvedCount}</span>
-              <span className="text-[10px] font-semibold text-slate-400 block -mt-0.5">Authorized</span>
-            </div>
-          </div>
-
-          {/* Rejected Card */}
-          <div className="bg-white dark:bg-slate-950 rounded-3xl border border-slate-100 dark:border-slate-800/80 shadow-[0_15px_40px_rgba(15,23,42,0.04)] p-5 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-450">
-              <XCircle className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-rose-500 block">Rejected Requests</span>
-              <span className="text-2xl font-black text-rose-600 dark:text-rose-550">{rejectedCount}</span>
-              <span className="text-[10px] font-semibold text-slate-400 block -mt-0.5 font-medium">Declined</span>
-            </div>
-          </div>
-
+    <MainLayout>
+      {/* Top Header Banner */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
+            <IndianRupee className="h-6 w-6 text-[var(--dashboard-action-bg,#055B65)]" />
+            Discount Approvals Dashboard
+          </h1>
+          <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 mt-1">
+            Unified 2-Stage Approval System & Deep Analytics
+          </p>
         </div>
 
-        {/* Filter Controls Bar */}
-        <div className="bg-white dark:bg-slate-950 rounded-3xl border border-slate-100 dark:border-slate-800/80 p-4 flex flex-wrap items-center gap-3 shadow-[0_10px_30px_rgba(15,23,42,0.02)]">
-          
-          {/* Search bar */}
-          <div className="relative flex-1 min-w-[240px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by customer, VIN, requester, manager..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full h-9 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl pl-9 pr-4 text-xs font-bold placeholder-slate-450 text-slate-800 dark:text-slate-100 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-            />
-          </div>
-
-          {/* Branch selector filter */}
-          {(!branch || ['developer', 'admin', 'md', 'vp', 'general_manager', 'sales_manager'].includes(currentUser.role) || (currentUser.brand && currentUser.brand.includes(','))) && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Branch:</span>
-              <select
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value as any)}
-                className="h-9 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl px-3 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="all">All Branches</option>
-                <option value="hyundai">AM Hyundai</option>
-                <option value="platinum">AM Platinum</option>
-              </select>
-            </div>
-          )}
-
-          {/* Show all pending stages checkbox (Awaiting others) */}
-          {activeSection === 'pending' && ['sales_manager', 'vp', 'md', 'admin', 'developer'].includes(currentUser.role) && (
-            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl h-9 px-3 transition-colors hover:bg-slate-100/50">
-              <input
-                type="checkbox"
-                checked={showAllPending}
-                onChange={(e) => setShowAllPending(e.target.checked)}
-                className="h-3.5 w-3.5 rounded-md border-slate-350 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-              />
-              <span>Show all pending stages (Awaiting others)</span>
-            </label>
-          )}
-
-          {/* Refresh Action */}
+        {/* Action Buttons styled strictly with theme CSS variables */}
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={fetchSubmissions}
-            className="h-9 w-9 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-100 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-650 dark:text-slate-300 transition-all cursor-pointer shadow-xs active:scale-95"
-            title="Refresh submissions"
+            onClick={() => setShowDeepAnalysis(!showDeepAnalysis)}
+            className="h-10 px-4 bg-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_10%,transparent)] text-[var(--dashboard-action-bg,#055B65)] border border-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_30%,transparent)] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
           >
-            <RefreshCw className="h-4 w-4" />
+            <BarChart3 className="h-4 w-4" />
+            {showDeepAnalysis ? 'Hide Deep Analysis' : 'Show Deep Analysis'}
           </button>
-
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            style={{ backgroundColor: 'var(--dashboard-action-bg, #055B65)', color: 'var(--dashboard-action-fg, #ffffff)' }}
+            className="h-10 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-md hover:opacity-90"
+          >
+            <Download className="h-4 w-4" />
+            Export Excel
+          </button>
         </div>
-
-        {/* Dashboard table view */}
-        <div className="bg-white dark:bg-slate-950 rounded-[2rem] border border-slate-100 dark:border-slate-800/80 shadow-[0_20px_50px_rgba(15,23,42,0.04)] overflow-hidden">
-          {/* Tabbed Navigation */}
-          <div className="flex border-b border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/10 px-5 pt-3 gap-6">
-            <TabButton active={activeSection === 'pending'} onClick={() => setActiveSection('pending')} count={pendingCount}>
-              Pending
-            </TabButton>
-            <TabButton active={activeSection === 'approved'} onClick={() => setActiveSection('approved')} count={approvedCount}>
-              Approved
-            </TabButton>
-            <TabButton active={activeSection === 'rejected'} onClick={() => setActiveSection('rejected')} count={rejectedCount}>
-              Rejected
-            </TabButton>
-            <TabButton active={activeSection === 'all'} onClick={() => setActiveSection('all')} count={totalCount}>
-              All
-            </TabButton>
-          </div>
-          {loading ? (
-            <div className="py-20 flex flex-col items-center justify-center gap-3 bg-white dark:bg-slate-950">
-              <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
-              <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Loading Requests...</span>
-            </div>
-          ) : error ? (
-            <div className="py-20 flex flex-col items-center justify-center text-rose-500 gap-2">
-              <XCircle className="h-8 w-8" />
-              <span className="text-xs font-black uppercase tracking-widest">{error}</span>
-            </div>
-          ) : filteredData.length === 0 ? (
-            <div className="py-20 text-center text-slate-400 bg-white dark:bg-slate-950 space-y-2">
-              <FileText className="h-8 w-8 mx-auto text-slate-300" />
-              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">No Requests Found</h3>
-              <p className="text-[10px] text-slate-400 font-semibold max-w-xs mx-auto">There are no discount approvals matching your filter criteria.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[1000px]">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800/80 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50 dark:bg-slate-900/30">
-                    <th className="py-4 px-5">Date</th>
-                    <th className="py-4 px-5">Requester</th>
-                    <th className="py-4 px-5">Branch</th>
-                    <th className="py-4 px-5">Customer ID</th>
-                    <th className="py-4 px-5">Customer</th>
-                    <th className="py-4 px-5">Vehicle Specifications</th>
-                    <th className="py-4 px-5 text-right">Discount</th>
-                    <th className="py-4 px-5 text-right">Accessories</th>
-                    <th className="py-4 px-5">Manager</th>
-                    <th className="py-4 px-5">Delivery</th>
-                    <th className="py-4 px-5">Reference</th>
-                    <th className="py-4 px-5 text-center">Status</th>
-                    <th className="py-4 px-5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-850/80">
-                  {filteredData.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="hover:bg-slate-50/50 dark:hover:bg-slate-900/20 transition-colors cursor-pointer"
-                      onClick={() => openDrawer(item)}
-                    >
-                      <td className="py-4 px-5 whitespace-nowrap text-slate-400 dark:text-slate-500 font-bold">
-                        {formatDate(item.createdAt)}
-                      </td>
-                      <td className="py-4 px-5 font-black text-slate-800 dark:text-slate-100">
-                        {item.requesterName}
-                      </td>
-                      <td className="py-4 px-5">
-                        <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
-                          item.branch === 'hyundai'
-                            ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                            : 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
-                        }`}>
-                          {item.branch === 'hyundai' ? 'Hyundai' : 'Platinum'}
-                        </span>
-                      </td>
-                      <td className="py-4 px-5 font-mono text-slate-800 dark:text-slate-200 font-bold select-all">
-                        {item.customerId}
-                      </td>
-                      <td className="py-4 px-5 font-bold text-slate-800 dark:text-slate-100">
-                        {item.customerName || '—'}
-                      </td>
-                      <td className="py-4 px-5 max-w-[200px]">
-                        <div className="font-black text-slate-800 dark:text-slate-200 truncate">{item.model || '—'}</div>
-                        <div className="text-[10px] text-slate-400 font-semibold truncate mt-0.5">
-                          {item.variant || '—'} {item.color ? `· ${item.color}` : ''}
-                        </div>
-                      </td>
-                      <td className="py-4 px-5 text-right font-black text-rose-500 dark:text-rose-450 whitespace-nowrap">
-                        {formatCurrency(item.discountAmount)}
-                      </td>
-                      <td className="py-4 px-5 text-right font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
-                        {formatCurrency(item.accessoriesAmount)}
-                      </td>
-                      <td className="py-4 px-5 text-slate-650 dark:text-slate-300 font-bold">
-                        {item.tlManager || '—'}
-                      </td>
-                      <td className="py-4 px-5 text-slate-500 dark:text-slate-400 font-bold whitespace-nowrap">
-                        {formatDate(item.deliveryDate)}
-                      </td>
-                      <td className="py-4 px-5 text-slate-500 dark:text-slate-450 font-bold max-w-[120px] truncate">
-                        {item.reference || '—'}
-                      </td>
-                      <td className="py-4 px-5 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                            item.status === 'PENDING_SM'
-                              ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-450 border border-amber-200 dark:border-amber-900/30'
-                              : item.status === 'PENDING_VP' || item.status === 'PENDING_GSM'
-                              ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900/30'
-                              : item.status === 'PENDING_MD'
-                              ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/30'
-                              : item.status === 'APPROVED'
-                              ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-450 border border-emerald-250 dark:border-emerald-900/30'
-                              : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-450 border border-rose-250 dark:border-rose-900/30'
-                          }`}>
-                            {item.status === 'PENDING_SM' ? 'Pending Sales Manager' :
-                             item.status === 'PENDING_VP' || item.status === 'PENDING_GSM' ? 'Pending General Sales Manager' :
-                             item.status === 'PENDING_MD' ? 'Pending MD' :
-                             item.status}
-                          </span>
-                          {item.remarks && (
-                            <span className="text-[10px] text-slate-400 flex items-center gap-1 max-w-[140px] truncate" title={item.remarks}>
-                              <MessageSquare className="h-3 w-3 shrink-0 text-slate-350" />
-                              {item.remarks}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-4 px-5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        {canUserApprove(item) ? (
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              disabled={inlineSubmittingId !== null}
-                              onClick={() => handleDirectApprove(item)}
-                              style={{ backgroundColor: '#10b981' }}
-                              className="w-9 h-9 active:scale-95 text-white rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-md shadow-emerald-600/10 disabled:opacity-50"
-                              title="Approve Request"
-                            >
-                              {inlineSubmittingId === item.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin text-white" />
-                              ) : (
-                                <Check className="h-4 w-4 stroke-[3] text-white" />
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={inlineSubmittingId !== null}
-                              onClick={() => {
-                                setSelectedRequest(item)
-                                setActionStatus('REJECTED')
-                              }}
-                              style={{ backgroundColor: '#ef4444' }}
-                              className="w-9 h-9 active:scale-95 text-white rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-md shadow-rose-600/10 disabled:opacity-50"
-                              title="Reject Request"
-                            >
-                              <X className="h-4 w-4 stroke-[3] text-white" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex justify-end">
-                            {item.status === 'APPROVED' || item.status === 'REJECTED' ? (
-                              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-650 block pr-2">Reviewed</span>
-                            ) : (
-                              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block pr-2">
-                                Awaiting {item.status === 'PENDING_SM' ? 'Sales Manager' : (item.status === 'PENDING_VP' || item.status === 'PENDING_GSM') ? 'General Sales Manager' : 'MD'}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
       </div>
 
-      {/* Confirmation Remarks Modal (for Rejection only) */}
-      {selectedRequest && actionStatus === 'REJECTED' && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-[100] animate-in fade-in duration-150">
-          <div className="w-full max-w-md bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
-            
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedRequest(null)
-                    setActionStatus(null)
-                    setRemarksInput('')
-                  }}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center border bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 border-rose-200 text-rose-600 dark:text-rose-500 cursor-pointer transition-all active:scale-95"
-                  title="Cancel rejection"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-                <div>
-                  <h3 className="text-sm font-black uppercase text-slate-800 dark:text-white">
-                    Confirm Discount Rejection
+      {/* Deep Analysis & Summary Section */}
+      {showDeepAnalysis && (
+        <div className="mb-8 space-y-6 animate-in fade-in slide-in-from-top-3 duration-250">
+          {/* Executive Overview KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white dark:bg-slate-950 p-5 rounded-2xl border border-slate-100 dark:border-slate-800/80 shadow-[0_10px_30px_rgba(15,23,42,0.03)] space-y-2">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-[10px] font-black uppercase tracking-wider">Total Requested Discount</span>
+                <IndianRupee className="h-4 w-4 text-[var(--dashboard-action-bg,#055B65)]" />
+              </div>
+              <p className="text-xl font-black text-slate-900 dark:text-white">
+                {formatCurrency(totalDiscountVal)}
+              </p>
+              <p className="text-[10px] text-slate-400 font-semibold">
+                Across {totalCount} total discount requests
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-950 p-5 rounded-2xl border border-slate-100 dark:border-slate-800/80 shadow-[0_10px_30px_rgba(15,23,42,0.03)] space-y-2">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-[10px] font-black uppercase tracking-wider">Average Discount / Booking</span>
+                <TrendingUp className="h-4 w-4 text-[var(--dashboard-action-bg,#055B65)]" />
+              </div>
+              <p className="text-xl font-black text-slate-900 dark:text-white">
+                {formatCurrency(avgDiscountVal)}
+              </p>
+              <p className="text-[10px] text-slate-400 font-semibold">
+                Average per submitted vehicle
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-950 p-5 rounded-2xl border border-slate-100 dark:border-slate-800/80 shadow-[0_10px_30px_rgba(15,23,42,0.03)] space-y-2">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-[10px] font-black uppercase tracking-wider">Approved Discount Total</span>
+                <CheckCircle className="h-4 w-4 text-[var(--dashboard-action-bg,#055B65)]" />
+              </div>
+              <p className="text-xl font-black text-[var(--dashboard-action-bg,#055B65)]">
+                {formatCurrency(approvedDiscountVal)}
+              </p>
+              <p className="text-[10px] text-slate-400 font-semibold">
+                {approvedCount} requests approved by MD ({totalCount > 0 ? Math.round((approvedCount / totalCount) * 100) : 0}% rate)
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-950 p-5 rounded-2xl border border-slate-100 dark:border-slate-800/80 shadow-[0_10px_30px_rgba(15,23,42,0.03)] space-y-2">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-[10px] font-black uppercase tracking-wider">Total Accessories Amount</span>
+                <Layers className="h-4 w-4 text-[var(--dashboard-action-bg,#055B65)]" />
+              </div>
+              <p className="text-xl font-black text-slate-900 dark:text-white">
+                {formatCurrency(totalAccVal)}
+              </p>
+              <p className="text-[10px] text-slate-400 font-semibold">
+                Additional accessories requested
+              </p>
+            </div>
+          </div>
+
+          {/* Deep Breakdown Subsection: Insurance Type & Top Car Models */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Insurance Type Breakdown Card */}
+            <div className="bg-white dark:bg-slate-950 p-6 rounded-3xl border border-slate-100 dark:border-slate-800/80 shadow-[0_10px_30px_rgba(15,23,42,0.03)] space-y-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-[var(--dashboard-action-bg,#055B65)]" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Insurance Type Deep Analysis
                   </h3>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
-                    Request by {selectedRequest.requesterName} for {selectedRequest.customerName || 'Unknown Customer'}
+                </div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">In House vs Out House</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_10%,transparent)] border border-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_25%,transparent)] rounded-2xl space-y-1">
+                  <span className="text-[10px] font-black uppercase text-[var(--dashboard-action-bg,#055B65)] block">In House Insurance</span>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">{inHouseList.length} Requests</p>
+                  <p className="text-xs font-bold text-[var(--dashboard-action-bg,#055B65)]">{formatCurrency(inHouseDiscountVal)}</p>
+                  <p className="text-[9px] text-slate-400 pt-1">
+                    {totalDiscountVal > 0 ? Math.round((inHouseDiscountVal / totalDiscountVal) * 100) : 0}% of total discount value
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl space-y-1">
+                  <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-400 block">Out House Insurance</span>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">{outHouseList.length} Requests</p>
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{formatCurrency(outHouseDiscountVal)}</p>
+                  <p className="text-[9px] text-slate-400 pt-1">
+                    {totalDiscountVal > 0 ? Math.round((outHouseDiscountVal / totalDiscountVal) * 100) : 0}% of total discount value
                   </p>
                 </div>
               </div>
 
-              {/* Close Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedRequest(null)
-                  setActionStatus(null)
-                  setRemarksInput('')
-                }}
-                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 transition-all cursor-pointer"
-                title="Close dialog"
+              {/* Insurance Visual Ratio Bar */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                  <span>Distribution Ratio</span>
+                  <span>{inHouseList.length} In-House / {outHouseList.length} Out-House</span>
+                </div>
+                <div className="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                  <div
+                    style={{ width: `${totalCount > 0 ? (inHouseList.length / totalCount) * 100 : 50}%`, backgroundColor: 'var(--dashboard-action-bg, #055B65)' }}
+                    className="h-full transition-all"
+                    title={`In House: ${inHouseList.length}`}
+                  />
+                  <div
+                    style={{ width: `${totalCount > 0 ? (outHouseList.length / totalCount) * 100 : 50}%` }}
+                    className="h-full bg-slate-400 dark:bg-slate-600 transition-all"
+                    title={`Out House: ${outHouseList.length}`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Model-wise Discount Expenditure Breakdown Card */}
+            <div className="bg-white dark:bg-slate-950 p-6 rounded-3xl border border-slate-100 dark:border-slate-800/80 shadow-[0_10px_30px_rgba(15,23,42,0.03)] space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Car className="h-5 w-5 text-[var(--dashboard-action-bg,#055B65)]" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Top Models by Discount Amount
+                  </h3>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Top 5 Models</span>
+              </div>
+
+              {topModels.length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-6 text-center">No model data available yet.</p>
+              ) : (
+                <div className="space-y-3 pt-1">
+                  {topModels.map(({ model, count, totalDiscount }) => {
+                    const pct = totalDiscountVal > 0 ? Math.round((totalDiscount / totalDiscountVal) * 100) : 0
+                    return (
+                      <div key={model} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs font-bold">
+                          <span className="text-slate-800 dark:text-slate-200">{model} ({count} bookings)</span>
+                          <span className="text-[var(--dashboard-action-bg,#055B65)] font-extrabold">{formatCurrency(totalDiscount)} ({pct}%)</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            style={{ width: `${Math.max(pct, 4)}%`, backgroundColor: 'var(--dashboard-action-bg, #055B65)' }}
+                            className="h-full rounded-full transition-all"
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Toolbar: All Filters & Apply Button in ONE Single Inline Row */}
+      <div className="bg-white dark:bg-slate-950 p-4 rounded-3xl border border-slate-100 dark:border-slate-800/80 shadow-[0_10px_30px_rgba(15,23,42,0.03)] mb-6">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-3">
+          {/* 1. Search Input */}
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search Customer, VIN, Executive..."
+              value={stagedSearchTerm}
+              onChange={(e) => setStagedSearchTerm(e.target.value)}
+              className="w-full h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-9 pr-4 text-xs font-bold text-slate-900 dark:text-white placeholder-slate-400 outline-hidden transition-all focus:border-[var(--dashboard-action-bg,#055B65)] focus:bg-white dark:focus:bg-slate-950"
+            />
+          </div>
+
+          {/* 2. Month-Wise Tele Date Filter (No start and end) */}
+          <div className="relative flex-1 min-w-[170px]">
+            <CalendarIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--dashboard-action-bg,#055B65)] pointer-events-none" />
+            <select
+              value={stagedSelectedMonth}
+              onChange={(e) => setStagedSelectedMonth(e.target.value)}
+              className="w-full h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-9 pr-8 text-xs font-bold text-slate-900 dark:text-white outline-hidden appearance-none cursor-pointer"
+            >
+              <option value="all">All Tele Months</option>
+              {monthOptions.map((m) => (
+                <option key={m} value={m}>
+                  {formatMonthLabel(m)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+          </div>
+
+          {/* 3. Insurance Type Filter */}
+          <div className="relative flex-1 min-w-[160px]">
+            <ShieldCheck className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            <select
+              value={stagedInsuranceFilter}
+              onChange={(e) => setStagedInsuranceFilter(e.target.value as any)}
+              className="w-full h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-9 pr-8 text-xs font-bold text-slate-900 dark:text-white outline-hidden appearance-none cursor-pointer"
+            >
+              <option value="all">All Insurance Types</option>
+              <option value="In House">In House</option>
+              <option value="Out House">Out House</option>
+            </select>
+            <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+          </div>
+
+          {/* 4. Dealership Branch Filter */}
+          {!branch && (
+            <div className="relative flex-1 min-w-[160px]">
+              <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              <select
+                value={stagedBranchFilter}
+                onChange={(e) => setStagedBranchFilter(e.target.value as any)}
+                className="w-full h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-9 pr-8 text-xs font-bold text-slate-900 dark:text-white outline-hidden appearance-none cursor-pointer"
               >
-                <X className="h-4 w-4" />
-              </button>
+                <option value="all">All Dealerships</option>
+                <option value="hyundai">AM Hyundai</option>
+                <option value="platinum">AM Platinum</option>
+              </select>
+              <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            </div>
+          )}
+
+          {/* 5. Apply Filters Button in ONE SINGLE LINE - Uses Tropical Teal active theme variable */}
+          <button
+            type="button"
+            onClick={handleApplyFilters}
+            style={{ backgroundColor: 'var(--dashboard-action-bg, #055B65)', color: 'var(--dashboard-action-fg, #ffffff)' }}
+            className={`h-11 px-5 text-xs font-extrabold uppercase tracking-wider rounded-2xl transition-all cursor-pointer flex items-center gap-2 shrink-0 active:scale-95 shadow-md hover:opacity-90 ${
+              hasFilterChanges ? 'ring-2 ring-[var(--dashboard-action-bg,#055B65)]/50' : ''
+            }`}
+          >
+            <Filter className="h-4 w-4 text-white" />
+            Apply Filters
+          </button>
+
+          {/* 6. Reset Filters Button */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="h-11 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-2xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 active:scale-95"
+              title="Reset Filters"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset
+            </button>
+          )}
+
+          {/* 7. Refresh Button */}
+          <button
+            type="button"
+            onClick={fetchSubmissions}
+            className="h-11 w-11 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-center text-slate-650 dark:text-slate-300 transition-all cursor-pointer shrink-0 active:scale-95"
+            title="Refresh submissions"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Table Container */}
+      <div className="bg-white dark:bg-slate-950 rounded-[2rem] border border-slate-100 dark:border-slate-800/80 shadow-[0_20px_50px_rgba(15,23,42,0.04)] overflow-hidden">
+        {/* Tabbed Navigation */}
+        <div className="flex border-b border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/10 px-5 pt-3 gap-6">
+          <TabButton active={activeSection === 'pending'} onClick={() => setActiveSection('pending')} count={pendingCount}>
+            Pending
+          </TabButton>
+          <TabButton active={activeSection === 'approved'} onClick={() => setActiveSection('approved')} count={approvedCount}>
+            Approved
+          </TabButton>
+          <TabButton active={activeSection === 'rejected'} onClick={() => setActiveSection('rejected')} count={rejectedCount}>
+            Rejected
+          </TabButton>
+          <TabButton active={activeSection === 'all'} onClick={() => setActiveSection('all')} count={totalCount}>
+            All
+          </TabButton>
+        </div>
+
+        {loading ? (
+          <div className="py-20 flex flex-col items-center justify-center gap-3 bg-white dark:bg-slate-950">
+            <Loader2 className="h-8 w-8 text-[var(--dashboard-action-bg,#055B65)] animate-spin" />
+            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Loading Requests...</span>
+          </div>
+        ) : error ? (
+          <div className="py-20 flex flex-col items-center justify-center text-rose-500 gap-2">
+            <XCircle className="h-8 w-8" />
+            <span className="text-xs font-black uppercase tracking-widest">{error}</span>
+          </div>
+        ) : filteredData.length === 0 ? (
+          <div className="py-20 text-center text-slate-400 bg-white dark:bg-slate-950 space-y-2">
+            <FileText className="h-8 w-8 mx-auto text-slate-300" />
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">No Requests Found</h3>
+            <p className="text-[10px] text-slate-400 font-semibold max-w-xs mx-auto">There are no discount approvals matching your filter criteria.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[1100px]">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-800/80 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50 dark:bg-slate-900/30">
+                  <th className="py-4 px-5">Tele Date</th>
+                  <th className="py-4 px-5">Requester</th>
+                  <th className="py-4 px-5">Branch</th>
+                  <th className="py-4 px-5">Customer ID</th>
+                  <th className="py-4 px-5">Customer</th>
+                  <th className="py-4 px-5">Insurance</th>
+                  <th className="py-4 px-5">Vehicle Specs</th>
+                  <th className="py-4 px-5 text-right">Discount</th>
+                  <th className="py-4 px-5 text-right">Accessories</th>
+                  <th className="py-4 px-5">TL / Manager</th>
+                  <th className="py-4 px-5 text-center">Status</th>
+                  <th className="py-4 px-5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-850/80">
+                {filteredData.map((item) => (
+                  <tr
+                    key={item.id}
+                    className="hover:bg-slate-50/50 dark:hover:bg-slate-900/20 transition-colors cursor-pointer"
+                    onClick={() => openDrawer(item)}
+                  >
+                    <td className="py-4 px-5 whitespace-nowrap text-slate-600 dark:text-slate-300 font-bold text-xs">
+                      {item.teleDate ? formatDate(item.teleDate) : formatDate(item.createdAt)}
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white block">{item.requesterName}</span>
+                      <span className="text-[10px] text-slate-400 block font-medium">Sales Exec</span>
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_10%,transparent)] text-[var(--dashboard-action-bg,#055B65)]">
+                        {item.branch === 'hyundai' ? 'AM Hyundai' : 'AM Platinum'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap font-mono text-xs font-bold text-[var(--dashboard-action-bg,#055B65)]">
+                      {item.customerId}
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">{item.customerName || '—'}</span>
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                        item.insuranceType === 'In House'
+                          ? 'bg-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_10%,transparent)] text-[var(--dashboard-action-bg,#055B65)] border border-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_25%,transparent)]'
+                          : item.insuranceType === 'Out House'
+                          ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        <ShieldCheck className="h-3 w-3" />
+                        {item.insuranceType || '—'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">{item.model || '—'}</span>
+                      <span className="text-[10px] text-slate-400 block">{item.variant || '—'} {item.color ? `(${item.color})` : ''}</span>
+                    </td>
+                    <td className="py-4 px-5 text-right whitespace-nowrap font-black text-xs text-[var(--dashboard-action-bg,#055B65)]">
+                      {formatCurrency(item.discountAmount)}
+                    </td>
+                    <td className="py-4 px-5 text-right whitespace-nowrap font-bold text-xs text-slate-700 dark:text-slate-300">
+                      {formatCurrency(item.accessoriesAmount)}
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap text-xs font-bold text-slate-700 dark:text-slate-300">
+                      {item.tlManager || '—'}
+                    </td>
+                    <td className="py-4 px-5 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                          item.status === 'PENDING_GSM' || item.status === 'PENDING_VP' || item.status === 'PENDING_SM'
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                            : item.status === 'PENDING_MD'
+                            ? 'bg-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_12%,transparent)] text-[var(--dashboard-action-bg,#055B65)] border border-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_30%,transparent)]'
+                            : item.status === 'APPROVED'
+                            ? 'bg-[var(--dashboard-action-bg,#055B65)] text-white'
+                            : 'bg-rose-500 text-white'
+                        }`}>
+                          {item.status === 'PENDING_GSM' || item.status === 'PENDING_VP' || item.status === 'PENDING_SM' ? 'Pending General Manager / VP' :
+                           item.status === 'PENDING_MD' ? 'Pending MD' :
+                           item.status}
+                        </span>
+                        {item.remarks && (
+                          <span className="text-[10px] text-slate-400 flex items-center gap-1 max-w-[140px] truncate" title={item.remarks}>
+                            <MessageSquare className="h-3 w-3 shrink-0 text-slate-350" />
+                            {item.remarks}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-4 px-5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {canUserApprove(item) ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            disabled={inlineSubmittingId !== null}
+                            onClick={() => handleDirectApprove(item)}
+                            style={{ backgroundColor: 'var(--dashboard-action-bg, #055B65)', color: 'var(--dashboard-action-fg, #ffffff)' }}
+                            className="w-9 h-9 active:scale-95 hover:opacity-90 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-md disabled:opacity-50"
+                            title="Approve Request"
+                          >
+                            {inlineSubmittingId === item.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-white" />
+                            ) : (
+                              <Check className="h-4 w-4 stroke-[3] text-white" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={inlineSubmittingId !== null}
+                            onClick={() => {
+                              setSelectedRequest(item)
+                              setActionStatus('REJECTED')
+                            }}
+                            className="w-9 h-9 active:scale-95 bg-rose-600 hover:bg-rose-700 text-white rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-md disabled:opacity-50"
+                            title="Reject Request"
+                          >
+                            <X className="h-4 w-4 stroke-[3] text-white" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end">
+                          {item.status === 'APPROVED' || item.status === 'REJECTED' ? (
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-650 block pr-2">Reviewed</span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block pr-2">
+                              Awaiting {['PENDING_GSM', 'PENDING_VP', 'PENDING_SM'].includes(item.status) ? 'General Manager / VP' : 'MD'}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Action Dialog Modal for Rejection / Remarks */}
+      {selectedRequest && actionStatus && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              {actionStatus === 'APPROVED' ? (
+                <CheckCircle className="h-5 w-5 text-[var(--dashboard-action-bg,#055B65)]" />
+              ) : (
+                <XCircle className="h-5 w-5 text-rose-500" />
+              )}
+              {actionStatus === 'APPROVED' ? 'Approve Discount Request' : 'Reject Discount Request'}
+            </h3>
+
+            <div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl space-y-1 text-xs font-bold text-slate-700 dark:text-slate-300">
+              <p>Customer: <span className="text-slate-900 dark:text-white">{selectedRequest.customerName || selectedRequest.customerId}</span></p>
+              <p>Requested Discount: <span className="text-[var(--dashboard-action-bg,#055B65)] font-extrabold">{formatCurrency(selectedRequest.discountAmount)}</span></p>
             </div>
 
-            {/* Request Summary Box */}
-            <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-850 rounded-2xl p-4.5 space-y-2 text-xs font-bold text-slate-700 dark:text-slate-200">
-              <div className="flex justify-between">
-                <span className="text-slate-400 dark:text-slate-500 font-medium">Customer ID:</span>
-                <span className="font-mono select-all text-slate-800 dark:text-slate-100">{selectedRequest.customerId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400 dark:text-slate-500 font-medium">Vehicle:</span>
-                <span className="text-slate-800 dark:text-slate-100 truncate max-w-[200px]">{selectedRequest.model || '—'} {selectedRequest.variant ? `(${selectedRequest.variant})` : ''}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-100 dark:border-slate-850 pt-2 mt-2">
-                <span className="text-slate-400 dark:text-slate-500 font-medium">Proposed Discount:</span>
-                <span className="text-rose-600 dark:text-rose-450 font-black">{formatCurrency(selectedRequest.discountAmount)}</span>
-              </div>
-            </div>
-
-            {/* Reviewer Remarks */}
             <div className="space-y-2">
-              <label htmlFor="remarks" className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-                Add Rejection Remarks / Reason (Optional)
+              <label className="text-xs font-black uppercase text-slate-400 block">
+                {actionStatus === 'REJECTED' ? 'Reason / Remarks *' : 'Optional Remarks'}
               </label>
               <textarea
-                id="remarks"
-                placeholder="Enter rejection reason or remarks..."
+                rows={3}
                 value={remarksInput}
                 onChange={(e) => setRemarksInput(e.target.value)}
-                className="w-full h-20 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 focus:border-indigo-500 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-600 outline-hidden resize-none transition-all"
+                placeholder={actionStatus === 'REJECTED' ? 'Please specify reason for rejection...' : 'Enter any notes...'}
+                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 rounded-2xl p-3 text-xs text-slate-900 dark:text-white outline-hidden focus:border-[var(--dashboard-action-bg,#055B65)] font-medium"
               />
             </div>
 
-            {/* Modal Buttons */}
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => {
                   setSelectedRequest(null)
                   setActionStatus(null)
-                  setRemarksInput('')
                 }}
-                className="flex-1 h-10 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-150 dark:border-slate-800 text-slate-650 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                className="px-4 h-10 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
+                disabled={isSubmittingAction || (actionStatus === 'REJECTED' && !remarksInput.trim())}
                 onClick={handleActionSubmit}
-                disabled={isSubmittingAction}
-                className="flex-1 h-10 text-white text-xs font-extrabold tracking-wide uppercase flex items-center justify-center gap-1.5 rounded-xl cursor-pointer transition-all bg-rose-600 hover:bg-rose-500 disabled:opacity-50 shadow-md shadow-rose-600/10"
+                style={actionStatus === 'APPROVED' ? { backgroundColor: 'var(--dashboard-action-bg, #055B65)', color: 'var(--dashboard-action-fg, #ffffff)' } : undefined}
+                className={`px-5 h-10 text-white text-xs font-bold rounded-xl transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-md ${
+                  actionStatus === 'REJECTED' ? 'bg-rose-600 hover:bg-rose-700' : 'hover:opacity-90'
+                }`}
               >
-                {isSubmittingAction ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <span>Confirm Rejection</span>
-                )}
+                {isSubmittingAction && <Loader2 className="h-4 w-4 animate-spin text-white" />}
+                Confirm {actionStatus === 'APPROVED' ? 'Approval' : 'Rejection'}
               </button>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* ── Booking Detail Drawer ─────────────────────────────────────────────── */}
+      {/* Slide-over Full Details & Activity Log Drawer */}
       {drawerItem && (
         <>
-          {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-slate-950/50 backdrop-blur-[2px] z-[200] transition-opacity"
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 animate-in fade-in duration-200"
             onClick={closeDrawer}
           />
-
-          {/* Panel */}
-          <div className="fixed right-0 top-0 h-full w-full sm:w-[440px] bg-white dark:bg-slate-950 border-l border-slate-100 dark:border-slate-800 shadow-2xl z-[201] flex flex-col animate-in slide-in-from-right duration-300">
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 sticky top-0 z-10">
+          <div className="fixed top-0 right-0 bottom-0 w-full max-w-lg bg-white dark:bg-slate-950 border-l border-slate-100 dark:border-slate-800 z-50 shadow-2xl flex flex-col animate-in slide-in-from-right duration-250">
+            {/* Drawer Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wide">
-                  Booking Details
+                <h2 className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                  Discount Approval Details
                 </h2>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
-                  Customer ID: <span className="font-mono text-indigo-600 dark:text-indigo-400">{drawerItem.customerId}</span>
+                <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
+                  VIN / Customer ID: {drawerItem.customerId}
                 </p>
               </div>
               <button
                 onClick={closeDrawer}
-                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 transition-all cursor-pointer"
+                className="h-8 w-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-all cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto">
-
-              {/* Approval Request Summary */}
+            {/* Drawer Content */}
+            <div className="flex-1 overflow-y-auto space-y-6">
+              {/* Discount Summary Card */}
               <div className="p-5 border-b border-slate-100 dark:border-slate-800/80">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">Discount Request</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">Discount Request Summary</p>
                 <div className="space-y-2.5">
                   <DrawerRow icon={<User className="h-3.5 w-3.5" />} label="Requester" value={drawerItem.requesterName} />
                   <DrawerRow icon={<Building2 className="h-3.5 w-3.5" />} label="Branch" value={drawerItem.branch === 'hyundai' ? 'AM Hyundai' : 'AM Platinum'} />
+                  <DrawerRow icon={<CalendarIcon className="h-3.5 w-3.5" />} label="Tele Date" value={drawerItem.teleDate ? formatDate(drawerItem.teleDate) : formatDate(drawerItem.createdAt)} />
+                  <DrawerRow icon={<ShieldCheck className="h-3.5 w-3.5" />} label="Insurance Type" value={drawerItem.insuranceType || '—'} highlight />
                   <DrawerRow icon={<Tag className="h-3.5 w-3.5" />} label="Discount" value={formatCurrency(drawerItem.discountAmount)} highlight />
                   {drawerItem.accessoriesAmount && (
                     <DrawerRow icon={<Tag className="h-3.5 w-3.5" />} label="Accessories" value={formatCurrency(drawerItem.accessoriesAmount)} />
                   )}
                   <DrawerRow icon={<Hash className="h-3.5 w-3.5" />} label="Reference" value={drawerItem.reference || '—'} />
-                  <DrawerRow icon={<Calendar className="h-3.5 w-3.5" />} label="Delivery Date" value={formatDate(drawerItem.deliveryDate)} />
+                  
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">Approval Status</span>
                     <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                      drawerItem.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                      drawerItem.status === 'REJECTED' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                      drawerItem.status === 'PENDING_SM' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                      drawerItem.status === 'PENDING_VP' || drawerItem.status === 'PENDING_GSM' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
-                      'bg-blue-50 text-blue-700 border border-blue-200'
+                      drawerItem.status === 'APPROVED' ? 'bg-[var(--dashboard-action-bg,#055B65)] text-white' :
+                      drawerItem.status === 'REJECTED' ? 'bg-rose-600 text-white' :
+                      drawerItem.status === 'PENDING_GSM' || drawerItem.status === 'PENDING_VP' || drawerItem.status === 'PENDING_SM' ? 'bg-slate-100 text-slate-700' :
+                      'bg-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_12%,transparent)] text-[var(--dashboard-action-bg,#055B65)]'
                     }`}>
-                      {drawerItem.status === 'PENDING_SM' ? 'Pending Sales Manager' :
-                       drawerItem.status === 'PENDING_VP' || drawerItem.status === 'PENDING_GSM' ? 'Pending General Sales Manager' :
+                      {drawerItem.status === 'PENDING_GSM' || drawerItem.status === 'PENDING_VP' || drawerItem.status === 'PENDING_SM' ? 'Pending General Manager / VP' :
                        drawerItem.status === 'PENDING_MD' ? 'Pending MD' :
                        drawerItem.status}
                     </span>
@@ -806,10 +1090,51 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                 </div>
               </div>
 
+              {/* Requirement 5: Activity Log & Audit Trail Timeline */}
+              <div className="px-5 space-y-3">
+                <DrawerSection title="Activity Log & Approval History">
+                  {(!drawerItem.history || drawerItem.history.length === 0) ? (
+                    <div className="text-center py-4 space-y-1">
+                      <History className="h-5 w-5 text-slate-300 mx-auto" />
+                      <p className="text-xs text-slate-400 font-medium">Request submitted — Awaiting Stage 1 review</p>
+                    </div>
+                  ) : (
+                    <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200 dark:before:bg-slate-800">
+                      {drawerItem.history.map((log, index) => (
+                        <div key={index} className="relative space-y-1">
+                          <div className={`absolute -left-6 top-0.5 h-4 w-4 rounded-full flex items-center justify-center text-[9px] font-black ${
+                            log.action === 'APPROVED' ? 'bg-[var(--dashboard-action-bg,#055B65)] text-white' :
+                            log.action === 'REJECTED' ? 'bg-rose-600 text-white' :
+                            'bg-slate-700 text-white'
+                          }`}>
+                            {log.action === 'APPROVED' ? '✓' : log.action === 'REJECTED' ? '✕' : '•'}
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] font-bold">
+                            <span className="text-slate-900 dark:text-white">{log.actorName} ({log.actorRole})</span>
+                            <span className="text-[10px] text-slate-400 font-mono">{formatDate(log.timestamp)}</span>
+                          </div>
+
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--dashboard-action-bg,#055B65)]">
+                            Action: {log.action} {log.newStatus ? `(New Status: ${log.newStatus})` : ''}
+                          </p>
+
+                          {log.remarks && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium italic bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800 mt-1">
+                              "{log.remarks}"
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </DrawerSection>
+              </div>
+
               {/* Booking Record from DB */}
               {isLoadingDrawer ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
-                  <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+                  <Loader2 className="h-6 w-6 animate-spin text-[var(--dashboard-action-bg,#055B65)]" />
                   <p className="text-xs font-semibold">Fetching booking record...</p>
                 </div>
               ) : drawerBooking ? (
@@ -836,9 +1161,9 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                   {/* Booking Info */}
                   <DrawerSection title="Booking Details">
                     <DrawerRow icon={<Hash className="h-3.5 w-3.5" />} label="Order Ref No" value={drawerBooking.order_ref_no} mono />
-                    <DrawerRow icon={<Calendar className="h-3.5 w-3.5" />} label="Booking Date" value={formatDate(drawerBooking.booking_date ?? null)} />
-                    <DrawerRow icon={<Calendar className="h-3.5 w-3.5" />} label="Enquiry Date" value={formatDate(drawerBooking.enquiry_date ?? null)} />
-                    <DrawerRow icon={<Calendar className="h-3.5 w-3.5" />} label="Committed Delivery" value={formatDate(drawerBooking.committed_delivery_date ?? null)} />
+                    <DrawerRow icon={<CalendarIcon className="h-3.5 w-3.5" />} label="Booking Date" value={formatDate(drawerBooking.booking_date ?? null)} />
+                    <DrawerRow icon={<CalendarIcon className="h-3.5 w-3.5" />} label="Enquiry Date" value={formatDate(drawerBooking.enquiry_date ?? null)} />
+                    <DrawerRow icon={<CalendarIcon className="h-3.5 w-3.5" />} label="Committed Delivery" value={formatDate(drawerBooking.committed_delivery_date ?? null)} />
                     <DrawerRow icon={<Tag className="h-3.5 w-3.5" />} label="Main Source" value={drawerBooking.main_source} />
                     <DrawerRow icon={<Tag className="h-3.5 w-3.5" />} label="Sub Source" value={drawerBooking.sub_source} />
                     <DrawerRow icon={<Tag className="h-3.5 w-3.5" />} label="Activity" value={drawerBooking.activity} />
@@ -853,8 +1178,8 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                     <DrawerRow icon={<Tag className="h-3.5 w-3.5" />} label="DSA / Financier" value={drawerBooking.dsa_financier} />
                     <DrawerRow icon={<Banknote className="h-3.5 w-3.5" />} label="Loan Amount" value={drawerBooking.loan_amount != null ? formatCurrency(String(drawerBooking.loan_amount)) : null} />
                     <DrawerRow icon={<Banknote className="h-3.5 w-3.5" />} label="Approved Loan" value={drawerBooking.approved_loan_amount != null ? formatCurrency(String(drawerBooking.approved_loan_amount)) : null} />
-                    <DrawerRow icon={<Calendar className="h-3.5 w-3.5" />} label="File Login Date" value={formatDate(drawerBooking.file_login_date ?? null)} />
-                    <DrawerRow icon={<Calendar className="h-3.5 w-3.5" />} label="Approval Date" value={formatDate(drawerBooking.approval_date ?? null)} />
+                    <DrawerRow icon={<CalendarIcon className="h-3.5 w-3.5" />} label="File Login Date" value={formatDate(drawerBooking.file_login_date ?? null)} />
+                    <DrawerRow icon={<CalendarIcon className="h-3.5 w-3.5" />} label="Approval Date" value={formatDate(drawerBooking.approval_date ?? null)} />
                   </DrawerSection>
 
                   {/* Team Info */}
@@ -863,16 +1188,6 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                     <DrawerRow icon={<User className="h-3.5 w-3.5" />} label="Consultant" value={drawerBooking.consultant_name} />
                     <DrawerRow icon={<Building2 className="h-3.5 w-3.5" />} label="Dealer Code" value={drawerBooking.dealer_code} mono />
                   </DrawerSection>
-
-                  {/* Follow-Up Remarks */}
-                  {drawerBooking.last_follow_up_remarks && (
-                    <DrawerSection title="Last Follow-Up Remarks">
-                      <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 rounded-xl p-3">
-                        {drawerBooking.last_follow_up_remarks}
-                      </p>
-                    </DrawerSection>
-                  )}
-
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
@@ -881,7 +1196,6 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                   <p className="text-[10px] text-slate-350 dark:text-slate-600">Customer ID may not match any booking</p>
                 </div>
               )}
-
             </div>
 
             {/* Drawer Footer */}
@@ -893,12 +1207,52 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                 Close
               </button>
             </div>
-
           </div>
         </>
       )}
-
     </MainLayout>
+  )
+}
+
+function Phone({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+    </svg>
+  )
+}
+
+function TabButton({
+  active,
+  onClick,
+  count,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  count: number
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={active ? { borderColor: 'var(--dashboard-action-bg, #055B65)', color: 'var(--dashboard-action-bg, #055B65)' } : undefined}
+      className={`pb-3 px-1 text-xs font-black uppercase tracking-wider transition-all relative flex items-center gap-2 cursor-pointer ${
+        active
+          ? 'border-b-2 font-black'
+          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+      }`}
+    >
+      {children}
+      <span
+        style={active ? { backgroundColor: 'color-mix(in srgb, var(--dashboard-action-bg, #055B65) 15%, transparent)', color: 'var(--dashboard-action-bg, #055B65)' } : undefined}
+        className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+          active ? '' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+        }`}
+      >
+        {count}
+      </span>
+    </button>
   )
 }
 
@@ -919,60 +1273,33 @@ function DrawerRow({
   icon,
   label,
   value,
-  mono = false,
-  highlight = false,
+  mono,
+  highlight,
 }: {
   icon: React.ReactNode
   label: string
-  value: string | number | null | undefined
+  value: string | null | undefined
   mono?: boolean
   highlight?: boolean
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 text-xs font-bold">
-      <span className="text-slate-450 dark:text-slate-500 font-medium flex items-center gap-1.5 shrink-0">
-        <span className="text-slate-400 dark:text-slate-600">{icon}</span>
-        {label}:
-      </span>
-      <span className={`text-right break-all ${
-        highlight ? 'text-indigo-650 dark:text-indigo-400 font-black' : 'text-slate-800 dark:text-slate-200'
-      } ${mono ? 'font-mono select-all' : ''}`}>
+    <div className="flex items-center justify-between text-xs">
+      <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500 font-medium">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <span
+        style={highlight ? { color: 'var(--dashboard-action-bg, #055B65)' } : undefined}
+        className={`font-bold ${
+          highlight
+            ? 'font-extrabold'
+            : mono
+            ? 'font-mono text-slate-800 dark:text-slate-200'
+            : 'text-slate-800 dark:text-slate-200'
+        }`}
+      >
         {value || '—'}
       </span>
     </div>
   )
 }
-
-function TabButton({
-  active,
-  onClick,
-  count,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  count: number
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-        active
-          ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-          : 'border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-650 dark:hover:text-slate-355'
-      }`}
-    >
-      <span>{children}</span>
-      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-        active
-          ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
-          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-      }`}>
-        {count}
-      </span>
-    </button>
-  )
-}
-
-
