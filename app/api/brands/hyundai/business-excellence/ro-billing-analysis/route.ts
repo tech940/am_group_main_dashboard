@@ -164,8 +164,14 @@ function addDays(date: Date, days: number) {
   return next
 }
 
-function getCalendarYearStart(date: Date) {
-  return new Date(date.getFullYear(), 0, 1, 0, 0, 0, 0)
+/**
+ * Start of the FINANCIAL year (1 April), not the calendar year — the YTD windows below are fiscal.
+ * January-March belong to the financial year that started the previous April, hence the -1.
+ * Was `new Date(year, 0, 1)`, which started YTD three months early and overstated the base by ~61%.
+ */
+function getFinancialYearStart(date: Date) {
+  const financialYearStart = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1
+  return new Date(financialYearStart, 3, 1, 0, 0, 0, 0)
 }
 
 function buildPeriodWindows(startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null): Record<PeriodKey, PeriodWindow> {
@@ -175,7 +181,7 @@ function buildPeriodWindows(startDate: Date, endDate: Date, comparisonRange: Com
   const cyMtdStart = new Date(endDate.getFullYear(), endDate.getMonth(), 1)
   const quarterStartMonth = Math.floor(endDate.getMonth() / 3) * 3
   const cyQtdStart = new Date(endDate.getFullYear(), quarterStartMonth, 1)
-  const cyYtdStart = getCalendarYearStart(endDate)
+  const cyYtdStart = getFinancialYearStart(endDate)
   const customPeriodWindow = comparisonRange
     ? {
         cyStart: currentStart,

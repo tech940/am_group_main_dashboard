@@ -50,7 +50,7 @@ for (const href of RESTRICTED_ANALYTICS_HREFS) {
       }
     }
   }
-  console.log(`  ✓ ${href}: allowed for md+developer, denied for the other ${ALL_ROLES.length - 2} roles, even with every permission granted`)
+  console.log(`  ✓ ${href}: allowed for md+developer+assistant_manager, denied for the other ${ALL_ROLES.length - ALLOWED.size} roles, even with every permission granted`)
 }
 
 console.log('\n3. The role helper itself')
@@ -63,7 +63,7 @@ for (const junk of [null, undefined, '', '  ', 'MD ', 'Developer', 'superadmin',
     fail(`canViewRestrictedAnalytics(${JSON.stringify(junk)}) -> ${canViewRestrictedAnalytics(junk)}, expected ${expected}`)
   }
 }
-console.log('  ✓ exact two-role match, case/whitespace tolerant, no near-miss role leaks in')
+console.log('  ✓ exact restricted role match, case/whitespace tolerant, no near-miss role leaks in')
 
 console.log('\n4. No OTHER section was affected')
 const others = ALL_SECTIONS.filter((s) => !RESTRICTED_ANALYTICS_HREFS.includes(s.href))
@@ -73,6 +73,6 @@ console.log(`  md sees ${mdSees}/${others.length} other sections · admin sees $
 if (adminSees === 0) fail('admin now sees NOTHING — the gate is over-broad')
 
 console.log(failures === 0
-  ? `\nPASS — ${RESTRICTED_ANALYTICS_HREFS.length} sections locked to md+developer across sidebar and search`
+  ? `\nPASS — ${RESTRICTED_ANALYTICS_HREFS.length} sections locked to md+developer+assistant_manager across sidebar and search`
   : `\n*** ${failures} FAILURE(S) ***`)
 process.exit(failures === 0 ? 0 : 1)

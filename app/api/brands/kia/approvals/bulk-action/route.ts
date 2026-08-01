@@ -43,25 +43,19 @@ export async function POST(request: Request) {
     const failedRows = []
 
     for (const row of rows) {
-      // Determine what stage this request is currently in
       let activeStageKey: 'sales_manager' | 'accounts' | 'md' | null = null
       
       const vpApp = row.vpApproval
       const accApp = row.accountApproval
-      const eaApp = row.eaApproval
       const mdApp = row.managementApproval
 
-      // MD can act on anything not fully approved/rejected
-      if (isSuperUser || isTester) {
+      // Determine what stage this request is currently in
+      if (!vpApp || vpApp === 'HELD' || vpApp === 'NOT APPROVED') {
+        activeStageKey = 'sales_manager'
+      } else if (!mdApp || mdApp === 'HELD' || mdApp === 'NOT APPROVED') {
         activeStageKey = 'md'
-      } else {
-        if (!vpApp || vpApp === 'HELD' || vpApp === 'NOT APPROVED') {
-          activeStageKey = 'sales_manager'
-        } else if (vpApp === 'APPROVED' && (!mdApp || mdApp === 'HELD' || mdApp === 'NOT APPROVED')) {
-          activeStageKey = 'md'
-        } else if (vpApp === 'APPROVED' && mdApp === 'APPROVED' && (!accApp || accApp === 'HELD' || accApp === 'NOT APPROVED')) {
-          activeStageKey = 'accounts'
-        }
+      } else if (mdApp === 'APPROVED' && (!accApp || accApp === 'HELD' || accApp === 'NOT APPROVED')) {
+        activeStageKey = 'accounts'
       }
 
       if (!activeStageKey) {
@@ -70,11 +64,17 @@ export async function POST(request: Request) {
       }
 
       // Check if user is authorized to act on this active stage
+      const userRoleLower = (appUser.role || '').toLowerCase()
+      const isAccountsUser = 
+        ['accounts', 'accounts_head', 'accounts_team', 'finance_head', 'finance_team', 'assistant_manager', 'manager'].includes(appUser.role) ||
+        userRoleLower.includes('account') ||
+        userRoleLower.includes('finance')
+
       let isAuthorized = false
       if (activeStageKey === 'sales_manager') {
-        isAuthorized = isTester || appUser.role === 'ed'
+        isAuthorized = isTester || appUser.role === 'ed' || isSuperUser
       } else if (activeStageKey === 'accounts') {
-        isAuthorized = isTester || ['accounts', 'finance_head'].includes(appUser.role)
+        isAuthorized = isTester || isSuperUser || isAccountsUser
       } else if (activeStageKey === 'md') {
         isAuthorized = isTester || isSuperUser
       }
@@ -92,6 +92,9 @@ export async function POST(request: Request) {
         updates.vpApproval = statusVal
       } else if (activeStageKey === 'md') {
         updates.managementApproval = statusVal
+        if (action === 'APPROVE') {
+          updates.vpApproval = 'APPROVED'
+        }
         updates.managementRemarks = remarks || ''
         if (action === 'REJECT') {
           updates.emailSendStatus = 'Rejected'

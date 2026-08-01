@@ -43,18 +43,24 @@ export async function POST(
     // Role-based Authorization Checks
     const isSuperUser = ['ceo', 'md'].includes(appUser.role)
     const isTester = ['developer', 'admin'].includes(appUser.role)
+    const userRoleLower = (appUser.role || '').toLowerCase()
+    const isAccountsUser = 
+      ['accounts', 'accounts_head', 'accounts_team', 'finance_head', 'finance_team', 'assistant_manager', 'manager'].includes(appUser.role) ||
+      userRoleLower.includes('account') ||
+      userRoleLower.includes('finance')
+
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
-      isAuthorized = isTester || appUser.role === 'ed'
+      isAuthorized = isTester || appUser.role === 'ed' || isSuperUser
     } else if (stage === 'accounts') {
-      isAuthorized = isTester || ['accounts', 'finance_head'].includes(appUser.role)
+      isAuthorized = isTester || isSuperUser || isAccountsUser
     } else if (stage === 'ea') {
-      isAuthorized = isTester || ['ea'].includes(appUser.role)
+      isAuthorized = isTester || isSuperUser || appUser.role === 'ea'
     } else if (stage === 'md') {
       isAuthorized = isTester || isSuperUser
     } else if (stage === 'payment_done') {
-      isAuthorized = isTester || isSuperUser || ['accounts', 'finance_head'].includes(appUser.role)
+      isAuthorized = isTester || isSuperUser || isAccountsUser
     }
 
     if (!isAuthorized) {
@@ -147,6 +153,9 @@ export async function POST(
         updates.eaApproval = statusVal
       } else if (stage === 'md') {
         updates.managementApproval = statusVal
+        if (action === 'APPROVE') {
+          updates.vpApproval = 'APPROVED'
+        }
         updates.managementRemarks = remarks || ''
         if (action === 'REJECT') {
           updates.emailSendStatus = 'Rejected'

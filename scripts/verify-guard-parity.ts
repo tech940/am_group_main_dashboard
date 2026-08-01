@@ -50,12 +50,8 @@ const EXCEPTIONS: Record<string, { reason: string; requireToken?: string }> = {
   scrap_erp: { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canAccessScrapErp' },
   // Booking Payment History uses custom role & permission guard (MD/EA/Developer default).
   'kia.booking_payment_history': { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canViewBookingPaymentHistory' },
-  // Insurance Analysis is DELIBERATELY un-grantable: lib/auth/restricted-analytics.ts hardcodes
-  // MD+Developer because the section carries whole-book premium data and unmasked customer detail,
-  // and a permission key "would hold exactly until someone ticked a box". The registry row exists
-  // only so the sidebar/search can map the href — no Access-Map grant will ever open it.
-  // ⚠️ That makes the Access-Map row MISLEADING, not broken. See section 6 below.
-  insurance_analysis: { reason: 'hardcoded MD/Developer gate, not grantable', requireToken: 'isSuperAdminRole' },
+  // Insurance Analysis is gated via lib/auth/restricted-analytics.ts (MD, Developer, Assistant Manager).
+  insurance_analysis: { reason: 'hardcoded MD/Developer/Assistant Manager gate, not grantable', requireToken: 'canViewRestrictedAnalytics' },
 }
 
 console.log('\n=== Guard parity (sidebar visibility ↔ page guard) ===\n')

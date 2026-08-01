@@ -258,9 +258,21 @@ function firstOfQuarter(value: string) {
   return formatYmd(new Date(Date.UTC(date.getUTCFullYear(), quarterStart, 1)))
 }
 
+/**
+ * Start of the FINANCIAL year (1 April), not the calendar year.
+ *
+ * The business runs an April-March financial year — `current_fy` in
+ * lib/business-excellence/comparison.ts already does — but this returned 1 January, so the YTD
+ * column counted from three months too early. On 2026-07-31 that was 17,219 Hyundai ROs instead of
+ * 10,665: a base 61% too large, with the LY column carrying the same error so the growth % compared
+ * two wrong windows against each other.
+ *
+ * January-March belong to the financial year that STARTED the previous April, hence the -1.
+ */
 function firstOfYear(value: string) {
   const date = parseYmd(value)
-  return `${date.getUTCFullYear()}-01-01`
+  const financialYearStart = date.getUTCMonth() >= 3 ? date.getUTCFullYear() : date.getUTCFullYear() - 1
+  return `${financialYearStart}-04-01`
 }
 
 function daysBetweenInclusive(start: string, end: string) {

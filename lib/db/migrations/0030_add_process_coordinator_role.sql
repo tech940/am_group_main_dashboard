@@ -1,0 +1,16 @@
+-- 0030: Add the `process_coordinator` role enum value.
+--
+-- The role was added to lib/db/schema.ts roleEnum, lib/auth/roles.ts GLOBAL_ACCESS_ROLE_VALUES,
+-- lib/permissions/registry.ts (label + template) and lib/permissions/tiers.ts WITHOUT this enum
+-- value ever reaching Postgres — the exact ordering violation 0029's header warns about.
+--
+-- The result was a full access-control outage, not a localised failure: syncPermissionRegistry()
+-- seeds one role_permissions row per template key per role, so it tried to insert
+-- role = 'process_coordinator' and Postgres raised 22P02. Drizzle 0.45 wraps driver errors in a
+-- DrizzleQueryError whose message is the entire failed statement — which contains the literal
+-- text "role_permissions" — so isMissingPermissionTableError() substring-matched it and every
+-- caller concluded the permission tables were missing. See lib/permissions/service.ts.
+--
+-- `ALTER TYPE ... ADD VALUE` cannot run inside a transaction block, so this is applied standalone
+-- by scripts/apply-migration-0030.ts (not drizzle-kit). Idempotent via IF NOT EXISTS.
+ALTER TYPE role ADD VALUE IF NOT EXISTS 'process_coordinator';

@@ -53,6 +53,8 @@
     "db:repair-hyundai-be": "node scripts/repair-hyundai-business-excellence-data.mjs",
     "warranty:cleanup-remarks": "tsx scripts/cleanup-warranty-remarks.ts",
     "verify:permissions": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-permission-resolution.ts",
+    "verify:role-enum": "tsx scripts/verify-role-enum-parity.ts",
+    "verify:be-windows": "tsx scripts/verify-be-period-windows.ts",
     "verify:roles": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-restricted-roles.ts",
     "verify:sections": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-restricted-default-sections.ts",
     "verify:nav-map": "tsx scripts/verify-nav-map.ts",

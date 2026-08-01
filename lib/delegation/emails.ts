@@ -66,8 +66,6 @@ export async function sendTaskAssignedEmail(input: {
       </div>
     ` : ''}
 
-    ${primaryButton(tasksUrl, 'Open Delegation Tasks Board')}
-
     <div style="margin-top:20px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;font-size:13px;color:#334155;line-height:1.6;">
       <p style="margin:0 0 8px;">Please complete the task by the due date and inform the concerned EA once it is completed.</p>
       <p style="margin:0;">If you require additional time, please contact the concerned EA before the due date, explain the reason for the delay, and provide a revised completion date. The EA will update the task accordingly.</p>
@@ -144,7 +142,6 @@ export async function runDelegationTaskReminders(): Promise<{ due: number; email
 
 function digestHtml(items: DueTask[]): string {
   const name = items[0]?.assignedName || 'there'
-  const tasksUrl = getTasksUrl()
   const rows = items
     .map((t) => {
       const details: [string, string][] = [
@@ -168,16 +165,10 @@ function digestHtml(items: DueTask[]): string {
 
     ${rows}
 
-    ${primaryButton(tasksUrl, 'Open Delegation Tasks Board')}
-
     <div style="margin-top:20px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;font-size:13px;color:#334155;line-height:1.6;">
       <p style="margin:0 0 8px;">Please complete the task by the due date and inform the concerned EA once it is completed.</p>
       <p style="margin:0;">If you require additional time, please contact the concerned EA before the due date, explain the reason for the delay, and provide a revised completion date. The EA will update the task accordingly.</p>
     </div>
-
-    <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;line-height:1.4;text-align:center;">
-      Please mark tasks complete on the dashboard once done to stop further morning reminders.
-    </p>
   `
   return emailLayout({
     heading: 'Daily Pending Tasks Reminder',

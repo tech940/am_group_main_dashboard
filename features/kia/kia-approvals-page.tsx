@@ -149,8 +149,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   // Filter Scope: 'pending' (Pending My Approval), 'all' (All requests), 'vendors' (Vendor Ledgers), or 'gl_categories' (GL Category Ledgers)
   const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'vendors' | 'gl_categories'>('pending')
 
-  // Bulk selection states
+  // Bulk selection & popup modal states
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([])
+  const [bulkSuccessModal, setBulkSuccessModal] = useState<{
+    open: boolean
+    count: number
+    totalAmount: number
+    action: string
+  }>({
+    open: false,
+    count: 0,
+    totalAmount: 0,
+    action: 'APPROVED'
+  })
 
   // Vendor Ledgers states
   const [selectedVendorName, setSelectedVendorName] = useState<string | null>(null)
@@ -399,14 +410,25 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       if (!res.ok || resData.error) throw new Error(resData.error || 'Failed to complete bulk approval action')
       return resData
     },
-    onSuccess: (resData) => {
+    onSuccess: (resData, variables) => {
+      const approvedRows = (data?.rows || []).filter(r => variables.ids.includes(r.id))
+      const totalAmount = approvedRows.reduce((sum, r) => sum + Number(r.amount || 0), 0)
+
+      setBulkSuccessModal({
+        open: true,
+        count: resData.processedCount || variables.ids.length,
+        totalAmount,
+        action: variables.action
+      })
+
       toast({ 
-        title: 'Bulk Action completed', 
-        description: resData.message || `Successfully processed ${resData.processedCount} approvals.`, 
+        title: 'Bulk Approval Done!', 
+        description: resData.message || `Successfully processed ${resData.processedCount || variables.ids.length} approvals.`, 
         variant: 'success' 
       })
       setSelectedRequestIds([])
       queryClient.invalidateQueries({ queryKey: ['kia-approval-requests'] })
+      queryClient.invalidateQueries({ queryKey: ['kia', 'approvals'] })
     },
     onError: (err) => {
       toast({ 
@@ -930,6 +952,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
     if (req.emailSendStatus === 'SentBack') return 'Sent Back / Clarification'
 
+    if (req.managementApproval === 'APPROVED') {
+      if (req.accountApproval === 'APPROVED' || req.paymentStatus === 'PAID') return 'Paid'
+      return 'Pending Accounts'
+    }
+
     if (!req.vpApproval || req.vpApproval === '') return 'Pending ED'
 
     // ED approved — EA must see it first (non-blocking: MD can also act)
@@ -940,11 +967,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     // EA approved (or EA was bypassed by MD) — now it's MD's turn
     if (req.vpApproval === 'APPROVED' && (!req.managementApproval || req.managementApproval === '')) {
       return 'Pending MD'
-    }
-
-    if (req.managementApproval === 'APPROVED' && (!req.accountApproval || req.accountApproval === '' || req.paymentStatus !== 'PAID')) {
-      if (req.paymentStatus === 'PAID') return 'Paid'
-      return 'Pending Accounts'
     }
 
     if (req.accountApproval === 'APPROVED' || req.paymentStatus === 'PAID') {
@@ -960,22 +982,37 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return null
     }
 
-    if (pendingLabel === 'Pending ED') return 'sales_manager'
-    // EA gets action button when it's EA's turn
-    if (effectiveRole === 'ea' && pendingLabel === 'Pending EA') return 'ea'
-    // MD/CEO can act on both Pending EA (non-blocking) and Pending MD
-    if (['md', 'ceo'].includes(effectiveRole) && (pendingLabel === 'Pending EA' || pendingLabel === 'Pending MD')) return 'md'
     if (pendingLabel === 'Pending Accounts') return 'accounts'
+    if (pendingLabel === 'Pending Payment') return 'payment_done'
+    if (pendingLabel === 'Pending MD') return 'md'
+    if (pendingLabel === 'Pending EA') return 'ea'
+    if (pendingLabel === 'Pending ED') return 'sales_manager'
+
+    if (['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)) {
+      if (!req.managementApproval || req.managementApproval === '' || req.managementApproval === 'HELD') return 'md'
+      if (req.managementApproval === 'APPROVED' && req.accountApproval !== 'APPROVED') return 'accounts'
+    }
     return null
   }
+
+  const userRoleLower = (currentUser.role || '').toLowerCase()
+  const effectiveRoleLower = (effectiveRole || '').toLowerCase()
+
+  const isAccountsRole = 
+    ['accounts', 'accounts_head', 'accounts_team', 'finance_head', 'finance_team', 'assistant_manager', 'manager', 'admin', 'developer'].includes(currentUser.role) || 
+    ['accounts', 'finance_head'].includes(effectiveRole) ||
+    userRoleLower.includes('account') ||
+    userRoleLower.includes('finance') ||
+    effectiveRoleLower.includes('account') ||
+    effectiveRoleLower.includes('finance')
 
   const isUserAuthorizedForStage = (stage: string) => {
     if (['developer', 'admin'].includes(currentUser.role)) return true
 
-    if (stage === 'sales_manager') return effectiveRole === 'ed'
-    if (stage === 'ea') return ['ea'].includes(effectiveRole)
+    if (stage === 'sales_manager') return effectiveRole === 'ed' || ['md', 'ceo'].includes(effectiveRole)
+    if (stage === 'ea') return ['ea'].includes(effectiveRole) || ['md', 'ceo'].includes(effectiveRole)
     if (stage === 'md') return ['md', 'ceo'].includes(effectiveRole)
-    if (stage === 'accounts' || stage === 'payment_done') return ['accounts', 'finance_head', 'md', 'ceo'].includes(effectiveRole)
+    if (stage === 'accounts' || stage === 'payment_done') return isAccountsRole || ['md', 'ceo'].includes(effectiveRole)
     return false
   }
 
@@ -986,20 +1023,25 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return false
     }
 
-    // MD/CEO: see both Pending EA (non-blocking) and Pending MD items
-    if (['md', 'ceo'].includes(effectiveRole)) {
-      return row.vpApproval === 'APPROVED' && (!row.managementApproval || row.managementApproval === '')
+    if (pendingLabel === 'Pending Accounts' || pendingLabel === 'Held by Accounts') {
+      return isAccountsRole || ['md', 'ceo'].includes(effectiveRole)
     }
 
-    if (pendingLabel === 'Pending ED' && effectiveRole === 'ed') {
-      return true
+    if (pendingLabel === 'Pending ED' || pendingLabel === 'Held by ED') {
+      return effectiveRole === 'ed' || ['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)
     }
-    // EA sees items where ED approved but EA hasn't acted yet (and MD hasn't bypassed)
-    if (effectiveRole === 'ea' && pendingLabel === 'Pending EA') {
-      return true
+
+    if (pendingLabel === 'Pending EA' || pendingLabel === 'Held by EA') {
+      return effectiveRole === 'ea' || effectiveRole === 'ed' || ['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)
     }
-    if (pendingLabel === 'Pending Accounts' && ['accounts', 'finance_head'].includes(effectiveRole)) {
-      return true
+
+    if (pendingLabel === 'Pending MD' || pendingLabel === 'Held by MD') {
+      return ['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)
+    }
+
+    // Also check if MD approved and Accounts approval is still pending
+    if (row.managementApproval === 'APPROVED' && row.accountApproval !== 'APPROVED' && row.paymentStatus !== 'PAID') {
+      return isAccountsRole || ['md', 'ceo'].includes(effectiveRole)
     }
 
     return false
@@ -4314,6 +4356,44 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         }}
       />
 
+      {/* BULK APPROVAL SUCCESS POPUP TOAST DIALOG */}
+      <Dialog open={bulkSuccessModal.open} onOpenChange={(open) => setBulkSuccessModal(prev => ({ ...prev, open }))}>
+        <DialogContent className="rounded-[2.5rem] max-w-md bg-white p-7 shadow-2xl border border-emerald-100 text-center flex flex-col items-center z-50">
+          <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-3 animate-in zoom-in-50 duration-300">
+            <CheckCircle2 className="w-10 h-10" />
+          </div>
+          <DialogTitle className="text-2xl font-black text-slate-900 tracking-tight">
+            Bulk Approval Done!
+          </DialogTitle>
+          <DialogDescription className="text-xs text-slate-500 font-semibold mt-1 max-w-xs">
+            Successfully processed {bulkSuccessModal.count} vendor payment {bulkSuccessModal.count === 1 ? 'request' : 'requests'}.
+          </DialogDescription>
+
+          <div className="my-4 w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 flex justify-around items-center">
+            <div className="text-center">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Approved</p>
+              <p className="text-lg font-black text-emerald-600">{bulkSuccessModal.count} Requests</p>
+            </div>
+            <div className="h-8 w-px bg-slate-200" />
+            <div className="text-center">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Amount</p>
+              <p className="text-lg font-black text-slate-900">₹{bulkSuccessModal.totalAmount.toLocaleString('en-IN')}</p>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-slate-400 font-medium mb-5 leading-relaxed">
+            The payment requests have been approved and forwarded to the Accounts department for invoice verification & payment execution.
+          </p>
+
+          <Button
+            onClick={() => setBulkSuccessModal(prev => ({ ...prev, open: false }))}
+            className="w-full h-11 rounded-2xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20 text-xs uppercase tracking-wider"
+          >
+            Got it
+          </Button>
+        </DialogContent>
+      </Dialog>
+
       {/* Floating Bulk Action Bar */}
       {selectedRequestIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white rounded-3xl px-6 py-4 flex items-center gap-6 shadow-2xl border border-slate-800 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -4338,7 +4418,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 })
               }}
               disabled={bulkActionMutation.isPending}
-              className="h-9 px-4 rounded-xl text-xs font-black flex items-center gap-1 hover:opacity-90 transition-all border border-emerald-600"
+              className="h-9 px-4 rounded-xl text-xs font-black flex items-center gap-1 hover:opacity-90 transition-all border border-emerald-600 cursor-pointer"
               style={{ backgroundColor: '#10b981', color: '#ffffff' }}
             >
               {bulkActionMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Bulk Approve'}

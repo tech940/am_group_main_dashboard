@@ -38,7 +38,13 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 
 // Bumped for each new role or permission key (v16 delegation_tasks, v17 kia.approvals, v18 scrap_erp & kia.booking_payment_history, v19 ccm lead_followups, v20 eba scrap_erp access, v21 scrap_erp default visible, v22 kia.allocation_history, v23 assistant_manager, v24 accounts vendor payments & registry) — cached snapshots are keyed on this, so without a bump an
 // existing session would carry stale permissions for up to the cache TTL.
-const PERMISSION_CACHE_VERSION = 'v24'
+// v25 is a POISON FLUSH, not a new permission. While the role enum was missing
+// 'process_coordinator' (migration 0030), buildUserPermissionSnapshot returned a
+// role-template-only snapshot with every user override stripped — and getUserPermissionSnapshot
+// cached that degraded result for the full 75-minute TTL. Fixing the enum alone would have left
+// affected users locked out until their entry expired; bumping the version orphans every poisoned
+// key immediately, in every environment, with no Redis surgery.
+const PERMISSION_CACHE_VERSION = 'v25'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -61,15 +67,52 @@ function isRestrictedDefaultPermission(permissionKey: string) {
   return RESTRICTED_DEFAULT_PERMISSION_KEYS.has(permissionKey)
 }
 
+const PERMISSION_TABLE_NAMES = [
+  'permission_groups',
+  'permissions',
+  'role_permissions',
+  'user_permissions',
+  'permission_audit_logs',
+] as const
+
+/** Walk the `cause` chain — Drizzle wraps driver errors, so SQLSTATE is never on the outer error. */
+function collectSqlStates(error: unknown) {
+  const states = new Set<string>()
+  let current: unknown = error
+  for (let depth = 0; depth < 5 && current; depth += 1) {
+    const code = (current as { code?: unknown }).code
+    if (typeof code === 'string') states.add(code)
+    current = (current as { cause?: unknown }).cause
+  }
+  return states
+}
+
+/**
+ * True ONLY when a permission table genuinely does not exist.
+ *
+ * ⚠️ This used to substring-match the error MESSAGE for names like 'permissions' and
+ * 'role_permissions'. That is unsound: Drizzle 0.45 wraps every driver error in a
+ * DrizzleQueryError whose message is the entire failed statement, so ANY error on these tables —
+ * a constraint violation, a bad enum value, a type mismatch, a timeout — contained the table name
+ * and was read as "the tables are not installed".
+ *
+ * It caused a real, total access-control outage. `process_coordinator` was added to the code's
+ * roleEnum without the matching `ALTER TYPE` reaching Postgres (migration 0030). Every
+ * syncPermissionRegistry() insert then failed with 22P02; the wrapped message contained
+ * "role_permissions"; this function returned true; and both callers below "gracefully degraded" to
+ * a role-template-only snapshot — silently discarding all 205 Access Map grants. Users lost
+ * sections while the admin UI still showed their checkbox ticked, because the Access Map reads the
+ * stored user_permissions row while the sidebar reads the snapshot.
+ *
+ * So: match on SQLSTATE 42P01 (undefined_table) and nothing else. A missing table is the ONLY
+ * condition under which discarding overrides is safe — there are none to discard. Every other
+ * error must propagate loudly rather than quietly stripping people's access.
+ */
 export function isMissingPermissionTableError(error: unknown) {
+  if (!collectSqlStates(error).has('42P01')) return false
+  // 42P01 from an unrelated table is not our concern — don't claim the permission stack is missing.
   const message = error instanceof Error ? error.message : String(error)
-  return message.includes('permission_groups')
-    || message.includes('permissions')
-    || message.includes('role_permissions')
-    || message.includes('user_permissions')
-    || message.includes('permission_audit_logs')
-    || message.includes('relation "permission_')
-    || message.includes("relation 'permission_")
+  return PERMISSION_TABLE_NAMES.some((table) => message.includes(table))
 }
 
 const BRANCH_PERMISSION_PREFIXES = BRANCH_OPTIONS.map((branch) => branch.value)
@@ -427,6 +470,15 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
     await ensurePermissionRegistrySynced()
   } catch (error) {
     if (isMissingPermissionTableError(error)) {
+      // This path DISCARDS every user_permissions override — it is only sound when the tables do
+      // not exist (there is nothing to discard). It is never routine, and it must never be silent:
+      // a misclassified error here strips real people's access while the admin UI still shows the
+      // grant ticked, which is exactly how the process_coordinator outage went unnoticed.
+      console.error(
+        '[permissions] permission tables missing — falling back to a role-template-only snapshot; '
+        + `ALL overrides for user ${targetUser.id} are being ignored.`,
+        error,
+      )
       return buildRoleTemplateSnapshot(targetUser.role, targetUser.brand)
     }
     throw error
