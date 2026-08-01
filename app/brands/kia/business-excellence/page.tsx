@@ -32,7 +32,7 @@ export default async function Page({
 
   const query = dateParams.toString()
   const role = access.appUser?.role
-  const canAccessExecutive = ['developer', 'ceo', 'md', 'ea', 'eba'].includes(String(role || '').trim().toLowerCase())
+  const canAccessExecutive = ['developer', 'ceo', 'md', 'ea', 'eba', 'process_coordinator'].includes(String(role || '').trim().toLowerCase())
   const defaultReport = canAccessExecutive ? 'executive-dashboard' : 'overview'
   redirect(`/brands/kia/business-excellence/${defaultReport}${query ? `?${query}` : ''}`)
 }

@@ -198,6 +198,7 @@ const ROLE_LABELS: Record<string, string> = {
   edp: 'EDP (Electronic Data Processing)',
   cxm: 'CXM (Customer Experience) — marks Delivered',
   ccm: 'CCM (Customer Care Manager) — Delivered backup',
+  process_coordinator: 'Process Coordinator (PC)',
 }
 
 const TAB_DEFINITIONS: Array<{

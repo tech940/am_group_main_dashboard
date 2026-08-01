@@ -959,6 +959,7 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   edp: 'EDP (Electronic Data Processing)',
   cxm: 'CXM (Customer Experience) — marks Delivered',
   ccm: 'CCM (Customer Care Manager) — Delivered backup',
+  process_coordinator: 'Process Coordinator (PC)',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -1080,6 +1081,32 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'scrap_erp',
     'reports',
   ], ['view', 'approve', 'audit']),
+  process_coordinator: keysForGroups([
+    'kia',
+    'kia.service',
+    'kia.business_excellence',
+    'kia.business_excellence.ro_billing',
+    'kia.business_excellence.workshop_performance',
+    'kia.business_excellence.open_ro',
+    'kia.business_excellence.complaints',
+    'kia.demo_job_cards',
+    'kia.service_appointment',
+    'kia.demo_cars_list',
+    'kia.sales_report',
+    'kia.stock_report',
+    'kia.stock_management',
+    'kia.bookings',
+    'kia.proforma',
+    'kia.booking_payment_history',
+    'kia.allocation_history',
+    ...hyundaiPlatinumExecutiveGroups,
+    'purchase_orders',
+    'finance_orders',
+    'petty_cash',
+    'am_finance',
+    'scrap_erp',
+    'reports',
+  ], ['view', 'create', 'edit', 'approve', 'audit']),
   ea: keysForGroups([
     'kia',
     'kia.service',
@@ -1184,6 +1211,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   // an assistant manager at any brand.
   assistant_manager: [
     ...keysForGroups([
+      'insurance_analysis',
       'kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment',
       'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma',
       'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg',

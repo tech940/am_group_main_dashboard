@@ -67,20 +67,24 @@ function demoDealerFilter(filters: DemoFilters) {
   if (!filters.dealerCode) return sql``
 
   return sql`
-    AND EXISTS (
-      SELECT 1
-      FROM kia_ro_billing_report rb
-      WHERE UPPER(TRIM(COALESCE(NULLIF(rb.dealer_code, ''), NULLIF(rb.main_dealer_code, '')))) = ${filters.dealerCode}
-        AND (
-          (
-            NULLIF(TRIM(kia_demo_job_cards.vin), '') IS NOT NULL
-            AND UPPER(TRIM(COALESCE(rb.vin, ''))) = UPPER(TRIM(kia_demo_job_cards.vin))
+    AND (
+      UPPER(TRIM(COALESCE(kia_demo_job_cards.dealer_code, ''))) = ${filters.dealerCode}
+      OR UPPER(TRIM(COALESCE(kia_demo_job_cards.sale_dealer_code, ''))) = ${filters.dealerCode}
+      OR EXISTS (
+        SELECT 1
+        FROM kia_ro_billing_report rb
+        WHERE UPPER(TRIM(COALESCE(NULLIF(rb.dealer_code, ''), NULLIF(rb.main_dealer_code, '')))) = ${filters.dealerCode}
+          AND (
+            (
+              NULLIF(TRIM(kia_demo_job_cards.vin), '') IS NOT NULL
+              AND UPPER(TRIM(COALESCE(rb.vin, ''))) = UPPER(TRIM(kia_demo_job_cards.vin))
+            )
+            OR (
+              NULLIF(TRIM(kia_demo_job_cards.reg_no), '') IS NOT NULL
+              AND UPPER(TRIM(COALESCE(rb.vehicle_reg_no, ''))) = UPPER(TRIM(kia_demo_job_cards.reg_no))
+            )
           )
-          OR (
-            NULLIF(TRIM(kia_demo_job_cards.reg_no), '') IS NOT NULL
-            AND UPPER(TRIM(COALESCE(rb.vehicle_reg_no, ''))) = UPPER(TRIM(kia_demo_job_cards.reg_no))
-          )
-        )
+      )
     )
   `
 }

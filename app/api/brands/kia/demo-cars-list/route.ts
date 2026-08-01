@@ -98,7 +98,15 @@ function nullableTextExpression(columns: Set<string>, columnName: string) {
 
 function dateExpression(columns: Set<string>, columnName: string) {
   if (!hasColumn(columns, columnName)) return sql`NULL::date`
-  return sql`NULLIF(TRIM(${sql.raw(columnName)}::text), '')::date`
+  const col = sql.raw(columnName)
+  return sql`
+    CASE
+      WHEN NULLIF(TRIM(${col}::text), '') IS NULL THEN NULL::date
+      WHEN TRIM(${col}::text) ~ '^\d{1,2}[/-]\d{1,2}[/-]\d{4}' THEN TO_DATE(TRIM(${col}::text), 'DD/MM/YYYY')
+      WHEN TRIM(${col}::text) ~ '^\d{4}[/-]\d{1,2}[/-]\d{1,2}' THEN TO_DATE(TRIM(${col}::text), 'YYYY-MM-DD')
+      ELSE NULL::date
+    END
+  `
 }
 
 function firstExistingColumn(columns: Set<string>, candidates: string[]) {

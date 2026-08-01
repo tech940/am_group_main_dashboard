@@ -19,9 +19,9 @@ import {
 const ALL_ROLES = [
   'admin', 'branch_admin', 'purchase_manager', 'ea', 'md', 'accounts', 'manager', 'viewer',
   'finance_head', 'service_manager', 'general_manager', 'eba', 'sales_executive', 'sales_manager',
-  'developer', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed',
+  'developer', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed', 'assistant_manager',
 ]
-const ALLOWED = new Set(['md', 'developer'])
+const ALLOWED = new Set(['md', 'developer', 'assistant_manager'])
 
 // The adversarial case: a permission map where EVERY key is granted, i.e. someone ticked every box
 // in the Access Map. A permission-backed gate would open here; a role gate must not.

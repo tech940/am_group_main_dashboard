@@ -126,6 +126,17 @@ function roBillingDealerFilter(dealerCode: DealerFilter) {
   return hyundaiRoBillingDealerFilter(dealerCode)
 }
 
+/** The feed's last bill date for this dealer scope. Cheap: one indexed MAX, no date predicate. */
+async function fetchLatestBillDate(dealerCode: DealerFilter): Promise<string | null> {
+  const result = await db.execute(sql`
+    SELECT MAX(bill_date)::text AS latest
+    FROM hyundai_ro_billing_report
+    WHERE TRUE
+      ${roBillingDealerFilter(dealerCode)}
+  `)
+  return dateValue(resultRows(result)[0]?.latest) || null
+}
+
 async function fetchRoBillingCoverage(startDate: string, endDate: string, dealerCode: DealerFilter) {
   const result = await db.execute(sql`
     SELECT
@@ -229,12 +240,19 @@ function yearToDateLastYear(startDate: string, endDate: string) {
   }
 }
 
-function fullPreviousFinancialYear(value: string) {
-  const { year, month } = parseDateParts(value)
+/**
+ * Previous financial year UP TO THE SAME POINT — not the whole year.
+ *
+ * The `current_fy` CY window is FY-start..TODAY (123 days on 2026-08-01). Comparing that against a
+ * complete 365-day prior FY is a structural length mismatch, and it showed as a -65.4% collapse
+ * where the like-for-like change was +1.5%. Both sides now cover the same span of the fiscal year.
+ */
+function previousFinancialYearToDate(startDate: string, endDate: string) {
+  const { year, month } = parseDateParts(startDate)
   const currentFinancialYearStart = month >= 4 ? year : year - 1
   return {
     startDate: `${currentFinancialYearStart - 1}-04-01`,
-    endDate: `${currentFinancialYearStart}-03-31`,
+    endDate: sameDateLastYear(endDate),
   }
 }
 
@@ -262,7 +280,7 @@ function resolveOverviewComparisonRange(startDate: string, endDate: string, comp
   }
 
   if (comparison.preset === 'current_fy') {
-    return { ...fullPreviousFinancialYear(startDate), source: 'full-financial-year-ly' }
+    return { ...previousFinancialYearToDate(startDate, endDate), source: 'previous-fy-to-date-ly' }
   }
 
   if (comparison.preset === 'mtd' || comparison.preset === 'current_month' || isMonthAnchoredRange(startDate, endDate)) {
@@ -1406,11 +1424,31 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const defaults = defaultRange()
   const startDate = parseDateInput(searchParams.get('startDate')) || defaults.startDate
-  const endDate = parseDateInput(searchParams.get('endDate')) || defaults.endDate
+  const requestedEndDate = parseDateInput(searchParams.get('endDate')) || defaults.endDate
   const chunkParam = searchParams.get('chunk')
   const chunk: OverviewChunk = chunkParam === 'secondary' || chunkParam === 'full' ? chunkParam : 'summary'
   const comparison = getComparisonParams(searchParams)
   const dealerCode = normalizeHyundaiDealerCode(searchParams.get('dealer_code')) || null
+
+  /**
+   * Stop the current-year window where the DATA stops.
+   *
+   * The feed lands a day behind, so a window ending "today" asks for a day the source has not
+   * delivered — while its last-year mirror, derived from the same end date, is complete. Every
+   * comparison then understates: QTD read +3.5% against a like-for-like +5.5%, fiscal YTD +1.5%
+   * against +2.0%. Clamping the CY end to the feed's last bill date removes NO revenue (there are no
+   * bills after it to include) and makes the LY mirror line up, because every LY window on this route
+   * is derived from this same endDate.
+   *
+   * The guard matters: if the whole requested window sits AFTER the feed (asking for August on
+   * 1 August), clamping would invert the range, so the window is left alone and the empty result
+   * stands on its own — see the coverage ribbon, which reports what the feed actually covers.
+   */
+  const endDate = await timer.time('clamp', async () => {
+    const feedMax = await fetchLatestBillDate(dealerCode)
+    if (!feedMax || feedMax >= requestedEndDate) return requestedEndDate
+    return feedMax >= startDate ? feedMax : requestedEndDate
+  })
 
   try {
     const data = await timer.time('db', () => buildOverviewPayload(startDate, endDate, chunk, comparison, dealerCode))

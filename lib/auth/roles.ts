@@ -1,5 +1,5 @@
 export const DEVELOPER_ROLE_VALUES = ['developer'] as const
-export const GLOBAL_ACCESS_ROLE_VALUES = ['developer', 'md', 'ceo', 'ea', 'eba', 'ed', 'edp'] as const
+export const GLOBAL_ACCESS_ROLE_VALUES = ['developer', 'md', 'ceo', 'ea', 'eba', 'ed', 'edp', 'process_coordinator'] as const
 export const ADMIN_ROLE_VALUES = [...DEVELOPER_ROLE_VALUES] as const
 
 export function isSuperAdminRole(role: string | null | undefined) {

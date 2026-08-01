@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { forbidden, redirect } from 'next/navigation'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { isSuperAdminRole } from '@/lib/auth/roles'
+import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
 import { InsuranceClient } from './insurance-client'
 
 export const dynamic = 'force-dynamic'
@@ -24,8 +24,8 @@ export default async function InsurancePage({
     redirect('/auth/login')
   }
 
-  // Insurance Analysis is restricted strictly to MD and Developer roles
-  if (!isSuperAdminRole(appUser.role)) {
+  // Insurance Analysis access check (MD, Developer, Assistant Manager)
+  if (!canViewRestrictedAnalytics(appUser.role)) {
     forbidden()
   }
 

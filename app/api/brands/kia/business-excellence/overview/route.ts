@@ -165,12 +165,19 @@ function yearToDateLastYear(startDate: string, endDate: string) {
   }
 }
 
-function fullPreviousFinancialYear(value: string) {
-  const { year, month } = parseDateParts(value)
+/**
+ * Previous financial year UP TO THE SAME POINT — not the whole year.
+ *
+ * The `current_fy` CY window is FY-start..TODAY, so comparing it against a complete 365-day prior FY
+ * is a structural length mismatch that reads as a collapse. Both sides now cover the same span of
+ * the fiscal year. (Same defect and same fix as the Hyundai overview route.)
+ */
+function previousFinancialYearToDate(startDate: string, endDate: string) {
+  const { year, month } = parseDateParts(startDate)
   const currentFinancialYearStart = month >= 4 ? year : year - 1
   return {
     startDate: `${currentFinancialYearStart - 1}-04-01`,
-    endDate: `${currentFinancialYearStart}-03-31`,
+    endDate: sameDateLastYear(endDate),
   }
 }
 
@@ -198,7 +205,7 @@ function resolveOverviewComparisonRange(startDate: string, endDate: string, comp
   }
 
   if (comparison.preset === 'current_fy') {
-    return { ...fullPreviousFinancialYear(startDate), source: 'full-financial-year-ly' }
+    return { ...previousFinancialYearToDate(startDate, endDate), source: 'previous-fy-to-date-ly' }
   }
 
   if (comparison.preset === 'mtd' || comparison.preset === 'current_month' || isMonthAnchoredRange(startDate, endDate)) {
@@ -554,6 +561,18 @@ function emptyWorkshopSnapshot() {
       vasAmount: number
     }>,
   })
+}
+
+/** The feed's last bill date for this dealer scope. Cheap: one indexed MAX, no date predicate. */
+async function fetchLatestBillDate(dealerCode: DealerFilter): Promise<string | null> {
+  const result = await db.execute(sql`
+    SELECT MAX(bill_date)::text AS latest
+    FROM kia_ro_billing_report
+    WHERE TRUE
+      ${roBillingDealerFilter(dealerCode)}
+  `)
+  const value = resultRows(result)[0]?.latest
+  return value ? String(value).slice(0, 10) : null
 }
 
 async function buildOverviewPayload(
@@ -1132,12 +1151,31 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const defaults = defaultRange()
   const startDate = parseDateInput(searchParams.get('startDate')) || defaults.startDate
-  const endDate = parseDateInput(searchParams.get('endDate')) || defaults.endDate
+  const requestedEndDate = parseDateInput(searchParams.get('endDate')) || defaults.endDate
   const chunkParam = searchParams.get('chunk')
   const chunk: OverviewChunk = chunkParam === 'secondary' || chunkParam === 'full' ? chunkParam : 'summary'
   const skipCache = searchParams.get('skipCache') === 'true'
   const comparison = getComparisonParams(searchParams)
   const dealerCode = normalizeKiaDealerCode(searchParams.get('dealer_code')) || null
+
+  /**
+   * Stop the current-year window where the DATA stops.
+   *
+   * The feed lands a day behind, so a window ending "today" asks for a day the source has not
+   * delivered — while its last-year mirror, derived from the same end date, is complete. Every
+   * comparison then understates. Clamping removes NO revenue (there are no bills after the feed's
+   * last date) and makes the mirror line up, because every LY window on this route is derived from
+   * this same endDate.
+   *
+   * Deliberately computed BEFORE cacheKey() so the cache is keyed on the window actually queried.
+   * The guard matters: if the whole requested window sits AFTER the feed, clamping would invert the
+   * range, so it is left alone and the empty result stands on its own.
+   */
+  const endDate = await timer.time('clamp', async () => {
+    const feedMax = await fetchLatestBillDate(dealerCode)
+    if (!feedMax || feedMax >= requestedEndDate) return requestedEndDate
+    return feedMax >= startDate ? feedMax : requestedEndDate
+  })
 
   try {
     const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache

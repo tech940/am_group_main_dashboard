@@ -152,7 +152,11 @@ export function getBusinessPresetRange(preset: BusinessDatePreset, today = new D
       return { startDate: toBusinessDate(previous), endDate: toBusinessDate(new Date(previous.getFullYear(), previous.getMonth() + 1, 0)) }
     }
     case 'current_quarter':
-      return { startDate: toBusinessDate(startOfQuarter(current)), endDate: toBusinessDate(endOfQuarter(current)) }
+      // End at TODAY, not endOfQuarter. A quarter-end in the future adds no rows (none exist yet) but
+      // it made the last-year mirror a FULL 92-day quarter against a part-quarter of CY — the
+      // comparison read -62.2% where the like-for-like truth was +5.5%. `endOfQuarter` is still
+      // imported for previous_quarter, which is genuinely complete.
+      return { startDate: toBusinessDate(startOfQuarter(current)), endDate: toBusinessDate(current) }
     case 'current_fy':
       return { startDate: toBusinessDate(startOfFinancialYear(current)), endDate: toBusinessDate(current) }
     case 'qtd':

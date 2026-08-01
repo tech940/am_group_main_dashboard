@@ -670,7 +670,7 @@ function WorkshopTrendValueLabel({
 }
 
 function canAccessExecutiveDashboard(role?: string | null) {
-  return ['developer', 'ceo', 'md', 'ea'].includes(String(role || '').trim().toLowerCase())
+  return ['developer', 'ceo', 'md', 'ea', 'eba', 'process_coordinator'].includes(String(role || '').trim().toLowerCase())
 }
 
 function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[], role?: string | null) {
@@ -3883,37 +3883,36 @@ function ExecutiveRevenuePerformance({
   const renderRevenueTable = (
     tableId: Extract<ExecutiveDashboardTableId, 'labour-revenue' | 'parts-revenue'>,
     title: string,
-    rows: ExecutiveRevenueRow[],
-    headerClass: string
+    rows: ExecutiveRevenueRow[]
   ) => (
     <ExecutiveTableShell
       title={title}
       icon={<IndianRupee className="h-3.5 w-3.5" />}
-      headerClassName={cn('px-3 py-2 text-white', headerClass)}
+      headerClassName="px-3 py-2 text-white bg-[var(--dashboard-action-bg,#055B65)]"
       titleClassName="text-[11px]"
-      className={cn('rounded-2xl border-slate-300', expandedTable === tableId && 'xl:col-span-3')}
+      className={cn('rounded-2xl border-slate-300', expandedTable === tableId && 'col-span-1')}
       isExpanded={expandedTable === tableId}
       onToggleExpanded={() => onToggleTable(tableId)}
     >
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight">
-          <thead className="bg-slate-950 text-white">
+          <thead className="bg-[var(--dashboard-action-bg,#055B65)] text-white">
             <tr>
-              <th className="min-w-[130px] border border-slate-600 px-2 py-2 text-left">Category</th>
+              <th className="min-w-[130px] border border-white/30 px-2 py-2 text-left">Category</th>
               {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
-                <th key={label} colSpan={3} className="border border-slate-600 px-2 py-2 text-center">{label}</th>
+                <th key={label} colSpan={3} className="border border-white/30 px-2 py-2 text-center">{label}</th>
               ))}
             </tr>
             <tr>
-              <th className="border border-slate-600 px-2 py-1.5"></th>
+              <th className="border border-white/30 px-2 py-1.5"></th>
               {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', '%'].map((label) => (
-                <th key={`${groupIndex}-${label}`} className="border border-slate-600 px-2 py-1.5 text-center">{label}</th>
+                <th key={`${groupIndex}-${label}`} className="border border-white/30 px-2 py-1.5 text-center">{label}</th>
               )))}
             </tr>
           </thead>
           <tbody>
             {rows.map(({ key, label, row }) => (
-              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white')}>
+              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white text-slate-900')}>
                 <td className="whitespace-nowrap border border-slate-300 px-2 py-2 font-black leading-tight">{label}</td>
                 {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => renderPeriodCells(row, period))}
               </tr>
@@ -3948,11 +3947,11 @@ function ExecutiveRevenuePerformance({
         </p>
       </div>
 
-      <div className="mt-4 grid gap-3 xl:grid-cols-3">
-        {renderRevenueTable('labour-revenue', 'Labour Revenue', labourRows, 'bg-blue-600')}
-        {renderRevenueTable('parts-revenue', 'Part Revenue', partsRows, 'bg-purple-600')}
+      <div className="mt-4 grid gap-4 grid-cols-1">
+        {renderRevenueTable('labour-revenue', 'Labour Revenue', labourRows)}
+        {renderRevenueTable('parts-revenue', 'Part Revenue', partsRows)}
         <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-300 bg-white">
-          <div className="bg-slate-950 px-3 py-2 text-white">
+          <div className="bg-[var(--dashboard-action-bg,#055B65)] px-3 py-2 text-white">
             <h4 className="flex items-center gap-2 text-[11px] font-black">
               <TrendingUp className="h-3.5 w-3.5" />
               Growth Contribution
@@ -4275,17 +4274,18 @@ function BusinessExecutiveDashboard({
             />
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="grid gap-4 grid-cols-1">
             <ExecutiveTableShell
               title="Overall Load"
               subtitle="Location performance"
-              className={cn(expandedExecutiveTable === 'overall-load' && 'xl:col-span-2')}
+              headerClassName="bg-[var(--dashboard-action-bg,#055B65)] text-white"
+              className={cn(expandedExecutiveTable === 'overall-load' && 'col-span-1')}
               isExpanded={expandedExecutiveTable === 'overall-load'}
               onToggleExpanded={() => toggleExecutiveTable('overall-load')}
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-[#1f3f91] text-white">
+                  <thead className="bg-[var(--dashboard-action-bg,#055B65)] text-white">
                     <tr>
                       <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Location</th>
                       <th rowSpan={2} className="border border-white/30 px-3 py-3 text-center">TD</th>
@@ -4301,7 +4301,7 @@ function BusinessExecutiveDashboard({
                   </thead>
                   <tbody>
                     {locationRows.map((row) => (
-                      <tr key={row.label} className={row.label === 'Total' ? 'bg-slate-50 font-black' : 'bg-white'}>
+                      <tr key={row.label} className={row.label === 'Total' ? 'be-management-total-row font-black' : 'bg-white text-slate-900'}>
                         <td className="border border-slate-200 px-3 py-3 font-black text-slate-900">{row.label}</td>
                         <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
                         {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
@@ -4324,6 +4324,7 @@ function BusinessExecutiveDashboard({
             <ExecutiveTableShell
               title="Service Type Performance"
               subtitle={selectedLocationLabel}
+              headerClassName="bg-[var(--dashboard-action-bg,#055B65)] text-white"
               headerContentClassName="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between"
               actions={(
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -4335,8 +4336,8 @@ function BusinessExecutiveDashboard({
                       className={cn(
                         'executive-table-metric-button rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm transition',
                         activeExecutiveTableMetric === metric.id
-                          ? 'border-white bg-white text-[#1f3f91]'
-                          : 'border-white bg-white text-[#1f3f91] hover:bg-slate-50'
+                          ? 'border-white bg-white text-[#055B65]'
+                          : 'border-white/50 bg-white/20 text-white hover:bg-white/30'
                       )}
                     >
                       {metric.label}
@@ -4344,13 +4345,13 @@ function BusinessExecutiveDashboard({
                   ))}
                 </div>
               )}
-              className={cn(expandedExecutiveTable === 'service-type-performance' && 'xl:col-span-2')}
+              className={cn(expandedExecutiveTable === 'service-type-performance' && 'col-span-1')}
               isExpanded={expandedExecutiveTable === 'service-type-performance'}
               onToggleExpanded={() => toggleExecutiveTable('service-type-performance')}
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-[#1f3f91] text-white">
+                  <thead className="bg-[var(--dashboard-action-bg,#055B65)] text-white">
                     <tr>
                       <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Service Type</th>
                       <th rowSpan={2} className="border border-white/30 px-3 py-3 text-center">TD</th>
@@ -4366,7 +4367,7 @@ function BusinessExecutiveDashboard({
                   </thead>
                   <tbody>
                     {serviceTypeRows.map((row) => (
-                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white')}>
+                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white text-slate-900')}>
                         <td className="border border-slate-200 px-3 py-3 font-black">{row.name}</td>
                         <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
                         {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
@@ -4475,18 +4476,19 @@ function BusinessExecutiveDashboard({
             <ExecutiveTableShell
               title="FY Trends"
               subtitle="Revenue, parts, labour, load"
+              headerClassName="bg-[var(--dashboard-action-bg,#055B65)] text-white"
               isExpanded={expandedExecutiveTable === 'fy-trends'}
               onToggleExpanded={() => toggleExecutiveTable('fy-trends')}
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-slate-950 text-white">
+                  <thead className="bg-[var(--dashboard-action-bg,#055B65)] text-white">
                     <tr>
-                      <th className="border border-slate-700 px-3 py-3 text-left">Financial Year</th>
-                      <th className="border border-slate-700 px-3 py-3 text-right">Load</th>
-                      <th className="border border-slate-700 px-3 py-3 text-right">Labour</th>
-                      <th className="border border-slate-700 px-3 py-3 text-right">Parts</th>
-                      <th className="border border-slate-700 px-3 py-3 text-right">Revenue</th>
+                      <th className="border border-white/30 px-3 py-3 text-left">Financial Year</th>
+                      <th className="border border-white/30 px-3 py-3 text-right">Load</th>
+                      <th className="border border-white/30 px-3 py-3 text-right">Labour</th>
+                      <th className="border border-white/30 px-3 py-3 text-right">Parts</th>
+                      <th className="border border-white/30 px-3 py-3 text-right">Revenue</th>
                     </tr>
                   </thead>
                   <tbody>

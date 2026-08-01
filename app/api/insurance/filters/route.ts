@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { isSuperAdminRole } from '@/lib/auth/roles'
+import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
 import {
   INSURANCE_BRANDS,
   col,
@@ -52,8 +52,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (!isSuperAdminRole(user.role)) {
-      return NextResponse.json({ error: 'Forbidden: Restricted to MD & Developer' }, { status: 403 })
+    if (!canViewRestrictedAnalytics(user.role)) {
+      return NextResponse.json({ error: 'Forbidden: Restricted access' }, { status: 403 })
     }
 
     const { searchParams } = new URL(request.url)

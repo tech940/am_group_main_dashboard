@@ -167,7 +167,14 @@ function addDays(value: string, days: number) {
 
 function sameDateLastYear(value: string) {
   const [year, month, day] = value.split('-').map(Number)
-  return `${year - 1}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  // ⚠️ Clamp, do not concatenate. Building the string directly produced "2027-02-29" for a 29 Feb
+  // input — a date Postgres REJECTS ("date/time field value out of range"), which threw the whole
+  // audit query. The throw was swallowed by cockpit-data.ts's .catch(() => null), so the brand
+  // silently disappeared from the Group Cockpit instead of erroring visibly. The feed holds 104 real
+  // rows on 2024-02-29, so the input is reachable.
+  const lastDayOfLyMonth = new Date(Date.UTC(year - 1, month, 0)).getUTCDate()
+  const safeDay = Math.min(day, lastDayOfLyMonth)
+  return `${year - 1}-${String(month).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`
 }
 
 function inclusiveDayCount(startDate: string, endDate: string) {

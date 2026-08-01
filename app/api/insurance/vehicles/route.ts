@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { isSuperAdminRole } from '@/lib/auth/roles'
+import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
 import {
   CANONICAL_COLUMN,
   FILTER_PARAM_COLUMNS,
@@ -313,8 +313,8 @@ export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedAppUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!isSuperAdminRole(user.role)) {
-      return NextResponse.json({ error: 'Forbidden: Restricted to MD & Developer' }, { status: 403 })
+    if (!canViewRestrictedAnalytics(user.role)) {
+      return NextResponse.json({ error: 'Forbidden: Restricted access' }, { status: 403 })
     }
 
     const { searchParams } = new URL(request.url)

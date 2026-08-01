@@ -1665,19 +1665,19 @@
 
   .business-excellence-boundaries .be-management-total-row,
   .business-excellence-boundaries .be-management-total-row:hover {
-    background-color: #05070d !important;
-    color: #ffffff !important;
+    background-color: #1e293b !important;
+    color: #facc15 !important;
     box-shadow: none !important;
   }
 
   .business-excellence-boundaries .be-management-total-row > td {
-    background-color: #05070d !important;
-    border-color: rgba(255, 255, 255, 0.26) !important;
-    color: #ffffff !important;
+    background-color: #1e293b !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    color: #facc15 !important;
   }
 
-  .business-excellence-boundaries .be-management-total-row :where(.text-slate-950, .text-slate-900, .text-slate-800, .text-slate-700, .text-slate-600, .text-slate-500, .text-slate-400) {
-    color: #ffffff !important;
+  .business-excellence-boundaries .be-management-total-row :where(.text-slate-950, .text-slate-900, .text-slate-800, .text-slate-700, .text-slate-600, .text-slate-500, .text-slate-400, .font-mono) {
+    color: #facc15 !important;
   }
 
   .business-excellence-boundaries .be-management-total-row button {
