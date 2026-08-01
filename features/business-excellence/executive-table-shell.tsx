@@ -47,20 +47,20 @@ export function ExecutiveTableShell({
   return (
     <section
       className={cn(
-        'min-w-0 overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm transition-all',
-        isExpanded && 'ring-2 ring-[#1f3f91]/20',
+        'min-w-0 overflow-hidden rounded-[1.25rem] border border-slate-200/80 bg-white shadow-sm transition-all',
+        isExpanded && 'ring-2 ring-slate-900/20 shadow-md',
         className
       )}
     >
-      <div className={cn('flex items-center justify-between gap-3 bg-[#1f3f91] px-4 py-3 text-white', headerClassName)}>
+      <div className={cn('flex items-center justify-between gap-3 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 px-4 py-3 text-white shadow-inner', headerClassName)}>
         <div className={cn('flex min-w-0 flex-1 items-center justify-between gap-3', headerContentClassName)}>
           <div className="min-w-0">
-            <h3 className={cn('flex min-w-0 items-center gap-2 text-sm font-black', titleClassName)}>
-              {icon ? <span className="flex shrink-0 items-center">{icon}</span> : null}
+            <h3 className={cn('flex min-w-0 items-center gap-2 text-sm font-black tracking-tight', titleClassName)}>
+              {icon ? <span className="flex shrink-0 items-center text-slate-300">{icon}</span> : null}
               <span className="truncate">{title}</span>
             </h3>
             {subtitle ? (
-              <p className={cn('mt-0.5 truncate text-[10px] font-black uppercase tracking-widest text-white/75', subtitleClassName)}>
+              <p className={cn('mt-0.5 truncate text-[10px] font-bold uppercase tracking-widest text-slate-400', subtitleClassName)}>
                 {subtitle}
               </p>
             ) : null}
@@ -75,9 +75,9 @@ export function ExecutiveTableShell({
           aria-pressed={isExpanded}
           title={label}
           onClick={onToggleExpanded}
-          className="h-8 w-8 shrink-0 rounded-full border border-white/70 bg-white/95 p-0 text-[#1f3f91] shadow-sm hover:bg-white hover:text-[#1f3f91] focus-visible:ring-white"
+          className="h-7 w-7 shrink-0 rounded-lg border border-slate-700/60 bg-slate-800/80 p-0 text-slate-300 shadow-sm hover:bg-slate-700 hover:text-white focus-visible:ring-slate-400"
         >
-          <ToggleIcon className="h-4 w-4" aria-hidden="true" />
+          <ToggleIcon className="h-3.5 w-3.5" aria-hidden="true" />
         </Button>
       </div>
       {children}

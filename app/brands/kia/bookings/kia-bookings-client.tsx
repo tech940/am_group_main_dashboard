@@ -2918,8 +2918,12 @@ export function KiaBookingsClient({
                 variant="outline"
                 className="h-10 flex-1 gap-1.5 rounded-2xl text-xs font-bold sm:h-11 sm:text-sm"
                 onClick={() => {
-                  const header = ['Booking ID', 'Customer', 'Phone', 'Vehicle', 'Variant', 'Colour', 'Dealer', 'Status', 'Booking Date', 'Payment']
-                  const body = rows.map((r) => [r.bookingNumber, r.customerName, maskKiaPii(r.customerPhone, canViewPii), r.model, r.variant, r.color || '', r.dealerCode, String(r.status), formatDate(r.createdAt || r.updatedAt), paymentMeta(String(r.status), r.deliveredAt).label])
+                  // Consultant mirrors the on-screen column EXACTLY, metadata fallback included — the
+                  // table shows the consultant but the export omitted it, so an exported sheet could
+                  // not be reconciled against the list it came from. Older bookings only carry the
+                  // name in metadata, so reading r.consultantName alone exports blanks for those.
+                  const header = ['Booking ID', 'Customer', 'Phone', 'Vehicle', 'Variant', 'Colour', 'Dealer', 'Consultant', 'Status', 'Booking Date', 'Payment']
+                  const body = rows.map((r) => [r.bookingNumber, r.customerName, maskKiaPii(r.customerPhone, canViewPii), r.model, r.variant, r.color || '', r.dealerCode, r.consultantName || (r.metadata && String(r.metadata.consultantName || '')) || '', String(r.status), formatDate(r.createdAt || r.updatedAt), paymentMeta(String(r.status), r.deliveredAt).label])
                   const csv = [header, ...body].map((cols) => cols.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
                   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
                   const link = document.createElement('a')

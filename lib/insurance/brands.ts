@@ -282,6 +282,12 @@ export type InsuranceBrand = {
   id: InsuranceBrandId
   /** Physical table. Interpolated into sql.raw — never user-derived. */
   table: string
+  /**
+   * True when the feed re-ingests a policy on every upload instead of updating it, so the table
+   * holds SNAPSHOT VERSIONS of one policy rather than one row per policy. Read through
+   * `insuranceSource()` when set — see that function for the evidence.
+   */
+  versionedByPolicyNo: boolean
   /** Toggle pill + heading text. */
   label: string
   /** Short pill label. */
@@ -402,6 +408,7 @@ export const INSURANCE_BRANDS: Record<InsuranceBrandId, InsuranceBrand> = {
   hyundai: {
     id: 'hyundai',
     table: 'hyundai_insurance_policy_summary',
+    versionedByPolicyNo: true,
     label: 'Hyundai Insurance',
     shortLabel: 'Hyundai',
     columns: HYUNDAI_PLATINUM_COLUMNS,
@@ -423,6 +430,7 @@ export const INSURANCE_BRANDS: Record<InsuranceBrandId, InsuranceBrand> = {
   platinum: {
     id: 'platinum',
     table: 'am_platinum_insurance_policy_summary',
+    versionedByPolicyNo: true,
     label: 'Platinum Insurance',
     shortLabel: 'Platinum',
     columns: HYUNDAI_PLATINUM_COLUMNS,
@@ -444,6 +452,7 @@ export const INSURANCE_BRANDS: Record<InsuranceBrandId, InsuranceBrand> = {
   kia: {
     id: 'kia',
     table: 'kia_insurance',
+    versionedByPolicyNo: false,
     label: 'Kia Insurance',
     shortLabel: 'Kia',
 
@@ -768,8 +777,44 @@ export function activeRowsPredicate(brand: InsuranceBrandId | InsuranceBrand, al
 }
 
 /** The tables whose union forms a vehicle's lifetime history. Single-element for KIA. */
+/**
+ * The table to read from — collapsing snapshot versions to the LATEST row per policy.
+ *
+ * ⚠️ The Hyundai and Platinum feeds APPEND a fresh row every time a policy is re-uploaded rather
+ * than updating in place, so one policy can occupy several rows that differ only in how far its
+ * payment had progressed when that day's file was cut. Measured 2026-08-01 on
+ * am_platinum_insurance_policy_summary: policy 3001/O/HY-22174071/00/000 held 3 rows uploaded
+ * 28/30/31 Jul, identical except `payment_generated` NO->YES, `payinslip_no`/`cheque_no`/`cheque_amt`
+ * filling in, and `column_64vb_status` NOT VERIFIED->VERIFIED. 83 policies / 113 surplus rows in
+ * Platinum, 1 in Hyundai. Counting all of them inflates policy counts AND sums their premium twice
+ * or three times. `row_hash` does NOT protect against this: it is recomputed per upload and differed
+ * on all three rows, which is why the loader's dedup never fired.
+ *
+ * These are VERSIONS, not junk — the newest is the true state of the policy — so this filters at
+ * READ time and deletes nothing. Rows with no policy number fall back to their id and are always
+ * kept.
+ *
+ * ⚠️ Do NOT extend this to collapse by chassis_no. A vehicle legitimately carries an own-damage
+ * policy AND a fixed-premium third-party companion, plus one pair per renewal year: 7,144 Hyundai
+ * chassis repeat for that reason and every row is real. Renewal EVENTS are counted off the
+ * od-discriminator, not off row counts — see `odDiscriminator`.
+ *
+ * Aliased back to the physical table name so existing `FROM ${table}` and qualified column
+ * references keep working untouched; pass `alias` where the caller supplies its own.
+ */
+export function insuranceSource(brand: InsuranceBrandId | InsuranceBrand, alias?: string): string {
+  const resolved = brandOf(brand)
+  if (!resolved.versionedByPolicyNo) {
+    return alias ? `${resolved.table} ${alias}` : resolved.table
+  }
+  const key = `COALESCE(NULLIF(TRIM(policy_no), ''), 'row:' || id::text)`
+  return `(SELECT DISTINCT ON (${key}) * FROM ${resolved.table}`
+    + ` ORDER BY ${key}, uploaded_at DESC NULLS LAST, id DESC) AS ${alias ?? resolved.table}`
+}
+
 export function historyTables(brand: InsuranceBrandId | InsuranceBrand): { id: InsuranceBrandId; table: string }[] {
-  return brandOf(brand).historyPeers.map((id) => ({ id, table: INSURANCE_BRANDS[id].table }))
+  // `table` carries the DEDUPED source, so every UNION arm counts one row per policy.
+  return brandOf(brand).historyPeers.map((id) => ({ id, table: insuranceSource(id) }))
 }
 
 /**

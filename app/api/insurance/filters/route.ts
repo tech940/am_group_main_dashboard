@@ -9,7 +9,7 @@ import {
   hasCol,
   resolveBrand,
   type InsuranceColumnKey,
-} from '@/lib/insurance/brands'
+  insuranceSource,} from '@/lib/insurance/brands'
 import { createDbGate, mapWithConcurrency } from '@/lib/db/concurrency'
 
 export const dynamic = 'force-dynamic'
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const brandId = resolveBrand(searchParams.get('type'))
     const brand = INSURANCE_BRANDS[brandId]
-    const tableName = brand.table
+    const tableName = insuranceSource(brand)
 
     // Only the columns this brand actually has. `dealerCode` survives even when single-valued —
     // the client decides whether a one-option dropdown is worth showing.

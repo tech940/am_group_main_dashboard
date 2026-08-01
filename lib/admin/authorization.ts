@@ -37,6 +37,7 @@ export const PROTECTED_ROLES = new Set<AppUser['role']>([
   'accounts',
   'purchase_manager',
   'finance_head',
+  'hr',
 ])
 export const BRANCH_ASSIGNABLE_ROLES = new Set<AppUser['role']>([
   'manager',

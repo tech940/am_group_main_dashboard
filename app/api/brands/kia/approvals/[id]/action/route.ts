@@ -36,7 +36,7 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid action. Must be APPROVE, REJECT, HOLD, or SEND_BACK.' }, { status: 400 })
     }
 
-    if (!stage || !['sales_manager', 'accounts', 'ea', 'md', 'payment_done'].includes(stage)) {
+    if (!stage || !['sales_manager', 'hr', 'accounts', 'ea', 'md', 'payment_done'].includes(stage)) {
       return NextResponse.json({ error: 'Invalid stage.' }, { status: 400 })
     }
 
@@ -48,11 +48,16 @@ export async function POST(
       ['accounts', 'accounts_head', 'accounts_team', 'finance_head', 'finance_team', 'assistant_manager', 'manager'].includes(appUser.role) ||
       userRoleLower.includes('account') ||
       userRoleLower.includes('finance')
+    const isHrUser =
+      ['hr', 'hr_head', 'hr_team', 'hr_manager'].includes(appUser.role) ||
+      userRoleLower.includes('hr')
 
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
       isAuthorized = isTester || appUser.role === 'ed' || isSuperUser
+    } else if (stage === 'hr') {
+      isAuthorized = isTester || isSuperUser || isHrUser
     } else if (stage === 'accounts') {
       isAuthorized = isTester || isSuperUser || isAccountsUser
     } else if (stage === 'ea') {
@@ -82,16 +87,34 @@ export async function POST(
       return NextResponse.json({ error: 'This request is currently sent back for clarification and cannot be approved, rejected, or put on hold until the submitter re-submits it.' }, { status: 400 })
     }
 
+    const isHrApprovalRequired = (typeStr?: string | null) => {
+      if (!typeStr) return false
+      const norm = typeStr.trim().toLowerCase()
+      return ['salary', 'pf', 'incentive', 'training expense', 'training_expense', 'training', 'uniform', 'esi'].includes(norm)
+    }
+
     // Check steps order
-    // Flow: 1: ED (sales_manager) -> 2: EA (not mandatory) -> 3: MD -> 4: Accounts (payment_done)
+    // Flow: 1: ED -> 2: HR (if required for Salary/PF/Incentive/Training/Uniform/ESI) -> 3: EA (optional) -> 4: MD -> 5: Accounts
     if (action !== 'SEND_BACK') {
-      if (stage === 'ea' && !isSuperUser && !isTester) {
+      const requiresHr = isHrApprovalRequired(requestRow.approvalType)
+
+      if (stage === 'hr' && !isSuperUser && !isTester) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
+        }
+      } else if (stage === 'ea' && !isSuperUser && !isTester) {
+        if (requestRow.vpApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
+        }
+        if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'HR approval is pending.' }, { status: 400 })
         }
       } else if (stage === 'md' && !isSuperUser && !isTester) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval must be completed first.' }, { status: 400 })
+        }
+        if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'HR approval must be completed first for Salary/PF/Incentive/Training/Uniform/ESI requests.' }, { status: 400 })
         }
       } else if ((stage === 'accounts' || stage === 'payment_done') && !isSuperUser && !isTester) {
         if (
@@ -109,6 +132,7 @@ export async function POST(
 
     if (action === 'SEND_BACK') {
       updates.vpApproval = null
+      updates.hrApproval = null
       updates.accountApproval = null
       updates.eaApproval = null
       updates.managementApproval = null
@@ -149,6 +173,8 @@ export async function POST(
     } else {
       if (stage === 'sales_manager') {
         updates.vpApproval = statusVal
+      } else if (stage === 'hr') {
+        updates.hrApproval = statusVal
       } else if (stage === 'ea') {
         updates.eaApproval = statusVal
       } else if (stage === 'md') {
@@ -194,6 +220,7 @@ export async function POST(
     const historyList = Array.isArray(requestRow.history) ? [...requestRow.history] : []
     const roleLabel = 
       stage === 'sales_manager' ? 'ED' : 
+      stage === 'hr' ? 'HR' :
       stage === 'accounts' ? 'Accounts (Invoice)' : 
       stage === 'ea' ? 'EA' : 
       stage === 'payment_done' ? 'Accounts (Payment)' :

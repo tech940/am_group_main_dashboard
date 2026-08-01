@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Badge } from '@/components/ui/badge'
@@ -204,6 +204,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const [selectedBrand, setSelectedBrand] = useState('All')
   const [selectedGlId, setSelectedGlId] = useState('')
   const [glAccounts, setGlAccounts] = useState<any[]>([])
+
+  // Main Sub-view tab & Completed Spend filters state
+  const [mainSubView, setMainSubView] = useState<'requests' | 'completed_spend'>('requests')
+  const [completedDatePreset, setCompletedDatePreset] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'this_quarter' | 'custom'>('this_month')
+  const [completedStartDate, setCompletedStartDate] = useState<Date | null>(null)
+  const [completedEndDate, setCompletedEndDate] = useState<Date | null>(null)
+  const [completedSearch, setCompletedSearch] = useState('')
+  const [completedDeptFilter, setCompletedDeptFilter] = useState('All')
+  const [completedTypeFilter, setCompletedTypeFilter] = useState('All')
 
   useEffect(() => {
     fetch('/api/brands/kia/gl-accounts')
@@ -937,9 +946,18 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
 
+  const isHrApprovalRequired = (typeStr?: string | null) => {
+    if (!typeStr) return false
+    const norm = typeStr.trim().toLowerCase()
+    return ['salary', 'pf', 'incentive', 'training expense', 'training_expense', 'training', 'uniform', 'esi'].includes(norm)
+  }
+
   const getPendingStageLabel = (req: ApprovalRequest): string => {
     if (req.vpApproval === 'NOT APPROVED') return 'Rejected by ED'
     if (req.vpApproval === 'HELD') return 'Held by ED'
+
+    if (req.hrApproval === 'NOT APPROVED') return 'Rejected by HR'
+    if (req.hrApproval === 'HELD') return 'Held by HR'
 
     if (req.eaApproval === 'NOT APPROVED') return 'Rejected by EA'
     if (req.eaApproval === 'HELD') return 'Held by EA'
@@ -959,12 +977,18 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
     if (!req.vpApproval || req.vpApproval === '') return 'Pending ED'
 
-    // ED approved — EA must see it first (non-blocking: MD can also act)
+    // ED approved — check if HR approval is required
+    const requiresHr = isHrApprovalRequired(req.approvalType)
+    if (requiresHr && (!req.hrApproval || req.hrApproval === '')) {
+      return 'Pending HR'
+    }
+
+    // ED (and HR if required) approved — EA stage
     if (req.vpApproval === 'APPROVED' && (!req.eaApproval || req.eaApproval === '')) {
       return 'Pending EA'
     }
 
-    // EA approved (or EA was bypassed by MD) — now it's MD's turn
+    // Pending MD
     if (req.vpApproval === 'APPROVED' && (!req.managementApproval || req.managementApproval === '')) {
       return 'Pending MD'
     }
@@ -986,6 +1010,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (pendingLabel === 'Pending Payment') return 'payment_done'
     if (pendingLabel === 'Pending MD') return 'md'
     if (pendingLabel === 'Pending EA') return 'ea'
+    if (pendingLabel === 'Pending HR') return 'hr'
     if (pendingLabel === 'Pending ED') return 'sales_manager'
 
     if (['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)) {
@@ -1006,10 +1031,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     effectiveRoleLower.includes('account') ||
     effectiveRoleLower.includes('finance')
 
+  const isHrRole =
+    ['hr', 'hr_head', 'hr_team', 'hr_manager', 'admin', 'developer'].includes(currentUser.role) ||
+    ['hr'].includes(effectiveRole) ||
+    userRoleLower.includes('hr') ||
+    effectiveRoleLower.includes('hr')
+
   const isUserAuthorizedForStage = (stage: string) => {
     if (['developer', 'admin'].includes(currentUser.role)) return true
 
     if (stage === 'sales_manager') return effectiveRole === 'ed' || ['md', 'ceo'].includes(effectiveRole)
+    if (stage === 'hr') return isHrRole || ['md', 'ceo'].includes(effectiveRole)
     if (stage === 'ea') return ['ea'].includes(effectiveRole) || ['md', 'ceo'].includes(effectiveRole)
     if (stage === 'md') return ['md', 'ceo'].includes(effectiveRole)
     if (stage === 'accounts' || stage === 'payment_done') return isAccountsRole || ['md', 'ceo'].includes(effectiveRole)
@@ -1025,6 +1057,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
     if (pendingLabel === 'Pending Accounts' || pendingLabel === 'Held by Accounts') {
       return isAccountsRole || ['md', 'ceo'].includes(effectiveRole)
+    }
+
+    if (pendingLabel === 'Pending HR' || pendingLabel === 'Held by HR') {
+      return isHrRole || ['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)
     }
 
     if (pendingLabel === 'Pending ED' || pendingLabel === 'Held by ED') {
@@ -1127,6 +1163,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       const pendingLabel = getPendingStageLabel(row)
       const matchesStage = selectedStage === 'All' ||
         (selectedStage === 'pending_sales_manager' && pendingLabel === 'Pending ED') ||
+        (selectedStage === 'pending_hr' && pendingLabel === 'Pending HR') ||
         (selectedStage === 'pending_accounts' && pendingLabel === 'Pending Accounts') ||
         (selectedStage === 'pending_ea' && pendingLabel === 'Pending EA') ||
         (selectedStage === 'pending_md' && pendingLabel === 'Pending MD') ||
@@ -1327,75 +1364,132 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
   const analyticsData = useMemo(() => {
-    if (!data?.rows) {
-      return { 
-        totalApproved: 0, 
-        totalPending: 0, 
-        avgTxSize: 0, 
-        topVendors: [], 
-        topGlAccounts: [], 
-        spendHighlights: {
-          adSpend: 0,
-          repairSpend: 0,
-          fuelSpend: 0,
-          salarySpend: 0,
-          securitySpend: 0,
-          vehiclePurchase: 0,
-          partsPurchase: 0,
-          travelSpend: 0,
-          softwareSpend: 0,
-          professionalSpend: 0
-        }
+    const empty = { 
+      totalApproved: 0, 
+      totalPending: 0, 
+      totalAll: 0,
+      totalCount: 0,
+      approvedCount: 0,
+      pendingCount: 0,
+      avgTxSize: 0, 
+      topVendors: [] as { name: string; total: number }[], 
+      topGlAccounts: [] as { name: string; total: number }[], 
+      spendHighlights: {
+        adSpend: 0, repairSpend: 0, fuelSpend: 0, salarySpend: 0,
+        securitySpend: 0, vehiclePurchase: 0, partsPurchase: 0,
+        travelSpend: 0, softwareSpend: 0, professionalSpend: 0
       }
     }
+    if (!data?.rows || data.rows.length === 0) return empty
     
-    let totalApproved = 0
-    let totalPending = 0
+    let totalApproved = 0   // MD approved or fully paid
+    let totalPending = 0    // still in workflow (not rejected)
+    let totalAll = 0        // all requests combined
     let approvedCount = 0
     let pendingCount = 0
     const vendorMap: Record<string, number> = {}
     const glMap: Record<string, number> = {}
     
-    let adSpend = 0
-    let repairSpend = 0
-    let fuelSpend = 0
-    let salarySpend = 0
-    let securitySpend = 0
-    let vehiclePurchase = 0
-    let partsPurchase = 0
-    let travelSpend = 0
-    let softwareSpend = 0
-    let professionalSpend = 0
+    let adSpend = 0, repairSpend = 0, fuelSpend = 0, salarySpend = 0
+    let securitySpend = 0, vehiclePurchase = 0, partsPurchase = 0
+    let travelSpend = 0, softwareSpend = 0, professionalSpend = 0
 
     data.rows.forEach(row => {
       const amount = Number(row.amount || 0)
-      const stage = getPendingStageLabel(row)
-      
-      if (stage === 'Fully Approved') {
+      totalAll += amount
+
+      // "Approved" = MD has approved (management approved), regardless of accounts stage
+      const mdApproved = row.managementApproval === 'APPROVED'
+      const rejected = row.vpApproval === 'NOT APPROVED' ||
+                       row.hrApproval === 'NOT APPROVED' ||
+                       row.eaApproval === 'NOT APPROVED' ||
+                       row.managementApproval === 'NOT APPROVED' ||
+                       row.accountApproval === 'NOT APPROVED'
+
+      if (mdApproved && !rejected) {
         totalApproved += amount
         approvedCount++
-      } else if (!stage.startsWith('Rejected')) {
+      } else if (!rejected) {
         totalPending += amount
         pendingCount++
       }
       
+      // Vendor & GL maps use ALL rows for true spend distribution
       const vName = (row.vendorName || 'Unknown Vendor').trim()
       vendorMap[vName] = (vendorMap[vName] || 0) + amount
 
       const glName = row.glName || 'Unclassified GL'
       glMap[glName] = (glMap[glName] || 0) + amount
 
+      // Category spend classification — use GL name for matching since glCodes may vary
+      const glNameNorm = (row.glName || '').toLowerCase()
+      const typeNorm = (row.approvalType || row.typeOfPayment || '').toLowerCase()
       const glCode = row.glCode || ''
-      if (['GL-032', 'GL-033', 'GL-034'].includes(glCode)) adSpend += amount
-      else if (['GL-039', 'GL-040', 'GL-041', 'GL-042'].includes(glCode)) repairSpend += amount
-      else if (['GL-047', 'GL-048'].includes(glCode)) fuelSpend += amount
-      else if (['GL-024'].includes(glCode)) salarySpend += amount
-      else if (['GL-045'].includes(glCode)) securitySpend += amount
-      else if (['GL-011', 'GL-012', 'GL-013', 'GL-014'].includes(glCode)) vehiclePurchase += amount
-      else if (['GL-015', 'GL-016'].includes(glCode)) partsPurchase += amount
-      else if (['GL-052'].includes(glCode)) travelSpend += amount
-      else if (['GL-056'].includes(glCode)) softwareSpend += amount
-      else if (['GL-057', 'GL-059'].includes(glCode)) professionalSpend += amount
+      const combined = `${glNameNorm} ${typeNorm}`
+
+      if (
+        ['GL-032','GL-033','GL-034'].includes(glCode) ||
+        combined.includes('advertisement') || combined.includes('advertis') ||
+        combined.includes('marketing') || combined.includes('promotion')
+      ) {
+        adSpend += amount
+      } else if (
+        ['GL-039','GL-040','GL-041','GL-042'].includes(glCode) ||
+        combined.includes('repair') || combined.includes('maintenance') ||
+        combined.includes('amc') || combined.includes('service charge')
+      ) {
+        repairSpend += amount
+      } else if (
+        ['GL-047','GL-048'].includes(glCode) ||
+        combined.includes('fuel') || combined.includes('petrol') ||
+        combined.includes('diesel') || combined.includes('running')
+      ) {
+        fuelSpend += amount
+      } else if (
+        ['GL-024'].includes(glCode) ||
+        combined.includes('salary') || combined.includes('salaries') ||
+        combined.includes('wage') || combined.includes('payroll') ||
+        typeNorm === 'salary' || typeNorm === 'pf' || typeNorm === 'esi' ||
+        typeNorm === 'incentive' || typeNorm === 'uniform'
+      ) {
+        salarySpend += amount
+      } else if (
+        ['GL-045'].includes(glCode) ||
+        combined.includes('security') || combined.includes('guard')
+      ) {
+        securitySpend += amount
+      } else if (
+        ['GL-011','GL-012','GL-013','GL-014'].includes(glCode) ||
+        combined.includes('vehicle purchase') || combined.includes('car purchase') ||
+        combined.includes('vehicle sale')
+      ) {
+        vehiclePurchase += amount
+      } else if (
+        ['GL-015','GL-016'].includes(glCode) ||
+        combined.includes('spare') || combined.includes('part') ||
+        combined.includes('accessory') || combined.includes('accessories')
+      ) {
+        partsPurchase += amount
+      } else if (
+        ['GL-052'].includes(glCode) ||
+        combined.includes('travel') || combined.includes('conveyance') ||
+        combined.includes('lodging') || combined.includes('hotel')
+      ) {
+        travelSpend += amount
+      } else if (
+        ['GL-056'].includes(glCode) ||
+        combined.includes('software') || combined.includes('subscription') ||
+        combined.includes('saas') || combined.includes('license')
+      ) {
+        softwareSpend += amount
+      } else if (
+        ['GL-057','GL-059'].includes(glCode) ||
+        combined.includes('professional') || combined.includes('legal') ||
+        combined.includes('audit') || combined.includes('consultant') ||
+        combined.includes('training')
+      ) {
+        professionalSpend += amount
+      }
     })
     
     const topVendors = Object.entries(vendorMap)
@@ -1406,30 +1500,118 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     const topGlAccounts = Object.entries(glMap)
       .map(([name, total]) => ({ name, total }))
       .sort((a, b) => b.total - a.total)
-      .slice(0, 10)
+      .slice(0, 5)
       
-    const totalTransactions = approvedCount + pendingCount
-    const avgTxSize = totalTransactions > 0 ? (totalApproved + totalPending) / totalTransactions : 0
+    const totalCount = data.rows.length
+    const avgTxSize = totalCount > 0 ? totalAll / totalCount : 0
     
     return {
       totalApproved,
       totalPending,
+      totalAll,
+      totalCount,
+      approvedCount,
+      pendingCount,
       avgTxSize,
       topVendors,
       topGlAccounts,
       spendHighlights: {
-        adSpend,
-        repairSpend,
-        fuelSpend,
-        salarySpend,
-        securitySpend,
-        vehiclePurchase,
-        partsPurchase,
-        travelSpend,
-        softwareSpend,
-        professionalSpend
+        adSpend, repairSpend, fuelSpend, salarySpend,
+        securitySpend, vehiclePurchase, partsPurchase,
+        travelSpend, softwareSpend, professionalSpend
       }
     }
+  }, [data?.rows])
+
+  const completedPaymentsList = useMemo(() => {
+    if (!data?.rows) return []
+    return data.rows.filter((req) => {
+      const isCompleted = req.paymentStatus === 'PAID' || req.accountApproval === 'APPROVED' || req.managementApproval === 'APPROVED'
+      if (!isCompleted) return false
+
+      const dateToUse = req.paymentCompletedAt ? new Date(req.paymentCompletedAt) : new Date(req.updatedAt || req.createdAt)
+      const now = new Date()
+
+      if (completedDatePreset === 'today') {
+        if (dateToUse.toDateString() !== now.toDateString()) return false
+      } else if (completedDatePreset === 'this_week') {
+        const startOfWeek = new Date(now)
+        startOfWeek.setDate(now.getDate() - now.getDay())
+        startOfWeek.setHours(0, 0, 0, 0)
+        if (dateToUse < startOfWeek) return false
+      } else if (completedDatePreset === 'this_month') {
+        if (dateToUse.getMonth() !== now.getMonth() || dateToUse.getFullYear() !== now.getFullYear()) return false
+      } else if (completedDatePreset === 'this_quarter') {
+        const currentQuarter = Math.floor(now.getMonth() / 3)
+        const itemQuarter = Math.floor(dateToUse.getMonth() / 3)
+        if (itemQuarter !== currentQuarter || dateToUse.getFullYear() !== now.getFullYear()) return false
+      } else if (completedDatePreset === 'custom') {
+        if (completedStartDate) {
+          const start = new Date(completedStartDate)
+          start.setHours(0, 0, 0, 0)
+          if (dateToUse < start) return false
+        }
+        if (completedEndDate) {
+          const end = new Date(completedEndDate)
+          end.setHours(23, 59, 59, 999)
+          if (dateToUse > end) return false
+        }
+      }
+
+      if (completedDeptFilter !== 'All' && (req.department || '').trim().toUpperCase() !== completedDeptFilter.trim().toUpperCase()) {
+        return false
+      }
+
+      if (completedTypeFilter !== 'All' && (req.approvalType || '').trim().toUpperCase() !== completedTypeFilter.trim().toUpperCase()) {
+        return false
+      }
+
+      if (completedSearch.trim()) {
+        const q = completedSearch.trim().toLowerCase()
+        const match =
+          req.name.toLowerCase().includes(q) ||
+          (req.vendorName && req.vendorName.toLowerCase().includes(q)) ||
+          (req.department && req.department.toLowerCase().includes(q)) ||
+          (req.approvalType && req.approvalType.toLowerCase().includes(q)) ||
+          (req.invoiceNumber && req.invoiceNumber.toLowerCase().includes(q)) ||
+          (req.utrNumber && req.utrNumber.toLowerCase().includes(q)) ||
+          req.amount.includes(q)
+        if (!match) return false
+      }
+
+      return true
+    }).sort((a, b) => new Date(b.paymentCompletedAt || b.updatedAt || b.createdAt).getTime() - new Date(a.paymentCompletedAt || a.updatedAt || a.createdAt).getTime())
+  }, [data?.rows, completedDatePreset, completedStartDate, completedEndDate, completedDeptFilter, completedTypeFilter, completedSearch])
+
+  const totalCompletedSpend = useMemo(() => {
+    return completedPaymentsList.reduce((sum, r) => sum + Number(r.amount || 0), 0)
+  }, [completedPaymentsList])
+
+  const avgCompletedSpend = useMemo(() => {
+    if (completedPaymentsList.length === 0) return 0
+    return totalCompletedSpend / completedPaymentsList.length
+  }, [completedPaymentsList, totalCompletedSpend])
+
+  const spendByApprovalType = useMemo(() => {
+    const map: Record<string, { type: string; total: number; count: number }> = {}
+    completedPaymentsList.forEach((r) => {
+      const typeKey = r.approvalType || 'General Vendor Payment'
+      if (!map[typeKey]) {
+        map[typeKey] = { type: typeKey, total: 0, count: 0 }
+      }
+      map[typeKey].total += Number(r.amount || 0)
+      map[typeKey].count += 1
+    })
+    return Object.values(map).sort((a, b) => b.total - a.total)
+  }, [completedPaymentsList])
+
+  const completedApprovalTypes = useMemo(() => {
+    if (!data?.rows) return []
+    const types = new Set<string>()
+    data.rows.forEach(r => {
+      if (r.approvalType && r.approvalType.trim()) types.add(r.approvalType.trim())
+    })
+    return Array.from(types).sort()
   }, [data?.rows])
 
   function getSlaBadge(createdAt: string) {
@@ -1514,9 +1696,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
   const renderWorkflowStepper = (req: ApprovalRequest) => {
     const pendingLabel = getPendingStageLabel(req)
+    const requiresHr = isHrApprovalRequired(req.approvalType)
     
     const stages = [
       { key: 'sales_manager', label: 'ED', status: req.vpApproval },
+      ...(requiresHr ? [{ key: 'hr', label: 'HR', status: req.hrApproval }] : []),
       { key: 'accounts', label: 'Accounts (Invoice)', status: req.accountApproval },
       { key: 'ea', label: 'EA', status: req.eaApproval },
       { key: 'md', label: 'MD', status: req.managementApproval },
@@ -1535,6 +1719,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             // Check if this is the active stage
             let isActive = false
             if (pendingLabel === 'Pending ED' && stg.key === 'sales_manager') isActive = true
+            else if (pendingLabel === 'Pending HR' && stg.key === 'hr') isActive = true
             else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
             else if (pendingLabel === 'Pending EA' && stg.key === 'ea') isActive = true
             else if (pendingLabel === 'Pending MD' && stg.key === 'md') isActive = true
@@ -1688,6 +1873,258 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     <MainLayout title="Vendor Payments" subtitle="Manage payment requests and multi-stage approval workflows">
       <div className="space-y-6">
 
+        {/* SUB-VIEW SWITCHER HEADER */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-2.5 rounded-3xl border border-slate-200/80 shadow-2xs">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => setMainSubView('requests')}
+              className={cn(
+                'px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2',
+                mainSubView === 'requests'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              )}
+            >
+              <FileText className="w-4 h-4" />
+              <span>Active Workflow Requests</span>
+              <span className={cn(
+                'ml-1 px-2 py-0.5 rounded-full text-[10px] font-black',
+                mainSubView === 'requests' ? 'bg-slate-800 text-slate-200' : 'bg-slate-200 text-slate-700'
+              )}>
+                {totalCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMainSubView('completed_spend')}
+              className={cn(
+                'px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2',
+                mainSubView === 'completed_spend'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              )}
+            >
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>Approved & Completed Spend</span>
+              <span className={cn(
+                'ml-1 px-2 py-0.5 rounded-full text-[10px] font-black',
+                mainSubView === 'completed_spend' ? 'bg-emerald-800 text-emerald-100' : 'bg-emerald-100 text-emerald-800'
+              )}>
+                ₹{totalCompletedSpend.toLocaleString('en-IN')}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {mainSubView === 'completed_spend' ? (
+          <div className="space-y-6">
+            {/* Completed Spend Dashboard Cards */}
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-3xl p-5 shadow-sm border text-white" style={{background: 'linear-gradient(135deg, #055B65 0%, #044951 60%, #03373d 100%)', borderColor: 'rgba(5,91,101,0.3)'}}>
+                <span className="text-[10px] font-black uppercase tracking-wider block" style={{color: 'rgba(178,201,197,0.9)'}}>Total Approved &amp; Paid Spend</span>
+                <span className="text-2xl font-black text-white mt-1 block">₹{totalCompletedSpend.toLocaleString('en-IN')}</span>
+                <span className="text-[10px] font-semibold block mt-1" style={{color: 'rgba(178,201,197,0.8)'}}>Sum of completed payment orders</span>
+              </div>
+              <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Completed Transactions</span>
+                <span className="text-2xl font-black text-slate-900 mt-1 block">{completedPaymentsList.length}</span>
+                <span className="text-[10px] font-semibold text-slate-400 block mt-1">Approved & executed payments</span>
+              </div>
+              <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Average Payment Value</span>
+                <span className="text-2xl font-black text-indigo-600 mt-1 block">₹{Math.round(avgCompletedSpend).toLocaleString('en-IN')}</span>
+                <span className="text-[10px] font-semibold text-slate-400 block mt-1">Per transaction average</span>
+              </div>
+              <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Top Spend Category</span>
+                <span className="text-lg font-black text-slate-900 mt-1 block truncate">
+                  {spendByApprovalType[0]?.type || 'N/A'}
+                </span>
+                <span className="text-[10px] font-bold text-emerald-600 block mt-0.5">
+                  {spendByApprovalType[0] ? `₹${spendByApprovalType[0].total.toLocaleString('en-IN')} (${spendByApprovalType[0].count} orders)` : 'No transactions'}
+                </span>
+              </div>
+            </div>
+
+            {/* Toolbar: Filters & Date presets */}
+            <div className="bg-white rounded-3xl border border-slate-200/80 p-4 shadow-xs flex flex-col lg:flex-row items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mr-2">Date Presets:</span>
+                {[
+                  { id: 'this_month', label: 'This Month' },
+                  { id: 'today', label: 'Today' },
+                  { id: 'this_week', label: 'This Week' },
+                  { id: 'this_quarter', label: 'This Quarter' },
+                  { id: 'all', label: 'All Time' },
+                  { id: 'custom', label: 'Custom Range' },
+                ].map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setCompletedDatePreset(preset.id as any)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-xl text-xs font-black transition-all',
+                      completedDatePreset === preset.id
+                        ? 'bg-[#055B65] text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+                <div className="relative flex-1 sm:w-[220px]">
+                  <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    value={completedSearch}
+                    onChange={(e) => setCompletedSearch(e.target.value)}
+                    placeholder="Search completed payments..."
+                    className="pl-9 h-9 text-xs rounded-xl border-slate-200"
+                  />
+                </div>
+                <select
+                  value={completedTypeFilter}
+                  onChange={(e) => setCompletedTypeFilter(e.target.value)}
+                  className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700"
+                >
+                  <option value="All">All Payment Types</option>
+                  {completedApprovalTypes.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <select
+                  value={completedDeptFilter}
+                  onChange={(e) => setCompletedDeptFilter(e.target.value)}
+                  className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700"
+                >
+                  <option value="All">All Departments</option>
+                  {uniqueDepartments.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Custom Date Pickers */}
+            {completedDatePreset === 'custom' && (
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 flex flex-wrap items-center gap-4">
+                <span className="text-xs font-bold text-slate-700">Custom Date Range:</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">From:</span>
+                  <input
+                    type="date"
+                    value={completedStartDate ? completedStartDate.toISOString().split('T')[0] : ''}
+                    onChange={(e) => setCompletedStartDate(e.target.value ? new Date(e.target.value) : null)}
+                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">To:</span>
+                  <input
+                    type="date"
+                    value={completedEndDate ? completedEndDate.toISOString().split('T')[0] : ''}
+                    onChange={(e) => setCompletedEndDate(e.target.value ? new Date(e.target.value) : null)}
+                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold"
+                  />
+                </div>
+                {(completedStartDate || completedEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => { setCompletedStartDate(null); setCompletedEndDate(null); }}
+                    className="text-xs font-bold text-rose-600 hover:underline"
+                  >
+                    Clear dates
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Spend Breakdown by Category Cards */}
+            <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs space-y-3">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Spend Breakdown by Payment Type</span>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {spendByApprovalType.map((item) => (
+                  <div key={item.type} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-black text-slate-900">{item.type}</p>
+                      <p className="text-[10px] font-bold text-slate-400">{item.count} approved order{item.count !== 1 ? 's' : ''}</p>
+                    </div>
+                    <p className="text-sm font-black text-emerald-600 font-mono">₹{item.total.toLocaleString('en-IN')}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Completed Payments Table */}
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="p-4 text-white flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #055B65 0%, #044951 100%)' }}>
+                <div>
+                  <h3 className="text-sm font-black tracking-tight">Completed &amp; Approved Vendor Payments</h3>
+                  <p className="text-[10px] font-semibold text-teal-100/90">Showing {completedPaymentsList.length} approved orders</p>
+                </div>
+                <span className="text-xs font-mono font-black text-white bg-white/15 px-3 py-1 rounded-full border border-white/20">
+                  Total Spend: ₹{totalCompletedSpend.toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-3">Vendor / Beneficiary</th>
+                      <th className="px-4 py-3">Payment Type</th>
+                      <th className="px-4 py-3">Department</th>
+                      <th className="px-4 py-3 text-right">Amount (₹)</th>
+                      <th className="px-4 py-3">Payment Date</th>
+                      <th className="px-4 py-3">UTR / Invoice</th>
+                      <th className="px-4 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {completedPaymentsList.map((row) => (
+                      <tr key={row.id} className="hover:bg-slate-50/80 transition-colors cursor-pointer" onClick={() => setDetailRow(row)}>
+                        <td className="px-4 py-3 font-black text-slate-900">
+                          {row.vendorName || row.name}
+                          <span className="block text-[10px] font-semibold text-slate-400">{row.email}</span>
+                        </td>
+                        <td className="px-4 py-3 font-bold text-slate-700">
+                          <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[10px] font-bold">
+                            {row.approvalType || 'General'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-600">{row.department || '—'}</td>
+                        <td className="px-4 py-3 text-right font-mono font-black text-emerald-700 text-xs">
+                          ₹{Number(row.amount || 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-600">
+                          {row.paymentCompletedAt ? new Date(row.paymentCompletedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date(row.updatedAt || row.createdAt).toLocaleDateString('en-IN')}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[10px] text-slate-500">
+                          {row.utrNumber ? <span className="font-bold text-slate-900">UTR: {row.utrNumber}</span> : row.invoiceNumber ? `Inv: ${row.invoiceNumber}` : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            ✓ PAID
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {completedPaymentsList.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-slate-400 font-semibold">
+                          No completed vendor payments found for the selected date range and filters.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <React.Fragment>
         {/* 1. TOP METRICS STRIP */}
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
           {/* Card 1: Total Requests */}
@@ -1742,7 +2179,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
 
         {/* 2. FILTER BAR */}
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-4 flex flex-col lg:flex-row items-center gap-3">
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row items-center gap-3">
           <div className="relative flex-1 w-full">
             <Search className="absolute left-4 top-3 h-4 w-4 text-slate-400" />
             <Input
@@ -1752,7 +2190,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               className="pl-11 h-10 w-full rounded-2xl border-slate-200 focus:ring-slate-950 font-semibold"
             />
           </div>
-          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <select
               value={selectedBrand}
               onChange={e => setSelectedBrand(e.target.value)}
@@ -1787,8 +2225,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               <button
                 type="button"
                 onClick={() => setCalendarOpen(prev => !prev)}
-                className={`h-10 px-4 w-full sm:w-auto rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer flex items-center justify-between gap-2 transition-all ${
-                  startDate ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700' : ''
+                className={`h-10 px-4 w-full sm:w-auto rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#055B65] bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer flex items-center justify-between gap-2 transition-all ${
+                  startDate ? 'border-[#055B65] bg-teal-50/50 text-[#055B65]' : ''
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -1802,9 +2240,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       setStartDate(null)
                       setEndDate(null)
                     }}
-                    className="hover:bg-indigo-100 p-0.5 rounded-full"
+                    className="hover:bg-teal-100 p-0.5 rounded-full"
                   >
-                    <X className="w-3 h-3 text-indigo-500" />
+                    <X className="w-3 h-3 text-[#055B65]" />
                   </span>
                 )}
               </button>
@@ -1853,11 +2291,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
                       let cellClass = "h-8 w-8 text-xs flex items-center justify-center rounded-xl transition-all cursor-pointer "
                       if (isSelectedStart) {
-                        cellClass += "bg-slate-950 text-white font-black"
+                        cellClass += "bg-[#055B65] text-white font-black"
                       } else if (isSelectedEnd) {
-                        cellClass += "bg-slate-950 text-white font-black"
+                        cellClass += "bg-[#055B65] text-white font-black"
                       } else if (isInRange) {
-                        cellClass += "bg-slate-100 text-slate-900 font-bold"
+                        cellClass += "bg-teal-50 text-teal-900 font-bold"
                       } else if (day.isCurrentMonth) {
                         cellClass += "text-slate-800 hover:bg-slate-50 font-semibold"
                       } else {
@@ -1903,7 +2341,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     <button
                       type="button"
                       onClick={() => setCalendarOpen(false)}
-                      className="text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 bg-slate-950 text-white rounded-xl hover:bg-slate-800"
+                      className="text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 bg-[#055B65] text-white rounded-xl hover:bg-teal-800"
                     >
                       Apply
                     </button>
@@ -1915,10 +2353,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             <select
               value={selectedStage}
               onChange={e => setSelectedStage(e.target.value)}
-              className="h-10 px-4 w-full sm:w-[180px] rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer appearance-none"
+              className="h-10 px-4 w-full sm:w-[180px] rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#055B65] bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer appearance-none"
             >
               <option value="All">All Workflow States</option>
               <option value="pending_sales_manager">Pending ED</option>
+              <option value="pending_hr">Pending HR</option>
               <option value="pending_accounts">Pending Accounts</option>
               <option value="pending_ea">Pending EA</option>
               <option value="pending_md">Pending MD</option>
@@ -1935,11 +2374,16 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               className="h-10 px-4 rounded-2xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5"
             >
               <span>Filters</span>
-              <span className="bg-slate-950 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
+              <span className="bg-[#055B65] text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
                 {activeFiltersCount}
               </span>
             </button>
 
+          </div>
+          </div>
+
+          {/* Row 2: Action buttons */}
+          <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
             <Button
               variant="outline"
               onClick={() => {
@@ -1952,7 +2396,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 }
                 window.open(`/api/brands/kia/approvals/export-tally?ids=${approvedIds.join(',')}`, '_blank')
               }}
-              className="h-10 px-4 rounded-2xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center gap-1.5 text-xs font-bold"
+              className="h-9 px-4 rounded-2xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center gap-1.5 text-xs font-bold"
             >
               <Download className="w-4 h-4 text-slate-500" />
               <span>Export Tally CSV</span>
@@ -1962,15 +2406,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               variant="outline"
               onClick={() => setShowAnalytics(!showAnalytics)}
               className={cn(
-                "h-10 px-4 rounded-2xl border-slate-200 flex items-center justify-center gap-1.5 text-xs font-bold transition-all",
-                showAnalytics ? "bg-slate-900 border-slate-900 text-white hover:bg-slate-800" : "bg-white text-slate-700 hover:bg-slate-50"
+                "h-9 px-4 rounded-2xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all",
+                showAnalytics
+                  ? "bg-[#055B65] border-[#055B65] text-white hover:bg-teal-800"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               )}
             >
               <BarChart3 className="w-4 h-4" />
               <span>{showAnalytics ? 'Hide Analytics' : 'Show Analytics'}</span>
             </Button>
 
-            <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isLoading || isFetching} className="h-10 w-10 rounded-2xl border-slate-200 flex-shrink-0">
+            <div className="flex-1" />
+
+            <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isLoading || isFetching} className="h-9 w-9 rounded-2xl border-slate-200 flex-shrink-0">
               {isFetching ? <Loader2 className="w-4 h-4 animate-spin text-slate-500" /> : <RefreshCw className="w-4 h-4 text-slate-500" />}
             </Button>
           </div>
@@ -1983,21 +2431,21 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               {/* Left Column (KPI Cards) */}
               <div className="md:col-span-1 space-y-4">
                 <div className="bg-white rounded-3xl p-5 border border-slate-100/80 shadow-[0_4px_20px_rgba(15,23,42,0.02)] flex flex-col justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Approved Spend</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">MD Approved Spend</span>
                   <span className="text-2xl font-black text-slate-900 mt-2">₹{analyticsData.totalApproved.toLocaleString('en-IN')}</span>
                   <span className="text-[10px] font-semibold text-emerald-600 mt-2 flex items-center gap-1">
-                    <TrendingUp className="w-3.5 h-3.5" /> Approved transactions
+                    <TrendingUp className="w-3.5 h-3.5" /> {analyticsData.approvedCount} request{analyticsData.approvedCount !== 1 ? 's' : ''} approved by MD
                   </span>
                 </div>
                 <div className="bg-white rounded-3xl p-5 border border-slate-100/80 shadow-[0_4px_20px_rgba(15,23,42,0.02)] flex flex-col justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Pending Approvals Value</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Still In Workflow</span>
                   <span className="text-2xl font-black text-amber-600 mt-2">₹{analyticsData.totalPending.toLocaleString('en-IN')}</span>
-                  <span className="text-[10px] font-semibold text-slate-400 mt-2">Awaiting decision</span>
+                  <span className="text-[10px] font-semibold text-slate-400 mt-2">{analyticsData.pendingCount} request{analyticsData.pendingCount !== 1 ? 's' : ''} awaiting approval</span>
                 </div>
                 <div className="bg-white rounded-3xl p-5 border border-slate-100/80 shadow-[0_4px_20px_rgba(15,23,42,0.02)] flex flex-col justify-between">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Avg Transaction Size</span>
                   <span className="text-2xl font-black text-indigo-600 mt-2">₹{Math.round(analyticsData.avgTxSize).toLocaleString('en-IN')}</span>
-                  <span className="text-[10px] font-semibold text-slate-400 mt-2">Across all requests</span>
+                  <span className="text-[10px] font-semibold text-slate-400 mt-2">Across all {analyticsData.totalCount} requests</span>
                 </div>
               </div>
 
@@ -2088,49 +2536,70 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
         {/* Tab switch bar for Pending My Approval vs All Requests */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-          <div className="flex gap-6 text-sm font-bold">
+          <div className="flex flex-wrap gap-6 text-sm font-bold">
             <button
-              onClick={() => setFilterScope('pending')}
+              onClick={() => {
+                setFilterScope('pending')
+                setMainSubView('requests')
+              }}
               className={`pb-3 relative transition-all ${
-                filterScope === 'pending' ? 'text-indigo-600 font-black' : 'text-slate-400 hover:text-slate-600'
+                filterScope === 'pending' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               <span>Pending My Approval ({pendingForMeCount})</span>
               {filterScope === 'pending' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
               )}
             </button>
             <button
-              onClick={() => setFilterScope('all')}
+              onClick={() => {
+                setFilterScope('all')
+                setMainSubView('requests')
+              }}
               className={`pb-3 relative transition-all ${
-                filterScope === 'all' ? 'text-indigo-600 font-black' : 'text-slate-400 hover:text-slate-600'
+                filterScope === 'all' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               <span>All Requests ({totalCount})</span>
               {filterScope === 'all' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
               )}
             </button>
             <button
-              onClick={() => setFilterScope('vendors')}
+              onClick={() => setMainSubView('completed_spend')}
+              className="pb-3 relative transition-all flex items-center gap-1.5 text-slate-400 hover:text-slate-600"
+            >
+              <span>Completed &amp; Paid Orders ({completedPaymentsList.length})</span>
+              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                ₹{totalCompletedSpend.toLocaleString('en-IN')}
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                setFilterScope('vendors')
+                setMainSubView('requests')
+              }}
               className={`pb-3 relative transition-all ${
-                filterScope === 'vendors' ? 'text-indigo-600 font-black' : 'text-slate-400 hover:text-slate-600'
+                filterScope === 'vendors' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               <span>Vendors ({vendorSummary.length})</span>
               {filterScope === 'vendors' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
               )}
             </button>
             <button
-              onClick={() => setFilterScope('gl_categories')}
+              onClick={() => {
+                setFilterScope('gl_categories')
+                setMainSubView('requests')
+              }}
               className={`pb-3 relative transition-all ${
-                filterScope === 'gl_categories' ? 'text-indigo-600 font-black' : 'text-slate-400 hover:text-slate-600'
+                filterScope === 'gl_categories' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               <span>GL Categories ({glSummary.length})</span>
               {filterScope === 'gl_categories' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
               )}
             </button>
           </div>
@@ -2778,7 +3247,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             </div>
           </div>
         )}
-      </div>
+      </React.Fragment>
+    )}
+    </div>
 
       {/* 4. DETAIL & ACTION CENTER OVERLAY MODAL */}
       <Dialog open={Boolean(detailRow)} onOpenChange={(open) => { if (!open) setDetailRow(null) }}>
@@ -3113,7 +3584,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 { key: 'ea', label: 'EA Review (Optional)', status: req.eaApproval },
                 { key: 'md', label: 'MD Approval', status: req.managementApproval },
                 { key: 'accounts', label: 'Accounts Processing', status: req.accountApproval },
-                { key: 'paid', label: 'Paid', status: req.paymentStatus === 'PAID' ? 'APPROVED' : null },
+                { key: 'paid', label: 'Paid', status: (req.paymentStatus === 'PAID' || req.accountApproval === 'APPROVED') ? 'APPROVED' : null },
               ]
 
               const getStageDate = (key: string) => {
@@ -3124,9 +3595,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   if (req.paymentStatus === 'PAID' && req.paymentCompletedAt) {
                     return new Date(req.paymentCompletedAt).toLocaleDateString('en-CA')
                   }
-                  if (req.managementApproval === 'APPROVED' && req.invoiceDocUrl) {
-                    const mdEntry = (req.history || []).find((h: any) => h.roleKey === 'md' && h.action === 'APPROVED')
-                    if (mdEntry) return new Date(mdEntry.timestamp).toLocaleDateString('en-CA')
+                  // If accounts approved, use accounts approval date
+                  if (req.accountApproval === 'APPROVED') {
+                    const accEntry = (req.history || []).find((h: any) => h.roleKey === 'accounts' && h.action === 'APPROVED')
+                    if (accEntry) return new Date(accEntry.timestamp).toLocaleDateString('en-CA')
+                    if (req.updatedAt) return new Date(req.updatedAt).toLocaleDateString('en-CA')
                   }
                   return null
                 }
@@ -3156,17 +3629,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       let textColor = 'text-slate-400 font-semibold'
 
                       if (isApproved) {
-                        circleColor = 'bg-slate-900 text-white border-slate-900 shadow-md shadow-slate-900/10'
-                        textColor = 'text-slate-900 font-black'
+                        circleColor = 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20'
+                        textColor = 'text-indigo-700 font-black'
                       } else if (isRejected) {
-                        circleColor = 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/10'
+                        circleColor = 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/20'
                         textColor = 'text-rose-700 font-black'
                       } else if (isHeld) {
-                        circleColor = 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/10'
+                        circleColor = 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20'
                         textColor = 'text-amber-700 font-black'
                       } else if (isActive) {
-                        circleColor = 'bg-blue-600 text-white border-blue-600 ring-4 ring-blue-100 shadow-md shadow-blue-600/10'
-                        textColor = 'text-blue-600 font-black'
+                        circleColor = 'bg-indigo-500 text-white border-indigo-500 ring-4 ring-indigo-100 shadow-md shadow-indigo-500/20'
+                        textColor = 'text-indigo-600 font-black'
                       }
 
                       const stageDate = getStageDate(stg.key)
@@ -3181,7 +3654,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                 "left-3 top-[24px] w-0.5 h-[24px] sm:left-auto",
                                 // Desktop horizontal line:
                                 "sm:top-4 sm:left-[50%] sm:w-[100%] sm:h-0.5",
-                                stages[i].status === 'APPROVED' ? 'bg-slate-900' : 'bg-slate-200'
+                                stages[i].status === 'APPROVED' ? 'bg-indigo-500' : 'bg-slate-200'
                               )}
                               style={{ zIndex: 1 }}
                             />
@@ -3614,17 +4087,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           type="button"
                           disabled={actionMutation.isPending}
                           onClick={() => {
-                            if (pendingStageKey === 'accounts' || pendingStageKey === 'payment_done') {
-                              setActionStage(pendingStageKey)
-                              setActionDecision('APPROVE')
-                            } else {
-                              actionMutation.mutate({
-                                id: detailRow.id,
-                                action: 'APPROVE',
-                                stage: pendingStageKey!,
-                                remarks: remarkText || ''
-                              })
-                            }
+                            actionMutation.mutate({
+                              id: detailRow.id,
+                              action: 'APPROVE',
+                              stage: pendingStageKey!,
+                              remarks: remarkText || ''
+                            })
                           }}
                           className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
                           style={{ backgroundColor: '#059669', color: '#ffffff' }}
@@ -4063,35 +4531,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               <Button
                 onClick={() => {
                   if (detailRow && actionStage) {
-                    if (actionStage === 'accounts') {
-                      if (!invoiceNumber.trim()) {
-                        toast({ title: 'Invoice number required', description: 'Please enter the invoice number.', variant: 'error' })
-                        return
-                      }
-                      if (!invoiceDocUrl) {
-                        toast({ title: 'Invoice upload required', description: 'Please upload the invoice document (PDF or image).', variant: 'error' })
-                        return
-                      }
-                    }
-                    if (actionStage === 'payment_done') {
-                      if (!utrNumberVal.trim()) {
-                        toast({ title: 'UTR number required', description: 'Please enter the transaction UTR number.', variant: 'error' })
-                        return
-                      }
-                      if (!paymentProofUrl) {
-                        toast({ title: 'Payment proof required', description: 'Please upload the payment proof document.', variant: 'error' })
-                        return
-                      }
-                    }
                     actionMutation.mutate({
                       id: detailRow.id,
                       action: 'APPROVE',
                       stage: actionStage,
                       remarks: actionRemarks,
-                      invoiceNumber: actionStage === 'accounts' ? invoiceNumber : undefined,
-                      invoiceDocUrl: actionStage === 'accounts' ? invoiceDocUrl : undefined,
-                      utrNumber: actionStage === 'payment_done' ? utrNumberVal : undefined,
-                      paymentProofUrl: actionStage === 'payment_done' ? paymentProofUrl : undefined,
+                      invoiceNumber: actionStage === 'accounts' && invoiceNumber ? invoiceNumber : undefined,
+                      invoiceDocUrl: actionStage === 'accounts' && invoiceDocUrl ? invoiceDocUrl : undefined,
+                      utrNumber: actionStage === 'payment_done' && utrNumberVal ? utrNumberVal : undefined,
+                      paymentProofUrl: actionStage === 'payment_done' && paymentProofUrl ? paymentProofUrl : undefined,
                       glAccountId: selectedGlId || undefined
                     })
                   }

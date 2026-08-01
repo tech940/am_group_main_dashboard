@@ -1936,6 +1936,84 @@ export async function holdKiaStockVehicle(
   return { vinNumber: vin, holdFor: 'dealer' }
 }
 
+/**
+ * Mark a free-stock vehicle BBND — "Build But Not Delivered".
+ *
+ * ⚠️ The status literal is `bbnd_marked`, NOT `bbnd`. `bbnd` is already taken by a DIFFERENT
+ * concept: a Booked-But-Not-in-DMS VIN typed in by hand so it can be allotted before the DMS feed
+ * catches up (see allotKiaBbndVehicle and the `bbnd` arms of the matching-vehicle queries). Reusing
+ * that literal would make hand-entered VINs and BBND-marked stock indistinguishable.
+ *
+ * The vehicle DELIBERATELY STAYS IN FREE STOCK (owner decision). That falls out of the free-stock
+ * filter in app/api/brands/kia/proforma/stock/route.ts, which excludes only
+ * ('hold_customer', 'hold_dealer', 'retail') — `bbnd_marked` is absent from that list, so the row
+ * keeps showing and stays allottable. Consequently BBND needs NO expiry or release clock: it is a
+ * label, not a reservation.
+ *
+ * ⚠️ kia_stock_local_statuses is ONE ROW PER VIN, so writing here would clobber a hold. The guard
+ * below refuses on any hold/retail state rather than silently releasing it.
+ *
+ * Remarks are MANDATORY — the whole point is recording WHY the car is built but undelivered.
+ */
+export async function markKiaStockBbnd(
+  vinNumber: string,
+  opts: { notes?: string | null },
+  appUser: AppUser,
+) {
+  if (!canAllotKiaVehicle(appUser.role)) throw new Error('You are not allowed to mark vehicles BBND.')
+  const vin = text(vinNumber).toUpperCase()
+  if (!vin) throw new Error('VIN is required')
+  const notes = text(opts.notes ?? '')
+  if (!notes) throw new Error('Remarks are required to mark a vehicle BBND.')
+
+  const [activeVin] = await db.select({ id: kiaVehicleAllocations.id }).from(kiaVehicleAllocations)
+    .where(and(eq(kiaVehicleAllocations.vinNumber, vin), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
+  if (activeVin) throw new Error('This VIN is allocated to an active booking and cannot be marked BBND.')
+
+  const [existing] = await db.select({ localStatus: kiaStockLocalStatuses.localStatus }).from(kiaStockLocalStatuses)
+    .where(eq(kiaStockLocalStatuses.vinNumber, vin)).limit(1)
+  const blocking = text(existing?.localStatus ?? '')
+  if (blocking === 'retail') throw new Error('This vehicle is already retailed and cannot be marked BBND.')
+  if (blocking === 'hold_dealer' || blocking === 'hold_customer') {
+    throw new Error('This vehicle is on hold. Release the hold before marking it BBND.')
+  }
+
+  const vehicle = await readStockVehicleRow(vin)
+  const base = {
+    localStatus: 'bbnd_marked',
+    dealerCode: nullableText(vehicle?.dealer_code),
+    model: nullableText(vehicle?.model),
+    variant: nullableText(vehicle?.variant),
+    color: nullableText(vehicle?.color),
+    engineNo: nullableText(vehicle?.engine_no),
+    vehicleSnapshot: (vehicle?.snapshot || {}) as JsonRecord,
+    notes,
+    stockStatusAtMark: null,
+    markedBy: appUser.id,
+    markedByName: appUser.fullName,
+    markedByRole: appUser.role,
+    updatedAt: new Date(),
+  }
+  await db.insert(kiaStockLocalStatuses).values({ vinNumber: vin, ...base, markedAt: new Date() }).onConflictDoUpdate({
+    target: kiaStockLocalStatuses.vinNumber,
+    set: { ...base, markedAt: new Date() },
+  })
+  return { vinNumber: vin, localStatus: 'bbnd_marked' }
+}
+
+/** Clear a BBND marker. Refuses on any other status so it can never delete a hold. */
+export async function clearKiaStockBbnd(vinNumber: string, appUser: AppUser) {
+  if (!canAllotKiaVehicle(appUser.role)) throw new Error('You are not allowed to clear BBND.')
+  const vin = text(vinNumber).toUpperCase()
+  if (!vin) throw new Error('VIN is required')
+  const [existing] = await db.select({ localStatus: kiaStockLocalStatuses.localStatus }).from(kiaStockLocalStatuses)
+    .where(eq(kiaStockLocalStatuses.vinNumber, vin)).limit(1)
+  if (!existing) return { vinNumber: vin, cleared: false }
+  if (text(existing.localStatus) !== 'bbnd_marked') throw new Error('This vehicle is not marked BBND.')
+  await db.delete(kiaStockLocalStatuses).where(eq(kiaStockLocalStatuses.vinNumber, vin))
+  return { vinNumber: vin, cleared: true }
+}
+
 // Release a dealer hold — deletes the local-status row so the VIN becomes matchable again.
 export async function releaseKiaStockHold(vinNumber: string, appUser: AppUser) {
   if (!canAllotKiaVehicle(appUser.role)) throw new Error('You are not allowed to release holds.')

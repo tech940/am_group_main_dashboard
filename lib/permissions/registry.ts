@@ -960,6 +960,7 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   cxm: 'CXM (Customer Experience) — marks Delivered',
   ccm: 'CCM (Customer Care Manager) — Delivered backup',
   process_coordinator: 'Process Coordinator (PC)',
+  hr: 'HR (Human Resources)',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -1293,6 +1294,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
+  hr: allPermissionKeys,
 }
 
 export function getTemplateMap(role: PermissionRole) {

@@ -49,6 +49,7 @@ export const ROLE_PROFILE: Record<PermissionRole, RoleProfile> = {
   developer: { tier: TIER.SUPER_ADMIN, family: 'super' },
   md: { tier: TIER.SUPER_ADMIN, family: 'super' },
   admin: { tier: TIER.SUPER_ADMIN, family: 'super' },
+  hr: { tier: TIER.SUPER_ADMIN, family: 'super' },
   // Leadership (global access — bundle is overwritten by the resolver, track is nominal)
   ceo: { tier: TIER.LEADERSHIP, family: 'tracked', track: 'branch' },
   ea: { tier: TIER.LEADERSHIP, family: 'tracked', track: 'branch' },

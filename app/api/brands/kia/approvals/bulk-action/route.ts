@@ -43,15 +43,26 @@ export async function POST(request: Request) {
     const failedRows = []
 
     for (const row of rows) {
-      let activeStageKey: 'sales_manager' | 'accounts' | 'md' | null = null
+      let activeStageKey: 'sales_manager' | 'hr' | 'accounts' | 'md' | null = null
       
       const vpApp = row.vpApproval
+      const hrApp = row.hrApproval
       const accApp = row.accountApproval
       const mdApp = row.managementApproval
+
+      const isHrApprovalRequired = (typeStr?: string | null) => {
+        if (!typeStr) return false
+        const norm = typeStr.trim().toLowerCase()
+        return ['salary', 'pf', 'incentive', 'training expense', 'training_expense', 'training', 'uniform', 'esi'].includes(norm)
+      }
+
+      const requiresHr = isHrApprovalRequired(row.approvalType)
 
       // Determine what stage this request is currently in
       if (!vpApp || vpApp === 'HELD' || vpApp === 'NOT APPROVED') {
         activeStageKey = 'sales_manager'
+      } else if (requiresHr && (!hrApp || hrApp === 'HELD' || hrApp === 'NOT APPROVED')) {
+        activeStageKey = 'hr'
       } else if (!mdApp || mdApp === 'HELD' || mdApp === 'NOT APPROVED') {
         activeStageKey = 'md'
       } else if (mdApp === 'APPROVED' && (!accApp || accApp === 'HELD' || accApp === 'NOT APPROVED')) {
@@ -69,10 +80,15 @@ export async function POST(request: Request) {
         ['accounts', 'accounts_head', 'accounts_team', 'finance_head', 'finance_team', 'assistant_manager', 'manager'].includes(appUser.role) ||
         userRoleLower.includes('account') ||
         userRoleLower.includes('finance')
+      const isHrUser =
+        ['hr', 'hr_head', 'hr_team', 'hr_manager'].includes(appUser.role) ||
+        userRoleLower.includes('hr')
 
       let isAuthorized = false
       if (activeStageKey === 'sales_manager') {
         isAuthorized = isTester || appUser.role === 'ed' || isSuperUser
+      } else if (activeStageKey === 'hr') {
+        isAuthorized = isTester || isSuperUser || isHrUser
       } else if (activeStageKey === 'accounts') {
         isAuthorized = isTester || isSuperUser || isAccountsUser
       } else if (activeStageKey === 'md') {
@@ -90,6 +106,8 @@ export async function POST(request: Request) {
 
       if (activeStageKey === 'sales_manager') {
         updates.vpApproval = statusVal
+      } else if (activeStageKey === 'hr') {
+        updates.hrApproval = statusVal
       } else if (activeStageKey === 'md') {
         updates.managementApproval = statusVal
         if (action === 'APPROVE') {
@@ -102,12 +120,13 @@ export async function POST(request: Request) {
           updates.emailSendStatus = 'Held'
         }
       } else if (activeStageKey === 'accounts') {
-        if (action === 'APPROVE') {
-          failedRows.push({ id: row.id, error: 'Accounts stage requires an invoice number and document upload. Please approve individually.' })
-          continue
-        }
         updates.accountApproval = statusVal
-        if (action === 'REJECT') {
+        if (action === 'APPROVE') {
+          updates.paymentStatus = 'PAID'
+          updates.paymentCompletedAt = new Date()
+          updates.paymentCompletedBy = appUser.fullName
+          updates.emailSendStatus = 'Completed'
+        } else if (action === 'REJECT') {
           updates.emailSendStatus = 'Rejected'
         } else {
           updates.emailSendStatus = 'Held'
@@ -118,6 +137,7 @@ export async function POST(request: Request) {
       const historyList = Array.isArray(row.history) ? [...row.history] : []
       const roleLabel = 
         activeStageKey === 'sales_manager' ? 'ED' : 
+        activeStageKey === 'hr' ? 'HR' :
         activeStageKey === 'accounts' ? 'Accounts' : 
         'MD'
 

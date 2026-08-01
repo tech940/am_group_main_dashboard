@@ -17,7 +17,7 @@ import {
   selectList,
   supportedFilterParams,
   type InsuranceColumnKey,
-} from '@/lib/insurance/brands'
+  insuranceSource,} from '@/lib/insurance/brands'
 
 export const dynamic = 'force-dynamic'
 // Vercel kills a Node function at ~10s by default; a cold pooler connection alone costs ~1.8s.
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const brandId = resolveBrand(searchParams.get('type'))
     const brand = INSURANCE_BRANDS[brandId]
-    const tableName = brand.table
+    const tableName = insuranceSource(brand)
 
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
     const pageSize = Math.min(100, Math.max(10, parseInt(searchParams.get('pageSize') || '25', 10)))

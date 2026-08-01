@@ -3712,28 +3712,24 @@ function combineExecutiveMetricValues(primary: ROAnalysisMetric, secondary: ROAn
 
 function ExecutiveGrowthBadge({ value }: { value: number | string | 'N/A' }) {
   const numericValue = value === 'N/A' ? Number.NaN : Number(value)
-  const toneClass = value === 'N/A' || !Number.isFinite(numericValue)
-    ? 'executive-growth-badge-neutral'
-    : numericValue >= 0
-      ? 'executive-growth-badge-positive'
-      : 'executive-growth-badge-negative'
+  const isNeutral = value === 'N/A' || !Number.isFinite(numericValue)
+  const isPositive = !isNeutral && numericValue >= 0
 
   return (
-    <span className={cn(
-      'executive-growth-badge inline-flex items-center justify-center rounded-full border bg-white px-2.5 py-1 text-[10px] font-black',
-      toneClass,
-      getGrowthBadgeClass(value)
-    )}>
+    <span
+      className={cn(
+        'inline-flex items-center justify-center rounded-full border px-2.5 py-0.5 text-[10px] font-black tracking-tight transition-colors',
+        isNeutral
+          ? 'border-slate-200/80 bg-slate-100/80 text-slate-600'
+          : isPositive
+            ? 'border-emerald-200/70 bg-emerald-50 text-emerald-700'
+            : 'border-rose-200/70 bg-rose-50 text-rose-700'
+      )}
+    >
       {formatSignedGrowth(value)}
     </span>
   )
 }
-
-const EXEC_METRIC_TONES = {
-  emerald: { bar: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-600', value: 'text-emerald-900', prev: 'border-emerald-100 bg-emerald-50/50' },
-  blue:    { bar: 'bg-blue-500',    chip: 'bg-blue-50 text-blue-600',       value: 'text-blue-900',    prev: 'border-blue-100 bg-blue-50/50' },
-  amber:   { bar: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-600',     value: 'text-amber-900',   prev: 'border-amber-100 bg-amber-50/50' },
-} as const
 
 function ExecutiveMetricCard({
   label,
@@ -3741,7 +3737,6 @@ function ExecutiveMetricCard({
   previous,
   growth,
   helper,
-  tone = 'emerald',
   icon: Icon,
 }: {
   label: string
@@ -3749,28 +3744,28 @@ function ExecutiveMetricCard({
   previous: string
   growth: number | string | 'N/A'
   helper: string
-  tone?: keyof typeof EXEC_METRIC_TONES
+  tone?: string
   icon?: typeof Wrench
 }) {
-  const t = EXEC_METRIC_TONES[tone]
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-      <div className={cn('absolute inset-x-0 top-0 h-1', t.bar)} />
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            {Icon && <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-xl', t.chip)}><Icon className="h-[18px] w-[18px]" /></span>}
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
-          </div>
-          <ExecutiveGrowthBadge value={growth} />
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all hover:border-slate-300 hover:shadow-md">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {Icon && (
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-200/60 bg-slate-100/80 text-slate-700 shadow-2xs">
+              <Icon className="h-4 w-4" />
+            </span>
+          )}
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
         </div>
-        <p className={cn('mt-3 text-3xl font-black', t.value)}>{value}</p>
-        <div className={cn('mt-3 flex items-center justify-between rounded-xl border px-3 py-2', t.prev)}>
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Previous</span>
-          <span className="text-sm font-black text-slate-700">{previous}</span>
-        </div>
-        <p className="mt-3 text-xs font-bold text-slate-500">{helper}</p>
+        <ExecutiveGrowthBadge value={growth} />
       </div>
+      <p className="mt-3.5 text-3xl font-black tracking-tight text-slate-900">{value}</p>
+      <div className="mt-3.5 flex items-center justify-between rounded-xl border border-slate-200/70 bg-slate-50/70 px-3.5 py-2">
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Previous</span>
+        <span className="text-xs font-black text-slate-700">{previous}</span>
+      </div>
+      <p className="mt-2.5 text-[11px] font-bold text-slate-400">{helper}</p>
     </div>
   )
 }
@@ -3871,9 +3866,9 @@ function ExecutiveRevenuePerformance({
     const metric = executivePeriod(row, period)
     return (
       <React.Fragment key={`${row.name}-${period}`}>
-        <td className="min-w-[78px] whitespace-nowrap border border-slate-300 px-2 py-2 text-right font-mono font-black">{formatExecutiveRevenueMoney(metric.cy)}</td>
-        <td className="min-w-[78px] whitespace-nowrap border border-slate-300 px-2 py-2 text-right font-mono font-bold text-slate-500">{formatExecutiveRevenueMoney(metric.ly)}</td>
-        <td className="min-w-[82px] whitespace-nowrap border border-slate-300 px-2 py-2 text-center">
+        <td className="min-w-[78px] whitespace-nowrap border border-slate-200/70 px-2.5 py-2 text-right font-mono font-black text-slate-900">{formatExecutiveRevenueMoney(metric.cy)}</td>
+        <td className="min-w-[78px] whitespace-nowrap border border-slate-200/70 px-2.5 py-2 text-right font-mono font-bold text-slate-400">{formatExecutiveRevenueMoney(metric.ly)}</td>
+        <td className="min-w-[82px] whitespace-nowrap border border-slate-200/70 px-2.5 py-2 text-center">
           <ExecutiveGrowthBadge value={metric.growth} />
         </td>
       </React.Fragment>
@@ -3887,39 +3882,39 @@ function ExecutiveRevenuePerformance({
   ) => (
     <ExecutiveTableShell
       title={title}
-      icon={<IndianRupee className="h-3.5 w-3.5" />}
-      headerClassName="px-3 py-2 text-white bg-[var(--dashboard-action-bg,#055B65)]"
+      icon={<IndianRupee className="h-3.5 w-3.5 text-slate-300" />}
+      headerClassName="px-3.5 py-2.5 bg-slate-900 text-white"
       titleClassName="text-[11px]"
-      className={cn('rounded-2xl border-slate-300', expandedTable === tableId && 'col-span-1')}
+      className={cn('rounded-2xl border-slate-200/80', expandedTable === tableId && 'xl:col-span-3')}
       isExpanded={expandedTable === tableId}
       onToggleExpanded={() => onToggleTable(tableId)}
     >
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight">
-          <thead className="bg-[var(--dashboard-action-bg,#055B65)] text-white">
+          <thead className="bg-slate-900 text-slate-200">
             <tr>
-              <th className="min-w-[130px] border border-white/30 px-2 py-2 text-left">Category</th>
+              <th className="min-w-[130px] border border-slate-800 px-3 py-2 text-left font-bold text-slate-300">Category</th>
               {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
-                <th key={label} colSpan={3} className="border border-white/30 px-2 py-2 text-center">{label}</th>
+                <th key={label} colSpan={3} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-300">{label}</th>
               ))}
             </tr>
             <tr>
-              <th className="border border-white/30 px-2 py-1.5"></th>
+              <th className="border border-slate-800 px-3 py-1.5"></th>
               {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', '%'].map((label) => (
-                <th key={`${groupIndex}-${label}`} className="border border-white/30 px-2 py-1.5 text-center">{label}</th>
+                <th key={`${groupIndex}-${label}`} className="border border-slate-800 px-3 py-1.5 text-center font-bold text-slate-400">{label}</th>
               )))}
             </tr>
           </thead>
           <tbody>
             {rows.map(({ key, label, row }) => (
-              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white text-slate-900')}>
-                <td className="whitespace-nowrap border border-slate-300 px-2 py-2 font-black leading-tight">{label}</td>
+              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-slate-50/80 transition-colors')}>
+                <td className="whitespace-nowrap border border-slate-200/70 px-3 py-2 font-black leading-tight">{label}</td>
                 {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => renderPeriodCells(row, period))}
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="border border-slate-300 bg-white px-3 py-6 text-center text-xs font-bold text-slate-500">
+                <td colSpan={10} className="border border-slate-200/70 bg-white px-3 py-6 text-center text-xs font-bold text-slate-400">
                   Data not available.
                 </td>
               </tr>
@@ -3931,59 +3926,59 @@ function ExecutiveRevenuePerformance({
   )
 
   return (
-    <div className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="rounded-[1.25rem] border border-slate-200/80 bg-white p-4 shadow-xs">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50/80">
             <TrendingUp className="h-4 w-4 text-slate-700" />
           </div>
           <div>
             <p className="text-[9px] font-black uppercase tracking-[0.24em] text-slate-400">Revenue Performance</p>
-            <h3 className="text-lg font-black text-slate-950">{selectedLocationLabel}</h3>
+            <h3 className="text-lg font-black text-slate-900 tracking-tight">{selectedLocationLabel}</h3>
           </div>
         </div>
-        <p className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
+        <p className="rounded-full border border-slate-200/70 bg-slate-50/70 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
           CY {currentRangeLabel} vs LY {comparisonRangeLabel}
         </p>
       </div>
 
-      <div className="mt-4 grid gap-4 grid-cols-1">
+      <div className="mt-4 grid gap-3.5 xl:grid-cols-3">
         {renderRevenueTable('labour-revenue', 'Labour Revenue', labourRows)}
         {renderRevenueTable('parts-revenue', 'Part Revenue', partsRows)}
-        <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-300 bg-white">
-          <div className="bg-[var(--dashboard-action-bg,#055B65)] px-3 py-2 text-white">
-            <h4 className="flex items-center gap-2 text-[11px] font-black">
-              <TrendingUp className="h-3.5 w-3.5" />
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xs">
+          <div className="bg-slate-900 px-3.5 py-2.5 text-white">
+            <h4 className="flex items-center gap-2 text-[11px] font-black tracking-tight">
+              <TrendingUp className="h-3.5 w-3.5 text-slate-300" />
               Growth Contribution
             </h4>
           </div>
-          <div className="grid gap-2 p-3">
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total Revenue Growth</p>
-              <p className={cn('mt-2 text-2xl font-black', revenueGrowth !== 'N/A' && revenueGrowth < 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700')}>
-              {formatSignedGrowth(revenueGrowth)}
-            </p>
-              <p className="mt-2 text-[9px] font-black uppercase leading-4 text-slate-500">
-              CY {currentRangeLabel} vs LY {comparisonRangeLabel}
-            </p>
-              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2 text-[10px] font-black">
-              <div><p className="text-[9px] uppercase tracking-widest text-slate-400">CY Revenue</p><p>{formatCurrency(currentRevenue)}</p></div>
-              <div><p className="text-[9px] uppercase tracking-widest text-slate-400">LY Revenue</p><p>{formatCurrency(previousRevenue)}</p></div>
-            </div>
-          </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Paid Service Contribution</p>
-              <p className="mt-2 text-2xl font-black text-slate-950">{paidContribution.toFixed(1)}%</p>
-              <p className="mt-1 text-[9px] font-black uppercase leading-4 text-slate-500">Paid Service load share in CY selected period.</p>
-          </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Labour Share</p>
-                <p className="mt-2 text-xl font-black text-slate-950">{labourContribution.toFixed(1)}%</p>
+          <div className="grid gap-2.5 p-3.5">
+            <div className="rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total Revenue Growth</p>
+              <p className={cn('mt-1.5 text-2xl font-black tracking-tight', revenueGrowth !== 'N/A' && revenueGrowth < 0 ? 'text-rose-600' : 'text-emerald-700')}>
+                {formatSignedGrowth(revenueGrowth)}
+              </p>
+              <p className="mt-1 text-[9px] font-bold uppercase leading-4 text-slate-400">
+                CY {currentRangeLabel} vs LY {comparisonRangeLabel}
+              </p>
+              <div className="mt-2.5 grid grid-cols-2 gap-2 rounded-xl border border-slate-200/70 bg-white p-2.5 text-[10px] font-black">
+                <div><p className="text-[9px] uppercase tracking-widest text-slate-400">CY Revenue</p><p className="text-slate-900">{formatCurrency(currentRevenue)}</p></div>
+                <div><p className="text-[9px] uppercase tracking-widest text-slate-400">LY Revenue</p><p className="text-slate-700">{formatCurrency(previousRevenue)}</p></div>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
+            </div>
+            <div className="rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Paid Service Contribution</p>
+              <p className="mt-1.5 text-2xl font-black text-slate-900 tracking-tight">{paidContribution.toFixed(1)}%</p>
+              <p className="mt-1 text-[9px] font-bold uppercase leading-4 text-slate-400">Paid Service load share in CY selected period.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Labour Share</p>
+                <p className="mt-1.5 text-xl font-black text-slate-900">{labourContribution.toFixed(1)}%</p>
+              </div>
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Parts Share</p>
-                <p className="mt-2 text-xl font-black text-slate-950">{partsContribution.toFixed(1)}%</p>
+                <p className="mt-1.5 text-xl font-black text-slate-900">{partsContribution.toFixed(1)}%</p>
               </div>
             </div>
           </div>
@@ -4274,43 +4269,42 @@ function BusinessExecutiveDashboard({
             />
           </div>
 
-          <div className="grid gap-4 grid-cols-1">
+          <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
             <ExecutiveTableShell
               title="Overall Load"
               subtitle="Location performance"
-              headerClassName="bg-[var(--dashboard-action-bg,#055B65)] text-white"
-              className={cn(expandedExecutiveTable === 'overall-load' && 'col-span-1')}
+              className={cn(expandedExecutiveTable === 'overall-load' && 'xl:col-span-2')}
               isExpanded={expandedExecutiveTable === 'overall-load'}
               onToggleExpanded={() => toggleExecutiveTable('overall-load')}
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-[var(--dashboard-action-bg,#055B65)] text-white">
+                  <thead className="bg-slate-900 text-slate-100">
                     <tr>
-                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Location</th>
-                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-center">TD</th>
+                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Location</th>
+                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-center font-bold text-slate-300">TD</th>
                       {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
-                        <th key={label} colSpan={3} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                        <th key={label} colSpan={3} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-300">{label}</th>
                       ))}
                     </tr>
                     <tr>
                       {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
-                        <th key={`${groupIndex}-${label}`} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                        <th key={`${groupIndex}-${label}`} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-400">{label}</th>
                       )))}
                     </tr>
                   </thead>
                   <tbody>
                     {locationRows.map((row) => (
-                      <tr key={row.label} className={row.label === 'Total' ? 'be-management-total-row font-black' : 'bg-white text-slate-900'}>
-                        <td className="border border-slate-200 px-3 py-3 font-black text-slate-900">{row.label}</td>
-                        <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
+                      <tr key={row.label} className={row.label === 'Total' ? 'bg-slate-100/90 font-black' : 'bg-white hover:bg-slate-50/80 transition-colors'}>
+                        <td className="border border-slate-200/70 px-3 py-3 font-black text-slate-900">{row.label}</td>
+                        <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
                         {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
                           const metric = row[period]
                           return (
                             <React.Fragment key={`${row.label}-${period}`}>
-                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
-                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono text-slate-500">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
-                              <td className="border border-slate-200 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
+                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono text-slate-400">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
+                              <td className="border border-slate-200/70 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
                         })}
@@ -4324,7 +4318,6 @@ function BusinessExecutiveDashboard({
             <ExecutiveTableShell
               title="Service Type Performance"
               subtitle={selectedLocationLabel}
-              headerClassName="bg-[var(--dashboard-action-bg,#055B65)] text-white"
               headerContentClassName="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between"
               actions={(
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -4334,10 +4327,10 @@ function BusinessExecutiveDashboard({
                       type="button"
                       onClick={() => setActiveExecutiveTableMetric(metric.id)}
                       className={cn(
-                        'executive-table-metric-button rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm transition',
+                        'rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-all',
                         activeExecutiveTableMetric === metric.id
-                          ? 'border-white bg-white text-[#055B65]'
-                          : 'border-white/50 bg-white/20 text-white hover:bg-white/30'
+                          ? 'border-white bg-white text-slate-900 shadow-sm'
+                          : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'
                       )}
                     >
                       {metric.label}
@@ -4345,38 +4338,38 @@ function BusinessExecutiveDashboard({
                   ))}
                 </div>
               )}
-              className={cn(expandedExecutiveTable === 'service-type-performance' && 'col-span-1')}
+              className={cn(expandedExecutiveTable === 'service-type-performance' && 'xl:col-span-2')}
               isExpanded={expandedExecutiveTable === 'service-type-performance'}
               onToggleExpanded={() => toggleExecutiveTable('service-type-performance')}
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-[var(--dashboard-action-bg,#055B65)] text-white">
+                  <thead className="bg-slate-900 text-slate-100">
                     <tr>
-                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Service Type</th>
-                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-center">TD</th>
+                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Service Type</th>
+                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-center font-bold text-slate-300">TD</th>
                       {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
-                        <th key={label} colSpan={3} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                        <th key={label} colSpan={3} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-300">{label}</th>
                       ))}
                     </tr>
                     <tr>
                       {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
-                        <th key={`${groupIndex}-${label}`} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                        <th key={`${groupIndex}-${label}`} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-400">{label}</th>
                       )))}
                     </tr>
                   </thead>
                   <tbody>
                     {serviceTypeRows.map((row) => (
-                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white text-slate-900')}>
-                        <td className="border border-slate-200 px-3 py-3 font-black">{row.name}</td>
-                        <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
+                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-slate-50/80 transition-colors')}>
+                        <td className="border border-slate-200/70 px-3 py-3 font-black">{row.name}</td>
+                        <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
                         {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
                           const metric = row[period]
                           return (
                             <React.Fragment key={`${row.name}-${period}`}>
-                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
-                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono text-slate-500">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
-                              <td className="border border-slate-200 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
+                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono text-slate-400">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
+                              <td className="border border-slate-200/70 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
                         })}
@@ -4397,11 +4390,11 @@ function BusinessExecutiveDashboard({
           />
 
           <div className="space-y-4">
-            <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="rounded-[1.25rem] border border-slate-200/80 bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Trend Graph</p>
-                  <h3 className="mt-1 text-lg font-black text-slate-950">{activeTrendMeta.title}</h3>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Trend Graph</p>
+                  <h3 className="mt-1 text-lg font-black text-slate-900 tracking-tight">{activeTrendMeta.title}</h3>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   {([
@@ -4414,10 +4407,10 @@ function BusinessExecutiveDashboard({
                       type="button"
                       onClick={() => setActiveExecutiveMetric(metric.id)}
                       className={cn(
-                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider',
+                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all',
                         activeExecutiveMetric === metric.id
-                          ? 'border-[#1f3f91] bg-[#1f3f91] text-white'
-                          : 'border-slate-200 bg-white text-slate-600'
+                          ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
+                          : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                       )}
                     >
                       {metric.label}
@@ -4446,7 +4439,7 @@ function BusinessExecutiveDashboard({
                       type="monotone"
                       dataKey={activeTrendMeta.cyKey}
                       name={activeTrendMeta.currentName}
-                      stroke="#1f3f91"
+                      stroke="#0f172a"
                       strokeWidth={3}
                       dot={{ r: 3 }}
                       activeDot={{ r: 5 }}
@@ -4455,7 +4448,7 @@ function BusinessExecutiveDashboard({
                       type="monotone"
                       dataKey={activeTrendMeta.lyKey}
                       name={activeTrendMeta.previousName}
-                      stroke="#e47b00"
+                      stroke="#d97706"
                       strokeWidth={3}
                       dot={{ r: 3 }}
                       activeDot={{ r: 5 }}
@@ -4465,9 +4458,9 @@ function BusinessExecutiveDashboard({
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
                 {executiveTrendStats.cards.map((card) => (
-                  <div key={card.label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center shadow-sm">
+                  <div key={card.label} className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-center shadow-2xs">
                     <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>
-                    <p className={cn('mt-2 text-xl font-black text-slate-950', card.color)}>{card.value}</p>
+                    <p className={cn('mt-1.5 text-xl font-black text-slate-900', card.color?.includes('text-[lab') ? 'text-rose-600' : card.color)}>{card.value}</p>
                   </div>
                 ))}
               </div>
@@ -4476,29 +4469,28 @@ function BusinessExecutiveDashboard({
             <ExecutiveTableShell
               title="FY Trends"
               subtitle="Revenue, parts, labour, load"
-              headerClassName="bg-[var(--dashboard-action-bg,#055B65)] text-white"
               isExpanded={expandedExecutiveTable === 'fy-trends'}
               onToggleExpanded={() => toggleExecutiveTable('fy-trends')}
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-[var(--dashboard-action-bg,#055B65)] text-white">
+                  <thead className="bg-slate-900 text-slate-100">
                     <tr>
-                      <th className="border border-white/30 px-3 py-3 text-left">Financial Year</th>
-                      <th className="border border-white/30 px-3 py-3 text-right">Load</th>
-                      <th className="border border-white/30 px-3 py-3 text-right">Labour</th>
-                      <th className="border border-white/30 px-3 py-3 text-right">Parts</th>
-                      <th className="border border-white/30 px-3 py-3 text-right">Revenue</th>
+                      <th className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Financial Year</th>
+                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Load</th>
+                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Labour</th>
+                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Parts</th>
+                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Revenue</th>
                     </tr>
                   </thead>
                   <tbody>
                     {fyRows.map((row) => (
-                      <tr key={row.fy} className="bg-white">
-                        <td className="border border-slate-200 px-3 py-3 font-black text-slate-900">{row.fy}</td>
-                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black">{row.load.toLocaleString('en-IN')}</td>
-                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black">{formatCurrency(row.labour)}</td>
-                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black">{formatCurrency(row.parts)}</td>
-                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black text-[#1f3f91]">{formatCurrency(row.revenue)}</td>
+                      <tr key={row.fy} className="bg-white hover:bg-slate-50/80 transition-colors">
+                        <td className="border border-slate-200/70 px-3 py-3 font-black text-slate-900">{row.fy}</td>
+                        <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{row.load.toLocaleString('en-IN')}</td>
+                        <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.labour)}</td>
+                        <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.parts)}</td>
+                        <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.revenue)}</td>
                       </tr>
                     ))}
                     {fyRows.length === 0 && (

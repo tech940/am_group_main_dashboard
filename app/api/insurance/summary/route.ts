@@ -17,7 +17,7 @@ import {
   resolveBrand,
   supportedFilterParams,
   type InsuranceColumnKey,
-} from '@/lib/insurance/brands'
+  insuranceSource,} from '@/lib/insurance/brands'
 
 export const dynamic = 'force-dynamic'
 // Vercel kills a Node function at ~10s by default. This route legitimately takes a few seconds on a
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const brandId = resolveBrand(searchParams.get('type'))
     const brand = INSURANCE_BRANDS[brandId]
-    const tableName = brand.table
+    const tableName = insuranceSource(brand)
 
     // Short aliases so the SQL below stays readable. Every one resolves through the brand map: the
     // three feeds share no column vocabulary, and kia_insurance stores premiums as NUMERIC where the
@@ -381,7 +381,7 @@ export async function GET(request: Request) {
             NULLIF(regexp_replace(COALESCE(t.${C('currentNcbPercentage')},''), '[^0-9.]', '', 'g'),'')::numeric AS ncb,
             LAG(NULLIF(regexp_replace(COALESCE(t.${C('currentNcbPercentage')},''), '[^0-9.]', '', 'g'),'')::numeric) OVER w AS prev_ncb,
             LAG(t.${C('odExpiryDate')}) OVER w AS prev_exp
-          FROM ${tableName} t
+          FROM ${insuranceSource(brand, 't')}
           WHERE COALESCE(NULLIF(btrim(t.${C('odTenure')}),''),'0') <> '0'
           WINDOW w AS (PARTITION BY UPPER(TRIM(t.${C('chassisNo')})) ORDER BY t.${C('policyStartDate')}, t.id)
         )

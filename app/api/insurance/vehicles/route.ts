@@ -22,7 +22,7 @@ import {
   supportedFilterParams,
   type InsuranceBrand,
   type InsuranceColumnKey,
-} from '@/lib/insurance/brands'
+  insuranceSource,} from '@/lib/insurance/brands'
 
 export const dynamic = 'force-dynamic'
 // Vercel kills a Node function at ~10s by default; a cold pooler connection alone costs ~1.8s.
@@ -164,7 +164,7 @@ function buildCte(brand: InsuranceBrand, scopeWhere: string, withJourney: boolea
   return `
 WITH scope AS (
   SELECT t.${col(brand, 'chassisNo')} AS chassis_no, COUNT(*)::int AS scope_policies
-  FROM ${brand.table} t
+  FROM ${insuranceSource(brand, 't')}
   WHERE ${scopeWhere}
   GROUP BY t.${col(brand, 'chassisNo')}
 ),

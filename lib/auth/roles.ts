@@ -1,6 +1,6 @@
 export const DEVELOPER_ROLE_VALUES = ['developer'] as const
-export const GLOBAL_ACCESS_ROLE_VALUES = ['developer', 'md', 'ceo', 'ea', 'eba', 'ed', 'edp', 'process_coordinator'] as const
-export const ADMIN_ROLE_VALUES = [...DEVELOPER_ROLE_VALUES] as const
+export const GLOBAL_ACCESS_ROLE_VALUES = ['developer', 'md', 'ceo', 'ea', 'eba', 'ed', 'edp', 'process_coordinator', 'hr'] as const
+export const ADMIN_ROLE_VALUES = ['developer', 'admin', 'hr'] as const
 
 export function isSuperAdminRole(role: string | null | undefined) {
   if (!role) return false
@@ -21,5 +21,7 @@ export function isBranchAdminRole(role: string | null | undefined) {
 }
 
 export function isAdminRole(role: string | null | undefined) {
-  return isSuperAdminRole(role)
+  if (!role) return false
+  const normalized = String(role).trim().toLowerCase()
+  return isSuperAdminRole(role) || normalized === 'admin' || normalized === 'hr'
 }

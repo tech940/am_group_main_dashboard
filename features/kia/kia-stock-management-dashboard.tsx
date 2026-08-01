@@ -19,6 +19,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
@@ -239,6 +241,14 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const [holdVin, setHoldVin] = useState('')
   const [holdNotes, setHoldNotes] = useState('')
 
+  // BBND MARK — "Build But Not Delivered". Remarks are mandatory, so the dialog cannot be confirmed
+  // with an empty box (the confirm button is disabled on !bbndMarkNotes.trim(), same rule as Hold).
+  // ⚠️ Named bbndMark* on purpose: the identifiers bbndDialogOpen/bbndVin below already belong to
+  // the "#8 BBND (Booked-But-Not-in-DMS) allot" dialog — same abbreviation, unrelated feature.
+  const [bbndMarkDialogOpen, setBbndMarkDialogOpen] = useState(false)
+  const [bbndMarkVin, setBbndMarkVin] = useState('')
+  const [bbndMarkNotes, setBbndMarkNotes] = useState('')
+
   // #8 BBND (Booked-But-Not-in-DMS) allot dialog state.
   const [bbndDialogOpen, setBbndDialogOpen] = useState(false)
   const [bbndBookingId, setBbndBookingId] = useState('')
@@ -419,6 +429,26 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setHoldNotes('')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
+    },
+    onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
+  })
+
+  const bbndMarkMutation = useMutation({
+    mutationFn: async (payload: { vinNumber: string; notes: string }) => {
+      const res = await fetch('/api/brands/kia/stock/bbnd-mark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Failed to mark BBND')
+      return res.json()
+    },
+    onSuccess: () => {
+      // Stays in free stock by design — say so, or the user assumes it vanished like a Hold.
+      toast({ title: 'Marked BBND', description: 'Build But Not Delivered. The vehicle remains in free stock and can still be allotted.', variant: 'success' })
+      setBbndMarkDialogOpen(false)
+      setBbndMarkNotes('')
+      queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -1110,6 +1140,19 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                               >
                                 Hold
                               </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 rounded-lg border-violet-200 px-2 text-[10px] font-black text-violet-700 hover:bg-violet-50"
+                                title="Build But Not Delivered — flags the vehicle without taking it out of free stock"
+                                onClick={() => {
+                                  setBbndMarkVin(row.vin_number)
+                                  setBbndMarkNotes('')
+                                  setBbndMarkDialogOpen(true)
+                                }}
+                              >
+                                BBND
+                              </Button>
                             </>
                           ) : row.booking_status === 'ready_delivery' ? (
                             <>
@@ -1352,7 +1395,46 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
 
       {/* #12 HOLD DIALOG (Customer / Dealer) */}
       <Dialog open={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
-        <DialogContent className="kia-premium max-w-md rounded-3xl border-0 bg-white p-6 shadow-2xl">
+              {/* BBND Dialog — remarks are MANDATORY (confirm stays disabled until the box has text). */}
+      <Dialog open={bbndMarkDialogOpen} onOpenChange={setBbndMarkDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <LoaderOverlay show={bbndMarkMutation.isPending} variant="generic" label="Marking BBND…" sublabel="Recording Build But Not Delivered" />
+          <DialogHeader>
+            <DialogTitle>Mark as BBND</DialogTitle>
+            <DialogDescription>
+              Build But Not Delivered — <span className="font-semibold text-violet-700">{bbndVin || '—'}</span>.
+              The vehicle stays in free stock and can still be allotted; this only records why it is built but undelivered.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+              Remarks <span className="text-rose-600">*</span>
+            </Label>
+            <Textarea
+              value={bbndMarkNotes}
+              onChange={(event) => setBbndMarkNotes(event.target.value)}
+              placeholder="Why is this vehicle built but not delivered?"
+              rows={3}
+              autoFocus
+            />
+            {!bbndMarkNotes.trim() && (
+              <p className="text-[11px] font-semibold text-slate-400">Remarks are required before a vehicle can be marked BBND.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBbndMarkDialogOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-violet-700 text-white hover:bg-violet-800"
+              disabled={bbndMarkMutation.isPending || !bbndMarkNotes.trim()}
+              onClick={() => bbndMarkMutation.mutate({ vinNumber: bbndMarkVin, notes: bbndMarkNotes.trim() })}
+            >
+              {bbndMarkMutation.isPending ? 'Marking…' : 'Mark BBND'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+<DialogContent className="kia-premium max-w-md rounded-3xl border-0 bg-white p-6 shadow-2xl">
           <LoaderOverlay show={holdMutation.isPending} variant="generic" label="Holding vehicle…" sublabel="Marking the VIN on hold" />
           <DialogHeader className="space-y-2">
             <DialogTitle className="text-lg font-extrabold tracking-tight text-[var(--kia-text)]">Hold Vehicle for Dealer</DialogTitle>
@@ -2421,6 +2503,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             <thead>
               <tr className="bg-slate-900 text-[9px] font-black uppercase tracking-[0.12em] text-white">
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">VIN / Chassis</th>
                 <th className="px-4 py-3">Car</th>
                 <th className="px-4 py-3">Colour</th>
                 <th className="px-4 py-3 text-center">Age</th>
@@ -2447,6 +2530,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                         {badge.label}
                       </span>
                     </td>
+                    {/* The printed report is what the team reconciles against the physical yard, so it
+                        has to name the individual car — model/variant/colour cannot identify one unit. */}
+                    <td className="px-4 py-3 align-middle font-mono text-[9px] font-bold tracking-tight text-slate-900">{row.vin_number || '-'}</td>
                     <td className="px-4 py-3 align-middle">
                       <div className="font-black uppercase text-slate-950">{row.model}</div>
                       <div className="mt-0.5 text-[9px] font-semibold text-slate-500">{row.variant}</div>
@@ -2462,7 +2548,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                 )
               })}
               {(!data?.rows || data.rows.length === 0) && (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-[11px] font-semibold text-slate-400">No stock vehicles to report.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-[11px] font-semibold text-slate-400">No stock vehicles to report.</td></tr>
               )}
             </tbody>
           </table>
