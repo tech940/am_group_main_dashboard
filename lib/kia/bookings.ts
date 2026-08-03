@@ -2009,7 +2009,8 @@ export async function clearKiaStockBbnd(vinNumber: string, appUser: AppUser) {
   const [existing] = await db.select({ localStatus: kiaStockLocalStatuses.localStatus }).from(kiaStockLocalStatuses)
     .where(eq(kiaStockLocalStatuses.vinNumber, vin)).limit(1)
   if (!existing) return { vinNumber: vin, cleared: false }
-  if (text(existing.localStatus) !== 'bbnd_marked') throw new Error('This vehicle is not marked BBND.')
+  const currentStatus = text(existing.localStatus)
+  if (currentStatus !== 'bbnd_marked' && currentStatus !== 'bbnd') throw new Error('This vehicle is not marked BBND.')
   await db.delete(kiaStockLocalStatuses).where(eq(kiaStockLocalStatuses.vinNumber, vin))
   return { vinNumber: vin, cleared: true }
 }

@@ -186,7 +186,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   // Details & Action Modal states
   const [detailRow, setDetailRow] = useState<ApprovalRequest | null>(null)
   const [actionRemarks, setActionRemarks] = useState('')
-  const [actionStage, setActionStage] = useState<'sales_manager' | 'accounts' | 'ea' | 'md' | 'payment_done' | null>(null)
+  const [actionStage, setActionStage] = useState<'sales_manager' | 'hr' | 'accounts' | 'ea' | 'md' | 'payment_done' | null>(null)
   const [actionDecision, setActionDecision] = useState<'APPROVE' | 'HOLD' | 'REJECT' | 'SEND_BACK' | null>(null)
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [invoiceDocUrl, setInvoiceDocUrl] = useState('')
@@ -3086,32 +3086,91 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           </td>
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
                             <div className="inline-flex items-center gap-1">
-                              {/* Quick Approve Button (only if pending for user) */}
+                              {/* Complete Action Buttons Group for Approver */}
                               {getIsPendingForUser(row) && (() => {
                                 const stageKey = getActiveStageKey(row)
                                 if (!stageKey) return null
                                 return (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      actionMutation.mutate({
-                                        id: row.id,
-                                        action: 'APPROVE',
-                                        stage: stageKey,
-                                        remarks: 'Quick approved'
-                                      })
-                                    }}
-                                    disabled={actionMutation.isPending}
-                                    className="h-7 px-3 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 shadow-sm transition-all border border-emerald-600 hover:opacity-90"
-                                    style={{ backgroundColor: '#10b981', color: '#ffffff' }}
-                                  >
-                                    {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      'Approve'
-                                    )}
-                                  </button>
+                                  <div className="inline-flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200/80 mr-1">
+                                    <button
+                                      type="button"
+                                      title="Approve & Forward Request"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (stageKey === 'accounts' || stageKey === 'payment_done') {
+                                          setDetailRow(row)
+                                          setActionStage(stageKey)
+                                          setActionDecision('APPROVE')
+                                        } else {
+                                          actionMutation.mutate({
+                                            id: row.id,
+                                            action: 'APPROVE',
+                                            stage: stageKey,
+                                            remarks: 'Quick approved'
+                                          })
+                                        }
+                                      }}
+                                      disabled={actionMutation.isPending}
+                                      className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer border-none"
+                                    >
+                                      {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <>
+                                          <Check className="w-3 h-3" />
+                                          <span>Approve</span>
+                                        </>
+                                      )}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      title="Send Back to Submitter for Clarification"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setDetailRow(row)
+                                        setActionStage(stageKey)
+                                        setActionDecision('SEND_BACK')
+                                      }}
+                                      disabled={actionMutation.isPending}
+                                      className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-amber-600 hover:bg-amber-700 text-white cursor-pointer border-none"
+                                    >
+                                      <CornerUpLeft className="w-3 h-3" />
+                                      <span>Send Back</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      title="Reject / Deny Request"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setDetailRow(row)
+                                        setActionStage(stageKey)
+                                        setActionDecision('REJECT')
+                                      }}
+                                      disabled={actionMutation.isPending}
+                                      className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-rose-600 hover:bg-rose-700 text-white cursor-pointer border-none"
+                                    >
+                                      <X className="w-3 h-3" />
+                                      <span>Reject</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      title="Put Request on Hold"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setDetailRow(row)
+                                        setActionStage(stageKey)
+                                        setActionDecision('HOLD')
+                                      }}
+                                      disabled={actionMutation.isPending}
+                                      className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-slate-600 hover:bg-slate-700 text-white cursor-pointer border-none"
+                                    >
+                                      <Clock className="w-3 h-3" />
+                                      <span>Hold</span>
+                                    </button>
+                                  </div>
                                 )
                               })()}
 
@@ -3186,32 +3245,91 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         </div>
                       </div>
                       <div className="inline-flex items-center gap-1.5">
-                        {/* Mobile Quick Approve Button */}
+                        {/* Mobile Action Buttons Group */}
                         {getIsPendingForUser(row) && (() => {
                           const stageKey = getActiveStageKey(row)
                           if (!stageKey) return null
                           return (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                actionMutation.mutate({
-                                  id: row.id,
-                                  action: 'APPROVE',
-                                  stage: stageKey,
-                                  remarks: 'Quick approved'
-                                })
-                              }}
-                              disabled={actionMutation.isPending}
-                              className="h-8 px-4 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-sm transition-all border border-emerald-600 hover:opacity-90"
-                              style={{ backgroundColor: '#10b981', color: '#ffffff' }}
-                            >
-                              {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                'Approve'
-                              )}
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                title="Approve"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (stageKey === 'accounts' || stageKey === 'payment_done') {
+                                    setDetailRow(row)
+                                    setActionStage(stageKey)
+                                    setActionDecision('APPROVE')
+                                  } else {
+                                    actionMutation.mutate({
+                                      id: row.id,
+                                      action: 'APPROVE',
+                                      stage: stageKey,
+                                      remarks: 'Quick approved'
+                                    })
+                                  }
+                                }}
+                                disabled={actionMutation.isPending}
+                                className="h-8 px-3 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer border-none"
+                              >
+                                {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Check className="w-3 h-3" />
+                                    <span>Approve</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <button
+                                type="button"
+                                title="Send Back"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setDetailRow(row)
+                                  setActionStage(stageKey)
+                                  setActionDecision('SEND_BACK')
+                                }}
+                                disabled={actionMutation.isPending}
+                                className="h-8 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-amber-600 hover:bg-amber-700 text-white cursor-pointer border-none"
+                              >
+                                <CornerUpLeft className="w-3 h-3" />
+                                <span>Send Back</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                title="Reject"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setDetailRow(row)
+                                  setActionStage(stageKey)
+                                  setActionDecision('REJECT')
+                                }}
+                                disabled={actionMutation.isPending}
+                                className="h-8 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-rose-600 hover:bg-rose-700 text-white cursor-pointer border-none"
+                              >
+                                <X className="w-3 h-3" />
+                                <span>Reject</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                title="Hold"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setDetailRow(row)
+                                  setActionStage(stageKey)
+                                  setActionDecision('HOLD')
+                                }}
+                                disabled={actionMutation.isPending}
+                                className="h-8 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-slate-600 hover:bg-slate-700 text-white cursor-pointer border-none"
+                              >
+                                <Clock className="w-3 h-3" />
+                                <span>Hold</span>
+                              </button>
+                            </div>
                           )
                         })()}
                         <button
