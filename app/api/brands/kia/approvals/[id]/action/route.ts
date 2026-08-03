@@ -83,21 +83,21 @@ export async function POST(
       userRoleLower.includes('sales_manager') ||
       userRoleLower.includes('general_sales')
 
-    const isGeneralServiceManager = 
-      ['general_service_manager', 'service_general_manager', 'service_manager', 'service_head', 'gsm_service'].includes(userRoleLower) ||
-      userRoleLower.includes('service_manager') ||
-      userRoleLower.includes('service_general')
+    const isVp = 
+      ['vp', 'vice_president', 'vice_pres', 'vp_service', 'service_vp'].includes(userRoleLower) ||
+      userRoleLower.includes('vp') ||
+      userRoleLower.includes('vice_president')
 
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
       if (isServiceCategory) {
-        // SERVICE ORDER: ONLY General Service Manager or Admin/Developer can approve
+        // SERVICE ORDER: ONLY VP or Admin/Developer can approve
         // ED IS STRICTLY EXCLUDED!
         if (appUser.role === 'ed') {
           isAuthorized = false
         } else {
-          isAuthorized = isTester || isGeneralServiceManager
+          isAuthorized = isTester || isVp || isSuperUser
         }
       } else {
         // SALES ORDER: Either ED or General Sales Manager can approve
@@ -117,7 +117,7 @@ export async function POST(
 
     if (!isAuthorized) {
       return NextResponse.json({ 
-        error: `Your role (${appUser.role}) is not authorized to act on ${isServiceCategory ? 'Service (requires General Service Manager)' : 'Sales (requires ED or General Sales Manager)'} requests at the ${stage} stage.` 
+        error: `Your role (${appUser.role}) is not authorized to act on ${isServiceCategory ? 'Service (requires VP)' : 'Sales (requires ED or General Sales Manager)'} requests at the ${stage} stage.` 
       }, { status: 403 })
     }
 

@@ -595,7 +595,6 @@ export async function GET(request: Request) {
       row.r_o_no, row.vin, row.claim_no, row.campaign_no, row.part_desc,
     ].map(text).join(' ').toLowerCase()
     if (search && !haystack.includes(search)) return false
-    if (row.compliance === 'complete') return false
     if (locationDealerCodes?.size && !locationDealerCodes.has(row.dealerCode)) return false
     if (dealerSet.length && !dealerSet.includes(row.dealerCode)) return false
     if (statusSet.length && !statusSet.includes(row.status.toUpperCase())) return false

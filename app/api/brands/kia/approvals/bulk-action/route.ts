@@ -104,10 +104,10 @@ export async function POST(request: Request) {
         userRoleLower.includes('sales_manager') ||
         userRoleLower.includes('general_sales')
 
-      const isGeneralServiceManager = 
-        ['general_service_manager', 'service_general_manager', 'service_manager', 'service_head', 'gsm_service'].includes(userRoleLower) ||
-        userRoleLower.includes('service_manager') ||
-        userRoleLower.includes('service_general')
+      const isVp = 
+        ['vp', 'vice_president', 'vice_pres', 'vp_service', 'service_vp'].includes(userRoleLower) ||
+        userRoleLower.includes('vp') ||
+        userRoleLower.includes('vice_president')
 
       let isAuthorized = false
       if (activeStageKey === 'sales_manager') {
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
           if (appUser.role === 'ed') {
             isAuthorized = false
           } else {
-            isAuthorized = isTester || isGeneralServiceManager
+            isAuthorized = isTester || isVp || isSuperUser
           }
         } else {
           isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser

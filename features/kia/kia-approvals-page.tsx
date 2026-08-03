@@ -981,13 +981,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     )
   }
 
-  const isGeneralServiceManagerRole = (role?: string | null) => {
+  const isVpRole = (role?: string | null) => {
     if (!role) return false
     const r = role.toLowerCase().trim()
     return (
-      ['general_service_manager', 'service_general_manager', 'service_manager', 'service_head', 'gsm_service'].includes(r) ||
-      r.includes('service_manager') ||
-      r.includes('service_general')
+      ['vp', 'vice_president', 'vice_pres', 'vp_service', 'service_vp'].includes(r) ||
+      r.includes('vp') ||
+      r.includes('vice_president')
     )
   }
 
@@ -995,10 +995,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     const isService = isServiceCategory(req.department, req.approvalType)
 
     if (req.vpApproval === 'NOT APPROVED') {
-      return isService ? 'Rejected by General Service Manager' : 'Rejected by ED / GSM (Sales)'
+      return isService ? 'Rejected by VP' : 'Rejected by ED / GSM (Sales)'
     }
     if (req.vpApproval === 'HELD') {
-      return isService ? 'Held by General Service Manager' : 'Held by ED / GSM (Sales)'
+      return isService ? 'Held by VP' : 'Held by ED / GSM (Sales)'
     }
 
     if (req.hrApproval === 'NOT APPROVED') return 'Rejected by HR'
@@ -1021,7 +1021,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     }
 
     if (!req.vpApproval || req.vpApproval === '') {
-      return isService ? 'Pending General Service Manager' : 'Pending ED / GSM (Sales)'
+      return isService ? 'Pending VP' : 'Pending ED / GSM (Sales)'
     }
 
     // Stage 1 approved — check if HR approval is required
@@ -1058,7 +1058,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (pendingLabel === 'Pending MD') return 'md'
     if (pendingLabel === 'Pending EA') return 'ea'
     if (pendingLabel === 'Pending HR') return 'hr'
-    if (pendingLabel.startsWith('Pending ED') || pendingLabel.startsWith('Pending General Service Manager')) return 'sales_manager'
+    if (pendingLabel.startsWith('Pending ED') || pendingLabel.startsWith('Pending VP') || pendingLabel.startsWith('Pending General Service Manager')) return 'sales_manager'
 
     if (['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)) {
       if (!req.managementApproval || req.managementApproval === '' || req.managementApproval === 'HELD') return 'md'
@@ -1091,10 +1091,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       if (req) {
         const isService = isServiceCategory(req.department, req.approvalType)
         if (isService) {
-          // SERVICE ORDER: ONLY General Service Manager or Admin/Developer can approve
+          // SERVICE ORDER: ONLY VP or Admin/Developer can approve
           // ED IS STRICTLY EXCLUDED!
           if (effectiveRole === 'ed' || currentUser.role === 'ed') return false
-          return isGeneralServiceManagerRole(currentUser.role) || isGeneralServiceManagerRole(effectiveRole)
+          return isVpRole(currentUser.role) || isVpRole(effectiveRole)
         }
       }
       // SALES ORDER or general check: ED or General Sales Manager can approve
@@ -1128,13 +1128,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return isHrRole || ['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)
     }
 
-    if (pendingLabel.includes('General Service Manager')) {
+    if (pendingLabel.includes('VP') || pendingLabel.includes('General Service Manager')) {
       const isService = isServiceCategory(row.department, row.approvalType)
       if (isService) {
         if (effectiveRole === 'ed' || currentUser.role === 'ed') return false // Strictly exclude ED!
         return (
-          isGeneralServiceManagerRole(currentUser.role) ||
-          isGeneralServiceManagerRole(effectiveRole) ||
+          isVpRole(currentUser.role) ||
+          isVpRole(effectiveRole) ||
           ['developer', 'admin'].includes(currentUser.role)
         )
       }
@@ -1145,8 +1145,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       if (isService) {
         if (effectiveRole === 'ed' || currentUser.role === 'ed') return false // Strictly exclude ED!
         return (
-          isGeneralServiceManagerRole(currentUser.role) ||
-          isGeneralServiceManagerRole(effectiveRole) ||
+          isVpRole(currentUser.role) ||
+          isVpRole(effectiveRole) ||
           ['developer', 'admin'].includes(currentUser.role)
         )
       }
@@ -3811,9 +3811,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             }
 
             const renderNewWorkflowStepper = (req: ApprovalRequest) => {
+              const isService = isServiceCategory(req.department, req.approvalType)
+              const firstStageLabel = isService ? 'VP Approval' : 'ED / GSM Approval'
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
-                { key: 'sales_manager', label: 'ED Approval', status: req.vpApproval },
+                { key: 'sales_manager', label: firstStageLabel, status: req.vpApproval },
                 { key: 'ea', label: 'EA Review (Optional)', status: req.eaApproval },
                 { key: 'md', label: 'MD Approval', status: req.managementApproval },
                 { key: 'accounts', label: 'Accounts Processing', status: req.accountApproval },
@@ -3852,7 +3854,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       const isHeld = stg.status === 'HELD'
                       
                       let isActive = false
-                      if (pendingLabel === 'Pending ED' && stg.key === 'sales_manager') isActive = true
+                      if ((pendingLabel.startsWith('Pending ED') || pendingLabel.startsWith('Pending VP') || pendingLabel.startsWith('Pending General Service Manager')) && stg.key === 'sales_manager') isActive = true
                       else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
                       else if (pendingLabel === 'Pending EA' && stg.key === 'ea') isActive = true
                       else if (pendingLabel === 'Pending MD' && stg.key === 'md') isActive = true
