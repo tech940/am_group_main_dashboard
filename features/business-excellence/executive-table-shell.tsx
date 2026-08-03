@@ -47,20 +47,20 @@ export function ExecutiveTableShell({
   return (
     <section
       className={cn(
-        'min-w-0 overflow-hidden rounded-[1.25rem] border border-slate-200/80 bg-white shadow-sm transition-all',
-        isExpanded && 'ring-2 ring-slate-900/20 shadow-md',
+        'min-w-0 overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_12px_28px_-6px_rgba(15,23,42,0.08),0_4px_12px_-2px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_18px_38px_-8px_rgba(15,23,42,0.12)]',
+        isExpanded && 'ring-2 ring-[#055B65]/30 shadow-xl',
         className
       )}
     >
-      <div className={cn('flex items-center justify-between gap-3 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 px-4 py-3 text-white shadow-inner', headerClassName)}>
+      <div className={cn('flex items-center justify-between gap-3 bg-gradient-to-r from-slate-900 via-[#055B65] to-slate-900 px-5 py-3.5 text-white shadow-inner', headerClassName)}>
         <div className={cn('flex min-w-0 flex-1 items-center justify-between gap-3', headerContentClassName)}>
           <div className="min-w-0">
-            <h3 className={cn('flex min-w-0 items-center gap-2 text-sm font-black tracking-tight', titleClassName)}>
-              {icon ? <span className="flex shrink-0 items-center text-slate-300">{icon}</span> : null}
+            <h3 className={cn('flex min-w-0 items-center gap-2 text-sm font-black tracking-tight text-white', titleClassName)}>
+              {icon ? <span className="flex shrink-0 items-center text-teal-300">{icon}</span> : null}
               <span className="truncate">{title}</span>
             </h3>
             {subtitle ? (
-              <p className={cn('mt-0.5 truncate text-[10px] font-bold uppercase tracking-widest text-slate-400', subtitleClassName)}>
+              <p className={cn('mt-0.5 truncate text-[10px] font-bold uppercase tracking-widest text-teal-100/70', subtitleClassName)}>
                 {subtitle}
               </p>
             ) : null}
@@ -75,7 +75,7 @@ export function ExecutiveTableShell({
           aria-pressed={isExpanded}
           title={label}
           onClick={onToggleExpanded}
-          className="h-7 w-7 shrink-0 rounded-lg border border-slate-700/60 bg-slate-800/80 p-0 text-slate-300 shadow-sm hover:bg-slate-700 hover:text-white focus-visible:ring-slate-400"
+          className="h-7 w-7 shrink-0 rounded-xl border border-white/20 bg-white/10 p-0 text-white shadow-xs hover:bg-white/20 hover:text-white"
         >
           <ToggleIcon className="h-3.5 w-3.5" aria-hidden="true" />
         </Button>

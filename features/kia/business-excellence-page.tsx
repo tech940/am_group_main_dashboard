@@ -3866,9 +3866,9 @@ function ExecutiveRevenuePerformance({
     const metric = executivePeriod(row, period)
     return (
       <React.Fragment key={`${row.name}-${period}`}>
-        <td className="min-w-[78px] whitespace-nowrap border border-slate-200/70 px-2.5 py-2 text-right font-mono font-black text-slate-900">{formatExecutiveRevenueMoney(metric.cy)}</td>
-        <td className="min-w-[78px] whitespace-nowrap border border-slate-200/70 px-2.5 py-2 text-right font-mono font-bold text-slate-400">{formatExecutiveRevenueMoney(metric.ly)}</td>
-        <td className="min-w-[82px] whitespace-nowrap border border-slate-200/70 px-2.5 py-2 text-center">
+        <td className="min-w-[78px] whitespace-nowrap border-b border-slate-100 px-2.5 py-2.5 text-right font-mono font-black text-slate-900">{formatExecutiveRevenueMoney(metric.cy)}</td>
+        <td className="min-w-[78px] whitespace-nowrap border-b border-slate-100 px-2.5 py-2.5 text-right font-mono font-semibold text-slate-400">{formatExecutiveRevenueMoney(metric.ly)}</td>
+        <td className="min-w-[82px] whitespace-nowrap border-b border-slate-100 px-2.5 py-2.5 text-center">
           <ExecutiveGrowthBadge value={metric.growth} />
         </td>
       </React.Fragment>
@@ -3882,39 +3882,39 @@ function ExecutiveRevenuePerformance({
   ) => (
     <ExecutiveTableShell
       title={title}
-      icon={<IndianRupee className="h-3.5 w-3.5 text-slate-300" />}
-      headerClassName="px-3.5 py-2.5 bg-slate-900 text-white"
-      titleClassName="text-[11px]"
-      className={cn('rounded-2xl border-slate-200/80', expandedTable === tableId && 'xl:col-span-3')}
+      icon={<IndianRupee className="h-3.5 w-3.5 text-teal-300" />}
+      headerClassName="px-4 py-3 bg-gradient-to-r from-slate-900 via-[#055B65] to-slate-900 text-white"
+      titleClassName="text-xs"
+      className={cn('rounded-3xl border border-slate-200/80 shadow-[0_12px_28px_-6px_rgba(15,23,42,0.08)]', expandedTable === tableId && 'xl:col-span-3')}
       isExpanded={expandedTable === tableId}
       onToggleExpanded={() => onToggleTable(tableId)}
     >
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight">
-          <thead className="bg-slate-900 text-slate-200">
-            <tr>
-              <th className="min-w-[130px] border border-slate-800 px-3 py-2 text-left font-bold text-slate-300">Category</th>
-              {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
-                <th key={label} colSpan={3} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-300">{label}</th>
+        <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight text-left">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
+              <th className="min-w-[130px] px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Category</th>
+              {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
+                <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
               ))}
             </tr>
-            <tr>
-              <th className="border border-slate-800 px-3 py-1.5"></th>
-              {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', '%'].map((label) => (
-                <th key={`${groupIndex}-${label}`} className="border border-slate-800 px-3 py-1.5 text-center font-bold text-slate-400">{label}</th>
+            <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
+              <th className="px-4 py-1.5 border-r border-slate-200/60"></th>
+              {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', '%'].map((label, i) => (
+                <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
               )))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {rows.map(({ key, label, row }) => (
-              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-slate-50/80 transition-colors')}>
-                <td className="whitespace-nowrap border border-slate-200/70 px-3 py-2 font-black leading-tight">{label}</td>
+              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-teal-50/30 transition-colors')}>
+                <td className="whitespace-nowrap px-4 py-2.5 font-bold text-slate-900 border-r border-slate-100">{label}</td>
                 {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => renderPeriodCells(row, period))}
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="border border-slate-200/70 bg-white px-3 py-6 text-center text-xs font-bold text-slate-400">
+                <td colSpan={10} className="bg-white px-3 py-6 text-center text-xs font-bold text-slate-400">
                   Data not available.
                 </td>
               </tr>
@@ -3926,29 +3926,29 @@ function ExecutiveRevenuePerformance({
   )
 
   return (
-    <div className="rounded-[1.25rem] border border-slate-200/80 bg-white p-4 shadow-xs">
+    <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-[0_12px_28px_-6px_rgba(15,23,42,0.08)]">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50/80">
-            <TrendingUp className="h-4 w-4 text-slate-700" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-teal-50 text-[#055B65] border border-white/80 shadow-2xs">
+            <TrendingUp className="h-5 w-5" />
           </div>
           <div>
             <p className="text-[9px] font-black uppercase tracking-[0.24em] text-slate-400">Revenue Performance</p>
             <h3 className="text-lg font-black text-slate-900 tracking-tight">{selectedLocationLabel}</h3>
           </div>
         </div>
-        <p className="rounded-full border border-slate-200/70 bg-slate-50/70 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
+        <p className="rounded-full border border-slate-200/80 bg-slate-50/80 px-4 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600 shadow-2xs">
           CY {currentRangeLabel} vs LY {comparisonRangeLabel}
         </p>
       </div>
 
-      <div className="mt-4 grid gap-3.5 xl:grid-cols-3">
+      <div className="mt-4 flex flex-col gap-4 w-full">
         {renderRevenueTable('labour-revenue', 'Labour Revenue', labourRows)}
         {renderRevenueTable('parts-revenue', 'Part Revenue', partsRows)}
-        <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xs">
-          <div className="bg-slate-900 px-3.5 py-2.5 text-white">
-            <h4 className="flex items-center gap-2 text-[11px] font-black tracking-tight">
-              <TrendingUp className="h-3.5 w-3.5 text-slate-300" />
+        <div className="min-w-0 overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_12px_28px_-6px_rgba(15,23,42,0.08)]">
+          <div className="bg-gradient-to-r from-slate-900 via-[#055B65] to-slate-900 px-4 py-3 text-white">
+            <h4 className="flex items-center gap-2 text-xs font-black tracking-tight text-white">
+              <TrendingUp className="h-3.5 w-3.5 text-teal-300" />
               Growth Contribution
             </h4>
           </div>
@@ -4269,7 +4269,7 @@ function BusinessExecutiveDashboard({
             />
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="flex flex-col gap-4 w-full">
             <ExecutiveTableShell
               title="Overall Load"
               subtitle="Location performance"
@@ -4278,33 +4278,33 @@ function BusinessExecutiveDashboard({
               onToggleExpanded={() => toggleExecutiveTable('overall-load')}
             >
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-slate-900 text-slate-100">
-                    <tr>
-                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Location</th>
-                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-center font-bold text-slate-300">TD</th>
-                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
-                        <th key={label} colSpan={3} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-300">{label}</th>
+                <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
+                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Location</th>
+                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
+                        <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
                       ))}
                     </tr>
-                    <tr>
-                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
-                        <th key={`${groupIndex}-${label}`} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-400">{label}</th>
+                    <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label, i) => (
+                        <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
                       )))}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {locationRows.map((row) => (
-                      <tr key={row.label} className={row.label === 'Total' ? 'bg-slate-100/90 font-black' : 'bg-white hover:bg-slate-50/80 transition-colors'}>
-                        <td className="border border-slate-200/70 px-3 py-3 font-black text-slate-900">{row.label}</td>
-                        <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
-                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
+                      <tr key={row.label} className={row.label === 'Total' ? 'bg-teal-50/60 font-black text-[#055B65]' : 'bg-white hover:bg-teal-50/30 transition-colors'}>
+                        <td className="px-4 py-3 font-bold text-slate-900 border-r border-slate-100">{row.label}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => {
                           const metric = row[period]
                           return (
                             <React.Fragment key={`${row.label}-${period}`}>
-                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
-                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono text-slate-400">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
-                              <td className="border border-slate-200/70 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
+                              <td className={cn("px-3 py-3 text-center", pIdx < 2 && "border-r border-slate-100")}><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
                         })}
@@ -4327,10 +4327,10 @@ function BusinessExecutiveDashboard({
                       type="button"
                       onClick={() => setActiveExecutiveTableMetric(metric.id)}
                       className={cn(
-                        'rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-all',
+                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
                         activeExecutiveTableMetric === metric.id
-                          ? 'border-white bg-white text-slate-900 shadow-sm'
-                          : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'
+                          ? 'border-white bg-white text-[#055B65] shadow-xs scale-105'
+                          : 'border-white/20 bg-white/10 text-teal-100 hover:bg-white/20 hover:text-white'
                       )}
                     >
                       {metric.label}
@@ -4343,33 +4343,33 @@ function BusinessExecutiveDashboard({
               onToggleExpanded={() => toggleExecutiveTable('service-type-performance')}
             >
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-slate-900 text-slate-100">
-                    <tr>
-                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Service Type</th>
-                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-center font-bold text-slate-300">TD</th>
-                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
-                        <th key={label} colSpan={3} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-300">{label}</th>
+                <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
+                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Service Type</th>
+                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
+                        <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
                       ))}
                     </tr>
-                    <tr>
-                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
-                        <th key={`${groupIndex}-${label}`} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-400">{label}</th>
+                    <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label, i) => (
+                        <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
                       )))}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {serviceTypeRows.map((row) => (
-                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-slate-50/80 transition-colors')}>
-                        <td className="border border-slate-200/70 px-3 py-3 font-black">{row.name}</td>
-                        <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
-                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
+                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-teal-50/30 transition-colors')}>
+                        <td className="px-4 py-3 font-bold text-slate-900 border-r border-slate-100">{row.name}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => {
                           const metric = row[period]
                           return (
                             <React.Fragment key={`${row.name}-${period}`}>
-                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
-                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono text-slate-400">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
-                              <td className="border border-slate-200/70 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
+                              <td className={cn("px-3 py-3 text-center", pIdx < 2 && "border-r border-slate-100")}><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
                         })}

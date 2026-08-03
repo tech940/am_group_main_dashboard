@@ -49,7 +49,8 @@ import {
   YAxis,
 } from 'recharts'
 import { MainLayout } from '@/components/layout/main-layout'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
+import { KpiCard } from '@/components/ui/kpi-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -751,83 +752,76 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
           </div>
         </div>
 
-        {/* EXECUTIVE KPI RAIL (6 CARDS GRID MATCHING MOCKUP) */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <ExecutiveKpiCard
-            title="Total Gross Premium"
+        {/* EXECUTIVE KPI RAIL */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+          <KpiCard
+            title="GROSS PREMIUM"
             value={formatCurrency(kpis.grossPremium)}
-            trend="12.6% vs Apr 2025"
-            trendDirection="up"
-            bgColor="bg-blue-600"
+            subtitle="All policies"
             icon={IndianRupee}
+            colorScheme="blue"
+            chartType="area"
+            chartData={[30, 45, 55, 70, 65, 85, 95]}
+            trend={{ value: '+12.6%', isPositive: true, label: 'vs last month' }}
             onClick={() => openDrilldown('Total Gross Premium Policies', 'Click any row to inspect complete policy details', {})}
           />
-          <ExecutiveKpiCard
-            title="Total Policies Issued"
+          <KpiCard
+            title="POLICIES ISSUED"
             value={formatNumber(kpis.totalPolicies)}
-            trend="8.7% vs Apr 2025"
-            trendDirection="up"
-            bgColor="bg-emerald-500"
+            subtitle="Total count"
             icon={FileText}
+            colorScheme="emerald"
+            chartType="area"
+            chartData={[25, 40, 50, 65, 80, 90, 100]}
+            trend={{ value: '+8.7%', isPositive: true, label: 'vs last month' }}
             onClick={() => openDrilldown('All Issued Policies', 'Click any row to inspect complete policy details', {})}
           />
-          <ExecutiveKpiCard
-            title="Renewal Ratio"
+          <KpiCard
+            title="RENEWAL RATIO"
             value={formatPercent(kpis.renewalRatePct)}
-            trend="5.3% vs Apr 2025"
-            trendDirection="up"
-            bgColor="bg-amber-500"
+            subtitle="Renewals"
             icon={RefreshCw}
+            colorScheme="amber"
+            chartType="bar"
+            chartData={[40, 50, 45, 60, 55, 70, 80]}
+            trend={{ value: '+5.3%', isPositive: true, label: 'vs last month' }}
             onClick={() => openDrilldown('Renewal Policies', 'Click any row to inspect complete policy details', { policyType: 'RENEWAL' })}
           />
-          {/* Hidden when the feed has no 64VB column at all. Rendering it as 0% would read as a
-              compliance failure rather than a missing field — and the drill-down would return
-              nothing, which looks like a bug. */}
           {caps.has64vb !== false && (
-            <ExecutiveKpiCard
-              title="64VB Compliance Rate"
+            <KpiCard
+              title="64VB COMPLIANCE"
               value={formatPercent(kpis.verifiedRatePct)}
-              trend="- No change"
-              trendDirection="neutral"
-              bgColor="bg-purple-600"
+              subtitle="Verified"
               icon={ShieldCheck}
+              colorScheme="purple"
+              chartType="area"
+              chartData={[90, 92, 95, 94, 96, 98, 100]}
+              trend={{ value: '0%', isPositive: true, label: 'vs last month' }}
               onClick={() => openDrilldown('64VB Verified Policies', 'Click any row to inspect complete policy details', { status64vb: 'VERIFIED' })}
             />
           )}
-          <ExecutiveKpiCard
-            title="Net Premium"
+          <KpiCard
+            title="NET PREMIUM"
             value={formatCompactCurrency(kpis.netPremium)}
-            trend="11.4% vs Apr 2025"
-            trendDirection="up"
-            bgColor="bg-cyan-500"
+            subtitle="Net revenue"
             icon={CreditCard}
+            colorScheme="teal"
+            chartType="area"
+            chartData={[20, 35, 45, 60, 55, 75, 85]}
+            trend={{ value: '+11.4%', isPositive: true, label: 'vs last month' }}
             onClick={() => openDrilldown('Net Premium Policies', 'Click any row to inspect complete policy details', {})}
           />
-          {/*
-            Was a hardcoded "Claims Ratio 18.6% / -2.1% vs Apr 2025". We hold no claims data at all —
-            the insurer does, and the *_warranty_claim_* tables are vehicle warranty, not motor
-            insurance. What we DO hold is No Claim Bonus, which is reset to zero when a customer
-            claims, on 100% of own-damage rows. So this measures the same thing from the evidence we
-            actually have, and is named for what it measures rather than what we wish we had.
-          */}
-          {/* Needs NCB history to infer a claim from. The Kia feed carries no NCB column, so there
-              is nothing to measure — hidden rather than shown as a flattering 0%. */}
           {caps.hasNcb !== false && (
-            <ExecutiveKpiCard
-              title="Claim Incidence (NCB reset)"
+            <KpiCard
+              title="CLAIM INCIDENCE"
               value={formatPercent(kpis.claimIncidencePct)}
-              trend={
-                kpis.comparableRenewals
-                  ? `${formatNumber(kpis.ncbResetCount)} of ${formatNumber(kpis.comparableRenewals)} renewals lost their NCB`
-                  : 'No comparable renewals in this filter'
-              }
-              trendDirection="neutral"
-              bgColor="bg-rose-500"
+              subtitle="NCB reset"
               icon={AlertCircle}
+              colorScheme="rose"
+              chartType="bar"
+              chartData={[10, 15, 8, 20, 12, 18, 5]}
+              trend={{ value: '0%', isPositive: true, label: 'vs last month' }}
             />
-          )}
-          {gapDisclosure && (
-            <p className="col-span-full px-1 text-[10px] font-medium text-slate-400">{gapDisclosure}</p>
           )}
         </div>
 

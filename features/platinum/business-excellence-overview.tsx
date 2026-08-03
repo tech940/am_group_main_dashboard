@@ -1069,39 +1069,43 @@ function RoBillingPerformanceTable({
   }>
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 p-4">
+    <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_12px_28px_-6px_rgba(15,23,42,0.08),0_4px_12px_-2px_rgba(15,23,42,0.03)] transition-all">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-[#055B65] to-slate-900 px-6 py-4 text-white">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">RO Billing Data</p>
-          <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">RO Billing Performance</h3>
+          <p className="text-[10px] font-black uppercase tracking-widest text-teal-200/80">RO Billing Data</p>
+          <h3 className="mt-0.5 text-lg font-black tracking-tight text-white">RO Billing Performance</h3>
         </div>
-        <p className="text-xs font-bold text-slate-500">Metric | CY | LY | Growth</p>
+        <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-bold text-teal-100 backdrop-blur-xs">Metric | CY | LY | Growth</span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse">
-          <thead className="bg-slate-950 text-white">
-            <tr>
+        <table className="w-full min-w-[720px] text-left border-collapse">
+          <thead>
+            <tr className="border-b border-slate-200/80 bg-slate-50/80 text-slate-700">
               {['Metric', 'CY', 'LY', 'Growth'].map((heading) => (
-                <th key={heading} className="border border-slate-800 px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">
+                <th key={heading} className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
                   {heading}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100 text-sm">
             {rows.map((row) => {
               const growthValue = row.growth
               const isNeutral = growthValue === null
               const isGood = !isNeutral && (row.positiveIsGood === false ? growthValue <= 0 : growthValue >= 0)
               return (
-                <tr key={row.metric} className="bg-white transition hover:bg-slate-50">
-                  <td className="border border-slate-200 px-4 py-3 text-sm font-black text-slate-900">{row.metric}</td>
-                  <td className="border border-slate-200 px-4 py-3 font-mono text-sm font-black text-slate-950">{row.cy}</td>
-                  <td className="border border-slate-200 px-4 py-3 font-mono text-sm font-bold text-slate-500">{row.ly}</td>
-                  <td className="border border-slate-200 px-4 py-3">
+                <tr key={row.metric} className="bg-white transition-colors hover:bg-teal-50/30">
+                  <td className="px-6 py-4 font-bold text-slate-900">{row.metric}</td>
+                  <td className="px-6 py-4 font-mono font-black text-slate-950">{row.cy}</td>
+                  <td className="px-6 py-4 font-mono font-semibold text-slate-500">{row.ly}</td>
+                  <td className="px-6 py-4">
                     <span className={cn(
-                      'inline-flex rounded-full px-3 py-1 text-[11px] font-black',
-                      isNeutral ? 'bg-slate-100 text-slate-500' : isGood ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                      'inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-black shadow-2xs',
+                      isNeutral
+                        ? 'border-slate-200 bg-slate-100 text-slate-500'
+                        : isGood
+                        ? 'border-emerald-200/80 bg-emerald-50 text-emerald-700'
+                        : 'border-rose-200/80 bg-rose-50 text-rose-700'
                     )}>
                       {growthValue === null ? 'N/A' : formatDelta(growthValue)}
                     </span>
@@ -1126,51 +1130,55 @@ function DetailedRoBillingMatrix({
   }>
 }) {
   const renderGrowth = (value: number | 'N/A') => {
-    if (value === 'N/A') return <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">N/A</span>
+    if (value === 'N/A') return <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-black text-slate-400">N/A</span>
     return (
       <span className={cn(
-        'rounded-full px-2.5 py-1 text-[10px] font-black',
-        value >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+        'inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black shadow-2xs',
+        value >= 0 ? 'border-emerald-200/80 bg-emerald-50 text-emerald-700' : 'border-rose-200/80 bg-rose-50 text-rose-700'
       )}>
         {formatDelta(value)}
       </span>
     )
   }
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 p-4">
+    <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_12px_28px_-6px_rgba(15,23,42,0.08),0_4px_12px_-2px_rgba(15,23,42,0.03)] transition-all">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-[#055B65] to-slate-900 px-6 py-4 text-white">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">RO Billing Matrix</p>
-          <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">TD / MTD / QTD / YTD performance</h3>
+          <p className="text-[10px] font-black uppercase tracking-widest text-teal-200/80">RO Billing Matrix</p>
+          <h3 className="mt-0.5 text-lg font-black tracking-tight text-white">TD / MTD / QTD / YTD Performance</h3>
         </div>
-        <p className="text-xs font-bold text-slate-500">Load, Labour, Parts, Labour/Vehicle, Parts/Vehicle</p>
+        <p className="text-xs font-bold text-teal-100/80">Load, Labour, Parts, Labour/Vehicle, Parts/Vehicle</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] border-collapse">
-          <thead className="bg-slate-950 text-white">
-            <tr>
-              <th rowSpan={2} className="border border-slate-800 px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">Metric</th>
-              <th rowSpan={2} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">TD</th>
-              {['MTD', 'QTD', 'YTD'].map((period) => (
-                <th key={period} colSpan={3} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{period}</th>
+        <table className="w-full min-w-[980px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-slate-200/80 bg-slate-50/90 text-slate-700">
+              <th rowSpan={2} className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">Metric</th>
+              <th rowSpan={2} className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">TD</th>
+              {['MTD', 'QTD', 'YTD'].map((period, pIdx) => (
+                <th key={period} colSpan={3} className={cn("px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700", pIdx < 2 && "border-r border-slate-200/60")}>
+                  {period}
+                </th>
               ))}
             </tr>
-            <tr>
-              {['MTD', 'QTD', 'YTD'].flatMap((period) => ['CY', 'LY', 'Growth'].map((label) => (
-                <th key={`${period}-${label}`} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{label}</th>
+            <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
+              {['MTD', 'QTD', 'YTD'].flatMap((period, pIdx) => ['CY', 'LY', 'Growth'].map((label, lIdx) => (
+                <th key={`${period}-${label}`} className={cn("px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500", pIdx < 2 && lIdx === 2 && "border-r border-slate-200/60")}>
+                  {label}
+                </th>
               )))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100 text-sm">
             {rows.map((row) => (
-              <tr key={row.metric} className="bg-white transition hover:bg-slate-50">
-                <td className="border border-slate-200 px-4 py-3 text-sm font-black text-slate-950">{row.metric}</td>
-                <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-black text-slate-950">{row.formatter(row.values.td.cy)}</td>
-                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => (
+              <tr key={row.metric} className="bg-white transition-colors hover:bg-teal-50/30">
+                <td className="px-5 py-3.5 font-bold text-slate-900 border-r border-slate-100">{row.metric}</td>
+                <td className="px-4 py-3.5 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{row.formatter(row.values.td.cy)}</td>
+                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => (
                   <React.Fragment key={`${row.metric}-${period}`}>
-                    <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-black text-slate-950">{row.formatter(row.values[period].cy)}</td>
-                    <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-bold text-slate-500">{row.values[period].ly === 'N/A' ? 'N/A' : row.formatter(row.values[period].ly)}</td>
-                    <td className="border border-slate-200 px-4 py-3 text-center">{renderGrowth(row.values[period].growth)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-black text-slate-900">{row.formatter(row.values[period].cy)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-400">{row.values[period].ly === 'N/A' ? 'N/A' : row.formatter(row.values[period].ly)}</td>
+                    <td className={cn("px-3 py-3.5 text-center", pIdx < 2 && "border-r border-slate-100")}>{renderGrowth(row.values[period].growth)}</td>
                   </React.Fragment>
                 ))}
               </tr>
@@ -1193,11 +1201,11 @@ function ServiceTypeRoBillingTable({
 }) {
   const formatter = metric === 'load' ? formatNumber : formatCurrency
   const renderGrowth = (value: number | 'N/A') => {
-    if (value === 'N/A') return <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">N/A</span>
+    if (value === 'N/A') return <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-black text-slate-400">N/A</span>
     return (
       <span className={cn(
-        'rounded-full px-2.5 py-1 text-[10px] font-black',
-        value >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+        'inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black shadow-2xs',
+        value >= 0 ? 'border-emerald-200/80 bg-emerald-50 text-emerald-700' : 'border-rose-200/80 bg-rose-50 text-rose-700'
       )}>
         {formatDelta(value)}
       </span>
@@ -1205,22 +1213,24 @@ function ServiceTypeRoBillingTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 p-4">
+    <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_12px_28px_-6px_rgba(15,23,42,0.08),0_4px_12px_-2px_rgba(15,23,42,0.03)] transition-all">
+      <div className="border-b border-slate-100 bg-gradient-to-r from-slate-900 via-[#055B65] to-slate-900 px-6 py-4 text-white">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Service Type</p>
-            <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">RO Billing service type table</h3>
+            <p className="text-[10px] font-black uppercase tracking-widest text-teal-200/80">Service Type Breakdown</p>
+            <h3 className="mt-0.5 text-lg font-black tracking-tight text-white">RO Billing Service Type Table</h3>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {RO_ANALYSIS_TYPES.map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => onMetricChange(item)}
                 className={cn(
-                  'flex items-center gap-2 rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition',
-                  metric === item ? 'bg-slate-950 text-white shadow-sm' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                  'flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
+                  metric === item
+                    ? 'bg-white text-[#055B65] shadow-xs scale-105'
+                    : 'bg-white/10 text-teal-100 hover:bg-white/20 hover:text-white'
                 )}
               >
                 {item === 'load' ? <Activity className="h-3.5 w-3.5" /> : <TrendingUp className="h-3.5 w-3.5" />}
@@ -1229,41 +1239,47 @@ function ServiceTypeRoBillingTable({
             ))}
           </div>
         </div>
-        <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Metric {RO_ANALYSIS_LABELS[metric]}</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1080px] border-collapse">
-          <thead className="bg-slate-950 text-white">
-            <tr>
-              <th rowSpan={2} className="border border-slate-800 px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">Work Type</th>
-              <th rowSpan={2} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">TD</th>
-              {['MTD', 'QTD', 'YTD'].map((period) => (
-                <th key={period} colSpan={3} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{period}</th>
+        <table className="w-full min-w-[1080px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-slate-200/80 bg-slate-50/90 text-slate-700">
+              <th rowSpan={2} className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">Work Type</th>
+              <th rowSpan={2} className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">TD</th>
+              {['MTD', 'QTD', 'YTD'].map((period, pIdx) => (
+                <th key={period} colSpan={3} className={cn("px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700", pIdx < 2 && "border-r border-slate-200/60")}>
+                  {period}
+                </th>
               ))}
             </tr>
-            <tr>
-              {['MTD', 'QTD', 'YTD'].flatMap((period) => ['CY', 'LY', 'Growth'].map((label) => (
-                <th key={`${period}-${label}`} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{label}</th>
+            <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
+              {['MTD', 'QTD', 'YTD'].flatMap((period, pIdx) => ['CY', 'LY', 'Growth'].map((label, i) => (
+                <th key={`${period}-${label}`} className={cn("px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500", pIdx < 2 && i === 2 && "border-r border-slate-200/60")}>
+                  {label}
+                </th>
               )))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100 text-sm">
             {rows.map((row) => (
               <tr
                 key={row.name}
                 className={cn(
-                  'transition hover:bg-slate-50',
-                  row.isGrand ? 'bg-slate-100' : row.isTotal ? 'bg-slate-50' : 'bg-white',
-                  getManagementTotalRowClass(row.name)
+                  'transition-colors hover:bg-teal-50/30',
+                  row.isGrand
+                    ? 'bg-teal-50/60 font-black text-[#055B65]'
+                    : row.isTotal
+                    ? 'bg-slate-50/90 font-bold text-slate-900'
+                    : 'bg-white'
                 )}
               >
-                <td className={cn('border border-slate-200 px-4 py-3 text-sm font-black text-slate-950', row.isGrand && 'text-[var(--dashboard-action-bg)]')}>{row.name}</td>
-                <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-black text-slate-950">{formatter(row.values.td.cy)}</td>
-                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => (
+                <td className={cn('px-5 py-3.5 font-bold border-r border-slate-100', row.isGrand ? 'text-[#055B65] font-black' : 'text-slate-900')}>{row.name}</td>
+                <td className="px-4 py-3.5 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatter(row.values.td.cy)}</td>
+                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => (
                   <React.Fragment key={`${row.name}-${period}`}>
-                    <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-black text-slate-950">{formatter(row.values[period].cy)}</td>
-                    <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-bold text-slate-500">{row.values[period].ly === 'N/A' ? 'N/A' : formatter(row.values[period].ly)}</td>
-                    <td className="border border-slate-200 px-4 py-3 text-center">{renderGrowth(row.values[period].growth)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-black text-slate-900">{formatter(row.values[period].cy)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-400">{row.values[period].ly === 'N/A' ? 'N/A' : formatter(row.values[period].ly)}</td>
+                    <td className={cn("px-3 py-3.5 text-center", pIdx < 2 && "border-r border-slate-100")}>{renderGrowth(row.values[period].growth)}</td>
                   </React.Fragment>
                 ))}
               </tr>

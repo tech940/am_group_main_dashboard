@@ -29,6 +29,7 @@ import {
   Download,
   BarChart3
 } from 'lucide-react'
+import { KpiCard as KpiCardComponent } from '@/components/ui/kpi-card'
 import { canRevealKiaFollowupPhone } from '@/lib/kia/pii'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent } from '@/components/ui/card'
@@ -1069,34 +1070,37 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
           </div>
 
           {/* CRE Performance Stats Bar */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="flex items-center gap-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100">
-                <CheckCheck className="h-5 w-5 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Completed Today</p>
-                <p className="text-2xl font-black text-emerald-600 leading-tight">{completedToday}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 border border-amber-100">
-                <Timer className="h-5 w-5 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pending</p>
-                <p className="text-2xl font-black text-amber-600 leading-tight">{totalPending}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 border border-rose-100">
-                <TrendingUp className="h-5 w-5 text-rose-600" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Overdue</p>
-                <p className="text-2xl font-black text-rose-600 leading-tight">{totalOverdue}</p>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <KpiCardComponent
+              title="COMPLETED TODAY"
+              value={completedToday}
+              subtitle="Done by CRE team"
+              icon={CheckCheck}
+              colorScheme="emerald"
+              chartType="area"
+              chartData={[10, 20, 35, 45, 60, 75, 85]}
+              trend={{ value: '+14%', isPositive: true, label: 'vs yesterday' }}
+            />
+            <KpiCardComponent
+              title="PENDING FOLLOW-UPS"
+              value={totalPending}
+              subtitle="Awaiting CRE touch"
+              icon={Timer}
+              colorScheme="amber"
+              chartType="bar"
+              chartData={[15, 25, 20, 30, 18, 22, 12]}
+              trend={{ value: '-8%', isPositive: true, label: 'vs yesterday' }}
+            />
+            <KpiCardComponent
+              title="OVERDUE FOLLOW-UPS"
+              value={totalOverdue}
+              subtitle="Action required"
+              icon={TrendingUp}
+              colorScheme="rose"
+              chartType="bar"
+              chartData={[8, 12, 15, 10, 6, 4, 2]}
+              trend={{ value: '-18%', isPositive: true, label: 'vs yesterday' }}
+            />
           </div>
 
           {/* Tabs bar */}

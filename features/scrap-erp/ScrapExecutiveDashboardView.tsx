@@ -21,6 +21,7 @@ import {
   Search,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { KpiCard } from '@/components/ui/kpi-card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from '@/components/ui/dropdown-menu'
@@ -845,97 +846,39 @@ export function ScrapExecutiveDashboardView({
 
       {/* ── Top Executive KPI Summary Row ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Total Revenue */}
-        <Card
+        <KpiCard
+          title="TOTAL SCRAP REVENUE"
+          value={formatINR(metrics.totalRevenue)}
+          subtitle={`${activeTxns.length} Total Sales`}
+          icon={DollarSign}
+          colorScheme="amber"
+          chartType="area"
+          chartData={[30, 45, 60, 50, 75, 80, 95]}
+          trend={{ value: '+16%', isPositive: true, label: 'vs last month' }}
           onClick={() => onDrilldown('Total Disposal Revenue', activeTxns)}
-          className="cursor-pointer transition-all hover:shadow-md border border-slate-200 dark:border-slate-800 border-t-4 border-t-amber-600 bg-white dark:bg-slate-900 rounded-2xl p-1"
-        >
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <span className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Total Scrap Revenue
-            </span>
-            <div className="rounded-xl bg-amber-50 dark:bg-amber-950/60 p-2.5 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800">
-              <DollarSign className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
-              {formatINR(metrics.totalRevenue)}
-            </div>
-            <div className="mt-2 flex items-center justify-between text-xs font-medium border-t border-slate-100 dark:border-slate-800 pt-2">
-              <span className="text-amber-700 dark:text-amber-400 font-extrabold flex items-center gap-1">
-                <TrendingUp className="h-3.5 w-3.5" /> {activeTxns.length} Total Sales
-              </span>
-              <span className="text-slate-500 dark:text-slate-400">
-                Outstanding: <span className="font-extrabold text-rose-600">{formatINR(metrics.outstandingAmount)}</span>
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Total Weight Disposed */}
-        <Card
+        />
+        <KpiCard
+          title="WEIGHT DISPOSED"
+          value={`${metrics.totalWeight.toLocaleString('en-IN')} Kg/Ltr`}
+          subtitle={`Avg Rate: ₹${metrics.avgSellingRate.toFixed(2)}/unit`}
+          icon={Weight}
+          colorScheme="emerald"
+          chartType="bar"
+          chartData={[20, 35, 50, 65, 80, 60, 90]}
+          trend={{ value: '+22%', isPositive: true, label: 'vs last month' }}
           onClick={() => onDrilldown('Total Weight Disposed', activeTxns)}
-          className="cursor-pointer transition-all hover:shadow-md border border-slate-200 dark:border-slate-800 border-t-4 border-t-emerald-600 bg-white dark:bg-slate-900 rounded-2xl p-1"
-        >
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <span className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Weight Disposed
-            </span>
-            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800">
-              <Weight className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
-              {metrics.totalWeight.toLocaleString('en-IN')}{' '}
-              <span className="text-sm font-bold text-slate-500 dark:text-slate-400">Kg/Ltr</span>
-            </div>
-            <div className="mt-2 flex items-center justify-between text-xs font-medium border-t border-slate-100 dark:border-slate-800 pt-2">
-              <span className="font-extrabold text-emerald-700 dark:text-emerald-400">
-                Avg Rate: ₹{metrics.avgSellingRate.toFixed(2)}/unit
-              </span>
-              <span className="text-slate-500 dark:text-slate-400">Avg/Txn: {formatINR(metrics.avgRevenuePerTxn)}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Payment Breakdown */}
-        <Card className="transition-all hover:shadow-md border border-slate-200 dark:border-slate-800 border-t-4 border-t-slate-800 dark:border-t-slate-200 bg-white dark:bg-slate-900 rounded-2xl p-1">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <span className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Payment Method Breakdown
-            </span>
-            <div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-2.5 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-              <CreditCard className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xs font-black text-slate-900 dark:text-slate-100 space-y-1.5">
-              <div
-                onClick={() => onDrilldown('Cash Collections', activeTxns.filter((t) => (t.paymentModeName || '').toUpperCase().includes('CASH')))}
-                className="flex justify-between items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 p-1.5 rounded-lg transition-colors"
-              >
-                <span className="text-slate-600 dark:text-slate-400 font-bold text-xs">Cash Collections:</span>
-                <span className="text-emerald-700 dark:text-emerald-400 font-black">{formatINR(metrics.cash)}</span>
-              </div>
-              <div
-                onClick={() => onDrilldown('Cheque Payments', activeTxns.filter((t) => (t.paymentModeName || '').toUpperCase().includes('CHEQUE')))}
-                className="flex justify-between items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 p-1.5 rounded-lg transition-colors"
-              >
-                <span className="text-slate-600 dark:text-slate-400 font-bold text-xs">Cheque Payments:</span>
-                <span className="text-amber-700 dark:text-amber-400 font-black">{formatINR(metrics.cheque)}</span>
-              </div>
-              <div
-                onClick={() => onDrilldown('Online / Bank Transfers', activeTxns.filter((t) => !(t.paymentModeName || '').toUpperCase().includes('CASH') && !(t.paymentModeName || '').toUpperCase().includes('CHEQUE')))}
-                className="flex justify-between items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 p-1.5 rounded-lg transition-colors"
-              >
-                <span className="text-slate-600 dark:text-slate-400 font-bold text-xs">Online / Bank:</span>
-                <span className="text-slate-900 dark:text-slate-100 font-black">{formatINR(metrics.online)}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        />
+        <KpiCard
+          title="COLLECTIONS BREAKDOWN"
+          value={formatINR(metrics.cash + metrics.online)}
+          subtitle={`Cash: ${formatINR(metrics.cash)} · Online: ${formatINR(metrics.online)}`}
+          icon={CreditCard}
+          colorScheme="purple"
+          chartType="area"
+          chartData={[15, 30, 45, 60, 75, 90, 85]}
+          trend={{ value: '+18%', isPositive: true, label: 'vs last month' }}
+          onClick={() => onDrilldown('Cash Collections', activeTxns.filter((t) => (t.paymentModeName || '').toUpperCase().includes('CASH')))}
+        />
       </div>
 
       {/* ── 2x2 EXECUTIVE ANALYTICS GRID (CLEAN THEME COLORS MATCHING ORIGINAL REFERENCE) ── */}

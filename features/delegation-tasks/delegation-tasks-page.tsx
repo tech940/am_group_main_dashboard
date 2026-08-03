@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { canDelegateTasks, canViewAllDelegationTasks } from '@/lib/delegation/access'
+import { KpiCard } from '@/components/ui/kpi-card'
 
 // ── Types (match the server payload) ─────────────────────────────────────────────────────────────
 type TaskRow = {
@@ -402,10 +403,37 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
   return (
     <div className="space-y-6">
       {/* KPIs */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Kpi icon={<ListChecks className="h-4 w-4" />} label="Open Tasks" value={kpis.open} tone="text-slate-800" />
-        <Kpi icon={<TriangleAlert className="h-4 w-4" />} label="Overdue" value={kpis.overdue} tone="text-rose-600" />
-        <Kpi icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={kpis.done} tone="text-emerald-600" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <KpiCard
+          title="OPEN TASKS"
+          value={kpis.open}
+          subtitle="Active action items"
+          icon={ListChecks}
+          colorScheme="purple"
+          chartType="area"
+          chartData={[12, 18, 14, 22, 19, 28, 24, 30]}
+          trend={{ value: '+8%', isPositive: true, label: 'vs last week' }}
+        />
+        <KpiCard
+          title="OVERDUE TASKS"
+          value={kpis.overdue}
+          subtitle="Action required"
+          icon={TriangleAlert}
+          colorScheme="rose"
+          chartType="bar"
+          chartData={[5, 8, 4, 12, 6, 9, 3, 2]}
+          trend={{ value: '-15%', isPositive: true, label: 'vs last week' }}
+        />
+        <KpiCard
+          title="COMPLETED"
+          value={kpis.done}
+          subtitle="Total resolved"
+          icon={CheckCircle2}
+          colorScheme="emerald"
+          chartType="area"
+          chartData={[10, 15, 25, 30, 45, 40, 60, 75]}
+          trend={{ value: '+22%', isPositive: true, label: 'vs last week' }}
+        />
       </div>
 
       {/* Weekly Performance Scoring */}

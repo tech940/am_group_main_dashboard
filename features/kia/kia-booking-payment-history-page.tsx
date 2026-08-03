@@ -42,6 +42,7 @@ import {
   BadgeCheck,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
+import { KpiCard as KpiCardComponent } from '@/components/ui/kpi-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -448,54 +449,55 @@ export function KiaBookingPaymentHistoryPage() {
           <div className={cn('space-y-6 transition-opacity', query.isFetching && 'opacity-60')}>
             {/* 5 WOW KPI Executive Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-              <KpiCard
-                icon={<IndianRupee className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />}
-                iconBg="bg-emerald-50 dark:bg-emerald-950/80 border-emerald-200 dark:border-emerald-800"
-                label="Total Collections"
+              <KpiCardComponent
+                title="TOTAL COLLECTIONS"
                 value={formatCurrency(d.summary.totalAmount)}
-                subtext={formatFull(d.summary.totalAmount)}
-                badge={`${d.summary.receiptCount} Receipts`}
-                badgeTone="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                subtitle={`${d.summary.receiptCount} Receipts`}
+                icon={IndianRupee}
+                colorScheme="emerald"
+                chartType="area"
+                chartData={[20, 35, 45, 60, 75, 80, 95]}
+                trend={{ value: '+18%', isPositive: true, label: 'vs last month' }}
               />
-
-              <KpiCard
-                icon={<Receipt className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />}
-                iconBg="bg-indigo-50 dark:bg-indigo-950/80 border-indigo-200 dark:border-indigo-800"
-                label="Total Receipts Logged"
+              <KpiCardComponent
+                title="TOTAL RECEIPTS"
                 value={formatNumber(d.summary.receiptCount)}
-                subtext={`Avg ${formatCurrency(d.summary.avgReceipt)}`}
-                badge="100% Verified"
-                badgeTone="bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300"
+                subtitle={`Avg ${formatCurrency(d.summary.avgReceipt)}`}
+                icon={Receipt}
+                colorScheme="purple"
+                chartType="area"
+                chartData={[15, 30, 40, 55, 70, 75, 90]}
+                trend={{ value: '+12%', isPositive: true, label: 'vs last month' }}
               />
-
-              <KpiCard
-                icon={<BookOpen className="h-5 w-5 text-sky-600 dark:text-sky-400" />}
-                iconBg="bg-sky-50 dark:bg-sky-950/80 border-sky-200 dark:border-sky-800"
-                label="Bookings Paid"
+              <KpiCardComponent
+                title="BOOKINGS PAID"
                 value={formatNumber(d.summary.uniqueBookings)}
-                subtext="Unique Bookings"
-                badge="Paid Orders"
-                badgeTone="bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+                subtitle="Unique Bookings"
+                icon={BookOpen}
+                colorScheme="blue"
+                chartType="bar"
+                chartData={[10, 20, 25, 35, 45, 50, 65]}
+                trend={{ value: '+8%', isPositive: true, label: 'vs last month' }}
               />
-
-              <KpiCard
-                icon={<Users className="h-5 w-5 text-amber-600 dark:text-amber-400" />}
-                iconBg="bg-amber-50 dark:bg-amber-950/80 border-amber-200 dark:border-amber-800"
-                label="Unique Customers"
+              <KpiCardComponent
+                title="UNIQUE CUSTOMERS"
                 value={formatNumber(d.summary.uniqueCustomers)}
-                subtext="Verified Buyers"
-                badge="Customers"
-                badgeTone="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                subtitle="Verified Buyers"
+                icon={Users}
+                colorScheme="amber"
+                chartType="area"
+                chartData={[12, 22, 30, 42, 50, 60, 70]}
+                trend={{ value: '+10%', isPositive: true, label: 'vs last month' }}
               />
-
-              <KpiCard
-                icon={<CreditCard className="h-5 w-5 text-purple-600 dark:text-purple-400" />}
-                iconBg="bg-purple-50 dark:bg-purple-950/80 border-purple-200 dark:border-purple-800"
-                label="Digital Payment Share"
+              <KpiCardComponent
+                title="DIGITAL PAYMENT SHARE"
                 value={`${digitalSharePercentage}%`}
-                subtext="Online / Bank / NEFT / UPI"
-                badge={digitalSharePercentage >= 50 ? 'Digital First' : 'Cash Heavy'}
-                badgeTone="bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
+                subtitle="Online / NEFT / UPI"
+                icon={CreditCard}
+                colorScheme="teal"
+                chartType="bar"
+                chartData={[50, 60, 55, 70, 65, 80, 85]}
+                trend={{ value: '+5%', isPositive: true, label: 'vs last month' }}
               />
             </div>
 

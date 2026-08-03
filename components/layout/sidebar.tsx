@@ -4,6 +4,9 @@ import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   Activity,
+  LayoutGrid,
+  CalendarClock,
+  KeyRound,
   Menu,
   X,
   Shield,
@@ -323,8 +326,16 @@ export function Sidebar() {
     return permissionMap[permissionKey] === true
   }
 
+  /**
+   * Which links may be starred. Was `/brands/` only, so the Common modules — Cockpit, Purchase
+   * Orders, Petty Cash, Scrap, Insurance and the rest — could not be favourited at all, which is
+   * exactly the set a non-brand user lives in all day.
+   *
+   * Anything with a real in-app path is eligible now. Auth routes are excluded so a star can never
+   * point somewhere the sidebar would not render.
+   */
   const isEligibleFavouriteHref = useCallback((href: string) => {
-    return href.startsWith('/brands/')
+    return href.startsWith('/') && !href.startsWith('/auth') && href !== '/'
   }, [])
 
   const isSidebarItemVisible = useCallback((href: string) => {
@@ -425,23 +436,6 @@ export function Sidebar() {
   const navGroups = useMemo<NavGroup[]>(() => {
     const groups: NavGroup[] = []
 
-    // ── Favourites (starred sub-pages) ──
-    if (favouriteItems.length > 0) {
-      groups.push({
-        key: 'favourites',
-        label: 'Favourites',
-        nodes: favouriteItems.map((item) => ({
-          key: item.href,
-          label: item.label,
-          href: item.href,
-          badge: item.brandName,
-          external: true,
-          active: isSidebarHrefActive(item.href, pathname),
-          favourite: { active: true, onToggle: () => void toggleFavourite(item.href) },
-        })),
-      })
-    }
-
     // ── Common / global modules (shared across every branch) ──
     const commonNodes: NavNode[] = []
     if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, external: true, active: pathname === '/cockpit' })
@@ -487,6 +481,16 @@ export function Sidebar() {
     // permission snapshot like Group Cockpit: MD/Developer always + explicitly-granted finance roles.
     // if (hasPermission('finance.view')) commonNodes.push({ key: '/finance', label: 'Finance', href: '/finance', icon: HandCoins, external: true, active: pathname.startsWith('/finance') })
     // Call Analysis — MD + Developer only, role-gated (see lib/callyzer/access.ts).
+    // Sits beside Insurance and shares its gate — the queue carries customer names and registration
+    // numbers for ~3,700 vehicles, so it cannot be wider than the section it is derived from.
+    if (canAccessRestrictedAnalytics) commonNodes.push({
+      key: '/insurance/renewals',
+      label: 'Renewal Pipeline',
+      href: '/insurance/renewals',
+      icon: CalendarClock,
+      external: true,
+      active: Boolean(pathname?.startsWith('/insurance/renewals')),
+    })
     if (canAccessRestrictedAnalytics) commonNodes.push({
       key: '/call-analysis',
       label: 'Call Analysis',
@@ -494,6 +498,18 @@ export function Sidebar() {
       icon: PhoneCall,
       external: true,
       active: Boolean(pathname?.startsWith('/call-analysis')),
+    })
+    // Data Health is an OPERATIONS tool, not a business section: it exposes table names, row counts
+    // and load timestamps across every brand. Gated on the super-admin role directly rather than a
+    // permission key, so it can never be granted sideways from the Access Map. The page and the API
+    // enforce the identical check — see scripts/verify-guard-parity.ts for why that matters here.
+    if (isSuperAdminRole(userRole)) commonNodes.push({
+      key: '/data-health',
+      label: 'Data Health',
+      href: '/data-health',
+      icon: Activity,
+      external: true,
+      active: Boolean(pathname?.startsWith('/data-health')),
     })
     if (canAccessAdmin) {
       // Single link — the Admin page exposes all sections (Users, Access, Branch Admins, System,
@@ -503,7 +519,17 @@ export function Sidebar() {
         label: 'Admin Panel',
         href: '/admin',
         icon: Shield,
-        active: Boolean(pathname?.startsWith('/admin')),
+        // Exact match, otherwise this stays highlighted while Effective Access below is the active page.
+        active: pathname === '/admin' || Boolean(pathname?.startsWith('/admin/users')),
+      })
+      // Sibling link rather than an Admin tab: this answers "why can't X see Y" and is reached
+      // mid-investigation, not while working through the Users/Access flow.
+      commonNodes.push({
+        key: '/admin/effective-access',
+        label: 'Effective Access',
+        href: '/admin/effective-access',
+        icon: KeyRound,
+        active: Boolean(pathname?.startsWith('/admin/effective-access')),
       })
     }
     if (canAccessScrapErp(userRole, permissionMap)) {
@@ -526,7 +552,68 @@ export function Sidebar() {
         active: Boolean(pathname?.startsWith('/insurance')),
       })
     }
-    if (commonNodes.length > 0) groups.push({ key: 'common', label: 'Common', nodes: commonNodes })
+    // ── Favourites ── emitted here, not earlier, because it draws on BOTH the brand sub-pages and
+    // the Common modules, and commonNodes only exists by this point.
+    const commonByHref = new Map(
+      commonNodes.filter((node) => node.href).map((node) => [node.href as string, node]),
+    )
+    const favouriteNodes: NavNode[] = favouriteHrefs.flatMap((href) => {
+      const brandItem = favouriteItems.find((item) => item.href === href)
+      if (brandItem) {
+        return [{
+          key: `fav-${href}`,
+          label: brandItem.label,
+          href,
+          badge: brandItem.brandName,
+          external: true,
+          active: isSidebarHrefActive(href, pathname),
+          favourite: { active: true, onToggle: () => void toggleFavourite(href) },
+        }]
+      }
+      const commonNode = commonByHref.get(href)
+      if (commonNode) {
+        return [{
+          ...commonNode,
+          key: `fav-${href}`,
+          badge: 'Common',
+          favourite: { active: true, onToggle: () => void toggleFavourite(href) },
+        }]
+      }
+      // Starred then lost access, or the link was removed — drop it rather than render a dead row.
+      return []
+    })
+    if (favouriteNodes.length > 0) {
+      groups.push({ key: 'favourites', label: 'Favourites', nodes: favouriteNodes })
+    }
+
+    if (commonNodes.length > 0) {
+      // A star on every Common item. Favourites are stored by HREF, so a starred link survives a
+      // label change and resolves through the same lookup the brand links use.
+      const starredCommon = commonNodes.map((node) => (
+        node.href && isEligibleFavouriteHref(node.href)
+          ? {
+              ...node,
+              favourite: {
+                active: favouriteHrefs.includes(node.href),
+                onToggle: () => void toggleFavourite(node.href as string),
+              },
+            }
+          : node
+      ))
+
+      // One collapsible parent rather than a flat list: Common had grown past a dozen always-visible
+      // rows and pushed Branches below the fold. `children` is the accordion's existing nesting
+      // mechanism, so the nav component needs no change.
+      groups.push({
+        key: 'common',
+        nodes: [{
+          key: 'common-group',
+          label: 'Common',
+          icon: LayoutGrid,
+          children: starredCommon,
+        }],
+      })
+    }
 
     // ── Branches → Sections → Submenus (cascade), reusing the existing gating ──
     const brandNodes: NavNode[] = []

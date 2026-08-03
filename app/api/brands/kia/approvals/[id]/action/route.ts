@@ -40,6 +40,17 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid stage.' }, { status: 400 })
     }
 
+    // Retrieve existing request
+    const [requestRow] = await db
+      .select()
+      .from(kiaApprovalRequests)
+      .where(eq(kiaApprovalRequests.id, id))
+      .limit(1)
+
+    if (!requestRow) {
+      return NextResponse.json({ error: 'Approval request not found.' }, { status: 404 })
+    }
+
     // Role-based Authorization Checks
     const isSuperUser = ['ceo', 'md'].includes(appUser.role)
     const isTester = ['developer', 'admin'].includes(appUser.role)
@@ -52,10 +63,46 @@ export async function POST(
       ['hr', 'hr_head', 'hr_team', 'hr_manager'].includes(appUser.role) ||
       userRoleLower.includes('hr')
 
+    const deptNorm = (requestRow.department || '').trim().toUpperCase()
+    const approvalTypeNorm = (requestRow.approvalType || '').trim().toUpperCase()
+
+    const isServiceCategory = 
+      deptNorm === 'SERVICE' || 
+      deptNorm.includes('SERVICE') || 
+      deptNorm.includes('PARTS') || 
+      deptNorm.includes('BODY') || 
+      deptNorm.includes('LABOUR') ||
+      approvalTypeNorm.includes('PARTS') ||
+      approvalTypeNorm.includes('WORKSHOP') ||
+      approvalTypeNorm.includes('LABOUR') ||
+      approvalTypeNorm.includes('MAINTENANCE') ||
+      approvalTypeNorm.includes('SERVICE')
+
+    const isGeneralSalesManager = 
+      ['gsm', 'general_sales_manager', 'sales_manager', 'sales_head', 'general_manager'].includes(userRoleLower) ||
+      userRoleLower.includes('sales_manager') ||
+      userRoleLower.includes('general_sales')
+
+    const isGeneralServiceManager = 
+      ['general_service_manager', 'service_general_manager', 'service_manager', 'service_head', 'gsm_service'].includes(userRoleLower) ||
+      userRoleLower.includes('service_manager') ||
+      userRoleLower.includes('service_general')
+
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
-      isAuthorized = isTester || appUser.role === 'ed' || isSuperUser
+      if (isServiceCategory) {
+        // SERVICE ORDER: ONLY General Service Manager or Admin/Developer can approve
+        // ED IS STRICTLY EXCLUDED!
+        if (appUser.role === 'ed') {
+          isAuthorized = false
+        } else {
+          isAuthorized = isTester || isGeneralServiceManager
+        }
+      } else {
+        // SALES ORDER: Either ED or General Sales Manager can approve
+        isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser
+      }
     } else if (stage === 'hr') {
       isAuthorized = isTester || isSuperUser || isHrUser
     } else if (stage === 'accounts') {
@@ -69,18 +116,9 @@ export async function POST(
     }
 
     if (!isAuthorized) {
-      return NextResponse.json({ error: `Your role (${appUser.role}) is not authorized to act at the ${stage} stage.` }, { status: 403 })
-    }
-
-    // Retrieve existing request
-    const [requestRow] = await db
-      .select()
-      .from(kiaApprovalRequests)
-      .where(eq(kiaApprovalRequests.id, id))
-      .limit(1)
-
-    if (!requestRow) {
-      return NextResponse.json({ error: 'Approval request not found.' }, { status: 404 })
+      return NextResponse.json({ 
+        error: `Your role (${appUser.role}) is not authorized to act on ${isServiceCategory ? 'Service (requires General Service Manager)' : 'Sales (requires ED or General Sales Manager)'} requests at the ${stage} stage.` 
+      }, { status: 403 })
     }
 
     if (requestRow.emailSendStatus === 'SentBack' && action !== 'SEND_BACK') {

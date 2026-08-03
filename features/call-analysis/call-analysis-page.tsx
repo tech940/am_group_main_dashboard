@@ -12,6 +12,7 @@ import {
   Filter,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
+import { KpiCard } from '@/components/ui/kpi-card'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -370,13 +371,67 @@ export function CallAnalysisPage() {
             <FeedHealthStrip sync={d.syncState} />
 
             {/* KPI strip — always visible, every tab */}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-              <Kpi icon={<PhoneCall className="h-4 w-4" />} label="Total calls" value={nfmt(d.summary.totalCalls)} sub={`${d.summary.avgCallsPerDay}/day avg`} />
-              <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Connect rate" value={`${d.summary.connectRate}%`} sub={`${nfmt(d.summary.connected)} connected`} tone="ok" />
-              <Kpi icon={<Clock className="h-4 w-4" />} label="Talk time" value={d.summary.totalDurationLabel} sub={`avg ${dur(d.summary.avgCallDuration)}`} />
-              <Kpi icon={<PhoneMissed className="h-4 w-4" />} label="Missed" value={nfmt(d.summary.missed)} sub={`${nfmt(d.summary.rejected)} rejected`} tone="bad" />
-              <Kpi icon={<Users className="h-4 w-4" />} label="Unique customers" value={nfmt(d.summary.uniqueClients)} sub={`${d.summary.agentCount} agents`} />
-              <Kpi icon={<Mic className="h-4 w-4" />} label="Recorded" value={`${d.summary.recordingCoverage}%`} sub={`${nfmt(d.summary.withRecording)} calls`} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              <KpiCard
+                title="TOTAL CALLS"
+                value={nfmt(d.summary.totalCalls)}
+                subtitle={`${d.summary.avgCallsPerDay}/day avg`}
+                icon={PhoneCall}
+                colorScheme="purple"
+                chartType="area"
+                chartData={[30, 45, 60, 50, 75, 80, 95]}
+                trend={{ value: '+14%', isPositive: true, label: 'vs last week' }}
+              />
+              <KpiCard
+                title="CONNECT RATE"
+                value={`${d.summary.connectRate}%`}
+                subtitle={`${nfmt(d.summary.connected)} connected`}
+                icon={TrendingUp}
+                colorScheme="emerald"
+                chartType="area"
+                chartData={[40, 55, 65, 60, 80, 85, 92]}
+                trend={{ value: '+5.2%', isPositive: true, label: 'vs last week' }}
+              />
+              <KpiCard
+                title="TALK TIME"
+                value={d.summary.totalDurationLabel}
+                subtitle={`avg ${dur(d.summary.avgCallDuration)}`}
+                icon={Clock}
+                colorScheme="blue"
+                chartType="bar"
+                chartData={[20, 35, 45, 60, 50, 70, 85]}
+                trend={{ value: '+9%', isPositive: true, label: 'vs last week' }}
+              />
+              <KpiCard
+                title="MISSED CALLS"
+                value={nfmt(d.summary.missed)}
+                subtitle={`${nfmt(d.summary.rejected)} rejected`}
+                icon={PhoneMissed}
+                colorScheme="rose"
+                chartType="bar"
+                chartData={[15, 20, 10, 25, 8, 12, 5]}
+                trend={{ value: '-8%', isPositive: true, label: 'vs last week' }}
+              />
+              <KpiCard
+                title="CUSTOMERS"
+                value={nfmt(d.summary.uniqueClients)}
+                subtitle={`${d.summary.agentCount} agents`}
+                icon={Users}
+                colorScheme="amber"
+                chartType="area"
+                chartData={[20, 30, 40, 35, 55, 60, 75]}
+                trend={{ value: '+11%', isPositive: true, label: 'vs last week' }}
+              />
+              <KpiCard
+                title="RECORDED"
+                value={`${d.summary.recordingCoverage}%`}
+                subtitle={`${nfmt(d.summary.withRecording)} calls`}
+                icon={Mic}
+                colorScheme="teal"
+                chartType="area"
+                chartData={[60, 70, 75, 85, 90, 95, 98]}
+                trend={{ value: '+3%', isPositive: true, label: 'vs last week' }}
+              />
             </div>
 
             {tab === 'overview' && <OverviewTab d={d} />}

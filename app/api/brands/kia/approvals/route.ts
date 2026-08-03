@@ -35,6 +35,9 @@ export async function POST(request: NextRequest) {
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
+    if (!department || !department.trim()) {
+      return NextResponse.json({ error: 'Department Category (Sales or Service) is mandatory' }, { status: 400 })
+    }
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       return NextResponse.json({ error: 'A valid amount greater than 0 is required' }, { status: 400 })
     }

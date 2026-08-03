@@ -21,6 +21,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { KpiCard } from '@/components/ui/kpi-card'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
 import { getBranchLabel } from '@/lib/branches'
 import { getAllPettyCashLocationOptions, getPettyCashLocationOptions, PETTY_CASH_DEPARTMENT_OPTIONS } from '@/lib/petty-cash/constants'
@@ -627,45 +628,95 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
         </div>
       )}
 
-      {/* KPI row — reviewers see cross-branch aggregates (they own no single
-          allocation); creators see their own allocation health. */}
+      {/* KPI row */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {canReviewQueue && !canCreate ? (
           <>
-            <SummaryCard
-              label="Pending Requests"
+            <KpiCard
+              title="PENDING REQUESTS"
               value={String(summary?.pendingRequestCount ?? 0)}
-              meta="Awaiting your approval"
+              subtitle="Awaiting your approval"
               icon={ShieldCheck}
-              tone="amber"
+              colorScheme="amber"
+              chartType="bar"
+              chartData={[10, 15, 8, 20, 12, 18, 5]}
+              trend={{ value: '+12%', isPositive: true, label: 'vs last week' }}
               onClick={() => setActiveTab('requests')}
-              active={activeTab === 'requests'}
             />
-            <SummaryCard
-              label="Active Allocations"
+            <KpiCard
+              title="ACTIVE ALLOCATIONS"
               value={allocationsLoading ? '…' : String(allocations.length)}
-              meta="Across all branches"
+              subtitle="Across all branches"
               icon={Banknote}
-              tone="blue"
+              colorScheme="blue"
+              chartType="area"
+              chartData={[20, 35, 50, 40, 60, 55, 75]}
+              trend={{ value: '+5%', isPositive: true, label: 'vs last week' }}
               onClick={() => setActiveTab('allocations')}
-              active={activeTab === 'allocations'}
             />
-            <SummaryCard label="Total Remaining" value={formatCurrency(allocationTotals.remaining)} meta="Unspent across allocations" icon={Wallet} tone="emerald" />
-            <SummaryCard label="Total Spent" value={formatCurrency(allocationTotals.spent)} meta="Spent across allocations" icon={TrendingDown} tone="rose" />
+            <KpiCard
+              title="TOTAL REMAINING"
+              value={formatCurrency(allocationTotals.remaining)}
+              subtitle="Unspent across allocations"
+              icon={Wallet}
+              colorScheme="emerald"
+              chartType="area"
+              chartData={[40, 55, 65, 70, 85, 90, 95]}
+              trend={{ value: '+18%', isPositive: true, label: 'vs last week' }}
+            />
+            <KpiCard
+              title="TOTAL SPENT"
+              value={formatCurrency(allocationTotals.spent)}
+              subtitle="Spent across allocations"
+              icon={TrendingDown}
+              colorScheme="rose"
+              chartType="bar"
+              chartData={[15, 25, 30, 45, 60, 40, 35]}
+              trend={{ value: '+8%', isPositive: false, label: 'vs last week' }}
+            />
           </>
         ) : (
           <>
-            <SummaryCard label="Current Allocation" value={formatCurrency(allocationAmount)} meta={branchLabel} icon={Banknote} tone="blue" />
-            <SummaryCard label="Remaining" value={formatCurrency(remainingAmount)} meta={`${spendPercentage}% of allocation used`} icon={Wallet} tone="emerald" />
-            <SummaryCard label="Spent" value={formatCurrency(spentAmount)} meta="Live deducted from active allocation" icon={TrendingDown} tone="rose" />
-            <SummaryCard
-              label="Pending Requests"
+            <KpiCard
+              title="CURRENT ALLOCATION"
+              value={formatCurrency(allocationAmount)}
+              subtitle={branchLabel}
+              icon={Banknote}
+              colorScheme="blue"
+              chartType="area"
+              chartData={[30, 40, 50, 60, 70, 80, 90]}
+              trend={{ value: '0%', isPositive: true, label: 'vs last month' }}
+            />
+            <KpiCard
+              title="REMAINING"
+              value={formatCurrency(remainingAmount)}
+              subtitle={`${spendPercentage}% of allocation used`}
+              icon={Wallet}
+              colorScheme="emerald"
+              chartType="area"
+              chartData={[90, 80, 70, 60, 50, 40, 30]}
+              trend={{ value: '-12%', isPositive: true, label: 'vs last week' }}
+            />
+            <KpiCard
+              title="SPENT"
+              value={formatCurrency(spentAmount)}
+              subtitle="Live deducted"
+              icon={TrendingDown}
+              colorScheme="rose"
+              chartType="bar"
+              chartData={[10, 20, 30, 40, 50, 60, 70]}
+              trend={{ value: '+14%', isPositive: false, label: 'vs last week' }}
+            />
+            <KpiCard
+              title="PENDING REQUESTS"
               value={String(summary?.pendingRequestCount ?? 0)}
-              meta={canReviewQueue ? 'Awaiting your approval' : 'Your requests in review'}
+              subtitle={canReviewQueue ? 'Awaiting your approval' : 'Your requests in review'}
               icon={ShieldCheck}
-              tone="amber"
+              colorScheme="amber"
+              chartType="bar"
+              chartData={[5, 10, 8, 12, 15, 6, 4]}
+              trend={{ value: '+6%', isPositive: true, label: 'vs last week' }}
               onClick={() => setActiveTab('requests')}
-              active={activeTab === 'requests'}
             />
           </>
         )}

@@ -5,7 +5,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 import { requirePermission } from '@/lib/permissions/service'
-import { KIA_HOLD_WINDOW_HOURS, expireKiaTemporaryAllocations } from '@/lib/kia/bookings'
+import { KIA_HOLD_WINDOW_HOURS } from '@/lib/kia/bookings'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,12 +32,10 @@ export async function GET(request: Request) {
     const auth = await authorize()
     if (auth.response) return auth.response
 
-    // Automatically sweep expired allocations so overdue vehicles immediately return to Free Stock
-    try {
-      await expireKiaTemporaryAllocations()
-    } catch (err) {
-      console.error('Failed to run expireKiaTemporaryAllocations in stock route:', err)
-    }
+    // ⚠️ The expired-allocation sweep used to run here. Removed with the one on the bookings list:
+    // it is the maintenance cron's job (POST /api/brands/kia/maintenance), and repeating it per
+    // request cost ~514 ms of transaction overhead on a read endpoint for work that is nearly always
+    // a no-op.
 
     // Branch boundary: a dealer-scoped user only ever sees their own branch's vehicles (#10c).
     // MD/Developer/global users are unrestricted (getUserDealerScope returns null). Dealer codes

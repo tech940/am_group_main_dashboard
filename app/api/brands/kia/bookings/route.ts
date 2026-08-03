@@ -4,7 +4,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { requirePermission } from '@/lib/permissions/service'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
-import { createKiaBooking, getKiaBookingsList, expireKiaTemporaryAllocations } from '@/lib/kia/bookings'
+import { createKiaBooking, getKiaBookingsList } from '@/lib/kia/bookings'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 
 export const dynamic = 'force-dynamic'
@@ -31,12 +31,13 @@ export async function GET(request: Request) {
       return withServerTiming(NextResponse.json({ error: permission.reason }, { status: 403 }), timing.serverTiming)
     }
 
-    // Automatically sweep expired allocations so overdue vehicles immediately return to Free Stock
-    try {
-      await expireKiaTemporaryAllocations()
-    } catch (err) {
-      console.error('Failed to run expireKiaTemporaryAllocations in bookings route:', err)
-    }
+    // ⚠️ The expired-allocation sweep used to run HERE, on every list load. Measured 2026-08-02: it
+    // opened a transaction and cost 514 ms of the request, every time, for work that is almost always
+    // a no-op — a transaction is BEGIN + statements + COMMIT, and each round trip to the pooler is
+    // ~168 ms, so the wrapper alone dominates. It also made a read endpoint write.
+    //
+    // The sweep is owned by POST /api/brands/kia/maintenance (app/api/brands/kia/maintenance/route.ts:64),
+    // run by npm run kia:maintenance:scheduler. Doing it again per request bought nothing but latency.
 
     const profile = await timer.time('profile', () => ensureKiaUserProfile(appUser))
     const consultantName = profile?.consultantName || appUser?.fullName

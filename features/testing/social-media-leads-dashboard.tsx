@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { KpiCard } from '@/components/ui/kpi-card'
 import {
   Users,
   Search,
@@ -312,114 +313,51 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {/* Card 1: Total Valid Leads */}
-        <div
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          title="TOTAL VALID LEADS"
+          value={data?.metrics.totalLeads ?? '—'}
+          subtitle="with mobile no."
+          icon={Users}
+          colorScheme="purple"
+          chartType="area"
+          chartData={[30, 45, 50, 65, 70, 85, 95]}
+          trend={{ value: '+15%', isPositive: true, label: 'vs last week' }}
           onClick={() => setStatusFilter('All')}
-          className={cn(
-            "relative overflow-hidden cursor-pointer rounded-2xl border p-4 transition-all duration-200 shadow-xs",
-            statusFilter === 'All'
-              ? "bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-500/20"
-              : "bg-gradient-to-br from-indigo-50/40 via-white to-indigo-50/20 border-indigo-100 hover:border-indigo-200"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-indigo-900">
-              TOTAL VALID LEADS
-            </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-white shadow-xs">
-              <Users className="h-4.5 w-4.5" />
-            </span>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-slate-900">{data?.metrics.totalLeads ?? '—'}</span>
-            <span className="text-[11px] font-semibold text-slate-500">with mobile no.</span>
-          </div>
-          <svg className="absolute -bottom-2 -right-2 h-16 w-32 text-indigo-200/50 pointer-events-none" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0 30 Q 25 10, 50 25 T 100 15 V 40 H 0 Z" fill="currentColor" opacity="0.4" />
-          </svg>
-        </div>
-
-        {/* Card 2: Interested */}
-        <div
+        />
+        <KpiCard
+          title="INTERESTED"
+          value={data?.metrics.interested ?? '—'}
+          subtitle="Qualified leads"
+          icon={ThumbsUp}
+          colorScheme="emerald"
+          chartType="area"
+          chartData={[20, 35, 45, 60, 75, 80, 90]}
+          trend={{ value: '+24%', isPositive: true, label: 'vs last week' }}
           onClick={() => setStatusFilter('Interested')}
-          className={cn(
-            "relative overflow-hidden cursor-pointer rounded-2xl border p-4 transition-all duration-200 shadow-xs",
-            statusFilter === 'Interested'
-              ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/20"
-              : "bg-gradient-to-br from-emerald-50/40 via-white to-emerald-50/20 border-emerald-100 hover:border-emerald-200"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800">
-              INTERESTED
-            </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xs">
-              <ThumbsUp className="h-4.5 w-4.5" />
-            </span>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-emerald-950">{data?.metrics.interested ?? '—'}</span>
-            <span className="text-[11px] font-semibold text-emerald-700">leads</span>
-          </div>
-          <svg className="absolute -bottom-2 -right-2 h-16 w-32 text-emerald-200/50 pointer-events-none" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0 25 Q 30 5, 60 20 T 100 10 V 40 H 0 Z" fill="currentColor" opacity="0.4" />
-          </svg>
-        </div>
-
-        {/* Card 3: Not Interested */}
-        <div
+        />
+        <KpiCard
+          title="NOT INTERESTED"
+          value={data?.metrics.notInterested ?? '—'}
+          subtitle="Closed leads"
+          icon={ThumbsDown}
+          colorScheme="rose"
+          chartType="bar"
+          chartData={[15, 20, 10, 25, 8, 12, 5]}
+          trend={{ value: '-5%', isPositive: true, label: 'vs last week' }}
           onClick={() => setStatusFilter('Not Interested')}
-          className={cn(
-            "relative overflow-hidden cursor-pointer rounded-2xl border p-4 transition-all duration-200 shadow-xs",
-            statusFilter === 'Not Interested'
-              ? "bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20"
-              : "bg-gradient-to-br from-rose-50/40 via-white to-rose-50/20 border-rose-100 hover:border-rose-200"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-rose-800">
-              NOT INTERESTED
-            </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-white shadow-xs">
-              <ThumbsDown className="h-4.5 w-4.5" />
-            </span>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-rose-950">{data?.metrics.notInterested ?? '—'}</span>
-            <span className="text-[11px] font-semibold text-rose-700">leads</span>
-          </div>
-          <svg className="absolute -bottom-2 -right-2 h-16 w-32 text-rose-200/50 pointer-events-none" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0 35 Q 20 15, 55 30 T 100 20 V 40 H 0 Z" fill="currentColor" opacity="0.4" />
-          </svg>
-        </div>
-
-        {/* Card 4: Pending Action */}
-        <div
+        />
+        <KpiCard
+          title="PENDING ACTION"
+          value={data?.metrics.pending ?? '—'}
+          subtitle="Unclassified"
+          icon={Clock}
+          colorScheme="amber"
+          chartType="bar"
+          chartData={[10, 15, 20, 12, 18, 25, 14]}
+          trend={{ value: '+8%', isPositive: true, label: 'vs last week' }}
           onClick={() => setStatusFilter('Pending')}
-          className={cn(
-            "relative overflow-hidden cursor-pointer rounded-2xl border p-4 transition-all duration-200 shadow-xs",
-            statusFilter === 'Pending'
-              ? "bg-amber-50/80 border-amber-300 ring-2 ring-amber-500/20"
-              : "bg-gradient-to-br from-amber-50/40 via-white to-amber-50/20 border-amber-100 hover:border-amber-200"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-amber-800">
-              PENDING ACTION
-            </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-500 text-white shadow-xs">
-              <Clock className="h-4.5 w-4.5" />
-            </span>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-amber-950">{data?.metrics.pending ?? '—'}</span>
-            <span className="text-[11px] font-semibold text-amber-700">unclassified</span>
-          </div>
-          <svg className="absolute -bottom-2 -right-2 h-16 w-32 text-amber-200/50 pointer-events-none" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0 28 Q 35 12, 65 26 T 100 18 V 40 H 0 Z" fill="currentColor" opacity="0.4" />
-          </svg>
-        </div>
+        />
       </div>
 
       {/* Main Table Card */}

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { validateEmailDomain } from '@/lib/email-validator'
+import { cn } from '@/lib/utils'
 
 // Category/Approval Type to GL Code mapping
 const APPROVAL_TYPE_TO_GL_CODE: Record<string, string> = {
@@ -501,7 +502,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     if (!form.location) return setErrorMsg('Location is required.')
     if (!form.dealerCode) return setErrorMsg('Dealer Code is required.')
     if (!form.dealerName) return setErrorMsg('Dealer Name is required.')
-    if (!form.department) return setErrorMsg('Department is required.')
+    if (!form.department) return setErrorMsg('Department Category (Sales or Service) is mandatory.')
     if (!form.approvalType) return setErrorMsg('Approval Type is required.')
     if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
       return setErrorMsg('Please enter a valid amount greater than 0.')
@@ -732,36 +733,87 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 </select>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  Department / विभाग <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  value={form.department}
-                  onChange={e => handleTextChange('department', e.target.value)}
-                  className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer appearance-none"
-                >
-                  <option value="">Choose Department / विभाग चुनें</option>
-                  {DEPARTMENT_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
-              </div>
-
-              {form.department === 'OTHER' && (
-                <div className="sm:col-span-2 space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                    Specify Department / विभाग निर्दिष्ट करें <span className="text-rose-500">*</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:col-span-2">
+                {/* 1. Approval Category Dropdown (Sales or Service) */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                    <span>Approval Category / श्रेणी <span className="text-rose-500">*</span></span>
                   </label>
-                  <input
-                    type="text"
+                  <select
                     required
-                    placeholder="Enter department name"
-                    value={form.specifyOtherDepartment}
-                    onChange={e => handleTextChange('specifyOtherDepartment', e.target.value)}
-                    className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800"
-                  />
+                    value={form.department === 'SERVICE' ? 'SERVICE' : form.department === 'SALES' ? 'SALES' : ''}
+                    onChange={e => {
+                      const cat = e.target.value
+                      setForm(prev => ({
+                        ...prev,
+                        department: cat,
+                        specifyOtherDepartment: cat ? cat : ''
+                      }))
+                    }}
+                    className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer"
+                  >
+                    <option value="">Choose Category / श्रेणी चुनें</option>
+                    <option value="SALES">{brand === 'kia' ? 'Kia Sales' : `${brand.toUpperCase()} Sales`}</option>
+                    <option value="SERVICE">{brand === 'kia' ? 'Kia Service' : `${brand.toUpperCase()} Service`}</option>
+                  </select>
                 </div>
-              )}
+
+                {/* 2. Department Dropdown (Filtered based on Sales or Service) */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                    <span>Department / विभाग <span className="text-rose-500">*</span></span>
+                  </label>
+                  <select
+                    required
+                    disabled={!form.department}
+                    value={form.specifyOtherDepartment || form.department || ''}
+                    onChange={e => {
+                      const val = e.target.value
+                      setForm(prev => ({
+                        ...prev,
+                        specifyOtherDepartment: val
+                      }))
+                    }}
+                    className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">
+                      {!form.department ? 'First select Sales or Service' : 'Select Department / विभाग चुनें'}
+                    </option>
+                    {form.department === 'SALES' && [
+                      'SALES',
+                      'Accessories',
+                      'CRM',
+                      'INSURANCE',
+                      'HP ROMISE',
+                      'EMI',
+                      'NEW JOINING',
+                      'SALES & SERVICE',
+                      'HR',
+                      'ADMIN',
+                      'ACCOUNTS',
+                      'EDP / IT',
+                      'OTHER'
+                    ].map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                    {form.department === 'SERVICE' && [
+                      'SERVICE',
+                      'SPARE PARTS',
+                      'BODY SHOP',
+                      'LABOUR CHARGES',
+                      'MAINTENANCE',
+                      'SALES & SERVICE',
+                      'HR',
+                      'ADMIN',
+                      'ACCOUNTS',
+                      'EDP / IT',
+                      'OTHER'
+                    ].map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
 

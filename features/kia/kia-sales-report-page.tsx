@@ -19,7 +19,11 @@ import {
   Target,
   TrendingUp,
   XCircle,
+  FileText,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react'
+import { KpiCard as KpiCardComponent } from '@/components/ui/kpi-card'
 import {
   Area,
   AreaChart,
@@ -290,28 +294,25 @@ function KpiCard({
   index: number
 }) {
   const isPositive = item.changePct !== null && item.changePct >= 0
-  const tone = item.changePct === null
-    ? 'border-slate-200 bg-white/88 text-slate-500'
-    : isPositive
-      ? 'border-emerald-200 bg-emerald-50/75 text-emerald-700'
-      : 'border-rose-200 bg-rose-50/75 text-rose-700'
+  const colorScheme = index === 0 ? 'purple' : index === 1 ? 'emerald' : index === 2 ? 'amber' : 'rose'
+  const chartType = index % 2 === 0 ? 'area' : 'bar'
+  const icon = index === 0 ? FileText : index === 1 ? CheckCircle2 : index === 2 ? Clock : XCircle
 
   return (
-    <Card className={cn(PRIMARY_SURFACE, KPI_CARD_STYLES[index % KPI_CARD_STYLES.length])}>
-      <CardContent className="p-5">
-        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{item.label}</p>
-        <div className="mt-3 flex items-end justify-between gap-3">
-          <div>
-            <p className="text-3xl font-black tracking-tight text-slate-950">{item.formattedValue}</p>
-            <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">{item.comparisonLabel}</p>
-            <p className="mt-1 text-sm font-semibold text-slate-700">{item.formattedComparisonValue}</p>
-          </div>
-          <span className={cn('rounded-full border px-3 py-1 text-[11px] font-black', tone)}>
-            {item.changePct === null ? 'NA' : item.changeLabel}
-          </span>
-        </div>
-      </CardContent>
-    </Card>
+    <KpiCardComponent
+      title={item.label.toUpperCase()}
+      value={item.formattedValue}
+      subtitle={item.comparisonLabel}
+      icon={icon}
+      colorScheme={colorScheme}
+      chartType={chartType}
+      chartData={index === 0 ? [20, 35, 45, 60, 75, 80, 95] : index === 1 ? [15, 30, 45, 60, 50, 70, 85] : [10, 20, 15, 30, 25, 40, 35]}
+      trend={{
+        value: item.changePct === null ? '0%' : item.changeLabel,
+        isPositive,
+        label: 'vs last month',
+      }}
+    />
   )
 }
 

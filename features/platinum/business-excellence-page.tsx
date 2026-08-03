@@ -4019,7 +4019,7 @@ function ExecutiveRevenuePerformance({
         </p>
       </div>
 
-      <div className="mt-4 grid gap-3.5 xl:grid-cols-3">
+      <div className="mt-4 flex flex-col gap-4 w-full">
         {renderRevenueTable('labour-revenue', 'Labour Revenue', labourRows)}
         {renderRevenueTable('parts-revenue', 'Part Revenue', partsRows)}
         <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xs">
@@ -4378,7 +4378,7 @@ function BusinessExecutiveDashboard({
             />
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="flex flex-col gap-4 w-full">
             <ExecutiveTableShell
               title="Overall Load"
               subtitle="Location performance"
@@ -4387,33 +4387,33 @@ function BusinessExecutiveDashboard({
               onToggleExpanded={() => toggleExecutiveTable('overall-load')}
             >
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-slate-900 text-slate-100">
-                    <tr>
-                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Location</th>
-                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-center font-bold text-slate-300">TD</th>
-                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
-                        <th key={label} colSpan={3} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-300">{label}</th>
+                <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
+                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Location</th>
+                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
+                        <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
                       ))}
                     </tr>
-                    <tr>
-                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
-                        <th key={`${groupIndex}-${label}`} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-400">{label}</th>
+                    <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label, i) => (
+                        <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
                       )))}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {locationRows.map((row) => (
-                      <tr key={row.label} className={row.label === 'Total' ? 'bg-slate-100/90 font-black' : 'bg-white hover:bg-slate-50/80 transition-colors'}>
-                        <td className="border border-slate-200/70 px-3 py-3 font-black text-slate-900">{row.label}</td>
-                        <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
-                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
+                      <tr key={row.label} className={row.label === 'Total' ? 'bg-teal-50/60 font-black text-[#055B65]' : 'bg-white hover:bg-teal-50/30 transition-colors'}>
+                        <td className="px-4 py-3 font-bold text-slate-900 border-r border-slate-100">{row.label}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => {
                           const metric = row[period]
                           return (
                             <React.Fragment key={`${row.label}-${period}`}>
-                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
-                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono text-slate-400">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
-                              <td className="border border-slate-200/70 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
+                              <td className={cn("px-3 py-3 text-center", pIdx < 2 && "border-r border-slate-100")}><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
                         })}
@@ -4436,10 +4436,10 @@ function BusinessExecutiveDashboard({
                       type="button"
                       onClick={() => setActiveExecutiveTableMetric(metric.id)}
                       className={cn(
-                        'rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-all',
+                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
                         activeExecutiveTableMetric === metric.id
-                          ? 'border-white bg-white text-slate-900 shadow-sm'
-                          : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'
+                          ? 'border-white bg-white text-[#055B65] shadow-xs scale-105'
+                          : 'border-white/20 bg-white/10 text-teal-100 hover:bg-white/20 hover:text-white'
                       )}
                     >
                       {metric.label}
@@ -4452,33 +4452,33 @@ function BusinessExecutiveDashboard({
               onToggleExpanded={() => toggleExecutiveTable('service-type-performance')}
             >
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-slate-900 text-slate-100">
-                    <tr>
-                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Service Type</th>
-                      <th rowSpan={2} className="border border-slate-800 px-3 py-3 text-center font-bold text-slate-300">TD</th>
-                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
-                        <th key={label} colSpan={3} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-300">{label}</th>
+                <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
+                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Service Type</th>
+                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
+                        <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
                       ))}
                     </tr>
-                    <tr>
-                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
-                        <th key={`${groupIndex}-${label}`} className="border border-slate-800 px-3 py-2 text-center font-bold text-slate-400">{label}</th>
+                    <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label, i) => (
+                        <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
                       )))}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {serviceTypeRows.map((row) => (
-                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-slate-50/80 transition-colors')}>
-                        <td className="border border-slate-200/70 px-3 py-3 font-black">{row.name}</td>
-                        <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
-                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
+                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-teal-50/30 transition-colors')}>
+                        <td className="px-4 py-3 font-bold text-slate-900 border-r border-slate-100">{row.name}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => {
                           const metric = row[period]
                           return (
                             <React.Fragment key={`${row.name}-${period}`}>
-                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
-                              <td className="whitespace-nowrap border border-slate-200/70 px-3 py-3 text-center font-mono text-slate-400">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
-                              <td className="border border-slate-200/70 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
+                              <td className={cn("px-3 py-3 text-center", pIdx < 2 && "border-r border-slate-100")}><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
                         })}
