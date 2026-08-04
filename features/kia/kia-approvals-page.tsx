@@ -23,6 +23,7 @@ import {
   MessageSquare,
   Info,
   Clock,
+  ArrowLeft,
   User2,
   Building2,
   CreditCard,
@@ -2037,21 +2038,62 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
         {/* SUB-VIEW SWITCHER HEADER */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-2.5 rounded-3xl border border-slate-200/80 shadow-2xs">
-          <div className="flex items-center gap-2 p-1 bg-slate-100/80 rounded-2xl border border-slate-200/60">
-            <span
-              className="px-4 py-2 rounded-2xl text-xs font-black flex items-center gap-2 bg-[#004e5a] text-white shadow-xs"
+          <div className="flex flex-wrap items-center gap-2 p-1 bg-slate-100/80 rounded-2xl border border-slate-200/60">
+            <button
+              type="button"
+              onClick={() => setMainSubView('requests')}
+              className={cn(
+                'px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer border-none',
+                mainSubView === 'requests'
+                  ? 'bg-[#004e5a] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
+              )}
             >
               <FileText className="w-4 h-4" />
               <span>Active Workflow Requests</span>
-              <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-[#003c46] text-teal-100">
+              <span className={cn(
+                'ml-1 px-2 py-0.5 rounded-full text-[10px] font-black',
+                mainSubView === 'requests' ? 'bg-[#003c46] text-teal-100' : 'bg-slate-200 text-slate-700'
+              )}>
                 {totalCount}
               </span>
-            </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMainSubView('completed_spend')}
+              className={cn(
+                'px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer border-none',
+                mainSubView === 'completed_spend'
+                  ? 'bg-[#004e5a] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
+              )}
+            >
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>Completed &amp; Paid Orders</span>
+              <span className={cn(
+                'ml-1 px-2 py-0.5 rounded-full text-[10px] font-black',
+                mainSubView === 'completed_spend' ? 'bg-[#003c46] text-teal-100' : 'bg-emerald-100 text-emerald-800'
+              )}>
+                ₹{totalCompletedSpend.toLocaleString('en-IN')}
+              </span>
+            </button>
           </div>
         </div>
 
         {mainSubView === 'completed_spend' ? (
           <div className="space-y-6">
+            {/* Back Button Header Bar */}
+            <div className="flex items-center justify-between">
+              <Button
+                variant="outline"
+                onClick={() => setMainSubView('requests')}
+                className="h-9 px-4 rounded-xl border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-extrabold flex items-center gap-2 shadow-2xs cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4 text-slate-600" />
+                <span>← Back to Active Workflow Requests</span>
+              </Button>
+            </div>
             {/* Completed Spend Dashboard Cards */}
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-3xl p-5 shadow-sm border text-white" style={{background: 'linear-gradient(135deg, #055B65 0%, #044951 60%, #03373d 100%)', borderColor: 'rgba(5,91,101,0.3)'}}>
@@ -2693,7 +2735,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             </button>
             <button
               onClick={() => setMainSubView('completed_spend')}
-              className="pb-3 relative transition-all flex items-center gap-1.5 text-slate-400 hover:text-slate-600"
+              className="pb-3 relative transition-all flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-600"
             >
               <span>Completed &amp; Paid Orders ({completedPaymentsList.length})</span>
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0.5 rounded-full">
@@ -3824,9 +3866,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             const renderNewWorkflowStepper = (req: ApprovalRequest) => {
               const isService = isServiceCategory(req.department, req.approvalType)
               const firstStageLabel = isService ? 'VP Approval' : 'ED / GSM Approval'
+              // HR sits between ED/VP and EA, and ONLY for payroll-type requests
+              // (salary / PF / ESI / incentives / uniforms / training + bonus & gratuity).
+              // Without this the detail stepper jumped ED -> EA while the status bar read
+              // "Pending HR", so a request looked stalled at a stage the timeline never showed.
+              const requiresHrStage = isHrApprovalRequired(req.approvalType)
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
                 { key: 'sales_manager', label: firstStageLabel, status: req.vpApproval },
+                ...(requiresHrStage ? [{ key: 'hr', label: 'HR Approval', status: req.hrApproval }] : []),
                 { key: 'ea', label: 'EA Review (Optional)', status: req.eaApproval },
                 { key: 'md', label: 'MD Approval', status: req.managementApproval },
                 { key: 'accounts', label: 'Accounts Processing', status: req.accountApproval },
