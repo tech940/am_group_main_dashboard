@@ -4,8 +4,8 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { SocialMediaLeadsDashboard } from '@/features/testing/social-media-leads-dashboard'
 
 export const metadata = {
-  title: 'Testing - Social Media Leads | AM Group',
-  description: 'Manage incoming social media leads, CRE/KEC remarks, and follow-up interest status.',
+  title: 'Social Media Leads | AM Group',
+  description: 'Manage incoming social media leads, Interakt WhatsApp transcripts, CRE/KEC remarks, and follow-up interest status.',
 }
 
 export default async function SocialMediaLeadsTestingPage() {
@@ -21,8 +21,8 @@ export default async function SocialMediaLeadsTestingPage() {
 
   return (
     <MainLayout
-      title="Testing - Social Media Leads"
-      subtitle="CRE social media leads management and follow-up pipeline"
+      title="Social Media Leads"
+      subtitle="CRE WhatsApp social media leads management & Interakt conversation pipeline"
     >
       <SocialMediaLeadsDashboard currentUserRole={appUser.role} />
     </MainLayout>

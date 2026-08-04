@@ -3,6 +3,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests } from '@/lib/db/schema'
 import { eq, inArray } from 'drizzle-orm'
+import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -50,11 +51,6 @@ export async function POST(request: Request) {
       const accApp = row.accountApproval
       const mdApp = row.managementApproval
 
-      const isHrApprovalRequired = (typeStr?: string | null) => {
-        if (!typeStr) return false
-        const norm = typeStr.trim().toLowerCase()
-        return ['salary', 'pf', 'incentive', 'training expense', 'training_expense', 'training', 'uniform', 'esi'].includes(norm)
-      }
 
       const requiresHr = isHrApprovalRequired(row.approvalType)
 
@@ -109,22 +105,37 @@ export async function POST(request: Request) {
         userRoleLower.includes('vp') ||
         userRoleLower.includes('vice_president')
 
+      // ── SEPARATION OF DUTIES ──────────────────────────────────────────────────
+      // A stage may be actioned ONLY by that stage's intended approver. No seniority
+      // bypass: MD/CEO (`isSuperUser`) do NOT inherit ED, HR or Accounts rights, so
+      // `isSuperUser` appears on the `md` stage ONLY. This mirrors the single-action
+      // route (app/api/brands/kia/approvals/[id]/action/route.ts).
+      //
+      // WHY: while MD/CEO were authorised on every stage, an MD could approve at `md`
+      // and then mark the same request Accounts-approved and PAID — recording vendor
+      // payments as PAID that Accounts never approved (13 requests in production).
+      // Bulk-approve made it worse: one click could pay an entire selection.
+      //
+      // `isTester` (developer/admin) is retained on all stages as the support escape hatch.
       let isAuthorized = false
       if (activeStageKey === 'sales_manager') {
         if (isServiceCategory) {
-          if (appUser.role === 'ed') {
-            isAuthorized = false
-          } else {
-            isAuthorized = isTester || isVp || isSuperUser
-          }
+          isAuthorized = appUser.role === 'ed' ? false : isTester || isVp
         } else {
-          isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser
+          isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager
         }
       } else if (activeStageKey === 'hr') {
-        isAuthorized = isTester || isSuperUser || isHrUser
+        isAuthorized = isTester || isHrUser
       } else if (activeStageKey === 'accounts') {
-        isAuthorized = isTester || isSuperUser || isAccountsUser
+        // SEPARATION OF DUTIES — `isSuperUser` (ceo/md) is DELIBERATELY EXCLUDED here.
+        // This branch sets paymentStatus = 'PAID'. Granting it to the MD/CEO meant an MD could
+        // approve at the `md` stage and then mark the very same request PAID — which is exactly
+        // how vendor payments Accounts never approved ended up recorded as PAID in production.
+        // Bulk-approve made it worse: one click could pay a whole selection.
+        // Only Accounts may release money. developer/admin (`isTester`) stay for support only.
+        isAuthorized = isTester || isAccountsUser
       } else if (activeStageKey === 'md') {
+        // The ONLY stage where MD/CEO are the intended approver.
         isAuthorized = isTester || isSuperUser
       }
 

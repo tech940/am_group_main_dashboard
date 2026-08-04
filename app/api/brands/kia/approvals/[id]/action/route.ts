@@ -5,6 +5,7 @@ import { glAccounts, kiaApprovalRequests } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout } from '@/lib/email/templates/layout'
+import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -88,31 +89,51 @@ export async function POST(
       userRoleLower.includes('vp') ||
       userRoleLower.includes('vice_president')
 
+    // ── SEPARATION OF DUTIES ────────────────────────────────────────────────────
+    // A stage may be actioned ONLY by that stage's intended approver. There is no
+    // seniority bypass: MD/CEO (`isSuperUser`) do NOT inherit ED, HR, EA or Accounts
+    // rights, and `isSuperUser` therefore appears on the `md` stage ONLY.
+    //
+    // WHY: while MD/CEO were authorised on every stage, an MD could approve at the `md`
+    // stage and then — with the very same quick-approve button, which silently re-targeted
+    // the next stage on re-render — mark the request Accounts-approved and PAID. That
+    // recorded vendor payments as PAID which the Accounts department never approved
+    // ("MD Approved" and "Payment Recorded" seconds apart, same MD, on 13 requests).
+    // The same shape of bypass existed on every other stage, so it is closed everywhere.
+    //
+    // `isTester` (developer/admin) is retained on all stages as the support escape hatch.
+    // It is a support capability, not a business role.
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
       if (isServiceCategory) {
         // SERVICE ORDER: ONLY VP or Admin/Developer can approve
         // ED IS STRICTLY EXCLUDED!
-        if (appUser.role === 'ed') {
-          isAuthorized = false
-        } else {
-          isAuthorized = isTester || isVp || isSuperUser
-        }
+        isAuthorized = appUser.role === 'ed' ? false : isTester || isVp
       } else {
         // SALES ORDER: Either ED or General Sales Manager can approve
-        isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser
+        isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager
       }
     } else if (stage === 'hr') {
-      isAuthorized = isTester || isSuperUser || isHrUser
+      isAuthorized = isTester || isHrUser
     } else if (stage === 'accounts') {
-      isAuthorized = isTester || isSuperUser || isAccountsUser
+      // SEPARATION OF DUTIES — `isSuperUser` (ceo/md) is DELIBERATELY EXCLUDED here.
+      // The MD/CEO grant on this stage let an MD both approve at the `md` stage AND then
+      // immediately mark the request Accounts-approved / PAID. In production that recorded
+      // vendor payments as PAID that the Accounts department never approved (MD Approved and
+      // Payment Recorded landed seconds apart, by the same MD, on 13 requests).
+      // Only Accounts may release money. developer/admin (`isTester`) stay for support only.
+      isAuthorized = isTester || isAccountsUser
     } else if (stage === 'ea') {
-      isAuthorized = isTester || isSuperUser || appUser.role === 'ea'
+      isAuthorized = isTester || appUser.role === 'ea'
     } else if (stage === 'md') {
+      // The ONLY stage where MD/CEO are the intended approver.
       isAuthorized = isTester || isSuperUser
     } else if (stage === 'payment_done') {
-      isAuthorized = isTester || isSuperUser || isAccountsUser
+      // SEPARATION OF DUTIES — see the `accounts` stage above. `isSuperUser` (ceo/md) is
+      // DELIBERATELY EXCLUDED: this stage writes paymentStatus = 'PAID', the UTR and the
+      // payment proof. Recording a payment is an Accounts action, never an MD one.
+      isAuthorized = isTester || isAccountsUser
     }
 
     if (!isAuthorized) {
@@ -125,36 +146,36 @@ export async function POST(
       return NextResponse.json({ error: 'This request is currently sent back for clarification and cannot be approved, rejected, or put on hold until the submitter re-submits it.' }, { status: 400 })
     }
 
-    const isHrApprovalRequired = (typeStr?: string | null) => {
-      if (!typeStr) return false
-      const norm = typeStr.trim().toLowerCase()
-      return ['salary', 'pf', 'incentive', 'training expense', 'training_expense', 'training', 'uniform', 'esi'].includes(norm)
-    }
 
     // Check steps order
     // Flow: 1: ED -> 2: HR (if required for Salary/PF/Incentive/Training/Uniform/ESI) -> 3: EA (optional) -> 4: MD -> 5: Accounts
     if (action !== 'SEND_BACK') {
       const requiresHr = isHrApprovalRequired(requestRow.approvalType)
 
-      if (stage === 'hr' && !isSuperUser && !isTester) {
+      // NOTE: these prerequisite checks used to be written as `&& !isSuperUser && !isTester`,
+      // which meant MD/CEO skipped the chain order entirely and could action a stage whose
+      // prerequisites had never been met. `!isSuperUser` has been removed so the approval
+      // order is enforced for MD/CEO too — seniority does not bypass the workflow.
+      // `!isTester` (developer/admin) is kept deliberately as the support escape hatch.
+      if (stage === 'hr' && !isTester) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
         }
-      } else if (stage === 'ea' && !isSuperUser && !isTester) {
+      } else if (stage === 'ea' && !isTester) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
         }
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval is pending.' }, { status: 400 })
         }
-      } else if (stage === 'md' && !isSuperUser && !isTester) {
+      } else if (stage === 'md' && !isTester) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval must be completed first.' }, { status: 400 })
         }
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval must be completed first for Salary/PF/Incentive/Training/Uniform/ESI requests.' }, { status: 400 })
         }
-      } else if ((stage === 'accounts' || stage === 'payment_done') && !isSuperUser && !isTester) {
+      } else if ((stage === 'accounts' || stage === 'payment_done') && !isTester) {
         if (
           requestRow.vpApproval !== 'APPROVED' ||
           requestRow.managementApproval !== 'APPROVED'

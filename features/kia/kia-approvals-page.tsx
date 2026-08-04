@@ -60,6 +60,7 @@ import { printPaymentOrder } from '@/lib/kia/print-payment-order'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 
 const LOCATION_OPTIONS = ['JAMMU', 'UDHAMPUR', 'BANIHAL']
 const BRAND_OPTIONS = ['KIA', 'HYUNDAI', 'MG', 'TATA', 'PLATINUM']
@@ -947,11 +948,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
 
-  const isHrApprovalRequired = (typeStr?: string | null) => {
-    if (!typeStr) return false
-    const norm = typeStr.trim().toLowerCase()
-    return ['salary', 'pf', 'incentive', 'training expense', 'training_expense', 'training', 'uniform', 'esi'].includes(norm)
-  }
 
   const isServiceCategory = (department?: string | null, approvalType?: string | null) => {
     const d = (department || '').trim().toUpperCase()
@@ -1060,9 +1056,22 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (pendingLabel === 'Pending HR') return 'hr'
     if (pendingLabel.startsWith('Pending ED') || pendingLabel.startsWith('Pending VP') || pendingLabel.startsWith('Pending General Service Manager')) return 'sales_manager'
 
-    if (['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)) {
+    // developer/admin keep the full fallback for support purposes.
+    if (['developer', 'admin'].includes(currentUser.role)) {
       if (!req.managementApproval || req.managementApproval === '' || req.managementApproval === 'HELD') return 'md'
       if (req.managementApproval === 'APPROVED' && req.accountApproval !== 'APPROVED') return 'accounts'
+    }
+
+    if (['md', 'ceo'].includes(effectiveRole)) {
+      if (!req.managementApproval || req.managementApproval === '' || req.managementApproval === 'HELD') return 'md'
+      // SEPARATION OF DUTIES — once the MD has approved, this is NO LONGER their stage, so we
+      // return null rather than falling through to 'accounts'.
+      // The old fallback returned 'accounts' FOR THE MD the instant they approved: the row
+      // re-rendered and the SAME green quick-approve button silently became the Accounts /
+      // Record-Payment action. A second click — or a double-click — recorded the payment.
+      // That is how requests Accounts never approved were marked PAID ("MD Approved" and
+      // "Payment Recorded" seconds apart, same MD, on 13 requests). Only Accounts may pay.
+      return null
     }
     return null
   }
@@ -1084,6 +1093,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     userRoleLower.includes('hr') ||
     effectiveRoleLower.includes('hr')
 
+  // ── SEPARATION OF DUTIES ────────────────────────────────────────────────────────
+  // A stage's action buttons belong ONLY to that stage's intended approver. There is no
+  // seniority bypass: md/ceo do NOT inherit ED, HR, EA or Accounts rights, so
+  // ['md','ceo'] appears on the `md` stage ONLY.
+  //
+  // WHY: while md/ceo were eligible on every stage, an MD could approve at `md` and then —
+  // with the same quick-approve button, which silently re-targeted the next stage once the
+  // row re-rendered — mark the request Accounts-approved and PAID. That recorded vendor
+  // payments as PAID which Accounts never approved (13 requests in production).
+  //
+  // Mirrors the server guards in app/api/brands/kia/approvals/[id]/action/route.ts and
+  // .../bulk-action/route.ts. developer/admin keep blanket access (line below) as the
+  // support escape hatch only.
   const isUserAuthorizedForStage = (stage: string, req?: ApprovalRequest | null) => {
     if (['developer', 'admin'].includes(currentUser.role)) return true
 
@@ -1097,19 +1119,24 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           return isVpRole(currentUser.role) || isVpRole(effectiveRole)
         }
       }
-      // SALES ORDER or general check: ED or General Sales Manager can approve
+      // SALES ORDER or general check: ED or General Sales Manager can approve — NOT md/ceo.
       return (
         effectiveRole === 'ed' ||
         currentUser.role === 'ed' ||
         isGeneralSalesManagerRole(currentUser.role) ||
-        isGeneralSalesManagerRole(effectiveRole) ||
-        ['md', 'ceo'].includes(effectiveRole)
+        isGeneralSalesManagerRole(effectiveRole)
       )
     }
-    if (stage === 'hr') return isHrRole || ['md', 'ceo'].includes(effectiveRole)
-    if (stage === 'ea') return ['ea'].includes(effectiveRole) || ['md', 'ceo'].includes(effectiveRole)
+    if (stage === 'hr') return isHrRole
+    if (stage === 'ea') return ['ea'].includes(effectiveRole)
+    // The ONLY stage where md/ceo are the intended approver.
     if (stage === 'md') return ['md', 'ceo'].includes(effectiveRole)
-    if (stage === 'accounts' || stage === 'payment_done') return isAccountsRole || ['md', 'ceo'].includes(effectiveRole)
+    // SEPARATION OF DUTIES — md/ceo are DELIBERATELY EXCLUDED from the Accounts stages.
+    // These stages mark the vendor payment PAID and capture the UTR / payment proof; letting the
+    // MD act here is what caused payments Accounts never approved to be recorded as PAID.
+    // Only Accounts (plus developer/admin, handled above) may act. Mirrors the server checks in
+    // app/api/brands/kia/approvals/[id]/action/route.ts and .../bulk-action/route.ts.
+    if (stage === 'accounts' || stage === 'payment_done') return isAccountsRole
     return false
   }
 
@@ -1121,11 +1148,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     }
 
     if (pendingLabel === 'Pending Accounts' || pendingLabel === 'Held by Accounts') {
-      return isAccountsRole || ['md', 'ceo'].includes(effectiveRole)
+      // SEPARATION OF DUTIES — md/ceo excluded. This is the flag that renders the row-level
+      // quick Approve button (it is checked BEFORE getActiveStageKey), so leaving md/ceo here
+      // would keep handing the MD a one-click "Approve" on the Accounts stage even with the
+      // other guards fixed. `isAccountsRole` already covers developer/admin.
+      return isAccountsRole
     }
 
+    // SEPARATION OF DUTIES — md/ceo excluded from every stage below except their own ('Pending
+    // MD'). This flag renders the row-level quick Approve button and is evaluated BEFORE
+    // getActiveStageKey, so leaving md/ceo here would keep offering the MD a one-click approve
+    // on someone else's stage — which the server now rejects, producing a button that 403s.
     if (pendingLabel === 'Pending HR' || pendingLabel === 'Held by HR') {
-      return isHrRole || ['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)
+      return isHrRole || ['developer', 'admin'].includes(currentUser.role)
     }
 
     if (pendingLabel.includes('VP') || pendingLabel.includes('General Service Manager')) {
@@ -1150,27 +1185,32 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           ['developer', 'admin'].includes(currentUser.role)
         )
       }
+      // md/ceo excluded — the ED / GSM stage is not theirs.
       return (
         effectiveRole === 'ed' ||
         currentUser.role === 'ed' ||
         isGeneralSalesManagerRole(currentUser.role) ||
         isGeneralSalesManagerRole(effectiveRole) ||
-        ['md', 'ceo'].includes(effectiveRole) ||
         ['developer', 'admin'].includes(currentUser.role)
       )
     }
 
+    // md/ceo (and ed) excluded — the EA stage belongs to the EA role.
     if (pendingLabel === 'Pending EA' || pendingLabel === 'Held by EA') {
-      return effectiveRole === 'ea' || effectiveRole === 'ed' || ['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)
+      return effectiveRole === 'ea' || ['developer', 'admin'].includes(currentUser.role)
     }
 
     if (pendingLabel === 'Pending MD' || pendingLabel === 'Held by MD') {
       return ['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)
     }
 
-    // Also check if MD approved and Accounts approval is still pending
+    // Also check if MD approved and Accounts approval is still pending.
+    // SEPARATION OF DUTIES — md/ceo excluded: once the MD has approved, the request is waiting on
+    // Accounts, not on them. Showing it as "pending for me" is what surfaced the quick-approve
+    // button that let an MD mark payments PAID without Accounts. `isAccountsRole` covers
+    // developer/admin.
     if (row.managementApproval === 'APPROVED' && row.accountApproval !== 'APPROVED' && row.paymentStatus !== 'PAID') {
-      return isAccountsRole || ['md', 'ceo'].includes(effectiveRole)
+      return isAccountsRole
     }
 
     return false
@@ -1997,45 +2037,16 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
         {/* SUB-VIEW SWITCHER HEADER */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-2.5 rounded-3xl border border-slate-200/80 shadow-2xs">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => setMainSubView('requests')}
-              className={cn(
-                'px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2',
-                mainSubView === 'requests'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              )}
+          <div className="flex items-center gap-2 p-1 bg-slate-100/80 rounded-2xl border border-slate-200/60">
+            <span
+              className="px-4 py-2 rounded-2xl text-xs font-black flex items-center gap-2 bg-[#004e5a] text-white shadow-xs"
             >
               <FileText className="w-4 h-4" />
               <span>Active Workflow Requests</span>
-              <span className={cn(
-                'ml-1 px-2 py-0.5 rounded-full text-[10px] font-black',
-                mainSubView === 'requests' ? 'bg-slate-800 text-slate-200' : 'bg-slate-200 text-slate-700'
-              )}>
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-[#003c46] text-teal-100">
                 {totalCount}
               </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMainSubView('completed_spend')}
-              className={cn(
-                'px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2',
-                mainSubView === 'completed_spend'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              )}
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>Approved & Completed Spend</span>
-              <span className={cn(
-                'ml-1 px-2 py-0.5 rounded-full text-[10px] font-black',
-                mainSubView === 'completed_spend' ? 'bg-emerald-800 text-emerald-100' : 'bg-emerald-100 text-emerald-800'
-              )}>
-                ₹{totalCompletedSpend.toLocaleString('en-IN')}
-              </span>
-            </button>
+            </span>
           </div>
         </div>
 
@@ -3111,7 +3122,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                         }
                                       }}
                                       disabled={actionMutation.isPending}
-                                      className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer border-none"
+                                      className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-[#004e5a] hover:bg-[#003c46] text-white cursor-pointer border-none"
                                     >
                                       {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
                                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -3270,7 +3281,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                   }
                                 }}
                                 disabled={actionMutation.isPending}
-                                className="h-8 px-3 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer border-none"
+                                className="h-8 px-3 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-[#004e5a] hover:bg-[#003c46] text-white cursor-pointer border-none"
                               >
                                 {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
                                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -4330,7 +4341,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             })
                           }}
                           className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
-                          style={{ backgroundColor: '#059669', color: '#ffffff' }}
+                          style={{ backgroundColor: '#004e5a', color: '#ffffff' }}
                         >
                           {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -4780,8 +4791,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   }
                 }}
                 disabled={actionMutation.isPending}
-                className="h-10 rounded-2xl text-xs font-black shadow-md shadow-emerald-600/10 hover:opacity-90"
-                style={{ backgroundColor: '#059669', color: '#ffffff' }}
+                className="h-10 rounded-2xl text-xs font-black shadow-md hover:opacity-90"
+                style={{ backgroundColor: '#004e5a', color: '#ffffff' }}
               >
                 {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
                 {actionStage === 'payment_done' ? 'Record Payment' : 'Approve'}
@@ -5070,7 +5081,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
           <Button
             onClick={() => setBulkSuccessModal(prev => ({ ...prev, open: false }))}
-            className="w-full h-11 rounded-2xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20 text-xs uppercase tracking-wider"
+            className="w-full h-11 rounded-2xl font-bold bg-[#004e5a] hover:bg-[#003c46] text-white shadow-lg text-xs uppercase tracking-wider"
           >
             Got it
           </Button>
@@ -5101,8 +5112,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 })
               }}
               disabled={bulkActionMutation.isPending}
-              className="h-9 px-4 rounded-xl text-xs font-black flex items-center gap-1 hover:opacity-90 transition-all border border-emerald-600 cursor-pointer"
-              style={{ backgroundColor: '#10b981', color: '#ffffff' }}
+              className="h-9 px-4 rounded-xl text-xs font-black flex items-center gap-1 hover:opacity-90 transition-all border border-[#004e5a] cursor-pointer"
+              style={{ backgroundColor: '#004e5a', color: '#ffffff' }}
             >
               {bulkActionMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Bulk Approve'}
             </button>

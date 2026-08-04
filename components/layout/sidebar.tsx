@@ -6,6 +6,7 @@ import {
   Activity,
   LayoutGrid,
   CalendarClock,
+  ClipboardCheck,
   KeyRound,
   Menu,
   X,
@@ -21,9 +22,10 @@ import {
   Recycle,
   PhoneCall,
   ShieldCheck,
+  LogOut,
 } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
-import { useEffect, useMemo, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
@@ -90,7 +92,7 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Booking Payment History', href: '/brands/kia/booking-payment-history' },
           { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups' },
-          { name: 'Testing - Social Media Leads', href: '/social-media-leads' },
+          { name: 'Social Media Leads', href: '/social-media-leads' },
         ],
       },
       // {
@@ -232,10 +234,49 @@ function isSidebarHrefActive(href: string, pathname: string | null) {
   return pathname === href
 }
 
+function useTropicalTheme() {
+  const [isTropical, setIsTropical] = useState(false)
+  useEffect(() => {
+    const update = () => {
+      if (typeof window === 'undefined') return
+      const accent = document.documentElement.getAttribute('data-dashboard-accent') || ''
+      const stored = window.localStorage.getItem('dashboard-accent') || ''
+      setIsTropical(
+        accent === 'tropical-teal'
+      )
+    }
+    update()
+    window.addEventListener('dashboard-accent-change', update)
+    window.addEventListener('storage', update)
+    return () => {
+      window.removeEventListener('dashboard-accent-change', update)
+      window.removeEventListener('storage', update)
+    }
+  }, [])
+  return isTropical
+}
+
 export function Sidebar() {
+  const { collapsed, setCollapsed } = useSidebar()
+  const sidebarRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (collapsed) return
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      if (sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) {
+        setCollapsed(true)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('touchstart', handlePointerDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('touchstart', handlePointerDown)
+    }
+  }, [collapsed, setCollapsed])
+  const isTropical = useTropicalTheme()
   const pathname = usePathname()
   const router = useRouter()
-  const { collapsed, setCollapsed } = useSidebar()
   const { userRole, canAccessAdmin, userBrand, loading } = useUserRole()
   const {
     value: favouriteHrefsValue,
@@ -277,7 +318,15 @@ export function Sidebar() {
     // staleTime bought nothing but invocations. refetchOnWindowFocus fired a request every time the
     // user tabbed back; refetchOnMount is kept because the Sidebar lives in the per-page MainLayout and
     // remounts on navigation, which is exactly when a revoked link should disappear.
-    staleTime: 30 * 60 * 1000,
+    // ⚠️ 30 MINUTES was the bug behind five separate "I granted access but they still can't see it"
+    // reports. The reasoning above is right that the server clears its snapshot on grant/revoke — but
+    // `refetchOnMount` only refetches data React Query considers STALE, so within staleTime a
+    // navigation serves the OLD map with no network call. A freshly-granted user therefore had to
+    // hard-reload or wait half an hour, with nothing on screen explaining why.
+    //
+    // Two minutes keeps the invocation saving that matters (a burst of navigations still shares one
+    // fetch) while making a grant take effect on the next page change instead of the next half hour.
+    staleTime: 2 * 60 * 1000,
     gcTime: 60 * 60 * 1000,
     refetchOnMount: true,
     refetchOnWindowFocus: false,
@@ -499,6 +548,18 @@ export function Sidebar() {
       external: true,
       active: Boolean(pathname?.startsWith('/call-analysis')),
     })
+    // MD Approvals aggregates the purchase-order, petty-cash and vendor-payment queues into one
+    // screen. Role-gated on isSuperAdminRole DELIBERATELY rather than on a permission key, so it can
+    // never be widened from the Access Map — it is money movement across three modules, and the page
+    // plus both API routes enforce the identical check.
+    if (isSuperAdminRole(userRole)) commonNodes.push({
+      key: '/md-approvals',
+      label: 'MD Approvals',
+      href: '/md-approvals',
+      icon: ClipboardCheck,
+      external: true,
+      active: Boolean(pathname?.startsWith('/md-approvals')),
+    })
     // Data Health is an OPERATIONS tool, not a business section: it exposes table names, row counts
     // and load timestamps across every brand. Gated on the super-admin role directly rather than a
     // permission key, so it can never be granted sideways from the Access Map. The page and the API
@@ -671,67 +732,155 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Semi-transparent Grey Backdrop */}
-      {!collapsed && (
-        <div
-          className="fixed inset-0 bg-slate-900/40 z-40 transition-opacity duration-300 animate-in fade-in"
-          onClick={() => setCollapsed(true)}
-        />
-      )}
-
+    {/* ──────────────────────────────────────────────────────────────────────
+        Semi-transparent backdrop (closes sidebar on mobile tap)
+    ────────────────────────────────────────────────────────────────────── */}
+    {!collapsed && (
       <div
-        className={cn(
-          'app-sidebar-brand fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden border-r border-white/20 bg-[#023468] shadow-2xl shadow-slate-950/20 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] dark:border-white/10 dark:bg-[#012348]',
-          collapsed ? 'w-0 border-none' : 'w-72 max-w-[86vw]'
-        )}
-      >
-        {/* Header with Hamburger */}
-        <div className={cn(
-          "z-10 flex shrink-0 items-center border-b border-white/35 bg-[linear-gradient(135deg,rgba(255,255,255,0.24)_0%,rgba(255,255,255,0.10)_100%)] transition-all duration-500",
-          collapsed ? "h-20 justify-center px-0" : "h-20 justify-between px-4"
-        )}>
-          {!collapsed && (
-            <div className="flex items-center gap-2 h-12 flex-1 ml-1">
-              <div className="rounded-lg border border-slate-200/50 bg-white px-2.5 py-1.5 shadow-sm">
-                <img
-                  src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg"
-                  alt="AM Group"
-                  className="h-8 object-contain"
-                />
-              </div>
-              <div className="h-3 w-[1px] bg-indigo-700/20" />
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-50/80">
+        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] cursor-pointer"
+        onClick={() => setCollapsed(true)}
+        aria-hidden
+      />
+    )}
+
+    {/* ──────────────────────────────────────────────────────────────────────
+        SIDEBAR PANEL
+    ────────────────────────────────────────────────────────────────────── */}
+    <div
+      ref={sidebarRef}
+      className={cn(
+        'app-sidebar-brand fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden border-r border-slate-200/80 shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+        collapsed ? 'w-0 border-none' : 'w-[368px] max-w-[92vw]'
+      )}
+      style={{
+        background: 'linear-gradient(180deg, #F7F4FF 0%, #EEF4FF 45%, #DDF7F8 100%)',
+      }}
+    >
+      {/* Decorative Radial Glow Accent (Bottom Right) */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          width: '320px',
+          height: '320px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle at bottom right, rgba(59,130,246,0.12) 0%, rgba(99,102,241,0.08) 35%, transparent 70%)',
+          pointerEvents: 'none',
+          zIndex: 0,
+        }}
+      />
+
+      {/* Header with Hamburger */}
+      <div className={cn(
+        "relative z-10 flex shrink-0 items-center border-b border-slate-200/60 bg-white/60 backdrop-blur-md transition-all duration-500",
+        collapsed ? "h-20 justify-center px-0" : "h-20 justify-between px-4"
+      )}>
+        {/* Subtle Decorative Dot Pattern Header Accent */}
+        <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#4f46e5_1px,transparent_1px)] [background-size:12px_12px]" />
+
+        {!collapsed && (
+          <div className="relative flex items-center gap-3 h-14 flex-1 ml-0.5">
+            {/* Increased Logo Container Size */}
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-xs flex items-center justify-center h-14 w-14 shrink-0">
+              <img
+                src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg"
+                alt="AM Group"
+                className="h-10 w-10 object-contain"
+              />
+            </div>
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-black tracking-tight text-slate-900">
+                AM GROUP
+              </span>
+              <span className="text-[9.5px] font-black uppercase tracking-[0.2em] text-indigo-600">
                 Management
               </span>
             </div>
+          </div>
+        )}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className={cn(
+            "relative h-9 w-9 rounded-2xl flex items-center justify-center transition-all duration-300 cursor-pointer shadow-xs",
+            "border border-slate-200/80 bg-white/80 text-slate-600 hover:bg-white hover:text-slate-900"
           )}
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className={cn(
-              "h-10 w-10 rounded-xl flex items-center justify-center transition-all duration-300",
-              "border border-white/25 bg-white/12 text-white shadow-sm hover:bg-white/20 hover:text-white"
-            )}
-          >
-            {collapsed ? <Menu className="h-6 w-6" /> : <X className="h-5 w-5" />}
-          </button>
-        </div>
-
-        {/* Navigation */}
-        <div className={cn(
-          "flex-1 overflow-y-auto py-6 scrollbar-none transition-all duration-500",
-          collapsed ? "px-0" : "px-4"
-        )}>
-          {permissionsReady || isSuperAdminRole(userRole) ? (
-            <CascadingNav groups={navGroups} collapsed={collapsed} onNavigate={handleSidebarLinkClick} />
-          ) : (
-            <SidebarNavSkeleton collapsed={collapsed} />
-          )}
-        </div>
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label="Toggle sidebar"
+        >
+          {collapsed ? <Menu className="h-5 w-5" /> : <X className="h-4 w-4" />}
+        </button>
       </div>
+
+      {/* Navigation */}
+      <div className={cn(
+        "relative z-10 flex-1 overflow-y-auto py-4 scrollbar-none transition-all duration-500",
+        collapsed ? "px-0" : "px-3.5"
+      )}>
+        {permissionsReady || isSuperAdminRole(userRole) ? (
+          <CascadingNav groups={navGroups} collapsed={collapsed} onNavigate={handleSidebarLinkClick} />
+        ) : (
+          <SidebarNavSkeleton collapsed={collapsed} />
+        )}
+      </div>
+
+      {/* User Profile Footer Card */}
+      {!collapsed && (
+        <div className="relative z-10 p-3.5 border-t border-slate-200/60 bg-white/40 backdrop-blur-xs shrink-0">
+          <div
+            className="sidebar-footer-card flex items-center justify-between gap-3 rounded-2xl p-3 text-white shadow-md border border-white/20"
+            style={{
+              background: 'linear-gradient(135deg, var(--dashboard-action-bg) 0%, var(--dashboard-action-hover) 100%)',
+              color: 'var(--dashboard-action-fg, #ffffff)',
+            }}
+          >
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              {/* Profile Avatar Gradient */}
+              <div
+                className="sidebar-footer-avatar flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-black text-xs shadow-xs border border-white/20"
+                style={{
+                  background: isTropical
+                    ? 'linear-gradient(135deg, #055B65, #033A41)'
+                    : 'linear-gradient(135deg, #6366F1, #3B82F6)',
+                  color: '#FFFFFF',
+                }}
+              >
+                {userRole ? userRole.slice(0, 2).toUpperCase() : 'SK'}
+              </div>
+              <div className="truncate">
+                <p className="text-xs font-black tracking-tight truncate leading-tight" style={{ color: isTropical ? '#033A41' : '#FFFFFF' }}>
+                  {userRole === 'developer' || userRole === 'md' ? 'Sahil Katoch' : 'AM Group User'}
+                </p>
+                <p className="text-[10px] font-bold capitalize truncate" style={{ color: isTropical ? '#055B65' : 'rgba(224, 231, 255, 0.8)' }}>
+                  {userRole || 'Developer'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch('/api/auth/logout', { method: 'POST' })
+                window.location.href = '/login'
+              }}
+              className="sidebar-footer-logout flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors cursor-pointer"
+              style={{
+                background: isTropical ? 'rgba(5, 91, 101, 0.15)' : 'rgba(255, 255, 255, 0.15)',
+                color: isTropical ? '#033A41' : '#FFFFFF',
+              }}
+              title="Sign Out"
+              aria-label="Sign Out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
     </>
   )
 }
-
 // Placeholder shown while the effective permission map is still loading, so the nav never flashes
 // links the user may not have (hasPermission is fail-closed until permissions resolve).
 function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
@@ -739,7 +888,7 @@ function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="space-y-3 px-1" aria-hidden>
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="h-9 w-full animate-pulse rounded-xl bg-white/10" />
+        <div key={i} className="h-8 w-full animate-pulse rounded-lg bg-slate-100" />
       ))}
     </div>
   )

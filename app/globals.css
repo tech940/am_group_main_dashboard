@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -1181,61 +1181,17 @@
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.05) !important;
   }
 
-  .app-sidebar-brand {
-    background: linear-gradient(165deg, var(--dashboard-sidebar-from) 0%, var(--dashboard-sidebar-via) 46%, var(--dashboard-sidebar-to) 100%) !important;
-    background-color: var(--dashboard-sidebar-via) !important;
-    border-color: rgba(255, 255, 255, 0.18) !important;
-    color: rgba(255, 255, 255, 0.92) !important;
-  }
-
-  .app-sidebar-brand :where([class*="bg-white/22"]) {
-    background-color: rgba(255, 255, 255, 0.18) !important;
-    border-color: rgba(255, 255, 255, 0.70) !important;
-    color: #ffffff !important;
-    box-shadow: 0 12px 28px rgba(1, 22, 46, 0.18) !important;
-  }
-
-  .app-sidebar-brand :where([class*="bg-white/10"], [class*="bg-white/12"], [class*="bg-white/16"]) {
-    background-color: rgba(255, 255, 255, 0.08) !important;
-  }
-
-  .app-sidebar-brand :where([class*="text-indigo-50"], [class*="text-teal-50"], [class*="text-white"]) {
-    color: rgba(255, 255, 255, 0.86) !important;
-  }
-
-  .app-sidebar-brand :where([class*="border-white"], [class*="border-emerald"], [class*="border-indigo"]) {
-    border-color: rgba(255, 255, 255, 0.28) !important;
-  }
-
-  .app-sidebar-brand :where(a:hover, button:hover) {
-    background-color: rgba(255, 255, 255, 0.16) !important;
+    /* Pure White Text on Sidebar Active Card & Footer Card */
+  .sidebar-active-card,
+  .sidebar-active-card *,
+  .sidebar-footer-card,
+  .sidebar-footer-card *,
+  .sidebar-footer-card p,
+  .sidebar-footer-card span {
     color: #ffffff !important;
   }
 
-  .app-sidebar-brand :where(a:hover *, button:hover *) {
-    color: #ffffff !important;
-  }
-
-  .app-sidebar-brand :where([class*="bg-white/22"], [class*="bg-white/22"] *) {
-    color: #ffffff !important;
-  }
-
-  .app-sidebar-brand img {
-    filter: none;
-  }
-
-  .app-sidebar-brand [class*="bg-black"] {
-    background-color: #0f172a !important;
-  }
-
-  .dark .app-sidebar-brand {
-    background: linear-gradient(165deg, #020617 0%, var(--dashboard-primary-dark) 48%, var(--dashboard-primary) 100%) !important;
-    background-color: #020617 !important;
-    border-color: rgba(255, 255, 255, 0.10) !important;
-    color: rgba(226, 232, 240, 0.92) !important;
-  }
-
-  .glass-dashboard-content table tbody {
+.glass-dashboard-content table tbody {
     background-color: rgba(255, 255, 255, 0.24);
   }
 

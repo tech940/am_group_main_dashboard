@@ -509,7 +509,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                           <>
                             <button
                               onClick={(e) => void runActionDirect(e, request.id, 'approve', request.stage)}
-                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-black text-white hover:bg-emerald-700 transition shadow-sm"
+                              className="rounded-lg bg-[#004e5a] px-3 py-1.5 text-[11px] font-black text-white hover:bg-[#003c46] transition shadow-sm"
                             >
                               Approve
                             </button>
@@ -673,7 +673,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                         <Button
                           onClick={() => void runAction('approve')}
                           disabled={submitting !== null}
-                          className="h-11 gap-2 rounded-xl bg-emerald-600 font-bold text-white hover:bg-emerald-700"
+                          className="h-11 gap-2 rounded-xl bg-[#004e5a] font-bold text-white hover:bg-[#003c46]"
                         >
                           {submitting === 'approve' ? (
                             <Loader2 className="h-4 w-4 animate-spin" />

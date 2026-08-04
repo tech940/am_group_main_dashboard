@@ -339,7 +339,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   const filtersQuery = useQuery({
     queryKey: ['insurance-filters', insuranceType],
     queryFn: async () => {
-      const res = await fetch(`/api/insurance/filters?type=${insuranceType}`, { cache: 'no-store' })
+      const res = await fetch(`/api/insurance/filters?type=${insuranceType}`)
       if (!res.ok) throw new Error('Failed to fetch filters')
       return res.json()
     },
@@ -367,7 +367,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   const summaryQuery = useQuery({
     queryKey: ['insurance-summary', summaryQueryParams],
     queryFn: async () => {
-      const res = await fetch(`/api/insurance/summary?${summaryQueryParams}`, { cache: 'no-store' })
+      const res = await fetch(`/api/insurance/summary?${summaryQueryParams}`)
       if (!res.ok) throw new Error('Failed to fetch summary analytics')
       return res.json()
     },
@@ -402,7 +402,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   const policiesQuery = useQuery({
     queryKey: ['insurance-policies', policiesQueryParams],
     queryFn: async () => {
-      const res = await fetch(`/api/insurance/policies?${policiesQueryParams}`, { cache: 'no-store' })
+      const res = await fetch(`/api/insurance/policies?${policiesQueryParams}`)
       if (!res.ok) throw new Error('Failed to fetch policies register')
       return res.json()
     },
@@ -459,7 +459,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   const cohortsQuery = useQuery({
     queryKey: ['insurance-cohorts', cohortsQueryParams],
     queryFn: async () => {
-      const res = await fetch(`/api/insurance/cohorts?${cohortsQueryParams}`, { cache: 'no-store' })
+      const res = await fetch(`/api/insurance/cohorts?${cohortsQueryParams}`)
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load cohort retention')
       return res.json()
     },
@@ -470,7 +470,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   const vehiclesQuery = useQuery({
     queryKey: ['insurance-vehicles', vehiclesQueryParams],
     queryFn: async () => {
-      const res = await fetch(`/api/insurance/vehicles?${vehiclesQueryParams}`, { cache: 'no-store' })
+      const res = await fetch(`/api/insurance/vehicles?${vehiclesQueryParams}`)
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to fetch vehicle retention')
       return res.json()
     },
@@ -518,7 +518,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   const modalPoliciesQuery = useQuery({
     queryKey: ['insurance-modal-policies', modalQueryParams],
     queryFn: async () => {
-      const res = await fetch(`/api/insurance/policies?${modalQueryParams}`, { cache: 'no-store' })
+      const res = await fetch(`/api/insurance/policies?${modalQueryParams}`)
       if (!res.ok) throw new Error('Failed to fetch drilldown policies')
       return res.json()
     },

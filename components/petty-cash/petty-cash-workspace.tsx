@@ -1067,7 +1067,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
               <div className="flex items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()}>
                 {withActions && canActOnRequest(userRole, request) && (
                   <>
-                    <button type="button" onClick={() => void applyRequestWorkflow(request.id, stageForRequest(request, userRole), 'approve')} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                    <button type="button" onClick={() => void applyRequestWorkflow(request.id, stageForRequest(request, userRole), 'approve')} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg bg-[#004e5a] px-2.5 text-xs font-bold text-white transition-colors hover:bg-[#003c46] disabled:opacity-50">
                       <CheckCircle2 className="h-3.5 w-3.5" /> Approve
                     </button>
                     <button type="button" onClick={() => setWorkflowDialog({ request, action: 'hold' })} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg border border-amber-200 px-2.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50">

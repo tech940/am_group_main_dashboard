@@ -60,6 +60,7 @@
     "verify:sections": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-restricted-default-sections.ts",
     "verify:nav-map": "tsx scripts/verify-nav-map.ts",
     "verify:guard-parity": "tsx scripts/verify-guard-parity.ts",
+    "repair:md-accounts": "tsx scripts/repair-md-approved-accounts.ts",
     "verify:snapshot-parity": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-snapshot-parity.ts",
     "verify:dealers": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-dealer-scope.ts",
     "verify:kia-workflow-access": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-kia-workflow-access.ts",

@@ -7,7 +7,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import {
-  Loader2, PhoneCall, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Users,
+  Loader2, PhoneCall, MessageSquare, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Users,
   Mic, Search, X, ChevronLeft, ChevronRight, Download, AlertTriangle, TrendingUp,
   Filter,
 } from 'lucide-react'
@@ -186,7 +186,11 @@ function shortDate(d: string) {
   return Number.isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
 }
 
+import { AmGroupCallAnalysis } from './am-group-call-analysis'
+import { SocialMediaLeadsDashboard } from '@/features/testing/social-media-leads-dashboard'
+
 export function CallAnalysisPage() {
+  const [sourceSection, setSourceSection] = useState<'callyzer' | 'am_group'>('callyzer')
   const [tab, setTab] = useState<TabKey>('overview')
   const [preset, setPreset] = useState('30d')
   const [startDate, setStartDate] = useState(iso(30))
@@ -258,8 +262,43 @@ export function CallAnalysisPage() {
   return (
     <MainLayout title="Call Analysis" subtitle="Call volume, agent performance, customer matching & recordings">
       <div className="space-y-5">
-        {/* ── Filters ─────────────────────────────────────────────── */}
-        <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        {/* Top Sub-Section Switcher Bar */}
+        <div className="flex items-center gap-2 border-b border-slate-200 pb-3 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => setSourceSection('callyzer')}
+            className={cn(
+              "px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border",
+              sourceSection === 'callyzer'
+                ? "bg-slate-900 text-white border-slate-900 shadow-sm dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100"
+                : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+            )}
+          >
+            <PhoneCall className="h-4 w-4" />
+            <span>Callyzer Data</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSourceSection('am_group')}
+            className={cn(
+              "px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border",
+              sourceSection === 'am_group'
+                ? "bg-slate-900 text-white border-slate-900 shadow-sm dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100"
+                : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+            )}
+          >
+            <Mic className="h-4 w-4 text-emerald-500" />
+            <span>AM Group Call Analysis</span>
+          </button>
+        </div>
+
+        {sourceSection === 'am_group' ? (
+          <AmGroupCallAnalysis />
+        ) : (
+          <div className="space-y-5">
+            {/* ── Filters ─────────────────────────────────────────────── */}
+            <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <CardContent className="space-y-3 p-4">
             <div className="flex flex-wrap items-center gap-3">
               <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
@@ -449,6 +488,8 @@ export function CallAnalysisPage() {
             )}
           </div>
         ) : null}
+      </div>
+    )}
       </div>
     </MainLayout>
   )

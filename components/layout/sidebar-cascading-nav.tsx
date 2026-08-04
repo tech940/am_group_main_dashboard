@@ -1,17 +1,24 @@
-'use client'
-
-/* eslint-disable react-hooks/set-state-in-effect */
+﻿'use client'
 
 /**
- * Accordion sidebar navigation — click-to-expand for all devices.
- *
- * All nav items expand inline when clicked; no hover flyouts are used.
- * This provides a consistent, accessible navigation experience on both
- * desktop and mobile.
+ * Pixel-Matched Premium SaaS Sidebar Navigation
+ * Matches exact UI mockup provided by user:
+ * - Soft gradient background with floating white cards
+ * - Rich pastel icon badges per module
+ * - Blue-indigo active gradient card
+ * - Pill badges for brand tags (AM KIA, AM HYUNDAI, COMMON)
+ * - Chevron & Star actions
  */
 
 import Link from 'next/link'
-import { ChevronDown, Star, type LucideIcon } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Star,
+  LayoutGrid,
+  Building2,
+  type LucideIcon,
+} from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -33,8 +40,25 @@ export type NavNode = {
 
 export type NavGroup = { key: string; label?: string; nodes: NavNode[] }
 
-// Always use accordion (click-to-expand) navigation for all devices.
-// This provides consistent UX across desktop and mobile — no hover flyouts.
+function useTropicalTheme() {
+  const [isTropical, setIsTropical] = useState(false)
+  useEffect(() => {
+    const update = () => {
+      if (typeof window === 'undefined') return
+      const accent = document.documentElement.getAttribute('data-dashboard-accent') || ''
+      setIsTropical(accent === 'tropical-teal')
+    }
+    update()
+    window.addEventListener('dashboard-accent-change', update)
+    window.addEventListener('storage', update)
+    return () => {
+      window.removeEventListener('dashboard-accent-change', update)
+      window.removeEventListener('storage', update)
+    }
+  }, [])
+  return isTropical
+}
+
 export function CascadingNav({
   groups,
   collapsed,
@@ -44,43 +68,135 @@ export function CascadingNav({
   collapsed: boolean
   onNavigate?: () => void
 }) {
-  return <AccordionNav groups={groups} collapsed={collapsed} onNavigate={() => onNavigate?.()} />
-}
-
-function GroupLabel({ label }: { label: string }) {
   return (
-    <p className="px-3 pb-1 pt-1 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-50/45">{label}</p>
+    <AccordionNav
+      groups={groups}
+      collapsed={collapsed}
+      onNavigate={() => onNavigate?.()}
+    />
   )
 }
 
+// ─── Section Label ───────────────────────────────────────────────────────────
+function GroupLabel({ label }: { label: string }) {
+  const upper = label.toUpperCase()
+  const isFav = upper.includes('FAVOURITE')
+  const isBranch = upper.includes('BRANCH')
 
+  return (
+    <div className="flex items-center gap-2 px-1 pb-2 pt-4 first:pt-0">
+      {isFav ? (
+        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
+      ) : isBranch ? (
+        <Building2 className="h-3.5 w-3.5 text-teal-500 shrink-0" />
+      ) : (
+        <LayoutGrid className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+      )}
+      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500/90 select-none">
+        {label}
+      </p>
+    </div>
+  )
+}
 
-function FavStar({ favourite, label }: { favourite: { active: boolean; onToggle: () => void }; label: string }) {
+// ─── Module Icon Badge Colors ────────────────────────────────────────────────
+function getIconBadgeStyle(label: string, active?: boolean) {
+  if (active) return 'bg-white/20 text-white'
+
+  const l = label.toLowerCase()
+  if (l.includes('booking') || l.includes('dashboard')) return 'bg-blue-100 text-blue-600'
+  if (l.includes('discount') || l.includes('approval')) return 'bg-emerald-100 text-emerald-600'
+  if (l.includes('cockpit'))                             return 'bg-blue-100 text-blue-600'
+  if (l.includes('delegation') || l.includes('task'))   return 'bg-emerald-100 text-emerald-600'
+  if (l.includes('purchase') || l.includes('order'))    return 'bg-sky-100 text-sky-600'
+  if (l.includes('petty') || l.includes('cash'))        return 'bg-purple-100 text-purple-600'
+  if (l.includes('vendor payment'))                     return 'bg-teal-100 text-teal-600'
+  if (l.includes('vendor registry'))                    return 'bg-teal-100 text-teal-600'
+  if (l.includes('renewal') || l.includes('pipeline')) return 'bg-rose-100 text-rose-500'
+  if (l.includes('call') || l.includes('analysis'))     return 'bg-indigo-100 text-indigo-600'
+  if (l.includes('data') || l.includes('health'))       return 'bg-emerald-100 text-emerald-600'
+  if (l.includes('admin'))                              return 'bg-teal-100 text-teal-600'
+  if (l.includes('effective') || l.includes('access')) return 'bg-blue-100 text-blue-600'
+  if (l.includes('scrap'))                              return 'bg-amber-100 text-amber-600'
+  if (l.includes('insurance'))                          return 'bg-teal-100 text-teal-600'
+  if (l.includes('finance'))                            return 'bg-violet-100 text-violet-600'
+  return 'bg-slate-100 text-slate-600'
+}
+
+// ─── Pill Badge Styles ────────────────────────────────────────────────────────
+function getBadgeStyle(badge?: string): React.CSSProperties {
+  if (!badge) return {}
+  const b = badge.toUpperCase()
+  if (b.includes('KIA')) {
+    return {
+      background: 'linear-gradient(135deg, #EEF4FF, #D9E7FF)',
+      color: '#2563EB',
+    }
+  }
+  if (b.includes('HYUNDAI')) {
+    return {
+      background: 'linear-gradient(135deg, #E8FFF3, #D1FAE5)',
+      color: '#15803D',
+    }
+  }
+  if (b.includes('COMMON')) {
+    return {
+      background: 'linear-gradient(135deg, #F5EDFF, #E9D5FF)',
+      color: '#7C3AED',
+    }
+  }
+  return { background: '#F1F5F9', color: '#475569' }
+}
+
+// ─── Favourite Star Button ────────────────────────────────────────────────────
+function FavStar({
+  favourite,
+  label,
+  activeItem,
+}: {
+  favourite: { active: boolean; onToggle: () => void }
+  label: string
+  activeItem?: boolean
+}) {
   return (
     <button
       type="button"
-      onClick={(event) => { event.preventDefault(); event.stopPropagation(); favourite.onToggle() }}
-      className={cn(
-        'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border transition',
-        favourite.active
-          ? 'border-amber-300/50 bg-amber-300/15 text-amber-200'
-          : 'border-white/10 bg-white/8 text-indigo-50/55 hover:bg-white/14 hover:text-amber-200',
-      )}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        favourite.onToggle()
+      }}
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition-transform hover:scale-110 cursor-pointer ml-auto"
       aria-label={favourite.active ? `Remove ${label} from favourites` : `Add ${label} to favourites`}
       title={favourite.active ? 'Remove from favourites' : 'Add to favourites'}
     >
-      <Star className={cn('h-3 w-3', favourite.active && 'fill-current')} />
+      <Star
+        className={cn(
+          'h-3.5 w-3.5 transition-colors',
+          favourite.active
+            ? 'fill-[#F59E0B] text-[#F59E0B]'
+            : activeItem
+            ? 'text-white/60 hover:text-white'
+            : 'text-slate-300 hover:text-amber-400'
+        )}
+      />
     </button>
   )
 }
 
-
-/* ------------------------------------------------------------------ */
-/* Accordion: click-to-expand inline navigation for all devices.       */
-/* ------------------------------------------------------------------ */
-
-function AccordionNav({ groups, collapsed, onNavigate }: { groups: NavGroup[]; collapsed: boolean; onNavigate: () => void }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set())
+// ─── Accordion Container ──────────────────────────────────────────────────────
+function AccordionNav({
+  groups,
+  collapsed,
+  onNavigate,
+}: {
+  groups: NavGroup[]
+  collapsed: boolean
+  onNavigate: () => void
+}) {
+  const [open, setOpen] = useState<Set<string>>(
+    () => new Set(['common-group', 'kia']),
+  )
   const toggle = useCallback((key: string) => {
     setOpen((prev) => {
       const next = new Set(prev)
@@ -89,20 +205,32 @@ function AccordionNav({ groups, collapsed, onNavigate }: { groups: NavGroup[]; c
       return next
     })
   }, [])
+
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {groups.map((group) => (
-        <div key={group.key} className="space-y-1">
+        <div key={group.key}>
           {!collapsed && group.label && <GroupLabel label={group.label} />}
-          {group.nodes.map((node) => (
-            <AccordionRow key={node.key} node={node} depth={0} pathKey={node.key} open={open} onToggle={toggle} onNavigate={onNavigate} />
-          ))}
+          <div className="flex flex-col gap-2">
+            {group.nodes.map((node) => (
+              <AccordionRow
+                key={node.key}
+                node={node}
+                depth={0}
+                pathKey={node.key}
+                open={open}
+                onToggle={toggle}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
         </div>
       ))}
     </div>
   )
 }
 
+// ─── Single Floating Card Row ─────────────────────────────────────────────────
 function AccordionRow({
   node,
   depth,
@@ -121,81 +249,130 @@ function AccordionRow({
   const hasChildren = Boolean(node.children?.length)
   const expanded = open.has(pathKey)
   const Icon = node.icon
+  const iconBadgeClass = getIconBadgeStyle(node.label, node.active)
+
+  const isTropical = useTropicalTheme()
+
+  // Floating White Card vs Active Gradient Card
   const rowClass = cn(
-    'flex items-center gap-2 rounded-xl border-l-4 px-2.5 py-2 text-[12px] transition-colors',
-    node.active ? 'bg-white/22 border-white font-semibold text-white' : 'bg-white/10 border-transparent text-indigo-50/85 hover:bg-white/16 hover:text-white active:bg-white/20',
-    node.disabled && 'opacity-60',
+    'group flex w-full items-center gap-2.5 rounded-xl p-2 text-[11px] font-bold transition-all duration-200 select-none cursor-pointer',
+    node.active
+      ? 'sidebar-active-card text-white shadow-md'
+      : 'bg-white text-slate-800 border border-slate-200/70 shadow-xs hover:border-slate-300 hover:shadow-sm hover:translate-y-[-1px]',
+    node.disabled && 'opacity-50 cursor-not-allowed pointer-events-none'
   )
-  const label = (
+
+  const activeStyle: React.CSSProperties = node.active
+    ? {
+        background: 'linear-gradient(135deg, var(--dashboard-action-bg) 0%, var(--dashboard-action-hover) 100%)',
+        color: '#FFFFFF',
+        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.15)',
+      }
+    : {}
+
+  const expandChevron = hasChildren ? (
+    <ChevronDown
+      className={cn(
+        'h-4 w-4 shrink-0 transition-transform duration-200 ml-auto',
+        node.active ? 'text-white/80' : 'text-slate-400',
+        expanded && 'rotate-180'
+      )}
+    />
+  ) : null
+
+  const inner = (
     <>
+      {/* Icon Badge */}
       {(node.logo || Icon) && (
-        <span className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/12', node.logoContainerClassName)}>
-          {node.logo ? <img src={node.logo} alt={node.label} className={cn('h-full w-full object-contain', node.logoClassName)} /> : Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+        <span
+          className={cn(
+            'flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-105',
+            iconBadgeClass,
+            node.logoContainerClassName
+          )}
+        >
+          {node.logo ? (
+            <img
+              src={node.logo}
+              alt={node.label}
+              className={cn('h-full w-full object-contain p-1', node.logoClassName)}
+            />
+          ) : Icon ? (
+            <Icon className="h-3.5 w-3.5" />
+          ) : null}
         </span>
       )}
-      <span className="flex-1 truncate text-left">{node.label}</span>
-      {node.badge && (
-        <span className={cn(
-          "ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider",
-          node.badge === 'TEST'
-            ? "bg-amber-500/20 text-amber-200 border border-amber-500/30"
-            : "bg-white/10 text-indigo-50/70"
-        )}>
+
+      {/* Label */}
+      <span className="flex-1 truncate text-left leading-tight">{node.label}</span>
+
+      {/* Brand Badge */}
+      {node.badge && !node.active && (
+        <span
+          className="shrink-0 rounded-full border px-2.5 py-0.5 text-[9.5px] font-extrabold uppercase tracking-wider"
+          style={getBadgeStyle(node.badge)}
+        >
           {node.badge}
         </span>
       )}
+
+      {/* Star in place of arrow */}
+      {node.favourite ? (
+        <FavStar favourite={node.favourite} label={node.label} activeItem={node.active} />
+      ) : (
+        expandChevron
+      )}
     </>
   )
-  // A node can be a direct LINK, an expandable GROUP, or BOTH (link + a separate chevron toggle) —
-  // e.g. "Purchase Orders" navigates to its page and expands to show the nested "CA" child.
-  const chevron = hasChildren ? (
-    <ChevronDown className={cn('h-3.5 w-3.5 flex-shrink-0 text-indigo-50/60 transition-transform', expanded && 'rotate-180')} />
-  ) : null
+
   return (
     <div style={{ paddingLeft: depth === 0 ? 0 : 8 }}>
       {node.href && !node.disabled ? (
-        <div className="flex items-center gap-1">
+        <div className="flex items-center w-full">
           <Link
             href={node.href}
             target={node.external ? '_blank' : undefined}
             rel={node.external ? 'noreferrer' : undefined}
             prefetch={false}
             onClick={onNavigate}
-            className={cn(rowClass, 'flex-1')}
+            className={cn(rowClass, 'w-full')}
+            style={activeStyle}
           >
-            {label}
+            {inner}
           </Link>
-          {hasChildren && (
-            <button
-              type="button"
-              onClick={() => onToggle(pathKey)}
-              aria-label={`Toggle ${node.label}`}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-indigo-50/70 transition-colors hover:bg-white/12 hover:text-white"
-            >
-              {chevron}
-            </button>
-          )}
-          {node.favourite && <FavStar favourite={node.favourite} label={node.label} />}
         </div>
       ) : (
-        <button
-          type="button"
-          disabled={node.disabled}
-          onClick={() => { if (hasChildren) onToggle(pathKey) }}
-          className={cn(rowClass, 'w-full')}
-        >
-          {label}
-          {chevron}
-        </button>
+        <div className="flex items-center w-full">
+          <button
+            type="button"
+            disabled={node.disabled}
+            onClick={() => {
+              if (hasChildren) onToggle(pathKey)
+            }}
+            className={cn(rowClass, 'w-full')}
+            style={activeStyle}
+          >
+            {inner}
+          </button>
+        </div>
       )}
+
+      {/* Expanded Sub-items */}
       {expanded && hasChildren && (
-        <div className="mt-1 space-y-1 border-l border-white/10 pl-1">
+        <div className="mt-2 flex flex-col gap-2 border-l-2 border-indigo-100 pl-3 ml-4">
           {node.children!.map((child) => (
-            <AccordionRow key={child.key} node={child} depth={depth + 1} pathKey={`${pathKey}/${child.key}`} open={open} onToggle={onToggle} onNavigate={onNavigate} />
+            <AccordionRow
+              key={child.key}
+              node={child}
+              depth={depth + 1}
+              pathKey={`${pathKey}/${child.key}`}
+              open={open}
+              onToggle={onToggle}
+              onNavigate={onNavigate}
+            />
           ))}
         </div>
       )}
     </div>
   )
 }
-

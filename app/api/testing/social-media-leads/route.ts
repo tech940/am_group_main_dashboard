@@ -33,8 +33,8 @@ export async function GET(request: Request) {
       SELECT 
         id,
         COALESCE(
-          NULLIF(TRIM(customer_name), ''),
           NULLIF(TRIM(conversation_name), ''),
+          NULLIF(TRIM(customer_name), ''),
           NULLIF(TRIM(customer), ''),
           NULLIF(TRIM(ownername), ''),
           'Customer'
@@ -43,7 +43,8 @@ export async function GET(request: Request) {
           NULLIF(TRIM(phone_num), ''),
           NULLIF(TRIM(phone_no), ''),
           NULLIF(TRIM(full_phone_number), ''),
-          NULLIF(TRIM(user_id), '')
+          NULLIF(TRIM(user_id), ''),
+          '—'
         ) AS "mobileNumber",
         COALESCE(
           NULLIF(TRIM(source), ''),
@@ -55,13 +56,13 @@ export async function GET(request: Request) {
         COALESCE(NULLIF(TRIM(variant), ''), '—') AS "variant",
         COALESCE(NULLIF(TRIM(colour), ''), '—') AS "colour",
         COALESCE(NULLIF(TRIM(fuel_type), ''), '—') AS "fuelType",
-        COALESCE(NULLIF(TRIM(location), ''), NULLIF(TRIM(city), ''), NULLIF(TRIM(area), ''), '—') AS "location",
+        COALESCE(NULLIF(TRIM(location), ''), NULLIF(TRIM(city), ''), '—') AS "location",
         COALESCE(NULLIF(TRIM(address), ''), '—') AS "address",
         COALESCE(NULLIF(TRIM(whatsapp_opted), ''), '—') AS "whatsappOpted",
-        COALESCE(NULLIF(TRIM(vin), ''), NULLIF(TRIM(vin_num), ''), NULLIF(TRIM(vin_number), ''), '—') AS "vin",
-        COALESCE(NULLIF(TRIM(registration_no), ''), NULLIF(TRIM(registration_number), ''), NULLIF(TRIM(car_reg), ''), '—') AS "registrationNo",
+        COALESCE(NULLIF(TRIM(vin), ''), NULLIF(TRIM(vin_no), ''), '—') AS "vin",
+        COALESCE(NULLIF(TRIM(registration_no), ''), NULLIF(TRIM(reg_no), ''), NULLIF(TRIM(car_reg), ''), '—') AS "registrationNo",
         date_of_enquiry AS "dateOfEnquiry",
-        COALESCE(booking_date, vehicle_boking_date) AS "bookingDate",
+        booking_date AS "bookingDate",
         COALESCE(NULLIF(TRIM(consultant_name), ''), '—') AS "consultantName",
         COALESCE(NULLIF(TRIM(manager_name), ''), '—') AS "managerName",
         COALESCE(NULLIF(TRIM(tl_name), ''), '—') AS "tlName",
@@ -72,16 +73,28 @@ export async function GET(request: Request) {
         kec_remark AS "kecRemark",
         followup_status AS "followupStatus",
         status AS "rawStatus",
+        row_hash AS "rowHash",
+        COALESCE(NULLIF(TRIM(conversation_name), ''), '—') AS "conversationName",
+        COALESCE(
+          NULLIF(TRIM(phone_num), ''),
+          NULLIF(TRIM(phone_no), ''),
+          NULLIF(TRIM(full_phone_number), ''),
+          NULLIF(TRIM(user_id), ''),
+          '—'
+        ) AS "contact",
+        chat_transcript AS "chatTranscript",
+        COALESCE(message_count, 0) AS "messageCount",
+        first_message AS "firstMessage",
+        last_message AS "lastMessage",
+        lead_age AS "leadAge",
+        assigned_to AS "assignedTo",
+        tags AS "tags",
+        notes AS "notes",
+        ad_url AS "adUrl",
         created_at AS "createdAt",
         uploaded_at AS "uploadedAt",
         updated_at AS "updatedAt"
       FROM social_media_leads
-      WHERE COALESCE(
-        NULLIF(TRIM(phone_num), ''),
-        NULLIF(TRIM(phone_no), ''),
-        NULLIF(TRIM(full_phone_number), ''),
-        NULLIF(TRIM(user_id), '')
-      ) IS NOT NULL
       ORDER BY uploaded_at DESC NULLS LAST, id DESC
     `))
 
@@ -91,12 +104,27 @@ export async function GET(request: Request) {
     let interestedCount = 0
     let notInterestedCount = 0
     let pendingCount = 0
+    let fromAdCount = 0
+    let customerInitiatedCount = 0
+    let weInitiatedCount = 0
 
     allLeads.forEach(lead => {
       const fs = String(lead.followupStatus || '').trim()
       if (fs === 'Interested') interestedCount++
       else if (fs === 'Not Interested') notInterestedCount++
       else pendingCount++
+
+      if (lead.adUrl && String(lead.adUrl).trim().length > 0) {
+        fromAdCount++
+      }
+
+      const transcript = String(lead.chatTranscript || '').trim()
+      const firstMsg = String(lead.firstMessage || '').trim()
+      if (transcript.startsWith('[in') || firstMsg.startsWith('[in')) {
+        customerInitiatedCount++
+      } else if (transcript.startsWith('[out') || firstMsg.startsWith('[out')) {
+        weInitiatedCount++
+      }
     })
 
     // Filter leads based on search and statusFilter
@@ -132,6 +160,9 @@ export async function GET(request: Request) {
         interested: interestedCount,
         notInterested: notInterestedCount,
         pending: pendingCount,
+        fromAd: fromAdCount,
+        customerInitiated: customerInitiatedCount,
+        weInitiated: weInitiatedCount,
       },
       leads: filtered,
     })

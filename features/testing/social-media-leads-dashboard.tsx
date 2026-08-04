@@ -27,8 +27,20 @@ import {
   ShieldCheck,
   Briefcase,
   DollarSign,
-  ChevronRight,
+  ChevronRight, ExternalLink, Send, MessageCircle, Sparkles, MessageSquareText, NotebookPen, BarChart3,
 } from 'lucide-react'
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from 'recharts'
 
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -85,6 +97,55 @@ export interface SocialMediaLead {
   createdAt: string | null
   uploadedAt: string | null
   updatedAt: string | null
+
+  // Interakt WhatsApp Chat Columns
+  rowHash?: string | null
+  conversationName?: string | null
+  contact?: string | null
+  chatTranscript?: string | null
+  messageCount?: number | null
+  firstMessage?: string | null
+  lastMessage?: string | null
+  leadAge?: string | null
+  assignedTo?: string | null
+  tags?: string | null
+  notes?: string | null
+  adUrl?: string | null
+}
+
+export interface ChatMessage {
+  from: 'customer' | 'us'
+  time: string | null
+  text: string
+}
+
+export function parseChatTranscript(transcript?: string | null): ChatMessage[] {
+  if (!transcript) return []
+  const result: ChatMessage[] = []
+  const lines = transcript.split('\n')
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const m = trimmed.match(/^\[(in|out)(?:\s+([0-9]{1,2}:[0-9]{2}\s*(?:am|pm)?))?[\s\S]*?\]\s*([\s\S]*)$/i)
+    if (m) {
+      const rawText = m[3]
+      const text = rawText
+        .replace(/\.[a-z0-9_-]+\s*\{[\s\S]*?\}/gi, '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/Delivered\s*:\s*\d{1,2}:\d{2}\s*(?:am|pm)?/gi, '')
+        .replace(/Read\s*:\s*\d{1,2}:\d{2}\s*(?:am|pm)?/gi, '')
+        .trim()
+
+      if (text) {
+        result.push({
+          from: m[1].toLowerCase() === 'in' ? 'customer' : 'us',
+          time: m[2] ?? null,
+          text,
+        })
+      }
+    }
+  }
+  return result
 }
 
 interface LeadsPayload {
@@ -93,6 +154,9 @@ interface LeadsPayload {
     interested: number
     notInterested: number
     pending: number
+    fromAd: number
+    customerInitiated: number
+    weInitiated: number
   }
   leads: SocialMediaLead[]
 }
@@ -161,12 +225,14 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
+  const [showAnalysis, setShowAnalysis] = useState(false)
 
   // Modals state
   const [contactLead, setContactLead] = useState<SocialMediaLead | null>(null)
   const [copiedNumber, setCopiedNumber] = useState(false)
 
   const [remarksLead, setRemarksLead] = useState<SocialMediaLead | null>(null)
+  const [chatLead, setChatLead] = useState<SocialMediaLead | null>(null)
   const [remarkType, setRemarkType] = useState<'CRE' | 'KEC'>('CRE')
   const [remarkText, setRemarkText] = useState('')
 
@@ -289,6 +355,21 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant={showAnalysis ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowAnalysis(prev => !prev)}
+            className={cn(
+              "h-9.5 rounded-xl text-xs font-black transition-all gap-2 border shadow-xs cursor-pointer",
+              showAnalysis
+                ? "bg-[#004e5a] text-white border-[#004e5a] hover:bg-[#003c46]"
+                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+            )}
+          >
+            <BarChart3 className="h-4 w-4" />
+            <span>Analysis</span>
+          </Button>
+
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9.5 w-[160px] rounded-xl border-slate-200 bg-white text-xs font-bold shadow-xs">
               <SelectValue placeholder="All Statuses" />
@@ -312,7 +393,7 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
+      {/* KPI Cards Grid with Distinct Theme Styling & Chart Types */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           title="TOTAL VALID LEADS"
@@ -326,13 +407,13 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
           onClick={() => setStatusFilter('All')}
         />
         <KpiCard
-          title="INTERESTED"
+          title="INTERESTED LEADS"
           value={data?.metrics.interested ?? '—'}
           subtitle="Qualified leads"
           icon={ThumbsUp}
           colorScheme="emerald"
-          chartType="area"
-          chartData={[20, 35, 45, 60, 75, 80, 90]}
+          chartType="progress"
+          progressPercentage={data?.metrics.totalLeads ? Math.round((data.metrics.interested / data.metrics.totalLeads) * 100) : 74}
           trend={{ value: '+24%', isPositive: true, label: 'vs last week' }}
           onClick={() => setStatusFilter('Interested')}
         />
@@ -350,15 +431,122 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
         <KpiCard
           title="PENDING ACTION"
           value={data?.metrics.pending ?? '—'}
-          subtitle="Unclassified"
+          subtitle="Unclassified leads"
           icon={Clock}
           colorScheme="amber"
-          chartType="bar"
-          chartData={[10, 15, 20, 12, 18, 25, 14]}
+          chartType="radial"
+          progressPercentage={data?.metrics.totalLeads ? Math.round((data.metrics.pending / data.metrics.totalLeads) * 100) : 38}
           trend={{ value: '+8%', isPositive: true, label: 'vs last week' }}
           onClick={() => setStatusFilter('Pending')}
         />
       </div>
+
+      {/* ── Visual Charts & Graphs Analysis Panel (Hidden by default, toggled via Analysis button) ── */}
+      {showAnalysis && (
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-6 animate-in fade-in slide-in-from-top-3 duration-300">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 shadow-2xs">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black uppercase text-slate-900 tracking-tight">Leads & Conversation Analytics</h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">Visual charts for ad origin, message direction & interest funnel</p>
+              </div>
+            </div>
+
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setShowAnalysis(false)}
+              className="h-8 w-8 rounded-xl text-slate-400 hover:bg-slate-100"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Chart 1: Conversation & Ad Origin Distribution */}
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/50 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-black uppercase text-slate-900 tracking-wide">Origin & Message Direction</h4>
+                  <span className="text-[11px] font-semibold text-slate-400">Meta Ads vs Customer First vs Team First</span>
+                </div>
+                <span className="rounded-full bg-indigo-100 border border-indigo-200 px-2.5 py-0.5 text-[10px] font-black text-indigo-700">
+                  {data?.metrics.totalLeads ?? 0} Total Leads
+                </span>
+              </div>
+
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={[
+                      { name: 'Meta/IG Ads', count: data?.metrics.fromAd ?? 0, fill: '#6366f1' },
+                      { name: 'Customer First', count: data?.metrics.customerInitiated ?? 0, fill: '#10b981' },
+                      { name: 'We Texted First', count: data?.metrics.weInitiated ?? 0, fill: '#f59e0b' },
+                    ]}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff', fontSize: '12px', fontWeight: 700 }}
+                      cursor={{ fill: 'rgba(0,0,0,0.03)' }}
+                    />
+                    <Bar dataKey="count" radius={[8, 8, 0, 0]} barSize={44} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Chart 2: Follow-up Qualification Funnel Chart */}
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/50 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-black uppercase text-slate-900 tracking-wide">Follow-Up Interest Breakdown</h4>
+                  <span className="text-[11px] font-semibold text-slate-400">Qualified vs Pending vs Closed</span>
+                </div>
+                <span className="rounded-full bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-black text-emerald-700">
+                  Status Funnel
+                </span>
+              </div>
+
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Interested', value: data?.metrics.interested ?? 0, fill: '#10b981' },
+                        { name: 'Pending Action', value: data?.metrics.pending ?? 0, fill: '#f59e0b' },
+                        { name: 'Not Interested', value: data?.metrics.notInterested ?? 0, fill: '#f43f5e' },
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={85}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {[
+                        { name: 'Interested', fill: '#10b981' },
+                        { name: 'Pending Action', fill: '#f59e0b' },
+                        { name: 'Not Interested', fill: '#f43f5e' },
+                      ].map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} stroke="none" />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff', fontSize: '12px', fontWeight: 700 }}
+                    />
+                    <Legend verticalAlign="bottom" height={36} formatter={(value) => <span className="text-xs font-extrabold text-slate-700">{value}</span>} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Table Card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-4">
@@ -569,6 +757,23 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
                             <Phone className="h-4 w-4" />
                           </Button>
 
+                          {/* WhatsApp Interakt Chat Button */}
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={() => setChatLead(lead)}
+                            className="h-8 w-8 rounded-xl border-emerald-200 bg-emerald-50/70 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 shadow-2xs relative"
+                            title="View WhatsApp Chat Transcript"
+                          >
+                            <MessageSquareText className="h-4 w-4" />
+                            {lead.chatTranscript && (
+                              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                              </span>
+                            )}
+                          </Button>
+
                           {/* Remarks Button */}
                           <Button
                             size="icon"
@@ -577,7 +782,7 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
                             className="h-8 w-8 rounded-xl border-amber-200 bg-amber-50/60 text-amber-600 hover:bg-amber-100 hover:text-amber-700 shadow-2xs"
                             title="Add Remark"
                           >
-                            <MessageSquare className="h-4 w-4" />
+                            <NotebookPen className="h-4 w-4" />
                           </Button>
 
                           {/* Follow-up Status Update Popup Trigger */}
@@ -1038,6 +1243,130 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+          {/* Modal 4: WhatsApp Interakt Chat Transcript View */}
+      <Dialog open={Boolean(chatLead)} onOpenChange={(open) => !open && setChatLead(null)}>
+        <DialogContent className="max-w-4xl w-[92vw] max-h-[90vh] flex flex-col rounded-3xl bg-white p-0 shadow-2xl border border-slate-200/90 overflow-hidden">
+          <DialogTitle className="sr-only">WhatsApp Interakt Chat Transcript</DialogTitle>
+          {chatLead && (() => {
+            const messages = parseChatTranscript(chatLead.chatTranscript)
+            const displayName = chatLead.conversationName || chatLead.customerName || 'Contact'
+            const phone = chatLead.contact || chatLead.mobileNumber || ''
+            const isDegradedDirection = messages.length > 1 && (messages.every(m => m.from === 'customer') || messages.every(m => m.from === 'us'))
+
+            return (
+              <>
+                {/* Header */}
+                <div className="bg-gradient-to-r from-[#075E54] to-[#128C7E] px-6 py-4 text-white shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-white font-black text-sm shadow-xs border border-white/20">
+                        {getInitials(displayName)}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-black tracking-tight">{displayName}</h3>
+                          {chatLead.assignedTo && (
+                            <span className="rounded-full bg-emerald-400/20 border border-emerald-300/30 px-2 py-0.5 text-[10px] font-black text-emerald-100 uppercase tracking-wide">
+                              {chatLead.assignedTo}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs font-medium text-emerald-100/90 flex items-center gap-2 mt-0.5">
+                          <span className="font-mono">{phone}</span>
+                          {chatLead.leadAge && <span>• {chatLead.leadAge} old</span>}
+                          {chatLead.messageCount ? <span>• {chatLead.messageCount} msgs</span> : null}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 mr-8">
+                      {chatLead.adUrl && (
+                        <a
+                          href={chatLead.adUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/25 transition-colors border border-white/20"
+                          title="View Meta/Instagram Ad"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" /> Ad Link
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Metadata Chips: Tags & Notes */}
+                  {(chatLead.tags || chatLead.notes) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-white/15 text-[11px]">
+                      {chatLead.tags && (
+                        <span className="rounded-lg bg-white/15 px-2.5 py-0.5 font-semibold text-emerald-50">
+                          Tags: {chatLead.tags}
+                        </span>
+                      )}
+                      {chatLead.notes && (
+                        <span className="rounded-lg bg-white/15 px-2.5 py-0.5 font-semibold text-emerald-50 max-w-md truncate" title={chatLead.notes}>
+                          Note: {chatLead.notes}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Chat Messages Body */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-[#E5DDD5]/40 dark:bg-slate-900/80 min-h-[340px]">
+                  {isDegradedDirection && (
+                    <div className="mx-auto max-w-md rounded-xl bg-amber-50 border border-amber-200 p-2.5 text-center text-[11px] font-semibold text-amber-800">
+                      Note: Single-direction message flow detected in transcript from Interakt.
+                    </div>
+                  )}
+
+                  {messages.length > 0 ? (
+                    messages.map((msg, idx) => (
+                      <div
+                        key={idx}
+                        className={cn(
+                          'flex flex-col max-w-[82%] text-xs transition-all duration-200',
+                          msg.from === 'customer' ? 'items-start mr-auto' : 'items-end ml-auto'
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            'rounded-2xl p-3.5 shadow-2xs relative space-y-1',
+                            msg.from === 'customer'
+                              ? 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-xs'
+                              : 'bg-[#005C4B] text-white rounded-tr-xs shadow-xs'
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-4 text-[10px] font-bold opacity-75 mb-1">
+                            <span>{msg.from === 'customer' ? displayName : 'AM Group / Team'}</span>
+                            {msg.time && <span>{msg.time}</span>}
+                          </div>
+                          <p className="text-xs leading-relaxed whitespace-pre-wrap font-medium">{msg.text}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : chatLead.chatTranscript ? (
+                    <div className="rounded-2xl bg-white p-4 text-xs text-slate-800 shadow-2xs border border-slate-200 whitespace-pre-wrap">
+                      {chatLead.chatTranscript}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-16 text-center text-slate-400">
+                      <MessageSquare className="h-10 w-10 stroke-1 mb-2 opacity-50" />
+                      <p className="text-xs font-bold">No chat transcript available for this lead.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Info */}
+                <div className="border-t border-slate-100 bg-slate-50 p-4 flex items-center justify-between shrink-0">
+                  <div className="text-[11px] text-slate-500 font-medium">
+                    Refreshed every 10 minutes from Interakt Postgres sync
+                  </div>
+                </div>
+              </>
+            )
+          })()}
         </DialogContent>
       </Dialog>
     </div>

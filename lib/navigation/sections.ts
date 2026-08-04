@@ -276,8 +276,8 @@ export const ALL_SECTIONS: SearchSection[] = [
     category: 'kia',
   },
   {
-    id: 'testing_social_media_leads',
-    name: 'Testing - Social Media Leads',
+    id: 'kia_social_media_leads',
+    name: 'Social Media Leads',
     description: 'CRE social media leads management and follow-up pipeline.',
     href: '/social-media-leads',
     department: 'sales',
