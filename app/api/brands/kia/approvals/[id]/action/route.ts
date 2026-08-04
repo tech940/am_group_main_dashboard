@@ -5,6 +5,7 @@ import { glAccounts, kiaApprovalRequests } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout } from '@/lib/email/templates/layout'
+import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
 import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 
 export const dynamic = 'force-dynamic'
@@ -240,6 +241,19 @@ export async function POST(
         updates.managementApproval = statusVal
         if (action === 'APPROVE') {
           updates.vpApproval = 'APPROVED'
+          updates.emailSendStatus = 'MDApproved'
+
+          // Trigger email notification to requester that MD approved the payment order
+          void sendMdApprovalNotificationEmail({
+            toEmail: requestRow.email,
+            requesterName: requestRow.name,
+            vendorName: requestRow.vendorName || 'Vendor',
+            amount: requestRow.amount,
+            purpose: requestRow.remarks,
+            department: requestRow.department,
+            approvalType: requestRow.approvalType,
+            approvalTime: new Date(),
+          })
         }
         updates.managementRemarks = remarks || ''
         if (action === 'REJECT') {

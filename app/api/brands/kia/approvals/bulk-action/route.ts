@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { kiaApprovalRequests } from '@/lib/db/schema'
 import { eq, inArray } from 'drizzle-orm'
 import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
+import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -156,6 +157,19 @@ export async function POST(request: Request) {
         updates.managementApproval = statusVal
         if (action === 'APPROVE') {
           updates.vpApproval = 'APPROVED'
+          updates.emailSendStatus = 'MDApproved'
+
+          // Trigger email notification to requester that MD approved the payment order
+          void sendMdApprovalNotificationEmail({
+            toEmail: row.email,
+            requesterName: row.name,
+            vendorName: row.vendorName || 'Vendor',
+            amount: row.amount,
+            purpose: row.remarks,
+            department: row.department,
+            approvalType: row.approvalType,
+            approvalTime: new Date(),
+          })
         }
         updates.managementRemarks = remarks || ''
         if (action === 'REJECT') {
