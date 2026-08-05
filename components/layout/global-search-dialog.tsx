@@ -216,6 +216,33 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
     )
   }, [userRole, userBrand, permissionMap, roleLoading])
 
+// Helper to compute search relevance score for section ordering
+function getRelevanceScore(section: SearchSection, query: string): number {
+  if (!query) return 0
+  const nameLower = section.name.toLowerCase()
+  const queryLower = query.toLowerCase().trim()
+
+  // 1. Exact match on name
+  if (nameLower === queryLower) return 1000
+  // 2. Name starts with query (e.g. "Sales Performance" for "sales")
+  if (nameLower.startsWith(queryLower)) return 800
+  // 3. Name contains query as a whole word
+  const words = nameLower.split(/[\s\-_]+/)
+  if (words.some((w) => w === queryLower)) return 600
+  // 4. Name contains query substring
+  if (nameLower.includes(queryLower)) return 400
+  // 5. Initials match
+  if (section.initials && section.initials.toLowerCase() === queryLower) return 350
+  // 6. Department exact match
+  if (section.department.toLowerCase() === queryLower) return 200
+  // 7. Brand match
+  if (section.brand.toLowerCase() === queryLower) return 150
+  // 8. Description match (lowest priority)
+  if (section.description.toLowerCase().includes(queryLower)) return 50
+
+  return 0
+}
+
   const filteredSections = useMemo(() => {
     const query = search.toLowerCase().trim()
     return authorizedSections.filter((section) => {
@@ -244,7 +271,8 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
 
   const orderedCategorizedGroups = useMemo(() => {
     const categories: SectionCategory[] = ['common_dashboards', 'kia', 'hyundai', 'platinum']
-    const result: { category: SectionCategory; sections: SearchSection[] }[] = []
+    const query = search.toLowerCase().trim()
+    const result: { category: SectionCategory; maxScore: number; sections: SearchSection[] }[] = []
 
     categories.forEach((catId) => {
       const list = filteredSections.filter((section) => {
@@ -255,13 +283,28 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
       })
 
       if (list.length > 0) {
-        list.sort((a, b) => a.name.localeCompare(b.name))
-        result.push({ category: catId, sections: list })
+        if (query) {
+          list.sort((a, b) => {
+            const scoreA = getRelevanceScore(a, query)
+            const scoreB = getRelevanceScore(b, query)
+            if (scoreA !== scoreB) return scoreB - scoreA
+            return a.name.localeCompare(b.name)
+          })
+        } else {
+          list.sort((a, b) => a.name.localeCompare(b.name))
+        }
+
+        const maxScore = query ? getRelevanceScore(list[0], query) : 0
+        result.push({ category: catId, maxScore, sections: list })
       }
     })
 
+    if (query) {
+      result.sort((a, b) => b.maxScore - a.maxScore)
+    }
+
     return result
-  }, [filteredSections])
+  }, [filteredSections, search])
 
   const flatOrderedSections = useMemo(() => {
     return orderedCategorizedGroups.flatMap((group) => group.sections)
@@ -356,7 +399,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[96vw] 2xl:max-w-[1520px] w-full h-[88vh] max-h-[880px] flex flex-col overflow-hidden p-0 border border-slate-300 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-950 rounded-[32px]">
+      <DialogContent className="max-w-[96vw] 2xl:max-w-[1520px] w-full h-[88vh] max-h-[880px] flex flex-col overflow-hidden p-0 border border-slate-300 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-950 rounded-[32px] [&>button.absolute]:hidden">
         <DialogTitle className="sr-only">Search Sections</DialogTitle>
 
         {/* ── Top Header & Command Search Bar ── */}

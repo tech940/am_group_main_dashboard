@@ -434,9 +434,9 @@ function getApprovalStatusSet(role: string) {
   return {
     pending: 'awaiting_md_approval',
     rejected: 'md_denied',
-    extraRejected: '',
+    extraRejected: 'ea_denied',
     hold: 'md_on_hold',
-    extraHold: '',
+    extraHold: 'ea_on_hold',
   }
 }
 
@@ -461,7 +461,7 @@ function matchesWorkflowStageFilter(order: PurchaseOrder, filter: WorkflowStageF
     case 'ea_pending':
       return order.status === 'awaiting_ea_approval'
     case 'md_pending':
-      return order.status === 'awaiting_md_approval'
+      return order.status === 'awaiting_md_approval' || order.status === 'awaiting_ea_approval' || order.status === 'ea_on_hold' || order.status === 'md_on_hold'
     case 'grn_pending':
       return order.status === 'awaiting_grn'
     case 'grn_completed':
@@ -484,16 +484,20 @@ function isActionableApprovalOrder(order: Pick<PurchaseOrder, 'status'>, role: s
     return false
   }
 
-  const statusSet = getApprovalStatusSet(role)
   if (role === 'ea') {
-    return order.status === statusSet.pending
-      || order.status === statusSet.rejected
-      || order.status === statusSet.extraRejected
-      || order.status === statusSet.hold
-      || order.status === statusSet.extraHold
+    return order.status === 'awaiting_ea_approval'
+      || order.status === 'ea_denied'
+      || order.status === 'md_denied'
+      || order.status === 'ea_on_hold'
+      || order.status === 'md_on_hold'
   }
 
-  return order.status === statusSet.pending || order.status === statusSet.hold
+  return order.status === 'awaiting_md_approval'
+    || order.status === 'awaiting_ea_approval'
+    || order.status === 'ea_on_hold'
+    || order.status === 'md_on_hold'
+    || order.status === 'md_denied'
+    || order.status === 'ea_denied'
 }
 
 function getAssignedStageLabel(order: PurchaseOrder, people?: Personnel | null) {
@@ -1847,7 +1851,26 @@ function PurchaseOrdersPageContent() {
       )
     }
 
-    if (currentStage === 'ea_approval') {
+    if (currentStage === 'ea_approval' || currentStage === 'md_approval') {
+      if (canApproveMD && ['awaiting_ea_approval', 'ea_on_hold', 'awaiting_md_approval', 'md_on_hold', 'md_denied', 'ea_denied'].includes(order.status)) {
+        return (
+          <Stage3MDApproval
+            orderId={order.id}
+            isLoading={isSubmitting}
+            orderDetails={{
+              itemName: normalizeDescription(order),
+              department: order.department,
+              subDepartment: order.subDepartment,
+              quantity: parseInt(normalizeQuantity(order), 10) || 0,
+              estimatedCost: parseFloat(normalizeEstimate(order)) || 0,
+              vendorName: normalizeVendorName(order),
+              eaRemarks: order.eaApprovalRemarks,
+            }}
+            onSubmit={(data) => handleStageSubmit('md_approval', data, order.id)}
+          />
+        )
+      }
+
       if (canApproveEA && ['awaiting_ea_approval', 'ea_denied', 'md_denied', 'ea_on_hold', 'md_on_hold'].includes(order.status)) {
         return (
           <Stage3EAApproval
@@ -1867,34 +1890,8 @@ function PurchaseOrdersPageContent() {
       }
 
       return renderReadOnlyPanel(
-        'Awaiting EA Approval',
-        'This purchase order is currently waiting in the EA approval queue.'
-      )
-    }
-
-    if (currentStage === 'md_approval') {
-      if (canApproveMD && ['awaiting_md_approval', 'md_denied', 'md_on_hold'].includes(order.status)) {
-        return (
-          <Stage3MDApproval
-            orderId={order.id}
-            isLoading={isSubmitting}
-            orderDetails={{
-              itemName: normalizeDescription(order),
-              department: order.department,
-              subDepartment: order.subDepartment,
-              quantity: parseInt(normalizeQuantity(order), 10) || 0,
-              estimatedCost: parseFloat(normalizeEstimate(order)) || 0,
-              vendorName: normalizeVendorName(order),
-              eaRemarks: order.eaApprovalRemarks,
-            }}
-            onSubmit={(data) => handleStageSubmit('md_approval', data, order.id)}
-          />
-        )
-      }
-
-      return renderReadOnlyPanel(
-        'Awaiting MD Approval',
-        'This purchase order is currently waiting for final MD approval.'
+        currentStage === 'ea_approval' ? 'Awaiting EA Approval' : 'Awaiting MD Approval',
+        currentStage === 'ea_approval' ? 'This purchase order is currently waiting in the EA approval queue.' : 'This purchase order is currently waiting for final MD approval.'
       )
     }
 

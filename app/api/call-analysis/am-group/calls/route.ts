@@ -20,15 +20,24 @@ export async function GET(request: Request) {
   const startDate = searchParams.get('startDate')
   const endDate = searchParams.get('endDate')
   const agent = searchParams.get('agent')
+  const branch = searchParams.get('branch')
+  const callStatus = searchParams.get('callStatus')
   const search = (searchParams.get('search') || '').trim().toLowerCase()
   const recordingsOnly = searchParams.get('recordingsOnly') === 'true'
+  const pendingOnly = searchParams.get('pendingOnly') === 'true'
 
   try {
     const supabase = getCreSupabase()
 
-    // 1. Fetch profiles map
-    const profilesRes = await supabase.from('user_profiles').select('id, full_name')
+    // 1. Fetch profiles and branch map
+    const [profilesRes, branchesRes] = await Promise.all([
+      supabase.from('user_profiles').select('id, full_name, branch_id'),
+      supabase.from('branch_directory').select('id, display_name'),
+    ])
+
     const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p.full_name]))
+    const profileBranchMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p.branch_id]))
+    const branchMap = new Map((branchesRes.data || []).map((b: any) => [b.id, b.display_name]))
 
     // 2. Fetch call recordings query
     let query = supabase.from('call_recordings').select('*', { count: 'exact' })
@@ -42,8 +51,13 @@ export async function GET(request: Request) {
     if (agent && agent !== 'all') {
       query = query.eq('cre_id', agent)
     }
+    if (branch && branch !== 'all') {
+      query = query.eq('branch_id', branch)
+    }
     if (recordingsOnly) {
       query = query.not('storage_path', 'is', null)
+    } else if (pendingOnly) {
+      query = query.is('storage_path', null)
     }
 
     const { data: rawRows, count, error } = await query
@@ -77,6 +91,27 @@ export async function GET(request: Request) {
         }
 
         const creName = profileMap.get(row.cre_id) || profileMap.get(row.created_by) || 'CRE Agent'
+        const bId = row.branch_id || profileBranchMap.get(row.cre_id) || 'general'
+        const branchName = branchMap.get(bId) || 'General Branch'
+        const durationSec = Number(row.duration_seconds) || 0
+        const rawType = (row.call_type || 'outgoing').toLowerCase()
+
+        let statusLabel = 'Connected Outgoing'
+        let statusBadgeClass = 'bg-blue-50 text-blue-700 border-blue-200'
+
+        if (rawType === 'missed' || (rawType === 'incoming' && durationSec === 0)) {
+          statusLabel = 'Missed Incoming'
+          statusBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200'
+        } else if (rawType === 'incoming' && durationSec > 0) {
+          statusLabel = 'Connected Incoming'
+          statusBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        } else if (rawType === 'outgoing' && durationSec > 0) {
+          statusLabel = 'Connected Outgoing'
+          statusBadgeClass = 'bg-[#004e5a]/10 text-[#004e5a] border-[#004e5a]/20'
+        } else {
+          statusLabel = 'Missed Outgoing (Not Answered)'
+          statusBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200'
+        }
 
         return {
           id: row.id,
@@ -84,8 +119,12 @@ export async function GET(request: Request) {
           contactName: row.contact_name || null,
           creId: row.cre_id,
           creName,
-          durationSeconds: Number(row.duration_seconds) || 0,
+          branchId: bId,
+          branchName,
+          durationSeconds: durationSec,
           callType: row.call_type || 'outgoing',
+          statusLabel,
+          statusBadgeClass,
           recordedAt: row.recorded_at || row.created_at,
           uploadStatus: row.upload_status || 'uploaded',
           storagePath: row.storage_path || null,

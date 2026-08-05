@@ -33,6 +33,21 @@ type CrePerformance = {
   overall_score: number
 }
 
+type BranchPerformance = {
+  id: string
+  name: string
+  calls: number
+  connectedOutgoing: number
+  connectedIncoming: number
+  missedIncoming: number
+  missedOutgoing: number
+  totalUnanswered: number
+  totalConnected: number
+  connectRate: number
+  unansweredRate: number
+  durationLabel: string
+}
+
 type AnalyticsData = {
   summary: {
     totalCalls: number
@@ -43,9 +58,14 @@ type AnalyticsData = {
     withRecording: number
     recordingCoverage: number
     uniquePhones: number
-    incoming: number
-    outgoing: number
-    missed: number
+    connectedOutgoing: number
+    connectedIncoming: number
+    missedIncoming: number
+    missedOutgoing: number
+    totalUnanswered: number
+    totalConnected: number
+    connectRate: number
+    unansweredRate: number
     agentCount: number
   }
   sparklines?: {
@@ -56,12 +76,14 @@ type AnalyticsData = {
     uniquePhonesSeries: number[]
     agentsSeries: number[]
   }
-  dailyTrend: { date: string; calls: number; duration: number }[]
+  dailyTrend: { date: string; calls: number; duration: number; missedIncoming?: number; missedOutgoing?: number }[]
   callTypeMix: { name: string; value: number }[]
   crePerformance: CrePerformance[]
-  agents: { id: string; name: string; calls: number; recordings: number; durationLabel: string }[]
+  branchPerformance?: BranchPerformance[]
+  agents: { id: string; name: string; branchName?: string; calls: number; recordings: number; durationLabel: string; connectRate?: number; missedIncoming?: number; missedOutgoing?: number }[]
   facets: {
     agentOptions: { id: string; name: string }[]
+    branchOptions?: { id: string; name: string }[]
     totalCallsAvailable: number
   }
 }
@@ -72,8 +94,12 @@ type RecordingRow = {
   contactName: string | null
   creId: string
   creName: string
+  branchId?: string
+  branchName?: string
   durationSeconds: number
   callType: string
+  statusLabel?: string
+  statusBadgeClass?: string
   recordedAt: string
   uploadStatus: string
   storagePath: string | null
@@ -116,15 +142,16 @@ function formatDate(isoStr: string) {
 }
 
 export function AmGroupCallAnalysis() {
-  const [subTab, setSubTab] = useState<'overview' | 'cre_performance' | 'recordings'>('overview')
+  const [subTab, setSubTab] = useState<'overview' | 'branch_performance' | 'cre_performance' | 'recordings' | 'pending'>('overview')
   const [preset, setPreset] = useState('30d')
   const [startDate, setStartDate] = useState(iso(30))
   const [endDate, setEndDate] = useState(today())
   const [agent, setAgent] = useState('all')
+  const [branch, setBranch] = useState('all')
+  const [callStatus, setCallStatus] = useState('all')
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [playingId, setPlayingId] = useState<string | null>(null)
 
   function applyPreset(key: string) {
     setPreset(key)
@@ -145,9 +172,11 @@ export function AmGroupCallAnalysis() {
     if (startDate) p.set('startDate', startDate)
     if (endDate) p.set('endDate', endDate)
     if (agent !== 'all') p.set('agent', agent)
+    if (branch !== 'all') p.set('branch', branch)
+    if (callStatus !== 'all') p.set('callStatus', callStatus)
     if (search) p.set('search', search)
     return p.toString()
-  }, [startDate, endDate, agent, search])
+  }, [startDate, endDate, agent, branch, callStatus, search])
 
   const analyticsQuery = useQuery<AnalyticsData>({
     queryKey: ['am-group-call-analysis', filterParams],
@@ -169,6 +198,23 @@ export function AmGroupCallAnalysis() {
       const p = new URLSearchParams(filterParams)
       p.set('page', String(page))
       p.set('pageSize', '20')
+      p.set('recordingsOnly', 'true')
+      const res = await fetch(`/api/call-analysis/am-group/calls?${p.toString()}`)
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load')
+      return res.json()
+    },
+  })
+
+  const pendingCallsQuery = useQuery<{ rows: RecordingRow[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>({
+    queryKey: ['am-group-pending-call-log', filterParams, page],
+    enabled: subTab === 'pending',
+    placeholderData: keepPreviousData,
+    staleTime: 2 * 60 * 1000,
+    queryFn: async () => {
+      const p = new URLSearchParams(filterParams)
+      p.set('page', String(page))
+      p.set('pageSize', '20')
+      p.set('pendingOnly', 'true')
       const res = await fetch(`/api/call-analysis/am-group/calls?${p.toString()}`)
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load')
       return res.json()
@@ -176,7 +222,6 @@ export function AmGroupCallAnalysis() {
   })
 
   const d = analyticsQuery.data
-  const busy = analyticsQuery.isFetching
 
   function runSearch() {
     setSearch(searchInput.trim())
@@ -186,12 +231,14 @@ export function AmGroupCallAnalysis() {
   function resetFilters() {
     applyPreset('30d')
     setAgent('all')
+    setBranch('all')
+    setCallStatus('all')
     setSearchInput('')
     setSearch('')
     setPage(1)
   }
 
-  const hasFilters = agent !== 'all' || Boolean(search) || preset !== '30d'
+  const hasFilters = agent !== 'all' || branch !== 'all' || callStatus !== 'all' || Boolean(search) || preset !== '30d'
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -231,8 +278,42 @@ export function AmGroupCallAnalysis() {
               />
             </div>
 
+            {/* Branch Wise Filter Selector */}
+            <div className="w-[12rem]">
+              <Select value={branch} onValueChange={(v) => { setBranch(v); setPage(1) }}>
+                <SelectTrigger className="h-9 rounded-xl text-xs font-bold">
+                  <SelectValue placeholder="All Branches" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all">All Branches</SelectItem>
+                  {(d?.facets.branchOptions || []).map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Call Status / Type Selector */}
+            <div className="w-[13.5rem]">
+              <Select value={callStatus} onValueChange={(v) => { setCallStatus(v); setPage(1) }}>
+                <SelectTrigger className="h-9 rounded-xl text-xs font-bold">
+                  <SelectValue placeholder="All Call Types / Statuses" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all">All Call Statuses</SelectItem>
+                  <SelectItem value="connected_outgoing">Connected Outgoing</SelectItem>
+                  <SelectItem value="connected_incoming">Connected Incoming</SelectItem>
+                  <SelectItem value="missed_incoming">Missed Incoming Calls</SelectItem>
+                  <SelectItem value="missed_outgoing">Missed Outgoing (Not Answered)</SelectItem>
+                  <SelectItem value="unanswered">All Unanswered / Missed Calls</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* CRE Agent Selector */}
-            <div className="w-[13rem]">
+            <div className="w-[12rem]">
               <Select value={agent} onValueChange={(v) => { setAgent(v); setPage(1) }}>
                 <SelectTrigger className="h-9 rounded-xl text-xs font-bold">
                   <SelectValue placeholder="All CRE Agents" />
@@ -254,7 +335,7 @@ export function AmGroupCallAnalysis() {
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <Input
                   type="text"
-                  placeholder="Search CRE name, phone..."
+                  placeholder="Search CRE name, phone, branch..."
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') runSearch() }}
@@ -274,67 +355,67 @@ export function AmGroupCallAnalysis() {
         </CardContent>
       </Card>
 
-      {/* Summary KPI Cards */}
+      {/* Summary KPI Cards Grid (6 Columns) */}
       <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6">
         <KpiCard
           title="TOTAL CRE CALLS"
           value={d ? d.summary.totalCalls.toLocaleString('en-IN') : '—'}
-          subtitle="Processed CRE calls"
+          subtitle="Processed CRE call volume"
           icon={PhoneCall}
-          colorScheme="purple"
+          colorScheme="teal"
           chartType="area"
           chartData={d?.sparklines?.callsSeries || [3, 5, 4, 6, 8, 5, 7]}
-          trend={{ value: '+14%', isPositive: true, label: 'vs last week' }}
+          trend={{ value: `${d?.summary.connectRate || 0}%`, isPositive: true, label: 'connected rate' }}
         />
         <KpiCard
-          title="AUDIO RECORDINGS"
-          value={d ? d.summary.withRecording.toLocaleString('en-IN') : '—'}
-          subtitle={d ? `${d.summary.recordingCoverage}% coverage` : '0% coverage'}
-          icon={Mic}
-          colorScheme="teal"
+          title="CONNECTED CALLS"
+          value={d ? d.summary.totalConnected.toLocaleString('en-IN') : '—'}
+          subtitle={d ? `${d.summary.connectedOutgoing} out / ${d.summary.connectedIncoming} in` : '—'}
+          icon={PhoneOutgoing}
+          colorScheme="emerald"
           chartType="line"
           chartData={d?.sparklines?.recordingsSeries || [2, 4, 3, 5, 6, 4, 5]}
-          trend={{ value: '+8%', isPositive: true, label: 'vs last week' }}
+          trend={{ value: `${d?.summary.connectRate || 0}%`, isPositive: true, label: 'connected' }}
+        />
+        <KpiCard
+          title="MISSED INCOMING"
+          value={d ? d.summary.missedIncoming.toLocaleString('en-IN') : '—'}
+          subtitle="Unanswered incoming calls"
+          icon={PhoneMissed}
+          colorScheme="rose"
+          chartType="bar"
+          chartData={[5, 8, 4, 10, 6, 7, d?.summary.missedIncoming || 5]}
+          trend={{ value: d ? `${Math.round((d.summary.missedIncoming / Math.max(1, d.summary.totalCalls)) * 100)}%` : '0%', isPositive: false, label: 'of total calls' }}
+        />
+        <KpiCard
+          title="NOT ANSWERED OUTGOING"
+          value={d ? d.summary.missedOutgoing.toLocaleString('en-IN') : '—'}
+          subtitle="Customer did not pick up"
+          icon={PhoneMissed}
+          colorScheme="amber"
+          chartType="bar"
+          chartData={[3, 6, 8, 5, 9, 4, d?.summary.missedOutgoing || 4]}
+          trend={{ value: d ? `${Math.round((d.summary.missedOutgoing / Math.max(1, d.summary.totalCalls)) * 100)}%` : '0%', isPositive: false, label: 'of total calls' }}
+        />
+        <KpiCard
+          title="TOTAL UNANSWERED"
+          value={d ? d.summary.totalUnanswered.toLocaleString('en-IN') : '—'}
+          subtitle={d ? `${d.summary.unansweredRate}% unanswered rate` : '—'}
+          icon={PhoneMissed}
+          colorScheme="purple"
+          chartType="area"
+          chartData={[8, 14, 12, 15, 15, 11, d?.summary.totalUnanswered || 9]}
+          trend={{ value: `${d?.summary.unansweredRate || 0}%`, isPositive: false, label: 'missed / no answer' }}
         />
         <KpiCard
           title="TOTAL TALK TIME"
           value={d ? d.summary.totalDurationLabel : '—'}
-          subtitle="Cumulative duration"
+          subtitle={d ? `Avg ${d.summary.avgDurationLabel} / call` : '—'}
           icon={Clock}
           colorScheme="blue"
           chartType="bar"
           chartData={d?.sparklines?.durationSeries || [15, 30, 45, 25, 60, 50, 85]}
-          trend={{ value: '+12%', isPositive: true, label: 'vs last week' }}
-        />
-        <KpiCard
-          title="AVG CALL DURATION"
-          value={d ? d.summary.avgDurationLabel : '—'}
-          subtitle="Per call average"
-          icon={Clock}
-          colorScheme="amber"
-          chartType="flat-line"
-          chartData={d?.sparklines?.avgDurationSeries || [10, 11, 12, 10, 14, 13, 12]}
-          trend={{ value: '+5%', isPositive: true, label: 'vs last week' }}
-        />
-        <KpiCard
-          title="UNIQUE CUSTOMERS"
-          value={d ? d.summary.uniquePhones.toLocaleString('en-IN') : '—'}
-          subtitle="Distinct phone numbers"
-          icon={Users}
-          colorScheme="emerald"
-          chartType="area"
-          chartData={d?.sparklines?.uniquePhonesSeries || [1, 1, 2, 2, 3, 2, 2]}
-          trend={{ value: '+20%', isPositive: true, label: 'vs last week' }}
-        />
-        <KpiCard
-          title="ACTIVE CRE AGENTS"
-          value={d ? d.summary.agentCount.toString() : '—'}
-          subtitle="Assigned CRE staff"
-          icon={UserCheck}
-          colorScheme="rose"
-          chartType="bar"
-          chartData={d?.sparklines?.agentsSeries || [1, 1, 1, 1, 1, 1, 1]}
-          trend={{ value: '1 Active', isPositive: true, label: 'online' }}
+          trend={{ value: `${d?.summary.recordingCoverage || 0}%`, isPositive: true, label: 'recordings' }}
         />
       </div>
 
@@ -345,12 +426,25 @@ export function AmGroupCallAnalysis() {
           className={cn(
             'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
             subTab === 'overview'
-              ? 'border-indigo-600 text-indigo-600'
+              ? 'border-[#004e5a] text-[#004e5a]'
               : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
           )}
         >
           <Building2 className="h-4 w-4" />
-          <span>Overview</span>
+          <span>Overview & Trends</span>
+        </button>
+
+        <button
+          onClick={() => setSubTab('branch_performance')}
+          className={cn(
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
+            subTab === 'branch_performance'
+              ? 'border-[#004e5a] text-[#004e5a]'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+          )}
+        >
+          <Building2 className="h-4 w-4" />
+          <span>Branch-Wise Call Performance</span>
         </button>
 
         <button
@@ -358,55 +452,65 @@ export function AmGroupCallAnalysis() {
           className={cn(
             'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
             subTab === 'cre_performance'
-              ? 'border-indigo-600 text-indigo-600'
+              ? 'border-[#004e5a] text-[#004e5a]'
               : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
           )}
         >
           <Award className="h-4 w-4" />
-          <span>CRE Performance Scorecard</span>
+          <span>CRE Staff Scorecard</span>
         </button>
 
         <button
-          onClick={() => setSubTab('recordings')}
+          onClick={() => { setSubTab('recordings'); setPage(1) }}
           className={cn(
             'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
             subTab === 'recordings'
-              ? 'border-indigo-600 text-indigo-600'
+              ? 'border-[#004e5a] text-[#004e5a]'
               : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
           )}
         >
           <FileAudio className="h-4 w-4" />
-          <span>Call Recordings & Audio Player</span>
+          <span>Uploaded Call Recordings</span>
+        </button>
+
+        <button
+          onClick={() => { setSubTab('pending'); setPage(1) }}
+          className={cn(
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
+            subTab === 'pending'
+              ? 'border-[#004e5a] text-[#004e5a]'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+          )}
+        >
+          <Clock className="h-4 w-4" />
+          <span>Uploading & Pending Calls</span>
         </button>
       </div>
 
       {/* TAB 1: OVERVIEW */}
       {subTab === 'overview' && (
-        <div className="space-y-6">
-          <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <CardHeader className="p-0 pb-4">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <Card className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
-                Daily Call Volume Trend
+                Daily Call Volume & Missed Calls Trend
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 h-[280px]">
               {d?.dailyTrend && d.dailyTrend.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={d.dailyTrend}>
-                    <defs>
-                      <linearGradient id="colorCalls" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.0} />
-                      </linearGradient>
-                    </defs>
+                  <BarChart data={d.dailyTrend}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fontSize: 11, fontWeight: 600 }} />
                     <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fontWeight: 600 }} />
                     <Tooltip
                       contentStyle={{ borderRadius: '16px', border: '1px solid #e2e8f0', fontWeight: 'bold' }}
                     />
-                    <Area type="monotone" dataKey="calls" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorCalls)" />
-                  </AreaChart>
+                    <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                    <Bar dataKey="calls" name="Total Calls" fill="#004e5a" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="missedIncoming" name="Missed Incoming" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="missedOutgoing" name="Not Answered Outgoing" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="flex h-full items-center justify-center text-xs font-semibold text-slate-400">
@@ -415,10 +519,120 @@ export function AmGroupCallAnalysis() {
               )}
             </CardContent>
           </Card>
+
+          <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <CardHeader className="p-0 pb-4">
+              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
+                Call Status & Outcome Mix
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 h-[280px] flex items-center justify-center">
+              {d?.callTypeMix && d.callTypeMix.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={d.callTypeMix}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={85}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {d.callTypeMix.map((entry, idx) => (
+                        <Cell
+                          key={`cell-${idx}`}
+                          fill={
+                            entry.name.includes('Outgoing') && !entry.name.includes('Missed')
+                              ? '#004e5a'
+                              : entry.name.includes('Incoming') && !entry.name.includes('Missed')
+                              ? '#10b981'
+                              : entry.name.includes('Missed Incoming')
+                              ? '#f43f5e'
+                              : '#f59e0b'
+                          }
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ borderRadius: '14px', fontWeight: 'bold' }} />
+                    <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-xs font-semibold text-slate-400">No call mix data</div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
 
-      {/* TAB 2: CRE PERFORMANCE SCORECARD */}
+      {/* TAB 2: BRANCH PERFORMANCE */}
+      {subTab === 'branch_performance' && (
+        <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
+                Branch-Wise Call Performance Breakdown
+              </CardTitle>
+              <p className="mt-1 text-xs font-medium text-slate-500">
+                Detailed call volume, connected calls, missed incoming, and unanswered outgoing calls grouped by dealership branch.
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
+                  <th className="py-3 px-4">Dealership Branch</th>
+                  <th className="py-3 px-4 text-center">Total Calls</th>
+                  <th className="py-3 px-4 text-center">Connected Outgoing</th>
+                  <th className="py-3 px-4 text-center">Connected Incoming</th>
+                  <th className="py-3 px-4 text-center">Missed Incoming</th>
+                  <th className="py-3 px-4 text-center">Not Answered Outgoing</th>
+                  <th className="py-3 px-4 text-center">Unanswered Rate</th>
+                  <th className="py-3 px-4 text-center">Total Talk Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(d?.branchPerformance || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400 font-semibold">
+                      No branch performance metrics available for the selected filters.
+                    </td>
+                  </tr>
+                ) : (
+                  (d?.branchPerformance || []).map((b) => (
+                    <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-xl bg-[#004e5a]/10 text-[#004e5a] font-black flex items-center justify-center text-[10px]">
+                          <Building2 className="h-4 w-4" />
+                        </div>
+                        <span>{b.name}</span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-900">{b.calls}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-[#004e5a]">{b.connectedOutgoing}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-emerald-600">{b.connectedIncoming}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-rose-600">{b.missedIncoming}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-amber-600">{b.missedOutgoing}</td>
+                      <td className="py-3.5 px-4 text-center font-bold">
+                        <span className={cn(
+                          'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
+                          b.unansweredRate > 30 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        )}>
+                          {b.unansweredRate}%
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-700">{b.durationLabel}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* TAB 3: CRE PERFORMANCE SCORECARD */}
       {subTab === 'cre_performance' && (
         <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
@@ -432,45 +646,41 @@ export function AmGroupCallAnalysis() {
                 <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
                   <th className="py-3 px-4">CRE Agent Name</th>
                   <th className="py-3 px-4">Branch</th>
-                  <th className="py-3 px-4 text-center">Calls Today</th>
-                  <th className="py-3 px-4 text-center">Calls This Month</th>
+                  <th className="py-3 px-4 text-center">Total Calls</th>
                   <th className="py-3 px-4 text-center">Connected Calls</th>
                   <th className="py-3 px-4 text-center">Connect Rate</th>
+                  <th className="py-3 px-4 text-center">Missed Incoming</th>
+                  <th className="py-3 px-4 text-center">Not Answered Outgoing</th>
                   <th className="py-3 px-4 text-center">Total Talk Time</th>
-                  <th className="py-3 px-4 text-center">Overall Score</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {(d?.crePerformance || []).length === 0 ? (
+                {(d?.agents || []).length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-slate-400 font-semibold">
-                      No CRE performance metrics recorded yet.
+                      No CRE agent performance metrics recorded yet.
                     </td>
                   </tr>
                 ) : (
-                  (d?.crePerformance || []).map((cre) => (
-                    <tr key={cre.cre_id} className="hover:bg-slate-50/80 transition-colors">
+                  (d?.agents || []).map((ag) => (
+                    <tr key={ag.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-full bg-indigo-50 text-indigo-700 font-black flex items-center justify-center text-[10px]">
-                          {cre.cre_name.slice(0, 2).toUpperCase()}
+                        <div className="h-7 w-7 rounded-full bg-[#004e5a]/10 text-[#004e5a] font-black flex items-center justify-center text-[10px]">
+                          {ag.name.slice(0, 2).toUpperCase()}
                         </div>
-                        <span>{cre.cre_name}</span>
+                        <span>{ag.name}</span>
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{cre.branch_name || 'Jammu'}</td>
-                      <td className="py-3.5 px-4 text-center font-bold text-slate-800">{cre.calls_today}</td>
-                      <td className="py-3.5 px-4 text-center font-bold text-slate-800">{cre.calls_this_month}</td>
-                      <td className="py-3.5 px-4 text-center font-bold text-emerald-600">{cre.connected_calls}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">{ag.branchName || 'General'}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-800">{ag.calls}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-emerald-600">{ag.recordings}</td>
                       <td className="py-3.5 px-4 text-center font-bold">
-                        <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-black">
-                          {cre.connect_rate}%
+                        <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-black border border-emerald-200">
+                          {ag.connectRate || 0}%
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-center font-bold text-slate-700">{dur(cre.total_talk_time_seconds)}</td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-full text-[11px] font-black">
-                          {cre.overall_score || 35.9}
-                        </span>
-                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-rose-600">{ag.missedIncoming || 0}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-amber-600">{ag.missedOutgoing || 0}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-700">{ag.durationLabel}</td>
                     </tr>
                   ))
                 )}
@@ -480,32 +690,38 @@ export function AmGroupCallAnalysis() {
         </Card>
       )}
 
-      {/* TAB 3: AUDIO RECORDINGS & PLAYER */}
+      {/* TAB 4: UPLOADED AUDIO RECORDINGS & PLAYER */}
       {subTab === 'recordings' && (
         <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
-              CRE Call Recordings & Audio Playback
-            </CardTitle>
+            <div>
+              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
+                Uploaded Call Recordings & Audio Playback
+              </CardTitle>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                Only showing calls with completed audio file uploads ready for playback.
+              </p>
+            </div>
           </CardHeader>
 
           <CardContent className="p-0 overflow-x-auto">
             {callsQuery.isFetching ? (
               <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
-                <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
-                <span>Loading CRE call recordings...</span>
+                <Loader2 className="h-4 w-4 animate-spin text-[#004e5a]" />
+                <span>Loading completed call recordings...</span>
               </div>
             ) : (callsQuery.data?.rows || []).length === 0 ? (
               <div className="py-12 text-center text-slate-400 font-semibold text-xs">
-                No call recordings found for the selected filter criteria.
+                No uploaded call recordings found for the selected filter criteria.
               </div>
             ) : (
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
                     <th className="py-3 px-4">CRE Agent</th>
+                    <th className="py-3 px-4">Branch</th>
                     <th className="py-3 px-4">Customer Phone</th>
-                    <th className="py-3 px-4 text-center">Type</th>
+                    <th className="py-3 px-4 text-center">Status / Type</th>
                     <th className="py-3 px-4 text-center">Duration</th>
                     <th className="py-3 px-4">Date & Time</th>
                     <th className="py-3 px-4 text-center">Audio Player</th>
@@ -517,19 +733,18 @@ export function AmGroupCallAnalysis() {
                       <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
                         {row.creName}
                       </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">
+                        {row.branchName || 'General'}
+                      </td>
                       <td className="py-3.5 px-4 font-bold text-slate-700">
                         {row.phone}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <span className={cn(
-                          'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border',
-                          row.callType === 'outgoing'
-                            ? 'bg-blue-50 text-blue-700 border-blue-200'
-                            : row.callType === 'incoming'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                          'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
+                          row.statusBadgeClass || 'bg-slate-100 text-slate-700 border-slate-200'
                         )}>
-                          {row.callType}
+                          {row.statusLabel || row.callType}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-center font-bold text-slate-700">
@@ -552,11 +767,7 @@ export function AmGroupCallAnalysis() {
                               <Download className="h-4 w-4" />
                             </a>
                           </div>
-                        ) : (
-                          <span className="text-[10px] font-bold text-slate-400 italic">
-                            Uploading / Pending
-                          </span>
-                        )}
+                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -582,6 +793,113 @@ export function AmGroupCallAnalysis() {
                   </Button>
                   <Button
                     disabled={page >= callsQuery.data.pagination.totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-xl text-xs font-bold"
+                  >
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* TAB 5: UPLOADING & PENDING CALLS QUEUE */}
+      {subTab === 'pending' && (
+        <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
+                Uploading & Pending Calls Queue
+              </CardTitle>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                Calls registered by CRE handsets where audio recording upload is pending or currently in progress.
+              </p>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-0 overflow-x-auto">
+            {pendingCallsQuery.isFetching ? (
+              <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
+                <Loader2 className="h-4 w-4 animate-spin text-[#004e5a]" />
+                <span>Loading pending calls queue...</span>
+              </div>
+            ) : (pendingCallsQuery.data?.rows || []).length === 0 ? (
+              <div className="py-12 text-center text-emerald-600 font-bold text-xs">
+                All call recordings are fully uploaded and synced! No pending uploads in queue.
+              </div>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
+                    <th className="py-3 px-4">CRE Agent</th>
+                    <th className="py-3 px-4">Branch</th>
+                    <th className="py-3 px-4">Customer Phone</th>
+                    <th className="py-3 px-4 text-center">Status / Direction</th>
+                    <th className="py-3 px-4 text-center">Duration</th>
+                    <th className="py-3 px-4">Recorded At</th>
+                    <th className="py-3 px-4 text-center">Sync / Upload Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {pendingCallsQuery.data?.rows.map((row) => (
+                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
+                        {row.creName}
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-600">
+                        {row.branchName || 'General'}
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-700">
+                        {row.phone}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className={cn(
+                          'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
+                          row.statusBadgeClass || 'bg-slate-100 text-slate-700 border-slate-200'
+                        )}>
+                          {row.statusLabel || row.callType}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-700">
+                        {dur(row.durationSeconds)}
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-slate-500 whitespace-nowrap">
+                        {formatDate(row.recordedAt)}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+                          <Loader2 className="h-3 w-3 animate-spin text-amber-600" />
+                          Uploading / Pending Sync
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* Pagination Controls */}
+            {pendingCallsQuery.data?.pagination && pendingCallsQuery.data.pagination.totalPages > 1 && (
+              <div className="flex items-center justify-between p-4 border-t border-slate-100">
+                <span className="text-xs font-semibold text-slate-500">
+                  Page {pendingCallsQuery.data.pagination.page} of {pendingCallsQuery.data.pagination.totalPages} ({pendingCallsQuery.data.pagination.total} pending calls)
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-xl text-xs font-bold"
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                  </Button>
+                  <Button
+                    disabled={page >= pendingCallsQuery.data.pagination.totalPages}
                     onClick={() => setPage((p) => p + 1)}
                     variant="outline"
                     size="sm"

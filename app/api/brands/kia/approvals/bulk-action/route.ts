@@ -121,22 +121,19 @@ export async function POST(request: Request) {
       let isAuthorized = false
       if (activeStageKey === 'sales_manager') {
         if (isServiceCategory) {
-          isAuthorized = appUser.role === 'ed' ? false : isTester || isVp
+          isAuthorized = appUser.role === 'ed' ? false : isTester || isVp || isSuperUser
         } else {
-          isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager
+          isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser
         }
       } else if (activeStageKey === 'hr') {
-        isAuthorized = isTester || isHrUser
+        isAuthorized = isTester || isHrUser || isSuperUser
       } else if (activeStageKey === 'accounts') {
         // SEPARATION OF DUTIES — `isSuperUser` (ceo/md) is DELIBERATELY EXCLUDED here.
-        // This branch sets paymentStatus = 'PAID'. Granting it to the MD/CEO meant an MD could
-        // approve at the `md` stage and then mark the very same request PAID — which is exactly
-        // how vendor payments Accounts never approved ended up recorded as PAID in production.
-        // Bulk-approve made it worse: one click could pay a whole selection.
+        // This branch sets paymentStatus = 'PAID'.
         // Only Accounts may release money. developer/admin (`isTester`) stay for support only.
         isAuthorized = isTester || isAccountsUser
       } else if (activeStageKey === 'md') {
-        // The ONLY stage where MD/CEO are the intended approver.
+        // Stage where MD/CEO are the intended approver.
         isAuthorized = isTester || isSuperUser
       }
 

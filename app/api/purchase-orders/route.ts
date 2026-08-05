@@ -55,7 +55,12 @@ function getWorkflowFilterExpression(filter: string | null) {
     case 'ea_pending':
       return eq(purchaseOrders.status, 'awaiting_ea_approval')
     case 'md_pending':
-      return eq(purchaseOrders.status, 'awaiting_md_approval')
+      return or(
+        eq(purchaseOrders.status, 'awaiting_md_approval'),
+        eq(purchaseOrders.status, 'awaiting_ea_approval'),
+        eq(purchaseOrders.status, 'ea_on_hold'),
+        eq(purchaseOrders.status, 'md_on_hold')
+      )
     case 'grn_pending':
       return eq(purchaseOrders.status, 'awaiting_grn')
     case 'grn_completed':
@@ -157,20 +162,25 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
 
   switch (filter) {
     case 'pending':
-      return eq(purchaseOrders.status, 'awaiting_md_approval')
+      return or(
+        eq(purchaseOrders.status, 'awaiting_md_approval'),
+        eq(purchaseOrders.status, 'awaiting_ea_approval'),
+        eq(purchaseOrders.status, 'ea_on_hold'),
+        eq(purchaseOrders.status, 'md_on_hold')
+      )
     case 'approved':
       return and(
         eq(purchaseOrders.mdApprovalStatus, 'approved'),
         sql`${purchaseOrders.status} NOT IN ('completed', 'md_denied', 'md_on_hold')`
       )
     case 'rejected':
-      return eq(purchaseOrders.status, 'md_denied')
+      return or(eq(purchaseOrders.status, 'md_denied'), eq(purchaseOrders.status, 'ea_denied'))
     case 'hold':
-      return eq(purchaseOrders.status, 'md_on_hold')
+      return or(eq(purchaseOrders.status, 'md_on_hold'), eq(purchaseOrders.status, 'ea_on_hold'))
     case 'completed':
       return eq(purchaseOrders.status, 'completed')
     case 'all':
-      return sql`${purchaseOrders.status} NOT IN ('submitted', 'vendor_info_pending', 'awaiting_ea_approval', 'ea_denied', 'ea_on_hold')`
+      return sql`${purchaseOrders.status} NOT IN ('submitted', 'vendor_info_pending')`
     default:
       return null
   }
@@ -185,7 +195,12 @@ async function fetchApprovalCounts(role: string, baseFilters: WhereFilter[]) {
 
   const pendingCond = isEa
     ? eq(purchaseOrders.status, 'awaiting_ea_approval')
-    : eq(purchaseOrders.status, 'awaiting_md_approval')
+    : or(
+        eq(purchaseOrders.status, 'awaiting_md_approval'),
+        eq(purchaseOrders.status, 'awaiting_ea_approval'),
+        eq(purchaseOrders.status, 'ea_on_hold'),
+        eq(purchaseOrders.status, 'md_on_hold')
+      )
 
   const approvedCond = isEa
     ? and(
@@ -199,11 +214,11 @@ async function fetchApprovalCounts(role: string, baseFilters: WhereFilter[]) {
 
   const rejectedCond = isEa
     ? sql`${purchaseOrders.status} IN ('ea_denied', 'md_denied')`
-    : eq(purchaseOrders.status, 'md_denied')
+    : sql`${purchaseOrders.status} IN ('ea_denied', 'md_denied')`
 
   const holdCond = isEa
     ? sql`${purchaseOrders.status} IN ('ea_on_hold', 'md_on_hold')`
-    : eq(purchaseOrders.status, 'md_on_hold')
+    : sql`${purchaseOrders.status} IN ('ea_on_hold', 'md_on_hold')`
 
   const completedCond = eq(purchaseOrders.status, 'completed')
 

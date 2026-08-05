@@ -108,27 +108,23 @@ export async function POST(
 
     if (stage === 'sales_manager') {
       if (isServiceCategory) {
-        // SERVICE ORDER: ONLY VP or Admin/Developer can approve
+        // SERVICE ORDER: ONLY VP, SuperUser, or Admin/Developer can approve
         // ED IS STRICTLY EXCLUDED!
-        isAuthorized = appUser.role === 'ed' ? false : isTester || isVp
+        isAuthorized = appUser.role === 'ed' ? false : isTester || isVp || isSuperUser
       } else {
-        // SALES ORDER: Either ED or General Sales Manager can approve
-        isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager
+        // SALES ORDER: Either ED, General Sales Manager, or SuperUser can approve
+        isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser
       }
     } else if (stage === 'hr') {
-      isAuthorized = isTester || isHrUser
+      isAuthorized = isTester || isHrUser || isSuperUser
     } else if (stage === 'accounts') {
       // SEPARATION OF DUTIES — `isSuperUser` (ceo/md) is DELIBERATELY EXCLUDED here.
-      // The MD/CEO grant on this stage let an MD both approve at the `md` stage AND then
-      // immediately mark the request Accounts-approved / PAID. In production that recorded
-      // vendor payments as PAID that the Accounts department never approved (MD Approved and
-      // Payment Recorded landed seconds apart, by the same MD, on 13 requests).
       // Only Accounts may release money. developer/admin (`isTester`) stay for support only.
       isAuthorized = isTester || isAccountsUser
     } else if (stage === 'ea') {
-      isAuthorized = isTester || appUser.role === 'ea'
+      isAuthorized = isTester || appUser.role === 'ea' || isSuperUser
     } else if (stage === 'md') {
-      // The ONLY stage where MD/CEO are the intended approver.
+      // The stage where MD/CEO are the intended approver.
       isAuthorized = isTester || isSuperUser
     } else if (stage === 'payment_done') {
       // SEPARATION OF DUTIES — see the `accounts` stage above. `isSuperUser` (ceo/md) is
@@ -153,23 +149,18 @@ export async function POST(
     if (action !== 'SEND_BACK') {
       const requiresHr = isHrApprovalRequired(requestRow.approvalType)
 
-      // NOTE: these prerequisite checks used to be written as `&& !isSuperUser && !isTester`,
-      // which meant MD/CEO skipped the chain order entirely and could action a stage whose
-      // prerequisites had never been met. `!isSuperUser` has been removed so the approval
-      // order is enforced for MD/CEO too — seniority does not bypass the workflow.
-      // `!isTester` (developer/admin) is kept deliberately as the support escape hatch.
-      if (stage === 'hr' && !isTester) {
+      if (stage === 'hr' && !isTester && !isSuperUser) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
         }
-      } else if (stage === 'ea' && !isTester) {
+      } else if (stage === 'ea' && !isTester && !isSuperUser) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
         }
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval is pending.' }, { status: 400 })
         }
-      } else if (stage === 'md' && !isTester) {
+      } else if (stage === 'md' && !isTester && !isSuperUser) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval must be completed first.' }, { status: 400 })
         }

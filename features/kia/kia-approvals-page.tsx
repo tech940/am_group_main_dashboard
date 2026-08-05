@@ -1196,13 +1196,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       )
     }
 
-    // md/ceo (and ed) excluded — the EA stage belongs to the EA role.
+    // md/ceo can approve Pending EA and Held by EA since EA stage is optional
     if (pendingLabel === 'Pending EA' || pendingLabel === 'Held by EA') {
-      return effectiveRole === 'ea' || ['developer', 'admin'].includes(currentUser.role)
+      return effectiveRole === 'ea' || ['md', 'ceo'].includes(effectiveRole) || ['md', 'ceo'].includes(currentUser.role) || ['developer', 'admin'].includes(currentUser.role)
     }
 
     if (pendingLabel === 'Pending MD' || pendingLabel === 'Held by MD') {
-      return ['md', 'ceo'].includes(effectiveRole) || ['developer', 'admin'].includes(currentUser.role)
+      return ['md', 'ceo'].includes(effectiveRole) || ['md', 'ceo'].includes(currentUser.role) || ['developer', 'admin'].includes(currentUser.role)
     }
 
     // Also check if MD approved and Accounts approval is still pending.

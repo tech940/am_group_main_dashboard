@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     const expectedStatuses = bulkStage === 'ea_approval'
       ? ['awaiting_ea_approval', 'ea_denied', 'ea_on_hold', 'md_denied', 'md_on_hold']
-      : ['awaiting_md_approval', 'md_denied', 'md_on_hold']
+      : ['awaiting_md_approval', 'awaiting_ea_approval', 'ea_on_hold', 'md_denied', 'md_on_hold']
     const eligibleOrders = visibleOrders.filter((order) => expectedStatuses.includes(order.status))
 
     if (eligibleOrders.length === 0) {
