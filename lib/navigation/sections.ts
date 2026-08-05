@@ -142,8 +142,8 @@ export const ALL_SECTIONS: SearchSection[] = [
   },
   {
     id: 'kia_approvals',
-    name: 'Vendor Payments',
-    description: 'Review pending vendor payment requests, attachments, and multi-stage workflows.',
+    name: 'Kia Approvals',
+    description: 'Review pending Kia payment approval requests, attachments, and multi-stage workflows.',
     href: '/brands/kia/payment-approvals',
     department: 'finance',
     brand: 'common',

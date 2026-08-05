@@ -18,7 +18,7 @@ import {
 } from '@/lib/navigation/sections'
 import {
   Search,
-  Star,
+  Bookmark,
   CornerDownLeft,
   Loader2,
   X,
@@ -487,10 +487,10 @@ function getRelevanceScore(section: SearchSection, query: string): number {
         >
           {/* Quick Access Bookmarks Row (if favourites exist & no search query) */}
           {!search && favouriteSections.length > 0 && activeFilter === 'all' && (
-            <div className="bg-amber-50/90 rounded-3xl border border-amber-200 p-5 shadow-2xs space-y-3 dark:bg-amber-950/30 dark:border-amber-900/40">
+            <div className="bg-teal-50/80 rounded-3xl border border-teal-200/90 p-5 shadow-2xs space-y-3 dark:bg-teal-950/30 dark:border-teal-900/40">
               <div className="flex items-center gap-2">
-                <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
-                <h3 className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-300">
+                <Bookmark className="w-4 h-4 fill-[#055B65] text-[#055B65] dark:fill-teal-400 dark:text-teal-400" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-teal-950 dark:text-teal-300">
                   Bookmarked Dashboards ({favouriteSections.length})
                 </h3>
               </div>
@@ -500,14 +500,14 @@ function getRelevanceScore(section: SearchSection, query: string): number {
                   <div
                     key={`fav-${section.id}`}
                     onClick={() => handleNavigate(section)}
-                    className="group relative flex cursor-pointer items-center justify-between rounded-2xl border border-amber-200 bg-white p-3.5 shadow-2xs hover:shadow-md hover:border-amber-300 transition-all dark:bg-slate-900 dark:border-amber-900/40"
+                    className="group relative flex cursor-pointer items-center justify-between rounded-2xl border border-teal-200/90 bg-white p-3.5 shadow-2xs hover:shadow-md hover:border-[#055B65]/40 transition-all dark:bg-slate-900 dark:border-teal-900/40"
                   >
                     <div className="flex items-center gap-3 min-w-0 pr-2">
                       <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl font-black text-xs shrink-0 shadow-xs text-white", getThemeAvatarClass(section))}>
                         {section.initials || section.name.slice(0, 2).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <h4 className="text-xs font-black text-slate-900 truncate group-hover:text-amber-700 dark:text-white transition-colors">
+                        <h4 className="text-xs font-black text-slate-900 truncate group-hover:text-[#055B65] dark:text-white transition-colors">
                           {section.name}
                         </h4>
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -518,9 +518,9 @@ function getRelevanceScore(section: SearchSection, query: string): number {
 
                     <button
                       onClick={(e) => toggleFavourite(e, section.href)}
-                      className="p-1 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-950/60 text-amber-400 shrink-0 cursor-pointer"
+                      className="p-1 rounded-lg hover:bg-teal-100/80 dark:hover:bg-teal-950/60 text-teal-600 shrink-0 cursor-pointer"
                     >
-                      <Star className="w-3.5 h-3.5 fill-amber-400" />
+                      <Bookmark className="w-3.5 h-3.5 fill-[#055B65] text-[#055B65] dark:fill-teal-400 dark:text-teal-400" />
                     </button>
                   </div>
                 ))}
@@ -630,7 +630,7 @@ function getRelevanceScore(section: SearchSection, query: string): number {
                             </div>
                           </div>
 
-                          {/* Action Star & Enter Key Indicator */}
+                          {/* Action Bookmark & Enter Key Indicator */}
                           <div className="flex items-center gap-1.5 shrink-0">
                             <button
                               onClick={(e) => toggleFavourite(e, section.href)}
@@ -640,12 +640,12 @@ function getRelevanceScore(section: SearchSection, query: string): number {
                                 isSelected ? "hover:bg-white/20" : "hover:bg-slate-100 dark:hover:bg-slate-800"
                               )}
                             >
-                              <Star
+                              <Bookmark
                                 className={cn(
                                   'w-3.5 h-3.5 transition-all',
                                   isFav
-                                    ? 'fill-amber-400 text-amber-400'
-                                    : isSelected ? 'text-white/60 hover:text-amber-300' : 'text-slate-300 hover:text-amber-400 dark:text-slate-600 dark:hover:text-amber-400'
+                                    ? 'fill-[#055B65] text-[#055B65] dark:fill-teal-400 dark:text-teal-400'
+                                    : isSelected ? 'text-white/60 hover:text-teal-200' : 'text-slate-300 hover:text-[#055B65] dark:text-slate-600 dark:hover:text-teal-400'
                                 )}
                               />
                             </button>

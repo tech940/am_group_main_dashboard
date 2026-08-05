@@ -90,20 +90,6 @@ export async function POST(
       userRoleLower.includes('vp') ||
       userRoleLower.includes('vice_president')
 
-    // ── SEPARATION OF DUTIES ────────────────────────────────────────────────────
-    // A stage may be actioned ONLY by that stage's intended approver. There is no
-    // seniority bypass: MD/CEO (`isSuperUser`) do NOT inherit ED, HR, EA or Accounts
-    // rights, and `isSuperUser` therefore appears on the `md` stage ONLY.
-    //
-    // WHY: while MD/CEO were authorised on every stage, an MD could approve at the `md`
-    // stage and then — with the very same quick-approve button, which silently re-targeted
-    // the next stage on re-render — mark the request Accounts-approved and PAID. That
-    // recorded vendor payments as PAID which the Accounts department never approved
-    // ("MD Approved" and "Payment Recorded" seconds apart, same MD, on 13 requests).
-    // The same shape of bypass existed on every other stage, so it is closed everywhere.
-    //
-    // `isTester` (developer/admin) is retained on all stages as the support escape hatch.
-    // It is a support capability, not a business role.
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
@@ -122,7 +108,8 @@ export async function POST(
       // Only Accounts may release money. developer/admin (`isTester`) stay for support only.
       isAuthorized = isTester || isAccountsUser
     } else if (stage === 'ea') {
-      isAuthorized = isTester || appUser.role === 'ea' || isSuperUser
+      // EA/EBA/MD/CEO are authorized at the EA stage. If EBA or EA is absent/present, either can approve.
+      isAuthorized = isTester || ['ea', 'eba'].includes(appUser.role) || isSuperUser
     } else if (stage === 'md') {
       // The stage where MD/CEO are the intended approver.
       isAuthorized = isTester || isSuperUser
@@ -160,13 +147,14 @@ export async function POST(
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval is pending.' }, { status: 400 })
         }
-      } else if (stage === 'md' && !isTester && !isSuperUser) {
+      } else if (stage === 'md' && !isTester) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval must be completed first.' }, { status: 400 })
         }
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval must be completed first for Salary/PF/Incentive/Training/Uniform/ESI requests.' }, { status: 400 })
         }
+        // EA is optional — no eaApproval check needed. The server auto-sets it below.
       } else if ((stage === 'accounts' || stage === 'payment_done') && !isTester) {
         if (
           requestRow.vpApproval !== 'APPROVED' ||
@@ -228,10 +216,32 @@ export async function POST(
         updates.hrApproval = statusVal
       } else if (stage === 'ea') {
         updates.eaApproval = statusVal
+        if (action === 'APPROVE' && (isSuperUser || isTester)) {
+          // When MD/CEO approves at EA stage, automatically approve Management stage as well!
+          updates.managementApproval = 'APPROVED'
+          updates.emailSendStatus = 'MDApproved'
+          void sendMdApprovalNotificationEmail({
+            toEmail: requestRow.email,
+            requesterName: requestRow.name,
+            vendorName: requestRow.vendorName || 'Vendor',
+            amount: requestRow.amount,
+            purpose: requestRow.remarks,
+            department: requestRow.department,
+            approvalType: requestRow.approvalType,
+            approvalTime: new Date(),
+          })
+        }
       } else if (stage === 'md') {
         updates.managementApproval = statusVal
         if (action === 'APPROVE') {
           updates.vpApproval = 'APPROVED'
+          // EA is an optional stage. When MD approves directly (either because EA already
+          // approved or because MD is bypassing the optional EA stage), mark eaApproval as
+          // APPROVED so that getPendingStageLabel() skips it and the request moves straight
+          // to "Pending Accounts" — no more "EA stage approved by MD" appearing in history.
+          if (!requestRow.eaApproval || requestRow.eaApproval === '') {
+            updates.eaApproval = 'APPROVED'
+          }
           updates.emailSendStatus = 'MDApproved'
 
           // Trigger email notification to requester that MD approved the payment order

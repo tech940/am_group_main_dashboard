@@ -10,7 +10,7 @@ export function useUserRole() {
     queryFn: async () => {
       const response = await fetch('/api/auth/user', { cache: 'no-store' })
       if (!response.ok) return null
-      return await response.json() as { id?: string; role?: string; brand?: string }
+      return await response.json() as { id?: string; role?: string; brand?: string; fullName?: string; email?: string }
     },
     staleTime: 60 * 1000,
   })
@@ -18,11 +18,15 @@ export function useUserRole() {
   const userId = currentUser?.id || null
   const userRole = currentUser?.role || null
   const userBrand = currentUser?.brand || null
+  const fullName = currentUser?.fullName || null
+  const email = currentUser?.email || null
 
   return {
     userId,
     userRole,
     userBrand,
+    fullName,
+    email,
     loading,
     isAdmin: isSuperAdminRole(userRole),
     isSuperAdmin: isSuperAdminRole(userRole),

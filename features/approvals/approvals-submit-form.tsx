@@ -76,7 +76,9 @@ const APPROVAL_TYPE_TO_GL_CODE: Record<string, string> = {
   'ESIC': 'GL-031',
   'RTO': 'GL-060',
   'Statutory Payment (PF / ESIC / GST / RTO)': 'GL-060',
-  'Professional Fee': 'GL-057'
+  'Professional Fee': 'GL-057',
+  'Driver Expenses': 'GL-052',
+  'Driver Expense': 'GL-052'
 }
 
 // GL Code to Vendor suggestions mapping
@@ -157,6 +159,7 @@ interface FormState {
   uploadDocUrl: string
   glAccountId: string
   gst: string
+  vehicleNumber: string
 }
 
 interface UploadState {
@@ -197,7 +200,8 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     uploadBillUrl2: '',
     uploadDocUrl: '',
     glAccountId: '',
-    gst: ''
+    gst: '',
+    vehicleNumber: ''
   })
 
   const [uploads, setUploads] = useState<UploadState>({
@@ -587,7 +591,8 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 uploadBillUrl2: '',
                 uploadDocUrl: '',
                 glAccountId: '',
-                gst: ''
+                gst: '',
+                vehicleNumber: ''
               })
               setUploads({
                 bill1: { name: '', loading: false, error: '' },
@@ -937,6 +942,22 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                     placeholder="Outstanding previous advance (if any)"
                     value={form.previousAdvance}
                     onChange={e => handleTextChange('previousAdvance', e.target.value)}
+                    className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800"
+                  />
+                </div>
+              )}
+
+              {(form.approvalType.toLowerCase().includes('stock transfer') || form.approvalType === 'Stock Transfer') && (
+                <div className="sm:col-span-2 space-y-1.5 animate-in fade-in duration-200">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
+                    Vehicle Number / वाहन संख्या <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter vehicle registration number (e.g. JK02AB1234 or Chassis / VIN)"
+                    value={form.vehicleNumber}
+                    onChange={e => handleTextChange('vehicleNumber', e.target.value)}
                     className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800"
                   />
                 </div>

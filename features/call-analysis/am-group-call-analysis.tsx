@@ -9,7 +9,7 @@ import {
 import {
   Loader2, PhoneCall, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Users,
   Mic, Search, X, ChevronLeft, ChevronRight, Download, Play, Pause, Volume2,
-  Building2, Award, UserCheck, ShieldCheck, FileAudio, RefreshCw
+  Building2, Award, UserCheck, ShieldCheck, FileAudio, RefreshCw, PhoneOff
 } from 'lucide-react'
 import { KpiCard } from '@/components/ui/kpi-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 type CrePerformance = {
   cre_id: string
   cre_name: string
+  branch_id?: string
   branch_name: string
   calls_today: number
   calls_this_week: number
@@ -83,7 +84,7 @@ type AnalyticsData = {
   agents: { id: string; name: string; branchName?: string; calls: number; recordings: number; durationLabel: string; connectRate?: number; missedIncoming?: number; missedOutgoing?: number }[]
   facets: {
     agentOptions: { id: string; name: string }[]
-    branchOptions?: { id: string; name: string }[]
+    branchOptions?: { id: string; name: string; subBranches?: { id: string; name: string }[] }[]
     totalCallsAvailable: number
   }
 }
@@ -142,7 +143,7 @@ function formatDate(isoStr: string) {
 }
 
 export function AmGroupCallAnalysis() {
-  const [subTab, setSubTab] = useState<'overview' | 'branch_performance' | 'cre_performance' | 'recordings' | 'pending'>('overview')
+  const [subTab, setSubTab] = useState<'overview' | 'branch_performance' | 'cre_performance' | 'unanswered' | 'recordings' | 'pending'>('overview')
   const [preset, setPreset] = useState('30d')
   const [startDate, setStartDate] = useState(iso(30))
   const [endDate, setEndDate] = useState(today())
@@ -221,6 +222,22 @@ export function AmGroupCallAnalysis() {
     },
   })
 
+  const unansweredCallsQuery = useQuery<{ rows: RecordingRow[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>({
+    queryKey: ['am-group-unanswered-calls', filterParams, page],
+    enabled: subTab === 'unanswered',
+    placeholderData: keepPreviousData,
+    staleTime: 2 * 60 * 1000,
+    queryFn: async () => {
+      const p = new URLSearchParams(filterParams)
+      p.set('page', String(page))
+      p.set('pageSize', '50')
+      p.set('unansweredOnly', 'true')
+      const res = await fetch(`/api/call-analysis/am-group/calls?${p.toString()}`)
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load')
+      return res.json()
+    },
+  })
+
   const d = analyticsQuery.data
 
   function runSearch() {
@@ -238,10 +255,107 @@ export function AmGroupCallAnalysis() {
     setPage(1)
   }
 
+  const activeBrandObj = useMemo(() => {
+    const opts = d?.facets.branchOptions || []
+    return opts.find((b) => b.id === branch || b.subBranches?.some((sb: any) => sb.id === branch))
+  }, [d, branch])
+
+  const availableAgents = useMemo(() => {
+    const allAgs = d?.facets.agentOptions || []
+    if (branch === 'all') return allAgs
+
+    const branchCreIds = (d?.crePerformance || [])
+      .filter((c) => {
+        if (branch === 'kia') return c.branch_name.includes('Kia')
+        if (branch === 'hyundai') return c.branch_name.includes('Hyundai')
+        if (branch === 'am_group') return c.branch_name.includes('AM Group') || c.branch_name.includes('Group')
+        if (branch === 'honda') return c.branch_name.includes('Honda')
+        return c.branch_id === branch || c.branch_name.toLowerCase().includes(branch.toLowerCase())
+      })
+      .map((c) => c.cre_id)
+
+    if (branchCreIds.length === 0) return allAgs
+    return allAgs.filter((a) => branchCreIds.includes(a.id))
+  }, [d, branch])
+
   const hasFilters = agent !== 'all' || branch !== 'all' || callStatus !== 'all' || Boolean(search) || preset !== '30d'
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Brand Sub-Sections Bar */}
+      <div className="space-y-2 border-b border-slate-200 pb-3 dark:border-slate-800">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-black text-slate-400 uppercase tracking-wider mr-1">Brand Sub-Sections:</span>
+          <button
+            type="button"
+            onClick={() => { setBranch('all'); setAgent('all'); setPage(1) }}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border",
+              branch === 'all'
+                ? "bg-slate-900 text-white border-slate-900 shadow-sm dark:bg-slate-100 dark:text-slate-900"
+                : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+            )}
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            <span>All Brands</span>
+          </button>
+
+          {(d?.facets.branchOptions || []).map((b) => {
+            const isBrandActive = branch === b.id || b.subBranches?.some((sb: any) => sb.id === branch)
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => { setBranch(b.id); setAgent('all'); setPage(1) }}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border",
+                  isBrandActive
+                    ? "bg-[#004e5a] text-white border-[#004e5a] shadow-sm"
+                    : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                )}
+              >
+                <Building2 className="h-3.5 w-3.5 text-emerald-400" />
+                <span>{b.name}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Sub-Branch Pill Selectors when a specific Brand with multiple branches is active (e.g. Kia) */}
+        {activeBrandObj?.subBranches && activeBrandObj.subBranches.length > 1 && (
+          <div className="flex items-center gap-2 pl-4 pt-1">
+            <span className="text-[11px] font-bold text-slate-400">Locations:</span>
+            <button
+              type="button"
+              onClick={() => { setBranch(activeBrandObj.id); setAgent('all'); setPage(1) }}
+              className={cn(
+                "px-3 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer border",
+                branch === activeBrandObj.id
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
+                  : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300"
+              )}
+            >
+              All {activeBrandObj.name}
+            </button>
+            {activeBrandObj.subBranches.map((sb: any) => (
+              <button
+                key={sb.id}
+                type="button"
+                onClick={() => { setBranch(sb.id); setAgent('all'); setPage(1) }}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer border",
+                  branch === sb.id
+                    ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
+                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300"
+                )}
+              >
+                {sb.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Filter Header */}
       <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <CardContent className="space-y-3 p-4">
@@ -278,23 +392,6 @@ export function AmGroupCallAnalysis() {
               />
             </div>
 
-            {/* Branch Wise Filter Selector */}
-            <div className="w-[12rem]">
-              <Select value={branch} onValueChange={(v) => { setBranch(v); setPage(1) }}>
-                <SelectTrigger className="h-9 rounded-xl text-xs font-bold">
-                  <SelectValue placeholder="All Branches" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="all">All Branches</SelectItem>
-                  {(d?.facets.branchOptions || []).map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* Call Status / Type Selector */}
             <div className="w-[13.5rem]">
               <Select value={callStatus} onValueChange={(v) => { setCallStatus(v); setPage(1) }}>
@@ -312,15 +409,17 @@ export function AmGroupCallAnalysis() {
               </Select>
             </div>
 
-            {/* CRE Agent Selector */}
-            <div className="w-[12rem]">
+            {/* CRE Agent Selector — Shows only CREs for active Branch */}
+            <div className="w-[13rem]">
               <Select value={agent} onValueChange={(v) => { setAgent(v); setPage(1) }}>
                 <SelectTrigger className="h-9 rounded-xl text-xs font-bold">
-                  <SelectValue placeholder="All CRE Agents" />
+                  <SelectValue placeholder="CRE Agents" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
-                  <SelectItem value="all">All CRE Agents</SelectItem>
-                  {(d?.facets.agentOptions || []).map((ag) => (
+                  <SelectItem value="all">
+                    {branch === 'all' ? 'All CRE Agents' : 'All Branch CREs'}
+                  </SelectItem>
+                  {availableAgents.map((ag) => (
                     <SelectItem key={ag.id} value={ag.id}>
                       {ag.name}
                     </SelectItem>
@@ -458,6 +557,24 @@ export function AmGroupCallAnalysis() {
         >
           <Award className="h-4 w-4" />
           <span>CRE Staff Scorecard</span>
+        </button>
+
+        <button
+          onClick={() => { setSubTab('unanswered'); setPage(1) }}
+          className={cn(
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
+            subTab === 'unanswered'
+              ? 'border-rose-500 text-rose-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+          )}
+        >
+          <PhoneOff className="h-4 w-4" />
+          <span>Unanswered Numbers</span>
+          {d && d.summary.totalUnanswered > 0 && (
+            <span className="ml-1 bg-rose-100 text-rose-700 text-[9px] font-black px-1.5 py-0.5 rounded-full border border-rose-200">
+              {d.summary.totalUnanswered}
+            </span>
+          )}
         </button>
 
         <button
@@ -632,57 +749,87 @@ export function AmGroupCallAnalysis() {
         </Card>
       )}
 
-      {/* TAB 3: CRE PERFORMANCE SCORECARD */}
+      {/* TAB 3: CRE PERFORMANCE SCORECARD — uses v_cre_performance view for accurate data */}
       {subTab === 'cre_performance' && (
         <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
-              CRE Staff Performance Scorecard
-            </CardTitle>
+            <div>
+              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
+                CRE Staff Performance Scorecard
+              </CardTitle>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                Attempts = all outgoing calls made. Answered = calls where customer picked up.
+              </p>
+            </div>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
-                  <th className="py-3 px-4">CRE Agent Name</th>
+                  <th className="py-3 px-4">CRE</th>
                   <th className="py-3 px-4">Branch</th>
-                  <th className="py-3 px-4 text-center">Total Calls</th>
-                  <th className="py-3 px-4 text-center">Connected Calls</th>
-                  <th className="py-3 px-4 text-center">Connect Rate</th>
-                  <th className="py-3 px-4 text-center">Missed Incoming</th>
-                  <th className="py-3 px-4 text-center">Not Answered Outgoing</th>
+                  <th className="py-3 px-4 text-center">Attempts</th>
+                  <th className="py-3 px-4 text-center">Answered</th>
+                  <th className="py-3 px-4 text-center">Unanswered</th>
+                  <th className="py-3 px-4 text-center">Answer Rate</th>
+                  <th className="py-3 px-4 text-center">Avg Duration</th>
                   <th className="py-3 px-4 text-center">Total Talk Time</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {(d?.agents || []).length === 0 ? (
+                {(d?.crePerformance || []).length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-slate-400 font-semibold">
-                      No CRE agent performance metrics recorded yet.
+                      No CRE performance data available for the selected period.
                     </td>
                   </tr>
                 ) : (
-                  (d?.agents || []).map((ag) => (
-                    <tr key={ag.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-full bg-[#004e5a]/10 text-[#004e5a] font-black flex items-center justify-center text-[10px]">
-                          {ag.name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <span>{ag.name}</span>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">{ag.branchName || 'General'}</td>
-                      <td className="py-3.5 px-4 text-center font-bold text-slate-800">{ag.calls}</td>
-                      <td className="py-3.5 px-4 text-center font-bold text-emerald-600">{ag.recordings}</td>
-                      <td className="py-3.5 px-4 text-center font-bold">
-                        <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-black border border-emerald-200">
-                          {ag.connectRate || 0}%
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-center font-bold text-rose-600">{ag.missedIncoming || 0}</td>
-                      <td className="py-3.5 px-4 text-center font-bold text-amber-600">{ag.missedOutgoing || 0}</td>
-                      <td className="py-3.5 px-4 text-center font-bold text-slate-700">{ag.durationLabel}</td>
-                    </tr>
-                  ))
+                  [...(d?.crePerformance || [])]
+                    .sort((a, b) => b.calls_this_month - a.calls_this_month)
+                    .map((cre) => {
+                      const unanswered = (cre.calls_this_month || 0) - (cre.connected_calls || 0)
+                      const answerRate = cre.connect_rate || 0
+                      return (
+                        <tr
+                          key={cre.cre_id}
+                          className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                          onClick={() => { setSubTab('unanswered'); setAgent(cre.cre_id); setPage(1) }}
+                          title="Click to see unanswered calls for this CRE"
+                        >
+                          <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
+                            <div className="flex items-center gap-2">
+                              <div className="h-7 w-7 rounded-full bg-[#004e5a]/10 text-[#004e5a] font-black flex items-center justify-center text-[10px]">
+                                {cre.cre_name.slice(0, 2).toUpperCase()}
+                              </div>
+                              <span>{cre.cre_name}</span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-slate-600">{cre.branch_name || 'General'}</td>
+                          <td className="py-3.5 px-4 text-center font-bold text-slate-800">{cre.calls_this_month || 0}</td>
+                          <td className="py-3.5 px-4 text-center font-bold text-emerald-600">{cre.connected_calls || 0}</td>
+                          <td className="py-3.5 px-4 text-center font-bold text-rose-600">
+                            {unanswered > 0 ? (
+                              <span className="inline-flex items-center gap-1">
+                                {unanswered}
+                                <PhoneOff className="h-3 w-3" />
+                              </span>
+                            ) : 0}
+                          </td>
+                          <td className="py-3.5 px-4 text-center font-bold">
+                            <span className={cn(
+                              'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
+                              answerRate >= 70 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : answerRate >= 50 ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                            )}>
+                              {answerRate}%
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-center font-bold text-slate-600">{dur(cre.avg_duration_seconds || 0)}</td>
+                          <td className="py-3.5 px-4 text-center font-bold text-slate-700">{dur(cre.total_talk_time_seconds || 0)}</td>
+                        </tr>
+                      )
+                    })
                 )}
               </tbody>
             </table>
@@ -690,7 +837,117 @@ export function AmGroupCallAnalysis() {
         </Card>
       )}
 
-      {/* TAB 4: UPLOADED AUDIO RECORDINGS & PLAYER */}
+      {/* TAB 4 NEW: UNANSWERED NUMBERS DETAIL */}
+      {subTab === 'unanswered' && (
+        <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                <PhoneOff className="h-4 w-4 text-rose-500" />
+                Unanswered &amp; Missed Call Numbers
+              </CardTitle>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                All calls where the customer did not answer (outgoing not answered) or CRE missed an incoming call. Click a CRE row in the scorecard to filter here.
+              </p>
+            </div>
+            {agent !== 'all' && (
+              <Button variant="outline" size="sm" onClick={() => { setAgent('all'); setPage(1) }} className="h-8 rounded-xl text-xs font-bold border-slate-200 text-slate-600">
+                <X className="h-3.5 w-3.5 mr-1" /> Clear CRE Filter
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            {unansweredCallsQuery.isFetching ? (
+              <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
+                <Loader2 className="h-4 w-4 animate-spin text-rose-500" />
+                <span>Loading unanswered calls...</span>
+              </div>
+            ) : (unansweredCallsQuery.data?.rows || []).length === 0 ? (
+              <div className="py-16 text-center">
+                <PhoneOff className="h-10 w-10 mx-auto text-emerald-400 mb-3" />
+                <p className="text-sm font-black text-emerald-600">No unanswered calls found!</p>
+                <p className="text-xs font-medium text-slate-400 mt-1">All calls were answered in this date range.</p>
+              </div>
+            ) : (
+              <>
+                <div className="px-4 py-2 bg-rose-50 border-b border-rose-100 flex items-center gap-2">
+                  <PhoneOff className="h-3.5 w-3.5 text-rose-500" />
+                  <span className="text-[11px] font-black text-rose-700">
+                    {unansweredCallsQuery.data?.pagination.total} unanswered calls
+                    {agent !== 'all' && ` for selected CRE`}
+                    {startDate && ` from ${startDate}`}{endDate && ` to ${endDate}`}
+                  </span>
+                </div>
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
+                      <th className="py-3 px-4">#</th>
+                      <th className="py-3 px-4">CRE</th>
+                      <th className="py-3 px-4">Branch</th>
+                      <th className="py-3 px-4">Phone Number</th>
+                      <th className="py-3 px-4">Contact Name</th>
+                      <th className="py-3 px-4 text-center">Call Type</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Date &amp; Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {unansweredCallsQuery.data?.rows.map((row, idx) => (
+                      <tr key={row.id} className="hover:bg-rose-50/30 transition-colors">
+                        <td className="py-3 px-4 text-[10px] font-black text-slate-400">
+                          {(page - 1) * 50 + idx + 1}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          <div className="flex items-center gap-2">
+                            <div className="h-6 w-6 rounded-full bg-rose-100 text-rose-700 font-black flex items-center justify-center text-[9px] flex-shrink-0">
+                              {row.creName.slice(0, 2).toUpperCase()}
+                            </div>
+                            {row.creName}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-bold text-slate-500">{row.branchName || 'General'}</td>
+                        <td className="py-3 px-4">
+                          <span className="font-black text-slate-900 tracking-wide">{row.phone}</span>
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-slate-600">
+                          {row.contactName || <span className="text-slate-300 font-medium">—</span>}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className={cn(
+                            'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
+                            row.statusBadgeClass || 'bg-amber-50 text-amber-700 border-amber-200'
+                          )}>
+                            {row.statusLabel}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-slate-500 whitespace-nowrap">{formatDate(row.recordedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Pagination */}
+                {unansweredCallsQuery.data?.pagination && unansweredCallsQuery.data.pagination.totalPages > 1 && (
+                  <div className="flex items-center justify-between p-4 border-t border-slate-100">
+                    <span className="text-xs font-semibold text-slate-500">
+                      Page {unansweredCallsQuery.data.pagination.page} of {unansweredCallsQuery.data.pagination.totalPages} ({unansweredCallsQuery.data.pagination.total} records)
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} variant="outline" size="sm" className="h-8 rounded-xl text-xs font-bold">
+                        <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                      </Button>
+                      <Button disabled={page >= unansweredCallsQuery.data.pagination.totalPages} onClick={() => setPage((p) => p + 1)} variant="outline" size="sm" className="h-8 rounded-xl text-xs font-bold">
+                        Next <ChevronRight className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* TAB 5: UPLOADED AUDIO RECORDINGS & PLAYER */}
       {subTab === 'recordings' && (
         <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">

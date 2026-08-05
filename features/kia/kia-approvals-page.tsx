@@ -106,6 +106,7 @@ interface ApprovalRequest {
   invoiceNumber: string | null
   invoiceDocUrl: string | null
   glAccountId: string | null
+  vehicleNumber: string | null
   gst: string | null
   glCode: string | null
   glName: string | null
@@ -198,6 +199,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const [paymentProofUrl, setPaymentProofUrl] = useState('')
   const [paymentProofFileName, setPaymentProofFileName] = useState('')
   const [uploadingPaymentProof, setUploadingPaymentProof] = useState(false)
+  const [isMigratingEA, setIsMigratingEA] = useState(false)
   const [activeTab, setActiveTab] = useState<'timeline' | 'remarks'>('timeline')
   const [showTimeline, setShowTimeline] = useState(false)
   const [remarkText, setRemarkText] = useState('')
@@ -280,7 +282,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     queryKey: ['kia-approval-requests'],
     queryFn: async () => {
       const res = await fetch('/api/brands/kia/approvals/list')
-      if (!res.ok) throw new Error('Failed to load approvals list')
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        let errMessage = 'Failed to load approvals list'
+        try {
+          const json = JSON.parse(text)
+          if (json?.error) errMessage = json.error
+        } catch {}
+        throw new Error(errMessage)
+      }
       return res.json()
     }
   })
@@ -1110,28 +1120,28 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const isUserAuthorizedForStage = (stage: string, req?: ApprovalRequest | null) => {
     if (['developer', 'admin'].includes(currentUser.role)) return true
 
+    const isSuperUser = ['md', 'ceo'].includes(effectiveRole) || ['md', 'ceo'].includes(currentUser.role)
+
     if (stage === 'sales_manager') {
       if (req) {
         const isService = isServiceCategory(req.department, req.approvalType)
         if (isService) {
-          // SERVICE ORDER: ONLY VP or Admin/Developer can approve
-          // ED IS STRICTLY EXCLUDED!
+          // SERVICE ORDER: VP, SuperUser, or Admin/Developer can approve. ED is excluded.
           if (effectiveRole === 'ed' || currentUser.role === 'ed') return false
-          return isVpRole(currentUser.role) || isVpRole(effectiveRole)
+          return isVpRole(currentUser.role) || isVpRole(effectiveRole) || isSuperUser
         }
       }
-      // SALES ORDER or general check: ED or General Sales Manager can approve — NOT md/ceo.
       return (
         effectiveRole === 'ed' ||
         currentUser.role === 'ed' ||
         isGeneralSalesManagerRole(currentUser.role) ||
-        isGeneralSalesManagerRole(effectiveRole)
+        isGeneralSalesManagerRole(effectiveRole) ||
+        isSuperUser
       )
     }
-    if (stage === 'hr') return isHrRole
-    if (stage === 'ea') return ['ea'].includes(effectiveRole)
-    // The ONLY stage where md/ceo are the intended approver.
-    if (stage === 'md') return ['md', 'ceo'].includes(effectiveRole)
+    if (stage === 'hr') return isHrRole || isSuperUser
+    if (stage === 'ea') return ['ea', 'eba'].includes(effectiveRole) || ['ea', 'eba'].includes(currentUser.role) || isSuperUser
+    if (stage === 'md') return isSuperUser
     // SEPARATION OF DUTIES — md/ceo are DELIBERATELY EXCLUDED from the Accounts stages.
     // These stages mark the vendor payment PAID and capture the UTR / payment proof; letting the
     // MD act here is what caused payments Accounts never approved to be recorded as PAID.
@@ -1196,9 +1206,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       )
     }
 
-    // md/ceo can approve Pending EA and Held by EA since EA stage is optional
+    // md/ceo/eba can approve Pending EA and Held by EA since EA stage is optional
     if (pendingLabel === 'Pending EA' || pendingLabel === 'Held by EA') {
-      return effectiveRole === 'ea' || ['md', 'ceo'].includes(effectiveRole) || ['md', 'ceo'].includes(currentUser.role) || ['developer', 'admin'].includes(currentUser.role)
+      return ['ea', 'eba'].includes(effectiveRole) || ['ea', 'eba'].includes(currentUser.role) || ['md', 'ceo'].includes(effectiveRole) || ['md', 'ceo'].includes(currentUser.role) || ['developer', 'admin'].includes(currentUser.role)
     }
 
     if (pendingLabel === 'Pending MD' || pendingLabel === 'Held by MD') {
@@ -2033,12 +2043,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
   return (
-    <MainLayout title="Vendor Payments" subtitle="Manage payment requests and multi-stage approval workflows">
-      <div className="space-y-6">
+    <MainLayout title="Kia Approvals" subtitle="Manage payment requests and multi-stage approval workflows">
+      <div className="space-y-6 max-w-full overflow-x-hidden">
 
         {/* SUB-VIEW SWITCHER HEADER */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-2.5 rounded-3xl border border-slate-200/80 shadow-2xs">
-          <div className="flex flex-wrap items-center gap-2 p-1 bg-slate-100/80 rounded-2xl border border-slate-200/60">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-2.5 rounded-3xl border border-slate-200/80 shadow-2xs w-full max-w-full">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-1 bg-slate-100/80 rounded-2xl border border-slate-200/60 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setMainSubView('requests')}
@@ -2551,7 +2561,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           </div>
 
           {/* Row 2: Action buttons */}
-          <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 w-full">
             <Button
               variant="outline"
               onClick={() => {
@@ -2703,14 +2713,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         )}
 
         {/* Tab switch bar for Pending My Approval vs All Requests */}
-        <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-          <div className="flex flex-wrap gap-6 text-sm font-bold">
+        <div className="border-b border-slate-100 pb-1">
+          <div className="flex items-center gap-4 text-sm font-bold overflow-x-auto whitespace-nowrap scrollbar-none pb-2 w-full">
             <button
               onClick={() => {
                 setFilterScope('pending')
                 setMainSubView('requests')
               }}
-              className={`pb-3 relative transition-all ${
+              className={`pb-2.5 relative transition-all flex-shrink-0 ${
                 filterScope === 'pending' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -2724,7 +2734,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 setFilterScope('all')
                 setMainSubView('requests')
               }}
-              className={`pb-3 relative transition-all ${
+              className={`pb-2.5 relative transition-all flex-shrink-0 ${
                 filterScope === 'all' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -2735,7 +2745,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             </button>
             <button
               onClick={() => setMainSubView('completed_spend')}
-              className="pb-3 relative transition-all flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-600"
+              className="pb-2.5 relative transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0 text-slate-400 hover:text-slate-600"
             >
               <span>Completed &amp; Paid Orders ({completedPaymentsList.length})</span>
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0.5 rounded-full">
@@ -2747,7 +2757,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 setFilterScope('vendors')
                 setMainSubView('requests')
               }}
-              className={`pb-3 relative transition-all ${
+              className={`pb-2.5 relative transition-all flex-shrink-0 ${
                 filterScope === 'vendors' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -2761,7 +2771,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 setFilterScope('gl_categories')
                 setMainSubView('requests')
               }}
-              className={`pb-3 relative transition-all ${
+              className={`pb-2.5 relative transition-all flex-shrink-0 ${
                 filterScope === 'gl_categories' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -2812,7 +2822,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors cursor-pointer"
                       >
                         <td className="py-4 px-6 font-mono text-slate-400">
-                          {(idx + 1).toString().padStart(2, '0')}
+                          {idx + 1}
                         </td>
                         <td className="py-4 px-6 font-bold text-slate-900">
                           {v.name}
@@ -2888,7 +2898,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors cursor-pointer"
                       >
                         <td className="py-4 px-6 font-mono text-slate-400">
-                          {(idx + 1).toString().padStart(2, '0')}
+                          {idx + 1}
                         </td>
                         <td className="py-4 px-6 font-mono text-xs font-bold text-slate-500">
                           {g.code}
@@ -3087,7 +3097,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           </td>
                           <td className="py-2.5 px-3 whitespace-nowrap">
                             <span className={`inline-flex items-center justify-center h-6 w-6 rounded-full border text-[10px] font-black tabular-nums ${numberBadge}`}>
-                              {globalIdx.toString().padStart(2, '0')}
+                              {globalIdx}
                             </span>
                           </td>
                           <td className="py-2.5 px-3 whitespace-nowrap">
@@ -3274,140 +3284,134 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 const globalIdx = (currentPage - 1) * rowsPerPage + idx + 1
                 const numberBadge = getNumberBadgeClass(globalIdx)
                 const pendingLabel = getPendingStageLabel(row)
+                const isPendingForUser = getIsPendingForUser(row)
 
                 return (
                   <div
                     key={row.id}
                     onClick={() => setDetailRow(row)}
-                    className="bg-white rounded-3xl border border-slate-100 shadow-[0_10px_30px_rgba(15,23,42,0.02)] p-5 space-y-4 cursor-pointer hover:border-slate-300 transition-all"
+                    className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-4 space-y-3 cursor-pointer hover:border-slate-400 transition-all"
                   >
-                    {/* Header: Number, Requester, and Action */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className={`inline-flex items-center justify-center h-8 w-8 rounded-full border text-xs font-black tabular-nums ${numberBadge}`}>
-                          {globalIdx.toString().padStart(2, '0')}
+                    {/* Top Row: Requester Name, Email & Amount */}
+                    <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className={`inline-flex items-center justify-center h-7 w-7 rounded-full border text-[11px] font-black tabular-nums shrink-0 ${numberBadge}`}>
+                          {globalIdx}
                         </span>
-                        <div className="flex flex-col items-start gap-1">
+                        <div className="flex flex-col items-start gap-0.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-slate-950 font-black text-sm">{row.name}</span>
-                            <span className={`inline-block border px-1.5 py-0.5 rounded-full text-[8px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
+                            <span className={`inline-block border px-1.5 py-0.2 rounded-full text-[8px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
                               {row.brand || '—'}
                             </span>
                           </div>
-                          <span className="text-slate-400 text-xs font-semibold">{row.email}</span>
+                          <span className="text-slate-400 text-[11px] font-semibold">{row.email}</span>
                         </div>
                       </div>
-                      <div className="inline-flex items-center gap-1.5">
-                        {/* Mobile Action Buttons Group */}
-                        {getIsPendingForUser(row) && (() => {
-                          const stageKey = getActiveStageKey(row)
-                          if (!stageKey) return null
-                          return (
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                title="Approve"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  if (stageKey === 'accounts' || stageKey === 'payment_done') {
-                                    setDetailRow(row)
-                                    setActionStage(stageKey)
-                                    setActionDecision('APPROVE')
-                                  } else {
-                                    actionMutation.mutate({
-                                      id: row.id,
-                                      action: 'APPROVE',
-                                      stage: stageKey,
-                                      remarks: 'Quick approved'
-                                    })
-                                  }
-                                }}
-                                disabled={actionMutation.isPending}
-                                className="h-8 px-3 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-[#004e5a] hover:bg-[#003c46] text-white cursor-pointer border-none"
-                              >
-                                {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
-                                  <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : (
-                                  <>
-                                    <Check className="w-3 h-3" />
-                                    <span>Approve</span>
-                                  </>
-                                )}
-                              </button>
 
-                              <button
-                                type="button"
-                                title="Send Back"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setDetailRow(row)
-                                  setActionStage(stageKey)
-                                  setActionDecision('SEND_BACK')
-                                }}
-                                disabled={actionMutation.isPending}
-                                className="h-8 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-amber-600 hover:bg-amber-700 text-white cursor-pointer border-none"
-                              >
-                                <CornerUpLeft className="w-3 h-3" />
-                                <span>Send Back</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                title="Reject"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setDetailRow(row)
-                                  setActionStage(stageKey)
-                                  setActionDecision('REJECT')
-                                }}
-                                disabled={actionMutation.isPending}
-                                className="h-8 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-rose-600 hover:bg-rose-700 text-white cursor-pointer border-none"
-                              >
-                                <X className="w-3 h-3" />
-                                <span>Reject</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                title="Hold"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setDetailRow(row)
-                                  setActionStage(stageKey)
-                                  setActionDecision('HOLD')
-                                }}
-                                disabled={actionMutation.isPending}
-                                className="h-8 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-slate-600 hover:bg-slate-700 text-white cursor-pointer border-none"
-                              >
-                                <Clock className="w-3 h-3" />
-                                <span>Hold</span>
-                              </button>
-                            </div>
-                          )
-                        })()}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setDetailRow(row)
-                          }}
-                          className="h-8 w-8 rounded-xl border border-slate-200 bg-white flex items-center justify-center shadow-sm"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-slate-500" />
-                        </button>
+                      <div className="text-right shrink-0">
+                        <span className="text-base font-black text-slate-950 block font-mono">₹{Number(row.amount || 0).toLocaleString('en-IN')}</span>
+                        <span className="text-[10px] font-bold text-slate-400 block">{new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
                       </div>
                     </div>
 
-                    {/* Tags: Department, Payment Type, Status */}
-                    <div className="flex flex-wrap gap-1.5">
+                    {/* Action Bar for Approvers (4-button 2x2 grid on mobile) */}
+                    {isPendingForUser && (() => {
+                      const stageKey = getActiveStageKey(row)
+                      if (!stageKey) return null
+                      return (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-slate-50 p-2 rounded-2xl border border-slate-200/80" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (stageKey === 'accounts' || stageKey === 'payment_done') {
+                                setDetailRow(row)
+                                setActionStage(stageKey)
+                                setActionDecision('APPROVE')
+                              } else {
+                                actionMutation.mutate({
+                                  id: row.id,
+                                  action: 'APPROVE',
+                                  stage: stageKey,
+                                  remarks: 'Quick approved'
+                                })
+                              }
+                            }}
+                            disabled={actionMutation.isPending}
+                            className="h-8 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 bg-[#004e5a] text-white shadow-2xs hover:bg-[#003c46]"
+                          >
+                            {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Approve</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailRow(row)
+                              setActionStage(stageKey)
+                              setActionDecision('SEND_BACK')
+                            }}
+                            disabled={actionMutation.isPending}
+                            className="h-8 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 bg-amber-600 text-white shadow-2xs hover:bg-amber-700"
+                          >
+                            <CornerUpLeft className="w-3.5 h-3.5" />
+                            <span>Send Back</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailRow(row)
+                              setActionStage(stageKey)
+                              setActionDecision('REJECT')
+                            }}
+                            disabled={actionMutation.isPending}
+                            className="h-8 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 bg-rose-600 text-white shadow-2xs hover:bg-rose-700"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Reject</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailRow(row)
+                              setActionStage(stageKey)
+                              setActionDecision('HOLD')
+                            }}
+                            disabled={actionMutation.isPending}
+                            className="h-8 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 bg-slate-600 text-white shadow-2xs hover:bg-slate-700"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Hold</span>
+                          </button>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Tags: Department, Payment Type, Approval Type, Status */}
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span className={`border px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getDeptBadgeClass(row.department || '')}`}>
                         {row.department || '—'}
                       </span>
                       <span className={`border px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getPaymentTypeBadgeClass(row.typeOfPayment || '')}`}>
                         {row.typeOfPayment || '—'}
                       </span>
-                      {pendingLabel === 'Fully Approved' ? (
-                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                      <span className="bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                        {row.approvalType || 'General'}
+                      </span>
+                      {pendingLabel === 'Paid' ? (
+                        <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                          PAID
+                        </span>
+                      ) : pendingLabel === 'Pending Payment' ? (
+                        <span className="bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
                           APPROVED
                         </span>
                       ) : pendingLabel.startsWith('Rejected') ? (
@@ -3422,41 +3426,44 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       {getSlaBadge(row.createdAt)}
                     </div>
 
-                    {/* Grid Details: Vendor, GL Account, Amount, Current Stage */}
-                    <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/60 text-xs">
+                    {/* Vendor & GL Account Grid */}
+                    <div className="grid grid-cols-2 gap-2 bg-slate-50/90 p-3 rounded-2xl border border-slate-200/60 text-xs">
                       <div>
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Vendor</span>
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Vendor / Beneficiary</span>
                         <span className="font-bold text-slate-900 mt-0.5 block truncate" title={row.vendorName || '—'}>{row.vendorName || '—'}</span>
                       </div>
                       <div>
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">GL Account</span>
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">GL Account</span>
                         <span className="font-bold text-indigo-700 mt-0.5 block truncate" title={row.glName || '—'}>{row.glName || '—'}</span>
                       </div>
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Amount</span>
-                        <span className="font-black text-slate-900 mt-0.5 block text-sm">₹{Number(row.amount || 0).toLocaleString('en-IN')}</span>
+                    </div>
+
+                    {/* Direct Remarks Callout Box on Mobile View */}
+                    <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-3 text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3 text-amber-600" />
+                          <span>Remarks / विवरण:</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-700">Tap card for detail</span>
                       </div>
-                      <div className="col-span-3 border-t border-slate-200/60 pt-2 mt-1">
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Current Stage</span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          {pendingLabel === 'Fully Approved' ? (
-                            <>
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                              <span className="text-slate-900 font-bold">Fully Approved</span>
-                            </>
-                          ) : pendingLabel.startsWith('Rejected') ? (
-                            <>
-                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                              <span className="text-slate-900 font-bold">Rejected</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                              <span className="text-slate-900 font-bold">{pendingLabel.replace('Pending ', '')}</span>
-                            </>
-                          )}
+                      <p className="font-semibold text-slate-800 italic leading-relaxed">
+                        "{row.remarks || 'No remarks provided'}"
+                      </p>
+                      {row.vehicleNumber && (
+                        <div className="flex items-center justify-between pt-1 border-t border-amber-200/50 text-[11px]">
+                          <span className="font-bold text-amber-900">🚗 Vehicle No:</span>
+                          <span className="font-mono font-black text-teal-950 bg-teal-100/80 px-2 py-0.5 rounded-md border border-teal-300">{row.vehicleNumber}</span>
                         </div>
-                      </div>
+                      )}
+                      {Array.isArray(row.history) && row.history.length > 0 && (
+                        <div className="pt-1.5 border-t border-amber-200/50 text-[10px] space-y-0.5">
+                          <span className="font-black text-slate-500 uppercase tracking-wider">Latest Action Comment:</span>
+                          <p className="font-medium text-slate-700">
+                            <span className="font-bold text-slate-900">{row.history[row.history.length - 1].user} ({row.history[row.history.length - 1].role}):</span> "{row.history[row.history.length - 1].remarks || 'No comment'}"
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Footer: Date Submitted */}
@@ -3728,7 +3735,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             const pendingStageKey = (() => {
               if (pendingLabel === 'Pending ED') return 'sales_manager'
               if (pendingLabel === 'Pending Accounts') return 'accounts'
-              if (pendingLabel === 'Pending EA') return 'ea'
+              // EA is optional. If the current user is MD/CEO, they skip the EA stage
+              // and act directly at the 'md' stage — preventing "EA stage approved by MD"
+              // being recorded in history. The backend auto-marks eaApproval when MD approves.
+              if (pendingLabel === 'Pending EA') return isMD ? 'md' : 'ea'
               if (pendingLabel === 'Pending MD') return 'md'
               if (pendingLabel === 'Pending Payment') return 'payment_done'
               return null
@@ -3881,27 +3891,43 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 { key: 'paid', label: 'Paid', status: (req.paymentStatus === 'PAID' || req.accountApproval === 'APPROVED') ? 'APPROVED' : null },
               ]
 
-              const getStageDate = (key: string) => {
+              const getStageInfo = (key: string) => {
                 if (key === 'created') {
-                  return new Date(req.createdAt).toLocaleDateString('en-CA') // YYYY-MM-DD
+                  return {
+                    date: new Date(req.createdAt).toLocaleDateString('en-CA'),
+                    user: req.name || null
+                  }
                 }
                 if (key === 'paid') {
                   if (req.paymentStatus === 'PAID' && req.paymentCompletedAt) {
-                    return new Date(req.paymentCompletedAt).toLocaleDateString('en-CA')
+                    return {
+                      date: new Date(req.paymentCompletedAt).toLocaleDateString('en-CA'),
+                      user: req.paymentCompletedBy || 'Accounts'
+                    }
                   }
-                  // If accounts approved, use accounts approval date
                   if (req.accountApproval === 'APPROVED') {
                     const accEntry = (req.history || []).find((h: any) => h.roleKey === 'accounts' && h.action === 'APPROVED')
-                    if (accEntry) return new Date(accEntry.timestamp).toLocaleDateString('en-CA')
-                    if (req.updatedAt) return new Date(req.updatedAt).toLocaleDateString('en-CA')
+                    return {
+                      date: accEntry ? new Date(accEntry.timestamp).toLocaleDateString('en-CA') : (req.updatedAt ? new Date(req.updatedAt).toLocaleDateString('en-CA') : null),
+                      user: accEntry?.user || 'Accounts'
+                    }
                   }
-                  return null
+                  return { date: null, user: null }
                 }
-                const entry = (req.history || []).find((h: any) => h.roleKey === key && h.action === 'APPROVED')
+                const entry = (req.history || []).find((h: any) => h.roleKey === key && (h.action === 'APPROVED' || h.action === 'APPROVE'))
                 if (entry) {
-                  return new Date(entry.timestamp).toLocaleDateString('en-CA')
+                  return {
+                    date: new Date(entry.timestamp).toLocaleDateString('en-CA'),
+                    user: entry.user || null
+                  }
                 }
-                return null
+                if (key === 'sales_manager' && req.vpApproval === 'APPROVED') return { date: 'Approved', user: null }
+                if (key === 'hr' && req.hrApproval === 'APPROVED') return { date: 'Approved', user: null }
+                if (key === 'ea' && req.eaApproval === 'APPROVED') return { date: 'Approved', user: null }
+                if (key === 'md' && req.managementApproval === 'APPROVED') return { date: 'Approved', user: null }
+                if (key === 'accounts' && req.accountApproval === 'APPROVED') return { date: 'Approved', user: null }
+
+                return { date: null, user: null }
               }
 
               return (
@@ -3936,7 +3962,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         textColor = 'text-indigo-600 font-black'
                       }
 
-                      const stageDate = getStageDate(stg.key)
+                      const stageInfo = getStageInfo(stg.key)
 
                       return (
                         <div key={stg.key} className="flex-1 flex flex-row sm:flex-col items-center relative z-10 gap-3 sm:gap-0">
@@ -3966,10 +3992,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               {stg.label}
                             </span>
 
-                            {stageDate ? (
-                              <span className="text-[8px] sm:text-[9px] text-slate-400 font-semibold mt-0.5 text-left sm:text-center block">
-                                {stageDate}
-                              </span>
+                            {stageInfo.date ? (
+                              <div className="flex flex-col sm:items-center mt-0.5">
+                                <span className="text-[8px] sm:text-[9px] text-slate-500 font-bold text-left sm:text-center block">
+                                  {stageInfo.date}
+                                </span>
+                                {stageInfo.user && (
+                                  <span className="text-[8px] sm:text-[9px] text-indigo-950 font-black text-left sm:text-center block truncate max-w-[100px]" title={stageInfo.user}>
+                                    by {stageInfo.user}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-[8px] sm:text-[9px] text-slate-300 font-medium mt-0.5 text-left sm:text-center block">
                                 —
@@ -4101,7 +4134,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
                           <div className="flex items-center gap-2 text-amber-800 text-xs font-black uppercase tracking-wider">
                             <AlertTriangle className="w-4 h-4 text-amber-600 animate-bounce" />
-                            <span>Budget Alert / बजट चेतावनी</span>
+                            <span>Budget Alert</span>
                           </div>
                           <p className="text-xs font-semibold text-amber-700 leading-relaxed">
                             ⚠ This payment exceeds the approved monthly budget of ₹{monthlyBudget.toLocaleString('en-IN')}. (Current Month Spend: ₹{approvedSpend.toLocaleString('en-IN')}, Current Request: ₹{requestAmount.toLocaleString('en-IN')}).

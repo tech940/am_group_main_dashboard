@@ -25,6 +25,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { toast } from '@/hooks/use-toast'
+import * as XLSX from 'xlsx'
 import { maskKiaPii } from '@/lib/kia/pii'
 import { cn } from '@/lib/utils'
 import {
@@ -212,6 +213,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const [dealerCode, setDealerCode] = useState('All')
   const [model, setModel] = useState('All')
   const [status, setStatus] = useState('AVAILABLE')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [page, setPage] = useState(1)
 
   // Custom states
@@ -795,10 +798,35 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const dealerFilters = data?.filters?.dealers || ['JK402', 'JK501']
   const modelFilters = data?.filters?.models || ['CARENS', 'SELTOS', 'SONET', 'CARENS CLAVIS EV']
 
+  const filteredStockRows = useMemo(() => {
+    const rows = data?.rows || []
+    if (!startDate && !endDate) return rows
+
+    const start = startDate ? new Date(`${startDate}T00:00:00`).getTime() : 0
+    const end = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : Infinity
+
+    return rows.filter((row) => {
+      const rawDate =
+        row.allocated_at ||
+        row.transfer_requested_at ||
+        row.booking_delivery_date ||
+        row.expires_at ||
+        row.metadata?.dms_purchase_date ||
+        row.metadata?.created_at ||
+        row.metadata?.purchase_date ||
+        null
+
+      if (!rawDate) return true
+      const time = new Date(rawDate).getTime()
+      if (isNaN(time)) return true
+      return time >= start && time <= end
+    })
+  }, [data?.rows, startDate, endDate])
+
   const getShareText = () => {
-    if (!data?.rows) return ''
+    if (!filteredStockRows || filteredStockRows.length === 0) return ''
     const dealerMap: Record<string, Record<string, StockRow[]>> = {}
-    data.rows.forEach(r => {
+    filteredStockRows.forEach(r => {
       const dealer = r.dealer_code || 'UNASSIGNED'
       const modelName = r.model || 'UNKNOWN MODEL'
       if (!dealerMap[dealer]) dealerMap[dealer] = {}
@@ -820,6 +848,40 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       text += '\n───────────────────\n\n'
     })
     return text.trim()
+  }
+
+  const handleDownloadExcel = () => {
+    const rowsToExport = filteredStockRows.map((row, idx) => ({
+      'S.No': idx + 1,
+      'VIN Number': row.vin_number || '—',
+      'Engine Number': row.engine_no || '—',
+      'Model': row.model || '—',
+      'Variant': row.variant || '—',
+      'Color': row.color || '—',
+      'Stock Status': row.stock_status || '—',
+      'Dealer Code': row.dealer_code || '—',
+      'Stock Age (Days)': row.stock_age || '—',
+      'Customer Name': row.customer_name || '—',
+      'Consultant': row.consultant_name || '—',
+      'Booking Number': row.booking_number || '—',
+      'Bank Name': row.bank_name || '—',
+      'Allocated Date': row.allocated_at ? new Date(row.allocated_at).toLocaleDateString('en-IN') : '—',
+      'Delivery Target Date': row.booking_delivery_date ? new Date(row.booking_delivery_date).toLocaleDateString('en-IN') : '—',
+    }))
+
+    if (rowsToExport.length === 0) {
+      toast({ title: 'No Data', description: 'No stock records found matching current filters.', variant: 'error' })
+      return
+    }
+
+    const ws = XLSX.utils.json_to_sheet(rowsToExport)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Stock Report')
+
+    const dateStr = new Date().toISOString().slice(0, 10)
+    const filterSuffix = startDate || endDate ? `_${startDate || 'start'}_to_${endDate || 'end'}` : ''
+    XLSX.writeFile(wb, `AM_Kia_Stock_Report_${dateStr}${filterSuffix}.xlsx`)
+    toast({ title: 'Success', description: 'Stock report downloaded in Excel format.', variant: 'success' })
   }
 
   const handleCopyWhatsApp = () => {
@@ -930,6 +992,35 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
               </SelectContent>
             </Select>
 
+            {/* Date Range Filter */}
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 shadow-sm">
+              <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase">From</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => { setStartDate(e.target.value); setPage(1) }}
+                className="h-7 text-xs font-semibold text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-0 p-0 cursor-pointer"
+              />
+              <span className="text-[10px] font-bold text-slate-400 uppercase ml-1">To</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => { setEndDate(e.target.value); setPage(1) }}
+                className="h-7 text-xs font-semibold text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-0 p-0 cursor-pointer"
+              />
+              {(startDate || endDate) && (
+                <button
+                  type="button"
+                  onClick={() => { setStartDate(''); setEndDate(''); setPage(1) }}
+                  className="ml-1 text-slate-400 hover:text-slate-600 transition-colors p-0.5 rounded-md hover:bg-slate-100"
+                  title="Clear Date Filter"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
             {/* Audit Log button — MD & Super Admin only */}
             {canViewAudit && (
               <Button
@@ -952,9 +1043,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="rounded-xl border border-slate-200 bg-white shadow-md z-[50]">
-                <DropdownMenuItem className="text-xs cursor-pointer focus:bg-slate-50" onClick={handleCopyWhatsApp}>📋 Copy (WhatsApp)</DropdownMenuItem>
-                <DropdownMenuItem className="text-xs cursor-pointer focus:bg-slate-50" onClick={handleDownloadPDF}>📄 Download PDF</DropdownMenuItem>
-                <DropdownMenuItem className="text-xs cursor-pointer focus:bg-slate-50" onClick={handleDownloadTXT}>📝 Download TXT</DropdownMenuItem>
+                <DropdownMenuItem className="text-xs cursor-pointer focus:bg-slate-50 font-semibold" onClick={handleCopyWhatsApp}>📋 Copy (WhatsApp)</DropdownMenuItem>
+                <DropdownMenuItem className="text-xs cursor-pointer focus:bg-slate-50 font-semibold" onClick={handleDownloadExcel}>📊 Download Excel (.xlsx)</DropdownMenuItem>
+                <DropdownMenuItem className="text-xs cursor-pointer focus:bg-slate-50 font-semibold" onClick={handleDownloadPDF}>📄 Download PDF</DropdownMenuItem>
+                <DropdownMenuItem className="text-xs cursor-pointer focus:bg-slate-50 font-semibold" onClick={handleDownloadTXT}>📝 Download TXT</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -973,8 +1065,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
               title="Failed to load stock data"
               description={error instanceof Error ? error.message : "Refresh the page to retry, or check the server logs if it repeats."}
             />
-          ) : data?.rows.length === 0 ? (
-            <PremiumEmptyState illustration="garage" title="No stock vehicles found" description="Adjust your search query or filters to browse available inventory." />
+          ) : filteredStockRows.length === 0 ? (
+            <PremiumEmptyState illustration="garage" title="No stock vehicles found" description="Adjust your search query or date filters to browse available inventory." />
           ) : (
             <div className="kia-surface w-full overflow-x-auto">
               <Table className="kia-table w-full min-w-[950px]">
@@ -986,7 +1078,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                    </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data?.rows.map((row) => (
+                  {filteredStockRows.map((row) => (
                     <TableRow
                       key={row.id}
                       className="cursor-pointer border-b"
@@ -2260,7 +2352,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             <div className="mt-2 text-[10px] font-semibold text-slate-500">
               Generated {new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })}
             </div>
-            <div className="text-[10px] font-semibold text-slate-400">{data?.rows.length ?? 0} vehicles listed</div>
+            <div className="text-[10px] font-semibold text-slate-400">{filteredStockRows.length} vehicles listed</div>
           </div>
         </div>
 
@@ -2555,7 +2647,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
         </div>
         <div className="mt-4 flex items-center justify-between text-[9px] font-semibold text-slate-400">
           <span>AM KIA · Confidential stock inventory — not for external distribution.</span>
-          <span>{data?.rows.length ?? 0} vehicles</span>
+          <span>{filteredStockRows.length} vehicles</span>
         </div>
       </div>
 

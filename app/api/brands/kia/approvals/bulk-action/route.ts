@@ -45,13 +45,13 @@ export async function POST(request: Request) {
     const failedRows = []
 
     for (const row of rows) {
-      let activeStageKey: 'sales_manager' | 'hr' | 'accounts' | 'md' | null = null
+      let activeStageKey: 'sales_manager' | 'hr' | 'ea' | 'accounts' | 'md' | null = null
       
       const vpApp = row.vpApproval
       const hrApp = row.hrApproval
+      const eaApp = row.eaApproval
       const accApp = row.accountApproval
       const mdApp = row.managementApproval
-
 
       const requiresHr = isHrApprovalRequired(row.approvalType)
 
@@ -60,6 +60,8 @@ export async function POST(request: Request) {
         activeStageKey = 'sales_manager'
       } else if (requiresHr && (!hrApp || hrApp === 'HELD' || hrApp === 'NOT APPROVED')) {
         activeStageKey = 'hr'
+      } else if (!eaApp || eaApp === 'HELD' || eaApp === 'NOT APPROVED') {
+        activeStageKey = 'ea'
       } else if (!mdApp || mdApp === 'HELD' || mdApp === 'NOT APPROVED') {
         activeStageKey = 'md'
       } else if (mdApp === 'APPROVED' && (!accApp || accApp === 'HELD' || accApp === 'NOT APPROVED')) {
@@ -132,6 +134,8 @@ export async function POST(request: Request) {
         // This branch sets paymentStatus = 'PAID'.
         // Only Accounts may release money. developer/admin (`isTester`) stay for support only.
         isAuthorized = isTester || isAccountsUser
+      } else if (activeStageKey === 'ea') {
+        isAuthorized = isTester || ['ea', 'eba'].includes(appUser.role) || isSuperUser
       } else if (activeStageKey === 'md') {
         // Stage where MD/CEO are the intended approver.
         isAuthorized = isTester || isSuperUser
@@ -150,10 +154,30 @@ export async function POST(request: Request) {
         updates.vpApproval = statusVal
       } else if (activeStageKey === 'hr') {
         updates.hrApproval = statusVal
+      } else if (activeStageKey === 'ea') {
+        updates.eaApproval = statusVal
+        if (action === 'APPROVE' && (isSuperUser || isTester)) {
+          updates.managementApproval = 'APPROVED'
+          updates.emailSendStatus = 'MDApproved'
+          void sendMdApprovalNotificationEmail({
+            toEmail: row.email,
+            requesterName: row.name,
+            vendorName: row.vendorName || 'Vendor',
+            amount: row.amount,
+            purpose: row.remarks,
+            department: row.department,
+            approvalType: row.approvalType,
+            approvalTime: new Date(),
+          })
+        }
       } else if (activeStageKey === 'md') {
         updates.managementApproval = statusVal
         if (action === 'APPROVE') {
           updates.vpApproval = 'APPROVED'
+          // EA is optional — auto-mark it approved so the workflow moves straight to Accounts.
+          if (!row.eaApproval || row.eaApproval === '') {
+            updates.eaApproval = 'APPROVED'
+          }
           updates.emailSendStatus = 'MDApproved'
 
           // Trigger email notification to requester that MD approved the payment order

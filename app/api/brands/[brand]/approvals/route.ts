@@ -34,6 +34,7 @@ export async function POST(
       uploadDocUrl,
       glAccountId,
       gst,
+      vehicleNumber,
     } = body
 
     const emailCheck = validateEmailDomain(email)
@@ -141,6 +142,7 @@ export async function POST(
         brand: normalizedBrand,
         glAccountId: finalGlAccountId,
         gst: gst?.trim() || null,
+        vehicleNumber: vehicleNumber?.trim() || null,
       })
       .returning()
 

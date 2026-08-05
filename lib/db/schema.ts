@@ -1941,6 +1941,7 @@ export const kiaApprovalRequests = pgTable('kia_approval_requests', {
   brand: text('brand').default('kia').notNull(),
   glAccountId: uuid('gl_account_id').references(() => glAccounts.id),
   gst: text('gst'),
+  vehicleNumber: text('vehicle_number'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })

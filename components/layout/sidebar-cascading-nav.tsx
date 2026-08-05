@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 /**
  * Pixel-Matched Premium SaaS Sidebar Navigation
@@ -14,7 +14,7 @@ import Link from 'next/link'
 import {
   ChevronDown,
   ChevronRight,
-  Star,
+  Bookmark,
   LayoutGrid,
   Building2,
   type LucideIcon,
@@ -86,7 +86,7 @@ function GroupLabel({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 px-1 pb-2 pt-4 first:pt-0">
       {isFav ? (
-        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
+        <Bookmark className="h-3.5 w-3.5 fill-[#055B65] text-[#055B65] shrink-0" />
       ) : isBranch ? (
         <Building2 className="h-3.5 w-3.5 text-teal-500 shrink-0" />
       ) : (
@@ -148,8 +148,8 @@ function getBadgeStyle(badge?: string): React.CSSProperties {
   return { background: '#F1F5F9', color: '#475569' }
 }
 
-// ─── Favourite Star Button ────────────────────────────────────────────────────
-function FavStar({
+// ─── Favourite Bookmark Button ────────────────────────────────────────────────
+function FavBookmark({
   favourite,
   label,
   activeItem,
@@ -170,14 +170,14 @@ function FavStar({
       aria-label={favourite.active ? `Remove ${label} from favourites` : `Add ${label} to favourites`}
       title={favourite.active ? 'Remove from favourites' : 'Add to favourites'}
     >
-      <Star
+      <Bookmark
         className={cn(
           'h-3.5 w-3.5 transition-colors',
           favourite.active
-            ? 'fill-[#F59E0B] text-[#F59E0B]'
+            ? 'fill-[#055B65] text-[#055B65]'
             : activeItem
             ? 'text-white/60 hover:text-white'
-            : 'text-slate-300 hover:text-amber-400'
+            : 'text-slate-300 hover:text-[#055B65]'
         )}
       />
     </button>
@@ -316,9 +316,9 @@ function AccordionRow({
         </span>
       )}
 
-      {/* Star in place of arrow */}
+      {/* Bookmark in place of arrow */}
       {node.favourite ? (
-        <FavStar favourite={node.favourite} label={node.label} activeItem={node.active} />
+        <FavBookmark favourite={node.favourite} label={node.label} activeItem={node.active} />
       ) : (
         expandChevron
       )}

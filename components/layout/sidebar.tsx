@@ -277,7 +277,16 @@ export function Sidebar() {
   const isTropical = useTropicalTheme()
   const pathname = usePathname()
   const router = useRouter()
-  const { userRole, canAccessAdmin, userBrand, loading } = useUserRole()
+  const { userRole, fullName, email, canAccessAdmin, userBrand, loading } = useUserRole()
+
+  const displayName = fullName || (email ? email.split('@')[0] : null) || (userRole ? userRole.toUpperCase() : 'AM Group User')
+  const userInitials = fullName
+    ? fullName.split(' ').filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+    : email
+    ? email.slice(0, 2).toUpperCase()
+    : userRole
+    ? userRole.slice(0, 2).toUpperCase()
+    : 'AM'
   const {
     value: favouriteHrefsValue,
     savePreference: saveFavouriteHrefs,
@@ -510,7 +519,7 @@ export function Sidebar() {
     if (hasPermission('kia.approvals.view')) {
       commonNodes.push({
         key: '/brands/kia/payment-approvals',
-        label: 'Vendor Payments',
+        label: 'Kia Approvals',
         href: '/brands/kia/payment-approvals',
         icon: FileCheck,
         external: true,
@@ -846,14 +855,14 @@ export function Sidebar() {
                   color: '#FFFFFF',
                 }}
               >
-                {userRole ? userRole.slice(0, 2).toUpperCase() : 'SK'}
+                {userInitials}
               </div>
               <div className="truncate">
                 <p className="text-xs font-black tracking-tight truncate leading-tight" style={{ color: isTropical ? '#033A41' : '#FFFFFF' }}>
-                  {userRole === 'developer' || userRole === 'md' ? 'Sahil Katoch' : 'AM Group User'}
+                  {displayName}
                 </p>
                 <p className="text-[10px] font-bold capitalize truncate" style={{ color: isTropical ? '#055B65' : 'rgba(224, 231, 255, 0.8)' }}>
-                  {userRole || 'Developer'}
+                  {userRole || 'User'}
                 </p>
               </div>
             </div>
