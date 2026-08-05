@@ -123,7 +123,7 @@ function canActOnRequest(role: string, request: PettyCashRequest) {
   if (r === 'ed' || r === 'sales_manager') return status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold'
   if (r === 'ea') return status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved'
   if (r === 'md' || r === 'eba') {
-    return status === 'md_pending' || status === 'md_on_hold' || status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved'
+    return status === 'md_pending' || status === 'md_on_hold' || status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved' || status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold'
   }
   if (r === 'accounts') return status === 'accounts_pending' || status === 'accounts_on_hold'
   return false

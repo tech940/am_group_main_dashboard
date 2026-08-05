@@ -182,8 +182,8 @@ function filterDashboardRequests(appUser: AppUser, requests: Array<Record<string
     return requests.filter((request) => ['ea_pending', 'ea_on_hold'].includes(String(request.status || '')))
   }
 
-  if (appUser.role === 'md') {
-    return requests.filter((request) => ['md_pending', 'md_on_hold'].includes(String(request.status || '')))
+  if (appUser.role === 'md' || appUser.role === 'eba') {
+    return requests.filter((request) => ['md_pending', 'md_on_hold', 'ea_pending', 'ea_on_hold', 'ed_approved', 'submitted', 'ed_pending', 'ed_on_hold'].includes(String(request.status || '')))
   }
 
   if (appUser.role === 'accounts') {
