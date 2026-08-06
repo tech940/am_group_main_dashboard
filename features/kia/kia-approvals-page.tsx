@@ -3546,7 +3546,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
       {/* 4. DETAIL & ACTION CENTER OVERLAY MODAL */}
       <Dialog open={Boolean(detailRow)} onOpenChange={(open) => { if (!open) setDetailRow(null) }}>
-        <DialogContent className="rounded-[2rem] sm:rounded-[2.5rem] w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] sm:max-w-6xl bg-[#f8fafc] p-0 overflow-y-auto sm:overflow-hidden shadow-2xl border border-slate-100 max-h-[98vh] sm:max-h-[95vh] flex flex-col">
+        <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl sm:rounded-[2.5rem] w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] sm:max-w-6xl bg-[#f8fafc] p-0 overflow-hidden shadow-2xl border border-slate-200/80 max-h-[calc(100dvh-1.5rem)] sm:max-h-[92vh] flex flex-col z-50">
           {detailRow && (() => {
             const pendingLabel = getPendingStageLabel(detailRow)
             const isApproved = pendingLabel === 'Fully Approved'
@@ -4020,14 +4020,25 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             return (
               <>
                 {/* Dialog Header */}
-                <DialogHeader className="p-5 sm:p-8 pb-4 bg-white border-b border-slate-100 flex flex-col gap-2 relative">
-                  <div className="flex flex-wrap items-center gap-1.5 pr-8">
+                <DialogHeader className="p-4 sm:p-7 pb-3 sm:pb-4 bg-white border-b border-slate-200/80 flex flex-col gap-2 shrink-0 sticky top-0 z-30 shadow-2xs relative">
+                  {/* Explicit Sticky Close Cross Button for Mobile & Desktop */}
+                  <button
+                    type="button"
+                    onClick={() => setDetailRow(null)}
+                    className="absolute right-3 top-3.5 sm:right-6 sm:top-6 z-40 flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-2xs border border-slate-200/80"
+                    aria-label="Close modal"
+                    title="Close"
+                  >
+                    <X className="h-4 w-4 stroke-[2.5]" />
+                  </button>
+
+                  <div className="flex flex-wrap items-center gap-1.5 pr-10 sm:pr-14">
                     <Badge className="bg-slate-900 text-white hover:bg-slate-900 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.location}</Badge>
                     <Badge className="bg-slate-100 hover:bg-slate-100 border border-slate-200 text-slate-800 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.department}</Badge>
                     <Badge className="bg-blue-50 hover:bg-blue-50 border border-blue-100 text-blue-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
                   </div>
                   
-                  <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4 mt-1 pr-10">
+                  <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4 mt-1 pr-8 sm:pr-12">
                     <div>
                       <DialogTitle className="text-xl sm:text-2xl font-black tracking-tight text-slate-950">
                         Vendor Payment Request Details
@@ -4081,8 +4092,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
                 {/* Dialog Body */}
                 <div className={cn(
-                  "flex-1 overflow-visible sm:overflow-y-auto lg:overflow-hidden grid grid-cols-1 p-5 sm:p-8 gap-6 sm:gap-8 transition-all duration-300",
-                  showTimeline ? "lg:grid-cols-3" : "lg:grid-cols-1"
+                  "flex-1 overflow-y-auto p-4 sm:p-8 gap-6 sm:gap-8 transition-all duration-300 min-h-0",
+                  showTimeline ? "grid grid-cols-1 lg:grid-cols-3" : "grid grid-cols-1"
                 )}>
                   {/* Left Column - Details */}
                   <div className={cn(
@@ -4481,6 +4492,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         Status: {pendingLabel}
                       </span>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setDetailRow(null)}
+                      className="text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs font-black rounded-xl h-10 px-4 flex items-center justify-center gap-1.5 cursor-pointer transition-all border border-slate-200 shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                      <span>Close Popup</span>
+                    </button>
                   </div>
                 </div>
               </>
@@ -4491,7 +4510,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
       {/* 4.5 VENDOR LEDGER DETAILS DIALOG */}
       <Dialog open={Boolean(selectedVendorName)} onOpenChange={(open) => { if (!open) setSelectedVendorName(null) }}>
-        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-4xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100 max-h-[85vh] flex flex-col">
+        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-4xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100 max-h-[calc(100dvh-1.5rem)] sm:max-h-[85vh] flex flex-col">
           {selectedVendorName && (() => {
             const totalSpend = vendorFilteredRows.reduce((sum, r) => sum + Number(r.amount), 0)
             return (
@@ -4645,7 +4664,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
       {/* 5. TAKE ACTION CONFIRMATION MODAL */}
       <Dialog open={Boolean(actionStage && detailRow)} onOpenChange={(open) => { if (!open) { setActionStage(null); setActionDecision(null); setActionRemarks(''); setInvoiceNumber(''); setInvoiceDocUrl(''); setInvoiceFileName(''); setUtrNumberVal(''); setPaymentProofUrl(''); setPaymentProofFileName(''); } }}>
-        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-md bg-white p-6 shadow-2xl border border-slate-100">
+        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-md bg-white p-6 shadow-2xl border border-slate-100 max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-black tracking-tight text-slate-900">
               Submit Action Confirmation
@@ -4885,7 +4904,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
       {/* 6. INLINE DOCUMENT PREVIEW DIALOG */}
       <Dialog open={Boolean(previewDocUrl)} onOpenChange={(open) => { if (!open) setPreviewDocUrl(null) }}>
-        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-4xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100 max-h-[90vh] flex flex-col">
+        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-4xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100 max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] flex flex-col">
           {previewDocUrl && (() => {
             const isPdf = previewDocUrl.toLowerCase().endsWith('.pdf') || previewDocUrl.includes('/pdf') || previewDocUrl.includes('response-content-type=application/pdf') || previewDocUrl.includes('.output');
             const isImage = previewDocUrl.toLowerCase().match(/\.(jpeg|jpg|gif|png|webp|svg)/) || previewDocUrl.includes('image/');
@@ -4966,7 +4985,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
       {/* 4.6 GL CATEGORY LEDGER DETAILS DIALOG */}
       <Dialog open={Boolean(selectedGlName)} onOpenChange={(open) => { if (!open) setSelectedGlName(null) }}>
-        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-4xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100 max-h-[85vh] flex flex-col">
+        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-4xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100 max-h-[calc(100dvh-1.5rem)] sm:max-h-[85vh] flex flex-col">
           {selectedGlName && (() => {
             const totalSpend = glFilteredRows.reduce((sum, r) => sum + Number(r.amount), 0)
             const glItem = glSummary.find(g => g.name === selectedGlName)
