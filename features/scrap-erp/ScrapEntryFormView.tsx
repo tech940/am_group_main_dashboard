@@ -148,10 +148,15 @@ export function ScrapEntryFormView({
 
   // Form Fields State
   const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || '')
+  const [customGroup, setCustomGroup] = useState<string>('')
   const [selectedLocationId, setSelectedLocationId] = useState<string>(locations[0]?.id || '')
+  const [customLocation, setCustomLocation] = useState<string>('')
   const [selectedDeptId, setSelectedDeptId] = useState<string>(departments[0]?.id || '')
+  const [customDept, setCustomDept] = useState<string>('')
   const [selectedTypeId, setSelectedTypeId] = useState<string>(scrapTypes[0]?.id || '')
+  const [customScrapType, setCustomScrapType] = useState<string>('')
   const [descriptionInput, setDescriptionInput] = useState<string>('')
+  const [customDescription, setCustomDescription] = useState<string>('')
   const [weightQty, setWeightQty] = useState<string>('')
   const [ratePerUnit, setRatePerUnit] = useState<string>('')
   const [randomWasteAmount, setRandomWasteAmount] = useState<string>('')
@@ -160,7 +165,9 @@ export function ScrapEntryFormView({
   const [customVendorName, setCustomVendorName] = useState<string>('')
   const [soldDate, setSoldDate] = useState<string>(new Date().toISOString().split('T')[0])
   const [selectedPaymentModeId, setSelectedPaymentModeId] = useState<string>(paymentModes[0]?.id || '')
+  const [customPaymentMode, setCustomPaymentMode] = useState<string>('')
   const [selectedHandoverUserId, setSelectedHandoverUserId] = useState<string>(handoverUsers[0]?.id || '')
+  const [customHandoverUser, setCustomHandoverUser] = useState<string>('')
   const [remarks, setRemarks] = useState<string>('')
 
   // Attachment states (supporting multiple images / PDFs for all 3 categories)
@@ -184,18 +191,57 @@ export function ScrapEntryFormView({
   // Populate initialData when editing an existing record
   useEffect(() => {
     if (initialData) {
-      if (initialData.groupId) setSelectedGroupId(initialData.groupId)
-      if (initialData.locationId) setSelectedLocationId(initialData.locationId)
-      if (initialData.departmentId) setSelectedDeptId(initialData.departmentId)
-      if (initialData.scrapTypeId) setSelectedTypeId(initialData.scrapTypeId)
-      setDescriptionInput(initialData.description || '')
+      const grpVal = initialData.groupId || initialData.groupName || ''
+      setSelectedGroupId(grpVal)
+      if (grpVal && !groups.some((g) => g.id === grpVal || g.name === grpVal)) {
+        setCustomGroup(grpVal)
+      }
+
+      const locVal = initialData.locationId || initialData.locationName || ''
+      setSelectedLocationId(locVal)
+      if (locVal && !locations.some((l) => l.id === locVal || l.name === locVal)) {
+        setCustomLocation(locVal)
+      }
+
+      const deptVal = initialData.departmentId || initialData.departmentName || ''
+      setSelectedDeptId(deptVal)
+      if (deptVal && !departments.some((d) => d.id === deptVal || d.name === deptVal)) {
+        setCustomDept(deptVal)
+      }
+
+      const typeVal = initialData.scrapTypeId || initialData.scrapTypeName || ''
+      setSelectedTypeId(typeVal)
+      if (typeVal && !scrapTypes.some((st) => st.id === typeVal || st.name === typeVal)) {
+        setCustomScrapType(typeVal)
+      }
+
+      const descVal = initialData.description || ''
+      setDescriptionInput(descVal)
+      if (descVal && !UNIT_TYPE_OPTIONS.includes(descVal as any)) {
+        setCustomDescription(descVal)
+      }
+
       setWeightQty(String(initialData.weightQty !== undefined ? initialData.weightQty : ''))
       setRatePerUnit(String(initialData.ratePerUnit !== undefined ? initialData.ratePerUnit : ''))
       setAmountReceivedInput(String(initialData.amountReceived !== undefined ? initialData.amountReceived : ''))
       setSoldTo(initialData.soldTo || '')
+      if (initialData.soldTo && !PRESET_VENDORS.includes(initialData.soldTo)) {
+        setCustomVendorName(initialData.soldTo)
+      }
       setSoldDate(initialData.soldDate || initialData.timestamp?.slice(0, 10) || new Date().toISOString().split('T')[0])
-      if (initialData.paymentModeId) setSelectedPaymentModeId(initialData.paymentModeId)
-      if (initialData.paymentHandoverToId) setSelectedHandoverUserId(initialData.paymentHandoverToId)
+
+      const pmVal = initialData.paymentModeId || initialData.paymentModeName || ''
+      setSelectedPaymentModeId(pmVal)
+      if (pmVal && !paymentModes.some((pm) => pm.id === pmVal || pm.name === pmVal)) {
+        setCustomPaymentMode(pmVal)
+      }
+
+      const hoVal = initialData.paymentHandoverToId || initialData.paymentHandoverToName || ''
+      setSelectedHandoverUserId(hoVal)
+      if (hoVal && !handoverUsers.some((ho) => ho.id === hoVal || ho.name === hoVal)) {
+        setCustomHandoverUser(hoVal)
+      }
+
       setRemarks(initialData.remarks || '')
 
       if (initialData.attachments && initialData.attachments.length > 0) {
@@ -535,11 +581,26 @@ export function ScrapEntryFormView({
   // Clear form to start fresh
   const handleResetForm = () => {
     setActiveDraftId(null)
+    setSelectedGroupId(groups[0]?.id || '')
+    setCustomGroup('')
+    setSelectedLocationId(locations[0]?.id || '')
+    setCustomLocation('')
+    setSelectedDeptId(departments[0]?.id || '')
+    setCustomDept('')
+    setSelectedTypeId(scrapTypes[0]?.id || '')
+    setCustomScrapType('')
+    setDescriptionInput('')
+    setCustomDescription('')
     setWeightQty('')
     setRatePerUnit('')
+    setRandomWasteAmount('')
     setAmountReceivedInput('')
-    setDescriptionInput('')
     setSoldTo('')
+    setCustomVendorName('')
+    setSelectedPaymentModeId(paymentModes[0]?.id || '')
+    setCustomPaymentMode('')
+    setSelectedHandoverUserId(handoverUsers[0]?.id || '')
+    setCustomHandoverUser('')
     setRemarks('')
     setWeightDocs([])
     setTallyDocs([])
@@ -552,11 +613,12 @@ export function ScrapEntryFormView({
     e.preventDefault()
     setIsSubmitting(true)
 
-    const selectedGroupObj = groups.find((g) => g.id === selectedGroupId)
-    const selectedLocObj = locations.find((l) => l.id === selectedLocationId)
-    const selectedDeptObj = departments.find((d) => d.id === selectedDeptId)
-    const selectedPmObj = paymentModes.find((p) => p.id === selectedPaymentModeId)
-    const selectedHoObj = handoverUsers.find((h) => h.id === selectedHandoverUserId)
+    const selectedGroupObj = groups.find((g) => g.id === selectedGroupId || g.name === selectedGroupId)
+    const selectedLocObj = locations.find((l) => l.id === selectedLocationId || l.name === selectedLocationId)
+    const selectedDeptObj = departments.find((d) => d.id === selectedDeptId || d.name === selectedDeptId)
+    const selectedTypeObj = scrapTypes.find((t) => t.id === selectedTypeId || t.name === selectedTypeId)
+    const selectedPmObj = paymentModes.find((p) => p.id === selectedPaymentModeId || p.name === selectedPaymentModeId)
+    const selectedHoObj = handoverUsers.find((h) => h.id === selectedHandoverUserId || h.name === selectedHandoverUserId)
 
     const attachmentsList: ScrapAttachment[] = [
       ...weightDocs.map((d) => ({
@@ -588,15 +650,15 @@ export function ScrapEntryFormView({
         transactionNumber: initialData?.transactionNumber,
         timestamp: initialData?.timestamp || new Date().toISOString(),
         groupId: selectedGroupId,
-        groupName: selectedGroupObj?.name || 'JAM',
+        groupName: selectedGroupObj?.name || selectedGroupId || 'JAM',
         locationId: selectedLocationId,
-        locationName: selectedLocObj?.name || 'Dealership Location',
+        locationName: selectedLocObj?.name || selectedLocationId || 'Dealership Location',
         departmentId: selectedDeptId,
-        departmentName: selectedDeptObj?.name || 'SERVICE',
+        departmentName: selectedDeptObj?.name || selectedDeptId || 'SERVICE',
         scrapTypeId: selectedTypeId,
-        scrapTypeName: selectedType?.name || 'PLASTIC',
+        scrapTypeName: selectedTypeObj?.name || selectedTypeId || 'PLASTIC',
         unit: activeUnitLabel,
-        description: descriptionInput || selectedType?.name || 'Scrap Material',
+        description: descriptionInput || selectedTypeObj?.name || 'Scrap Material',
         weightQty: wt,
         ratePerUnit: rate,
         calculatedTotal,
@@ -607,9 +669,9 @@ export function ScrapEntryFormView({
         soldTo: soldTo || 'Pending Vendor',
         soldDate,
         paymentModeId: selectedPaymentModeId,
-        paymentModeName: selectedPmObj?.name || 'CASH',
+        paymentModeName: selectedPmObj?.name || selectedPaymentModeId || 'CASH',
         paymentHandoverToId: selectedHandoverUserId,
-        paymentHandoverToName: selectedHoObj?.name || 'CASH HANDOVER TO MD',
+        paymentHandoverToName: selectedHoObj?.name || selectedHandoverUserId || 'CASH HANDOVER TO MD',
         remarks: remarks || 'Saved via Scrap Entry',
         status: outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED',
         attachments: attachmentsList,
@@ -735,46 +797,112 @@ export function ScrapEntryFormView({
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Dealership Group</Label>
                 <select
-                  value={selectedGroupId}
-                  onChange={(e) => setSelectedGroupId(e.target.value)}
+                  value={groups.some((g) => g.id === selectedGroupId) ? selectedGroupId : selectedGroupId ? 'OTHER' : ''}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === 'OTHER') {
+                      setSelectedGroupId(customGroup || '')
+                    } else {
+                      setSelectedGroupId(val)
+                      setCustomGroup('')
+                    }
+                  }}
                   className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                 >
+                  <option value="">Select Group...</option>
                   {groups.map((grp) => (
                     <option key={grp.id} value={grp.id}>
                       {grp.name}
                     </option>
                   ))}
+                  <option value="OTHER">+ Enter Group Manually...</option>
                 </select>
+                {(!groups.some((g) => g.id === selectedGroupId) || selectedGroupId === 'OTHER') && (
+                  <Input
+                    type="text"
+                    placeholder="Type custom group name..."
+                    value={groups.some((g) => g.id === selectedGroupId) ? customGroup : selectedGroupId}
+                    onChange={(e) => {
+                      setCustomGroup(e.target.value)
+                      setSelectedGroupId(e.target.value)
+                    }}
+                    className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
+                  />
+                )}
               </div>
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Dealership Location</Label>
                 <select
-                  value={selectedLocationId}
-                  onChange={(e) => setSelectedLocationId(e.target.value)}
+                  value={locations.some((l) => l.id === selectedLocationId) ? selectedLocationId : selectedLocationId ? 'OTHER' : ''}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === 'OTHER') {
+                      setSelectedLocationId(customLocation || '')
+                    } else {
+                      setSelectedLocationId(val)
+                      setCustomLocation('')
+                    }
+                  }}
                   className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                 >
+                  <option value="">Select Location...</option>
                   {locations.map((loc) => (
                     <option key={loc.id} value={loc.id}>
                       {loc.name}
                     </option>
                   ))}
+                  <option value="OTHER">+ Enter Location Manually...</option>
                 </select>
+                {(!locations.some((l) => l.id === selectedLocationId) || selectedLocationId === 'OTHER') && (
+                  <Input
+                    type="text"
+                    placeholder="Type custom location name..."
+                    value={locations.some((l) => l.id === selectedLocationId) ? customLocation : selectedLocationId}
+                    onChange={(e) => {
+                      setCustomLocation(e.target.value)
+                      setSelectedLocationId(e.target.value)
+                    }}
+                    className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
+                  />
+                )}
               </div>
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Department</Label>
                 <select
-                  value={selectedDeptId}
-                  onChange={(e) => setSelectedDeptId(e.target.value)}
+                  value={departments.some((d) => d.id === selectedDeptId) ? selectedDeptId : selectedDeptId ? 'OTHER' : ''}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === 'OTHER') {
+                      setSelectedDeptId(customDept || '')
+                    } else {
+                      setSelectedDeptId(val)
+                      setCustomDept('')
+                    }
+                  }}
                   className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                 >
+                  <option value="">Select Department...</option>
                   {departments.map((dept) => (
                     <option key={dept.id} value={dept.id}>
                       {dept.name}
                     </option>
                   ))}
+                  <option value="OTHER">+ Enter Department Manually...</option>
                 </select>
+                {(!departments.some((d) => d.id === selectedDeptId) || selectedDeptId === 'OTHER') && (
+                  <Input
+                    type="text"
+                    placeholder="Type custom department name..."
+                    value={departments.some((d) => d.id === selectedDeptId) ? customDept : selectedDeptId}
+                    onChange={(e) => {
+                      setCustomDept(e.target.value)
+                      setSelectedDeptId(e.target.value)
+                    }}
+                    className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
+                  />
+                )}
               </div>
             </div>
           </Card>
@@ -793,23 +921,53 @@ export function ScrapEntryFormView({
                 <div className="space-y-1.5">
                   <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Scrap Category / Type</Label>
                   <select
-                    value={selectedTypeId}
-                    onChange={(e) => setSelectedTypeId(e.target.value)}
+                    value={scrapTypes.some((st) => st.id === selectedTypeId) ? selectedTypeId : selectedTypeId ? 'OTHER' : ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val === 'OTHER') {
+                        setSelectedTypeId(customScrapType || '')
+                      } else {
+                        setSelectedTypeId(val)
+                        setCustomScrapType('')
+                      }
+                    }}
                     className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
                   >
+                    <option value="">Select Scrap Category...</option>
                     {scrapTypes.map((st) => (
                       <option key={st.id} value={st.id}>
                         {st.name}
                       </option>
                     ))}
+                    <option value="OTHER">+ Enter Scrap Type Manually...</option>
                   </select>
+                  {(!scrapTypes.some((st) => st.id === selectedTypeId) || selectedTypeId === 'OTHER') && (
+                    <Input
+                      type="text"
+                      placeholder="Type custom scrap type..."
+                      value={scrapTypes.some((st) => st.id === selectedTypeId) ? customScrapType : selectedTypeId}
+                      onChange={(e) => {
+                        setCustomScrapType(e.target.value)
+                        setSelectedTypeId(e.target.value)
+                      }}
+                      className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Description / Unit Type</Label>
                   <select
-                    value={descriptionInput}
-                    onChange={(e) => setDescriptionInput(e.target.value)}
+                    value={availableDescriptionOptions.includes(descriptionInput) ? descriptionInput : descriptionInput ? 'OTHER' : ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val === 'OTHER') {
+                        setDescriptionInput(customDescription || '')
+                      } else {
+                        setDescriptionInput(val)
+                        setCustomDescription('')
+                      }
+                    }}
                     className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
                   >
                     <option value="">Select Description...</option>
@@ -818,7 +976,20 @@ export function ScrapEntryFormView({
                         {opt}
                       </option>
                     ))}
+                    <option value="OTHER">+ Enter Description / Unit Manually...</option>
                   </select>
+                  {(!availableDescriptionOptions.includes(descriptionInput) || descriptionInput === 'OTHER') && (
+                    <Input
+                      type="text"
+                      placeholder="Type custom description / unit..."
+                      value={availableDescriptionOptions.includes(descriptionInput) ? customDescription : descriptionInput}
+                      onChange={(e) => {
+                        setCustomDescription(e.target.value)
+                        setDescriptionInput(e.target.value)
+                      }}
+                      className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -959,31 +1130,75 @@ export function ScrapEntryFormView({
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Payment Mode</Label>
                 <select
-                  value={selectedPaymentModeId}
-                  onChange={(e) => setSelectedPaymentModeId(e.target.value)}
+                  value={paymentModes.some((pm) => pm.id === selectedPaymentModeId) ? selectedPaymentModeId : selectedPaymentModeId ? 'OTHER' : ''}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === 'OTHER') {
+                      setSelectedPaymentModeId(customPaymentMode || '')
+                    } else {
+                      setSelectedPaymentModeId(val)
+                      setCustomPaymentMode('')
+                    }
+                  }}
                   className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
                 >
+                  <option value="">Select Payment Mode...</option>
                   {paymentModes.map((pm) => (
                     <option key={pm.id} value={pm.id}>
                       {pm.name}
                     </option>
                   ))}
+                  <option value="OTHER">+ Enter Payment Mode Manually...</option>
                 </select>
+                {(!paymentModes.some((pm) => pm.id === selectedPaymentModeId) || selectedPaymentModeId === 'OTHER') && (
+                  <Input
+                    type="text"
+                    placeholder="Type custom payment mode..."
+                    value={paymentModes.some((pm) => pm.id === selectedPaymentModeId) ? customPaymentMode : selectedPaymentModeId}
+                    onChange={(e) => {
+                      setCustomPaymentMode(e.target.value)
+                      setSelectedPaymentModeId(e.target.value)
+                    }}
+                    className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
+                  />
+                )}
               </div>
 
               <div className="sm:col-span-2 space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Payment Handover To</Label>
                 <select
-                  value={selectedHandoverUserId}
-                  onChange={(e) => setSelectedHandoverUserId(e.target.value)}
+                  value={handoverUsers.some((ho) => ho.id === selectedHandoverUserId) ? selectedHandoverUserId : selectedHandoverUserId ? 'OTHER' : ''}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === 'OTHER') {
+                      setSelectedHandoverUserId(customHandoverUser || '')
+                    } else {
+                      setSelectedHandoverUserId(val)
+                      setCustomHandoverUser('')
+                    }
+                  }}
                   className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
                 >
+                  <option value="">Select Handover Person...</option>
                   {handoverUsers.map((ho) => (
                     <option key={ho.id} value={ho.id}>
                       {ho.name}
                     </option>
                   ))}
+                  <option value="OTHER">+ Enter Handover Person Manually...</option>
                 </select>
+                {(!handoverUsers.some((ho) => ho.id === selectedHandoverUserId) || selectedHandoverUserId === 'OTHER') && (
+                  <Input
+                    type="text"
+                    placeholder="Type custom handover person name..."
+                    value={handoverUsers.some((ho) => ho.id === selectedHandoverUserId) ? customHandoverUser : selectedHandoverUserId}
+                    onChange={(e) => {
+                      setCustomHandoverUser(e.target.value)
+                      setSelectedHandoverUserId(e.target.value)
+                    }}
+                    className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
+                  />
+                )}
               </div>
 
               <div className="sm:col-span-2 space-y-1.5">

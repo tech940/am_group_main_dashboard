@@ -15,6 +15,13 @@ export interface KpiCardProps {
   chartType?: 'area' | 'bar' | 'line' | 'flat-line' | 'progress' | 'radial'
   chartData?: number[]
   progressPercentage?: number
+  /**
+   * Set false to render the card with no sparkline at all. The chart renderers fall back to a
+   * decorative placeholder series when `chartData` is empty, which is fine as chrome but reads as
+   * real history on a data-integrity-sensitive card. Callers that would otherwise be showing an
+   * invented trend should pass false. Defaults to true so existing call sites are unaffected.
+   */
+  showChart?: boolean
   onClick?: () => void
   onMoreClick?: () => void
 }
@@ -29,6 +36,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   chartType = 'area',
   chartData = [20, 45, 35, 50, 80, 60, 75],
   progressPercentage,
+  showChart = true,
   onClick,
   onMoreClick,
 }) => {
@@ -290,14 +298,16 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       </div>
 
       {/* Middle Embedded Chart Visual */}
-      <div className="mt-4 mb-2">
-        {chartType === 'area' && renderAreaChart()}
-        {chartType === 'bar' && renderBarChart()}
-        {chartType === 'progress' && renderProgressBar()}
-        {chartType === 'radial' && renderRadialRing()}
-        {chartType === 'flat-line' && renderFlatLine()}
-        {chartType === 'line' && renderAreaChart()}
-      </div>
+      {showChart && (
+        <div className="mt-4 mb-2">
+          {chartType === 'area' && renderAreaChart()}
+          {chartType === 'bar' && renderBarChart()}
+          {chartType === 'progress' && renderProgressBar()}
+          {chartType === 'radial' && renderRadialRing()}
+          {chartType === 'flat-line' && renderFlatLine()}
+          {chartType === 'line' && renderAreaChart()}
+        </div>
+      )}
 
       {/* Bottom Row: Trend Badge */}
       {trend && (
