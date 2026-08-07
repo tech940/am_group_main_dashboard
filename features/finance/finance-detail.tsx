@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, Loader2, Clock, AlertTriangle, CheckCircle2, MessageSquarePlus,
+  ArrowLeft, Loader2, Clock, AlertTriangle, CheckCircle2, MessageSquarePlus, MessageSquare,
   Landmark, History, CalendarClock, User, Banknote, ShieldCheck, XCircle, RotateCcw,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 import {
   DELAY_REASONS, formatCountdown, formatCurrency, formatDate, formatDateTime,
-  roleLabel, statusMeta, bankStatusMeta, str,
+  roleLabel, statusMeta, bankStatusMeta, str, isRealRemarkText, getFinanceRowMdRemarks,
   type DetailResponse, type BankAttempt,
 } from './finance-shared'
 
@@ -119,6 +119,40 @@ export function FinanceDetail({ proformaId, canApprove, currentUserRole, onBack 
     return Array.from(set).sort((a, b) => a.localeCompare(b))
   }, [bankOptionsQuery.data, bankName])
 
+  const mdRemarks = useMemo(() => {
+    if (!data?.remarks && !data?.proforma) return []
+    const list: { user: string; role: string; remark: string; date?: string }[] = []
+    const seen = new Set<string>()
+
+    for (const r of data?.remarks || []) {
+      if (isRealRemarkText(r.remark)) {
+        const roleLower = (r.createdByRole || '').toLowerCase()
+        const userLower = (r.createdByName || '').toLowerCase()
+        if (roleLower.includes('md') || roleLower.includes('management') || roleLower.includes('ceo') ||
+            userLower.includes('md') || userLower.includes('management') || /\[MD/i.test(r.remark)) {
+          const text = r.remark.trim()
+          if (!seen.has(text)) {
+            seen.add(text)
+            list.push({ user: r.createdByName || 'MD / Management', role: 'MD', remark: text, date: formatDate(r.createdAt) })
+          }
+        }
+      }
+    }
+
+    if (data?.proforma) {
+      const pRemarks = getFinanceRowMdRemarks(data.proforma as any)
+      for (const item of pRemarks) {
+        const text = item.remark.trim()
+        if (!seen.has(text)) {
+          seen.add(text)
+          list.push(item)
+        }
+      }
+    }
+
+    return list
+  }, [data?.remarks, data?.proforma])
+
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-slate-400" /></div>
   if (isError || !data) return (
     <div className="space-y-4">
@@ -178,6 +212,26 @@ export function FinanceDetail({ proformaId, canApprove, currentUserRole, onBack 
 
       {actionError && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700">{actionError}</div>
+      )}
+
+      {mdRemarks.length > 0 && (
+        <Card className="border-2 border-rose-200 bg-rose-50/90 p-5 shadow-sm space-y-3">
+          <div className="flex items-center gap-2 text-rose-900 font-black">
+            <MessageSquare className="h-4.5 w-4.5 text-rose-600" />
+            <h3 className="text-xs uppercase tracking-wider">MD / Management Remarks</h3>
+          </div>
+          <div className="space-y-2">
+            {mdRemarks.map((item, i) => (
+              <div key={i} className="rounded-xl bg-white p-3.5 border border-rose-200/80 shadow-2xs">
+                <p className="text-xs font-bold text-rose-950 italic">"{item.remark}"</p>
+                <div className="mt-2 flex items-center justify-between text-[11px] font-semibold text-rose-700">
+                  <span>{item.user}</span>
+                  <span className="rounded bg-rose-100 px-2 py-0.5 font-bold uppercase">{item.role}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">

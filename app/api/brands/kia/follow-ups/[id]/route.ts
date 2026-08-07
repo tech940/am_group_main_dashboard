@@ -19,7 +19,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = await request.json().catch(() => ({})) as {
       action?: 'update' | 'complete' | 'cancel'
       dueAt?: string; reason?: string; priority?: string; notes?: string; assignedTo?: string | null
-      outcome?: string; nextDueAt?: string; notInterestedReason?: string
+      outcome?: string; nextDueAt?: string; notInterestedReason?: string; bookingStatus?: string
     }
     if (body.action === 'complete') {
       const result = await completeFollowup(appUser, id, {
@@ -40,6 +40,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       priority: body.priority,
       notes: body.notes,
       assignedTo: body.assignedTo,
+      bookingStatus: body.bookingStatus,
     })
     return NextResponse.json(result)
   } catch (error) {

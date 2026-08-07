@@ -47,10 +47,12 @@ type Followup = {
   reason: string; priority: string; notes: string | null; source: string; outcome: string | null
   completedAt: string | null; createdAt: string
   notInterestedReason: string | null
-  bucket: 'not_connected' | 'customer_concerns' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled' | 'delivered'
+  bucket: 'not_connected' | 'customer_concerns' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled' | 'delivered' | 'md_remarks'
   overdue: boolean
   customerPhone: string | null
   remarksCount: number
+  mdRemarksCount?: number
+  latestMdRemark?: string | null
 }
 type Counts = { not_connected: number; customer_concerns: number; pending: number; next_day: number; scheduled: number; cancelled: number; delivered: number; rescheduled: number; overdue: number }
 type ListResponse = { rows: Followup[]; counts: Counts; now: string }
@@ -109,6 +111,7 @@ const REASON_LABEL: Record<string, string> = Object.fromEntries(REASONS.map((r) 
 
 const BUCKETS = [
   { key: 'pending', label: 'Pending Call', tone: 'text-amber-600', hint: 'Open follow-ups' },
+  { key: 'md_remarks', label: 'MD Remarks', tone: 'text-rose-600', hint: 'Remarks by MD/Management' },
   { key: 'not_connected', label: 'Not Connected', tone: 'text-rose-600', hint: 'Last call failed' },
   { key: 'customer_concerns', label: 'Customer Concerns', tone: 'text-amber-600', hint: 'Logged customer concerns' },
   { key: 'rescheduled', label: 'Rescheduled', tone: 'text-violet-600', hint: 'Rescheduled open touches' },
@@ -118,6 +121,124 @@ const BUCKETS = [
   { key: 'delivered', label: 'Delivered', tone: 'text-emerald-600', hint: 'Delivered vehicles' },
   { key: 'analytics', label: 'Analytics', tone: 'text-indigo-600', hint: 'Performance & completion metrics' },
 ] as const
+
+const isRealRemarkText = (text: string | null | undefined): boolean => {
+  if (!text) return false
+  const trimmed = text.trim()
+  if (!trimmed || trimmed.length < 3) return false
+  const lower = trimmed.toLowerCase()
+
+  const prefixesToIgnore = [
+    'quick approved',
+    'approved',
+    'approve',
+    'not approved',
+    'rejected',
+    'held',
+    'sent back',
+    'quick approved by',
+    'no remarks',
+    'no comment',
+    'no notes',
+    'status set to',
+    'marked as',
+    'booking cancelled',
+    'bulk completed',
+    'bulk rescheduled',
+    'follow-up updated',
+    'follow-up completed',
+    'booking created',
+    'proforma generated',
+    'discount requested',
+    'outcome:',
+    'booking status set to',
+    'rescheduled to',
+    'reassigned to',
+    'pending follow-up',
+    'remark:'
+  ]
+
+  for (const prefix of prefixesToIgnore) {
+    if (lower.startsWith(prefix) || lower === prefix) {
+      if (lower.startsWith('remark: ')) {
+        const after = lower.replace(/^remark:\s*/, '').trim()
+        return isRealRemarkText(after)
+      }
+      return false
+    }
+  }
+
+  return true
+}
+
+const isMdOrDevUser = (roleKey?: string | null, name?: string | null): boolean => {
+  const rKey = (roleKey || '').toLowerCase()
+  const uName = (name || '').toLowerCase()
+  return rKey.includes('md') || rKey.includes('management') || rKey.includes('ceo') ||
+         uName.includes('md') || uName.includes('management')
+}
+
+type MdRemarkItem = { user: string; role: string; remark: string; date?: string }
+
+const getFollowupMdRemarksList = (f: Followup | null | undefined, activities?: ActivityItem[]): MdRemarkItem[] => {
+  if (!f) return []
+  const list: MdRemarkItem[] = []
+  const seen = new Set<string>()
+
+  // Check latestMdRemark from DB subquery
+  if (f.latestMdRemark) {
+    const text = f.latestMdRemark.trim()
+    if (text && isRealRemarkText(text) && !seen.has(text)) {
+      seen.add(text)
+      list.push({
+        user: 'MD / Management',
+        role: 'MD',
+        remark: text,
+        date: f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN') : undefined
+      })
+    }
+  }
+
+  // Check follow-up notes
+  if (f.notes) {
+    const text = f.notes.trim()
+    if (text && isRealRemarkText(text)) {
+      if (/\[MD Remark|\[MD\]|\[Management\]/i.test(text) || isMdOrDevUser(f.assignedTo, f.assignedName || f.consultantName)) {
+        if (!seen.has(text)) {
+          seen.add(text)
+          list.push({
+            user: f.assignedName || f.consultantName || 'MD / Management',
+            role: 'MD',
+            remark: text,
+            date: f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN') : undefined
+          })
+        }
+      }
+    }
+  }
+
+  // Check activities if provided
+  if (activities && Array.isArray(activities)) {
+    for (const act of activities) {
+      const remarkText = (act.description || act.message || '').trim()
+      if (remarkText && isRealRemarkText(remarkText)) {
+        if (isMdOrDevUser(act.type, act.actorName) || /md|management/i.test(act.actorName || '') || /\[MD/i.test(remarkText)) {
+          if (!seen.has(remarkText)) {
+            seen.add(remarkText)
+            list.push({
+              user: act.actorName || 'MD / Management',
+              role: 'MD',
+              remark: remarkText,
+              date: act.createdAt ? new Date(act.createdAt).toLocaleDateString('en-IN') : undefined
+            })
+          }
+        }
+      }
+    }
+  }
+
+  return list
+}
 
 const MIN_REMARK_LENGTH = 10
 const MIN_REMARK_WORDS = 10
@@ -373,13 +494,13 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
       } else if (action === 'cancelled') {
         await patch(f.id, { action: 'cancel', notes: 'Booking Cancelled' }, 'Booking Cancelled')
       } else if (action === 'fake_booking') {
-        await patch(f.id, { action: 'update', notes: 'Fake Booking', reason: 'fake_booking' }, 'Marked as Fake Booking')
+        await patch(f.id, { action: 'update', bookingStatus: 'fake_booking', notes: 'Marked as Fake Booking', reason: 'fake_booking' }, 'Marked as Fake Booking')
       } else if (action === 'pending') {
-        await patch(f.id, { action: 'update', notes: 'Status set to Pending', reason: 'pending' }, 'Status set to Pending')
+        await patch(f.id, { action: 'update', bookingStatus: 'pending', notes: 'Status set to Pending', reason: 'pending' }, 'Status set to Pending')
       } else if (action === 'demo_vehicle') {
-        await patch(f.id, { action: 'update', notes: 'Demo Vehicle', reason: 'demo_vehicle' }, 'Marked as Demo Vehicle')
+        await patch(f.id, { action: 'update', bookingStatus: 'demo_vehicle', notes: 'Marked as Demo Vehicle', reason: 'demo_vehicle' }, 'Marked as Demo Vehicle')
       } else if (action === 'repeated_booking') {
-        await patch(f.id, { action: 'update', notes: 'Repeated Booking', reason: 'repeated_booking' }, 'Marked as Repeated Booking')
+        await patch(f.id, { action: 'update', bookingStatus: 'repeated_booking', notes: 'Marked as Repeated Booking', reason: 'repeated_booking' }, 'Marked as Repeated Booking')
       }
     } catch (e) {
       toast({ title: 'Action Failed', description: e instanceof Error ? e.message : '', variant: 'error' })
@@ -548,16 +669,37 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
     return () => clearInterval(timer)
   }, [data?.rows, alertedIds])
 
+  const uniqueRows = useMemo(() => {
+    const seen = new Set<string>()
+    const list: Followup[] = []
+    for (const r of data?.rows || []) {
+      if (!seen.has(r.id)) {
+        seen.add(r.id)
+        list.push(r)
+      }
+    }
+    return list
+  }, [data?.rows])
+
   const grouped = useMemo(() => {
-    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], customer_concerns: [], pending: [], next_day: [], scheduled: [], cancelled: [], delivered: [], rescheduled: [] }
-    for (const r of data?.rows || []) g[r.bucket].push(r)
+    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], customer_concerns: [], pending: [], next_day: [], scheduled: [], cancelled: [], delivered: [], rescheduled: [], md_remarks: [] }
+    for (const r of uniqueRows) {
+      if (g[r.bucket]) g[r.bucket].push(r)
+    }
     return g
-  }, [data])
+  }, [uniqueRows])
+
+  const mdRemarksCount = useMemo(() => {
+    return uniqueRows.filter((r) => getFollowupMdRemarksList(r).length > 0).length
+  }, [uniqueRows])
 
   const filteredRows = useMemo(() => {
     if (activeTab === 'analytics') return []
+    if (activeTab === 'md_remarks') {
+      return uniqueRows.filter((r) => getFollowupMdRemarksList(r).length > 0)
+    }
     return grouped[activeTab as Followup['bucket']] || []
-  }, [grouped, activeTab])
+  }, [grouped, activeTab, uniqueRows])
 
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * pageSize
@@ -1107,7 +1249,12 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
           <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-2xl border-x border-t border-slate-100 flex-wrap">
             {BUCKETS.map((b) => {
               const isAnalytics = b.key === 'analytics'
-              const count = isAnalytics ? null : (data?.counts[b.key as keyof Counts] ?? 0)
+              const isMdRemarks = b.key === 'md_remarks'
+              const count = isAnalytics
+                ? null
+                : isMdRemarks
+                ? mdRemarksCount
+                : (data?.counts[b.key as keyof Counts] ?? 0)
               const isActive = activeTab === b.key
               return (
                 <button
@@ -1116,17 +1263,20 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                   className={cn(
                     'border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition-all -mb-px flex items-center gap-1.5 cursor-pointer',
                     isActive
-                      ? 'border-indigo-600 text-indigo-600'
+                      ? isMdRemarks ? 'border-rose-600 text-rose-600' : 'border-indigo-600 text-indigo-600'
                       : 'border-transparent text-slate-400 hover:text-slate-600'
                   )}
                 >
                   {b.key === 'analytics' && <BarChart3 className="h-3.5 w-3.5" />}
+                  {b.key === 'md_remarks' && <MessageSquare className="h-3.5 w-3.5 text-rose-600" />}
                   {b.label}
                   {count !== null && (
                     <span
                       className={cn(
                         'rounded-full px-1.5 py-0.5 text-[9px] font-black',
-                        isActive ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
+                        isMdRemarks
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : isActive ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
                       )}
                     >
                       {count}
@@ -1169,7 +1319,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
-                    {paginatedRows.map((f) => {
+                    {paginatedRows.map((f, idx) => {
                       const isSelected = selectedBookingId === f.bookingId
                       const payment = getPaymentStatus(f)
                       const isDone = f.status !== 'pending'
@@ -1177,7 +1327,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                       const actCount = (f as any).activityCount as number | undefined
                       return (
                         <tr
-                          key={f.id}
+                          key={`${f.id}-${idx}`}
                           onMouseEnter={() => scheduleRowPrefetch(f.bookingId)}
                           onMouseLeave={cancelRowPrefetch}
                           onPointerDown={() => prefetchBookingDetail(f.bookingId)}
@@ -1575,6 +1725,34 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                   {/* 1. Full Specs/Details Tab */}
                   {sidebarTab === 'details' && (
                     <div className="space-y-5 text-xs font-bold text-slate-700">
+                      {/* Prominent MD / Management Remarks Callout Box */}
+                      {(() => {
+                        const mdRemarks = getFollowupMdRemarksList(bookingDetailQuery.data?.booking, bookingDetailQuery.data?.activities)
+                        if (mdRemarks.length === 0) return null
+
+                        return (
+                          <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 space-y-2.5 shadow-2xs">
+                            <div className="flex items-center gap-1.5 text-rose-900 text-[11px] font-black uppercase tracking-wider">
+                              <MessageSquare className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
+                              <span>MD / Management Remarks ({mdRemarks.length})</span>
+                            </div>
+                            <div className="space-y-1.5">
+                              {mdRemarks.map((item, i) => (
+                                <div key={i} className="bg-white p-2.5 rounded-lg border border-rose-100 space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="font-black text-slate-900">{item.user} ({item.role})</span>
+                                    {item.date && <span className="font-bold text-slate-400">{item.date}</span>}
+                                  </div>
+                                  <p className="text-[11px] font-bold text-rose-950 italic leading-relaxed whitespace-pre-wrap">
+                                    "{item.remark}"
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
                       <div>
                         <h5 className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-2 border-b border-indigo-50 pb-1">Customer Specs</h5>
                         <div className="grid grid-cols-2 gap-3 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
@@ -2254,6 +2432,34 @@ function BookingDetailsDialog({
           </div>
         ) : (
           <div className="space-y-6 pt-4 text-xs font-bold text-slate-700">
+            {/* Prominent MD / Management Remarks Callout Box */}
+            {(() => {
+              const mdRemarks = getFollowupMdRemarksList(bookingDetail?.booking, bookingDetail?.activities)
+              if (mdRemarks.length === 0) return null
+
+              return (
+                <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <div className="flex items-center gap-2 text-rose-900 text-xs font-black uppercase tracking-wider">
+                    <MessageSquare className="w-4 h-4 text-rose-600 animate-pulse" />
+                    <span>MD / Management Remarks ({mdRemarks.length})</span>
+                  </div>
+                  <div className="space-y-2">
+                    {mdRemarks.map((item, i) => (
+                      <div key={i} className="bg-white p-3.5 rounded-xl border border-rose-100 space-y-1 shadow-2xs">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-black text-slate-900">{item.user} ({item.role})</span>
+                          {item.date && <span className="font-bold text-slate-400">{item.date}</span>}
+                        </div>
+                        <p className="text-xs font-bold text-rose-950 italic leading-relaxed whitespace-pre-wrap">
+                          "{item.remark}"
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+
             {/* 1. Customer & General Specs */}
             <div>
               <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-3 border-b border-indigo-50 pb-1">1. Customer Info</h3>

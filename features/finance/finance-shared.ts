@@ -52,6 +52,9 @@ export interface ApprovalQueueRow {
   bookingLoanAmount?: string | number | null
   importMetadata?: Record<string, unknown> | null
   bookingMetadata?: Record<string, unknown> | null
+  financeRemarks?: string | null
+  mdRemarksCount?: number
+  latestMdRemark?: string | null
 }
 
 export interface ProcessingRow {
@@ -70,9 +73,87 @@ export interface ProcessingRow {
   trimDescription: string | null
   consultant: string | null
   location: string | null
+  financeRemarks?: string | null
+  mdRemarksCount?: number
+  latestMdRemark?: string | null
 }
 
 export interface QueueResponse { approvalQueue: ApprovalQueueRow[]; processing: ProcessingRow[] }
+
+export const isRealRemarkText = (text: string | null | undefined): boolean => {
+  if (!text) return false
+  const trimmed = text.trim()
+  if (!trimmed || trimmed.length < 3) return false
+  const lower = trimmed.toLowerCase()
+
+  const prefixesToIgnore = [
+    'quick approved',
+    'approved',
+    'approve',
+    'not approved',
+    'rejected',
+    'held',
+    'sent back',
+    'quick approved by',
+    'no remarks',
+    'no comment',
+    'no notes',
+    'status set to',
+    'marked as',
+    'booking cancelled',
+    'bulk completed',
+    'bulk rescheduled',
+    'follow-up updated',
+    'follow-up completed',
+    'booking created',
+    'proforma generated',
+    'discount requested',
+    'finance processing started',
+    'outcome:',
+    'booking status set to',
+    'rescheduled to',
+    'reassigned to',
+    'pending follow-up',
+    'remark:'
+  ]
+
+  for (const prefix of prefixesToIgnore) {
+    if (lower.startsWith(prefix) || lower === prefix) {
+      if (lower.startsWith('remark: ')) {
+        const after = lower.replace(/^remark:\s*/, '').trim()
+        return isRealRemarkText(after)
+      }
+      return false
+    }
+  }
+
+  return true
+}
+
+export type FinanceMdRemarkItem = { id?: string; user: string; role: string; remark: string; date?: string }
+
+export function getFinanceRowMdRemarks(row: { financeRemarks?: string | null; latestMdRemark?: string | null; mdRemarksCount?: number }): FinanceMdRemarkItem[] {
+  const list: FinanceMdRemarkItem[] = []
+  const seen = new Set<string>()
+
+  if (row.financeRemarks && isRealRemarkText(row.financeRemarks)) {
+    const text = row.financeRemarks.trim()
+    if (!seen.has(text)) {
+      seen.add(text)
+      list.push({ user: 'MD / Management', role: 'MD', remark: text })
+    }
+  }
+
+  if (row.latestMdRemark && isRealRemarkText(row.latestMdRemark)) {
+    const text = row.latestMdRemark.trim()
+    if (!seen.has(text)) {
+      seen.add(text)
+      list.push({ user: 'MD / Management', role: 'MD', remark: text })
+    }
+  }
+
+  return list
+}
 
 export interface Remark { id: string; remark: string; createdByName: string; createdByRole: string; createdAt: string }
 export interface BankAttempt {

@@ -339,6 +339,7 @@ export async function GET(request: Request) {
         unanswered: t.unanswered,
         missedIncoming: t.missedIncoming,
         missedOutgoing: t.outgoingUnanswered,
+        incomingAttempts: t.incomingAttempts,
       }))
       .sort((a, b) => a.date.localeCompare(b.date))
 
@@ -357,6 +358,7 @@ export async function GET(request: Request) {
       missedIncomingSeries: series((t) => t.missedIncoming),
       missedOutgoingSeries: series((t) => t.missedOutgoing),
       unansweredSeries: series((t) => t.unanswered),
+      incomingSeries: series((t) => t.incomingAttempts),
       agentsSeries: [] as number[],
     }
 

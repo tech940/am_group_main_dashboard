@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useEffect, Fragment } from 'react'
+import React, { useState, useMemo, useEffect, useCallback, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Badge } from '@/components/ui/badge'
@@ -136,6 +136,88 @@ interface CurrentUser {
   email: string
 }
 
+const isRealRemarkText = (text: string | null | undefined): boolean => {
+  if (!text) return false
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  const lower = trimmed.toLowerCase()
+  const genericStrings = [
+    'quick approved',
+    'approved',
+    'approve',
+    'not approved',
+    'rejected',
+    'held',
+    'sent back',
+    'quick approved by md',
+    'no remarks provided',
+    'no comment',
+    'no notes left.',
+    'quick approved by developer'
+  ]
+  return !genericStrings.includes(lower)
+}
+
+const isMdOrDevUser = (roleKey?: string | null, role?: string | null): boolean => {
+  const rKey = (roleKey || '').toLowerCase()
+  const rName = (role || '').toLowerCase()
+  return rKey === 'md' || rKey === 'management' || rKey === 'developer' ||
+         rName.includes('md') || rName.includes('management') || rName.includes('developer') || rName.includes('ceo')
+}
+
+const getMdRemarksList = (req: ApprovalRequest | null | undefined): { user: string; role: string; remark: string; date?: string }[] => {
+  if (!req) return []
+  const list: { user: string; role: string; remark: string; date?: string }[] = []
+  const seen = new Set<string>()
+
+  // 1. Direct managementRemarks column if present and real
+  if (req.managementRemarks && isRealRemarkText(req.managementRemarks)) {
+    const trimmed = req.managementRemarks.trim()
+    if (!seen.has(trimmed)) {
+      seen.add(trimmed)
+      list.push({
+        user: 'MD / Management',
+        role: 'MD',
+        remark: trimmed
+      })
+    }
+  }
+
+  // 2. Check history entries for MD / Management / Developer
+  if (Array.isArray(req.history)) {
+    req.history.forEach((h: any) => {
+      const isMd = isMdOrDevUser(h.roleKey, h.role)
+      if (isMd) {
+        if (h.action === 'REMARK_ADD' && h.remarks && h.remarks.trim().length > 0) {
+          const trimmed = h.remarks.trim()
+          if (!seen.has(trimmed)) {
+            seen.add(trimmed)
+            list.push({
+              user: h.user || 'MD',
+              role: h.role || 'MD',
+              remark: trimmed,
+              date: h.timestamp ? new Date(h.timestamp).toLocaleDateString('en-IN') : undefined
+            })
+          }
+        } else if (isRealRemarkText(h.remarks)) {
+          const trimmed = h.remarks.trim()
+          if (!seen.has(trimmed)) {
+            seen.add(trimmed)
+            list.push({
+              user: h.user || 'MD',
+              role: h.role || 'MD',
+              remark: trimmed,
+              date: h.timestamp ? new Date(h.timestamp).toLocaleDateString('en-IN') : undefined
+            })
+          }
+        }
+      }
+    })
+  }
+
+  return list
+}
+
 export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }) {
   const queryClient = useQueryClient()
   const effectiveRole = ['developer', 'admin'].includes(currentUser.role) ? 'md' : currentUser.role
@@ -150,8 +232,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return new Date(d.getFullYear(), d.getMonth(), 1)
   })
 
-  // Filter Scope: 'pending' (Pending My Approval), 'all' (All requests), 'vendors' (Vendor Ledgers), or 'gl_categories' (GL Category Ledgers)
-  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'vendors' | 'gl_categories'>('pending')
+  // Filter Scope: 'pending' (Pending My Approval), 'all' (All requests), 'md_remarks' (MD Remarks), 'vendors' (Vendor Ledgers), or 'gl_categories' (GL Category Ledgers)
+  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'md_remarks' | 'vendors' | 'gl_categories'>('pending')
 
   // Bulk selection & popup modal states
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([])
@@ -184,7 +266,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [rowsPerPage, setRowsPerPage] = useState(20)
 
   // Details & Action Modal states
   const [detailRow, setDetailRow] = useState<ApprovalRequest | null>(null)
@@ -1246,12 +1328,35 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return data.rows.filter(r => getPendingStageLabel(r).startsWith('Rejected')).length
   }, [data?.rows])
 
+  // Persistent master database row sequence map (so serial numbers stay fixed when items get approved/removed)
+  const dbRowIndexMap = useMemo(() => {
+    const map = new Map<string, number>()
+    if (!data?.rows) return map
+    data.rows.forEach((req, idx) => {
+      map.set(req.id, idx + 1)
+    })
+    return map
+  }, [data?.rows])
+
+  // MD Remarks Helper & Counter
+  const hasMdRemarks = useCallback((req: ApprovalRequest) => {
+    return getMdRemarksList(req).length > 0
+  }, [])
+
+  const mdRemarksCount = useMemo(() => {
+    if (!data?.rows) return 0
+    return data.rows.filter(hasMdRemarks).length
+  }, [data?.rows, hasMdRemarks])
+
   // Filter logic
   const filteredRows = useMemo(() => {
     if (!data?.rows) return []
     return data.rows.filter(row => {
-      // 1. Pending for me vs All filter
+      // 1. Pending for me vs All vs MD Remarks filter
       if (filterScope === 'pending' && !getIsPendingForUser(row)) {
+        return false
+      }
+      if (filterScope === 'md_remarks' && !hasMdRemarks(row)) {
         return false
       }
 
@@ -2312,46 +2417,54 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           <React.Fragment>
         {/* 1. TOP METRICS STRIP */}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            title="TOTAL REQUESTS"
-            value={totalCount}
-            subtitle="All time"
-            icon={FileText}
-            colorScheme="purple"
-            chartType="area"
-            chartData={[10, 25, 20, 45, 30, 65, 55, 80]}
-            trend={{ value: '+18%', isPositive: true, label: 'vs last month' }}
-          />
-          <KpiCard
-            title="PENDING APPROVALS"
-            value={pendingForMeCount}
-            subtitle="Awaiting your action"
-            icon={Clock}
-            colorScheme="amber"
-            chartType="bar"
-            chartData={[15, 30, 20, 50, 35, 75, 40, 20]}
-            trend={{ value: '+12%', isPositive: true, label: 'vs last month' }}
-          />
-          <KpiCard
-            title="APPROVED VOLUME"
-            value={`₹${approvedVolume.toLocaleString('en-IN')}`}
-            subtitle="This year"
-            icon={IndianRupee}
-            colorScheme="emerald"
-            chartType="area"
-            chartData={[20, 35, 50, 40, 60, 55, 75, 90]}
-            trend={{ value: '+24%', isPositive: true, label: 'vs last month' }}
-          />
-          <KpiCard
-            title="REJECTED"
-            value={rejectedCount}
-            subtitle="All time"
-            icon={XCircle}
-            colorScheme="rose"
-            chartType="flat-line"
-            chartData={[0, 0, 0, 0, 0, 0]}
-            trend={{ value: '0%', isPositive: true, label: 'vs last month' }}
-          />
+          <div className="hidden sm:block">
+            <KpiCard
+              title="TOTAL REQUESTS"
+              value={totalCount}
+              subtitle="All time"
+              icon={FileText}
+              colorScheme="purple"
+              chartType="area"
+              chartData={[10, 25, 20, 45, 30, 65, 55, 80]}
+              trend={{ value: '+18%', isPositive: true, label: 'vs last month' }}
+            />
+          </div>
+          <div>
+            <KpiCard
+              title="PENDING APPROVALS"
+              value={pendingForMeCount}
+              subtitle="Awaiting your action"
+              icon={Clock}
+              colorScheme="amber"
+              chartType="bar"
+              chartData={[15, 30, 20, 50, 35, 75, 40, 20]}
+              trend={{ value: '+12%', isPositive: true, label: 'vs last month' }}
+            />
+          </div>
+          <div className="hidden sm:block">
+            <KpiCard
+              title="APPROVED VOLUME"
+              value={`₹${approvedVolume.toLocaleString('en-IN')}`}
+              subtitle="This year"
+              icon={IndianRupee}
+              colorScheme="emerald"
+              chartType="area"
+              chartData={[20, 35, 50, 40, 60, 55, 75, 90]}
+              trend={{ value: '+24%', isPositive: true, label: 'vs last month' }}
+            />
+          </div>
+          <div className="hidden sm:block">
+            <KpiCard
+              title="REJECTED"
+              value={rejectedCount}
+              subtitle="All time"
+              icon={XCircle}
+              colorScheme="rose"
+              chartType="area"
+              chartData={[15, 55, 25, 70, 30, 85, 45, 90]}
+              trend={{ value: '0%', isPositive: true, label: 'vs last month' }}
+            />
+          </div>
         </div>
 
 
@@ -2744,6 +2857,27 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               )}
             </button>
             <button
+              onClick={() => {
+                setFilterScope('md_remarks')
+                setMainSubView('requests')
+              }}
+              className={`pb-2.5 relative transition-all flex-shrink-0 flex items-center gap-1.5 ${
+                filterScope === 'md_remarks' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <span>MD Remarks</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold shadow-2xs transition-all ${
+                mdRemarksCount > 0 
+                  ? 'bg-rose-600 text-white shadow-rose-500/30 animate-pulse' 
+                  : 'bg-slate-200 text-slate-600'
+              }`}>
+                {mdRemarksCount}
+              </span>
+              {filterScope === 'md_remarks' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+              )}
+            </button>
+            <button
               onClick={() => setMainSubView('completed_spend')}
               className="pb-2.5 relative transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0 text-slate-400 hover:text-slate-600"
             >
@@ -2980,8 +3114,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
                     {paginatedRows.map((row, idx) => {
-                      const globalIdx = (currentPage - 1) * rowsPerPage + idx + 1
-                      const numberBadge = getNumberBadgeClass(globalIdx)
+                      const displaySeqNo = dbRowIndexMap.get(row.id) ?? ((currentPage - 1) * rowsPerPage + idx + 1)
+                      const numberBadge = getNumberBadgeClass(displaySeqNo)
                       const pendingLabel = getPendingStageLabel(row)
 
                       // Current Stage Display
@@ -3097,7 +3231,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           </td>
                           <td className="py-2.5 px-3 whitespace-nowrap">
                             <span className={`inline-flex items-center justify-center h-6 w-6 rounded-full border text-[10px] font-black tabular-nums ${numberBadge}`}>
-                              {globalIdx}
+                              {displaySeqNo}
                             </span>
                           </td>
                           <td className="py-2.5 px-3 whitespace-nowrap">
@@ -3281,8 +3415,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             {/* Mobile View: Stacked Cards (visible below sm) */}
             <div className="space-y-4 sm:hidden">
               {paginatedRows.map((row, idx) => {
-                const globalIdx = (currentPage - 1) * rowsPerPage + idx + 1
-                const numberBadge = getNumberBadgeClass(globalIdx)
+                const displaySeqNo = dbRowIndexMap.get(row.id) ?? ((currentPage - 1) * rowsPerPage + idx + 1)
+                const numberBadge = getNumberBadgeClass(displaySeqNo)
                 const pendingLabel = getPendingStageLabel(row)
                 const isPendingForUser = getIsPendingForUser(row)
 
@@ -3296,7 +3430,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
                       <div className="flex items-center gap-2.5">
                         <span className={`inline-flex items-center justify-center h-7 w-7 rounded-full border text-[11px] font-black tabular-nums shrink-0 ${numberBadge}`}>
-                          {globalIdx}
+                          {displaySeqNo}
                         </span>
                         <div className="flex flex-col items-start gap-0.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -3315,7 +3449,78 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       </div>
                     </div>
 
-                    {/* Action Bar for Approvers (4-button 2x2 grid on mobile) */}
+                    {/* Tags: Department, Payment Type, Approval Type, Status */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className={`border px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getDeptBadgeClass(row.department || '')}`}>
+                        {row.department || '—'}
+                      </span>
+                      <span className={`border px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getPaymentTypeBadgeClass(row.typeOfPayment || '')}`}>
+                        {row.typeOfPayment || '—'}
+                      </span>
+                      <span className="bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                        {row.approvalType || 'General'}
+                      </span>
+                      {pendingLabel === 'Paid' ? (
+                        <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                          PAID
+                        </span>
+                      ) : pendingLabel === 'Pending Payment' ? (
+                        <span className="bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                          APPROVED
+                        </span>
+                      ) : pendingLabel.startsWith('Rejected') ? (
+                        <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                          REJECTED
+                        </span>
+                      ) : (
+                        <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                          PENDING
+                        </span>
+                      )}
+                      {getSlaBadge(row.createdAt)}
+                    </div>
+
+                    {/* Vendor & GL Account Grid */}
+                    <div className="grid grid-cols-2 gap-2 bg-slate-50/90 p-3 rounded-2xl border border-slate-200/60 text-xs">
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Vendor / Beneficiary</span>
+                        <span className="font-bold text-slate-900 mt-0.5 block truncate" title={row.vendorName || '—'}>{row.vendorName || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">GL Account</span>
+                        <span className="font-bold text-indigo-700 mt-0.5 block truncate" title={row.glName || '—'}>{row.glName || '—'}</span>
+                      </div>
+                    </div>
+
+                    {/* Direct Remarks Callout Box on Mobile View (ABOVE Buttons) */}
+                    <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-3 text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3 text-amber-600" />
+                          <span>Remarks / विवरण:</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-700">Tap card for detail</span>
+                      </div>
+                      <p className="font-semibold text-slate-800 italic leading-relaxed">
+                        "{row.remarks || 'No remarks provided'}"
+                      </p>
+                      {row.vehicleNumber && (
+                        <div className="flex items-center justify-between pt-1 border-t border-amber-200/50 text-[11px]">
+                          <span className="font-bold text-amber-900">🚗 Vehicle No:</span>
+                          <span className="font-mono font-black text-teal-950 bg-teal-100/80 px-2 py-0.5 rounded-md border border-teal-300">{row.vehicleNumber}</span>
+                        </div>
+                      )}
+                      {Array.isArray(row.history) && row.history.length > 0 && (
+                        <div className="pt-1.5 border-t border-amber-200/50 text-[10px] space-y-0.5">
+                          <span className="font-black text-slate-500 uppercase tracking-wider">Latest Action Comment:</span>
+                          <p className="font-medium text-slate-700">
+                            <span className="font-bold text-slate-900">{row.history[row.history.length - 1].user} ({row.history[row.history.length - 1].role}):</span> "{row.history[row.history.length - 1].remarks || 'No comment'}"
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Bar for Approvers (4-button 2x2 grid on mobile - BELOW Remarks) */}
                     {isPendingForUser && (() => {
                       const stageKey = getActiveStageKey(row)
                       if (!stageKey) return null
@@ -3394,77 +3599,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         </div>
                       )
                     })()}
-
-                    {/* Tags: Department, Payment Type, Approval Type, Status */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className={`border px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getDeptBadgeClass(row.department || '')}`}>
-                        {row.department || '—'}
-                      </span>
-                      <span className={`border px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getPaymentTypeBadgeClass(row.typeOfPayment || '')}`}>
-                        {row.typeOfPayment || '—'}
-                      </span>
-                      <span className="bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
-                        {row.approvalType || 'General'}
-                      </span>
-                      {pendingLabel === 'Paid' ? (
-                        <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
-                          PAID
-                        </span>
-                      ) : pendingLabel === 'Pending Payment' ? (
-                        <span className="bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
-                          APPROVED
-                        </span>
-                      ) : pendingLabel.startsWith('Rejected') ? (
-                        <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
-                          REJECTED
-                        </span>
-                      ) : (
-                        <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
-                          PENDING
-                        </span>
-                      )}
-                      {getSlaBadge(row.createdAt)}
-                    </div>
-
-                    {/* Vendor & GL Account Grid */}
-                    <div className="grid grid-cols-2 gap-2 bg-slate-50/90 p-3 rounded-2xl border border-slate-200/60 text-xs">
-                      <div>
-                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Vendor / Beneficiary</span>
-                        <span className="font-bold text-slate-900 mt-0.5 block truncate" title={row.vendorName || '—'}>{row.vendorName || '—'}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">GL Account</span>
-                        <span className="font-bold text-indigo-700 mt-0.5 block truncate" title={row.glName || '—'}>{row.glName || '—'}</span>
-                      </div>
-                    </div>
-
-                    {/* Direct Remarks Callout Box on Mobile View */}
-                    <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-3 text-xs space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
-                          <MessageSquare className="w-3 h-3 text-amber-600" />
-                          <span>Remarks / विवरण:</span>
-                        </span>
-                        <span className="text-[10px] font-bold text-amber-700">Tap card for detail</span>
-                      </div>
-                      <p className="font-semibold text-slate-800 italic leading-relaxed">
-                        "{row.remarks || 'No remarks provided'}"
-                      </p>
-                      {row.vehicleNumber && (
-                        <div className="flex items-center justify-between pt-1 border-t border-amber-200/50 text-[11px]">
-                          <span className="font-bold text-amber-900">🚗 Vehicle No:</span>
-                          <span className="font-mono font-black text-teal-950 bg-teal-100/80 px-2 py-0.5 rounded-md border border-teal-300">{row.vehicleNumber}</span>
-                        </div>
-                      )}
-                      {Array.isArray(row.history) && row.history.length > 0 && (
-                        <div className="pt-1.5 border-t border-amber-200/50 text-[10px] space-y-0.5">
-                          <span className="font-black text-slate-500 uppercase tracking-wider">Latest Action Comment:</span>
-                          <p className="font-medium text-slate-700">
-                            <span className="font-bold text-slate-900">{row.history[row.history.length - 1].user} ({row.history[row.history.length - 1].role}):</span> "{row.history[row.history.length - 1].remarks || 'No comment'}"
-                          </p>
-                        </div>
-                      )}
-                    </div>
 
                     {/* Footer: Date Submitted */}
                     <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 pt-1">
@@ -3727,9 +3861,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             }
 
             const timelineEvents = getTimelineEvents(detailRow)
-            const remarksCount = timelineEvents.filter(e => e.iconType === 'remark').length
+            const isRemarkEvent = (e: any) => e.iconType === 'remark' || (typeof e.description === 'string' && isRealRemarkText(e.description))
+            const remarksCount = timelineEvents.filter(isRemarkEvent).length
             const displayedEvents = activeTab === 'remarks' 
-              ? timelineEvents.filter(e => e.iconType === 'remark')
+              ? timelineEvents.filter(isRemarkEvent)
               : timelineEvents
 
             const pendingStageKey = (() => {
@@ -4102,6 +4237,34 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   )}>
                     {/* Stepper Card */}
                     {renderNewWorkflowStepper(detailRow)}
+
+                    {/* Prominent MD / Management Remarks Box */}
+                    {(() => {
+                      const mdRemarks = getMdRemarksList(detailRow)
+                      if (mdRemarks.length === 0) return null
+
+                      return (
+                        <div className="bg-rose-50 border-2 border-rose-200 rounded-3xl p-5 space-y-3 shadow-sm animate-in fade-in duration-200">
+                          <div className="flex items-center gap-2 text-rose-900 text-xs font-black uppercase tracking-wider">
+                            <MessageSquare className="w-4 h-4 text-rose-600 animate-pulse" />
+                            <span>MD / Management Remarks ({mdRemarks.length})</span>
+                          </div>
+                          <div className="space-y-2">
+                            {mdRemarks.map((item, i) => (
+                              <div key={i} className="bg-white p-4 rounded-2xl border border-rose-100 space-y-1 shadow-2xs">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="font-black text-slate-900">{item.user} ({item.role})</span>
+                                  {item.date && <span className="font-bold text-slate-400">{item.date}</span>}
+                                </div>
+                                <p className="text-xs font-bold text-rose-950 italic leading-relaxed whitespace-pre-wrap">
+                                  "{item.remark}"
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     {/* Risk Warning Box */}
                     {(() => {

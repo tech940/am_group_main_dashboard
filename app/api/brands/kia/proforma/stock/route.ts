@@ -50,6 +50,8 @@ export async function GET(request: Request) {
     const dealerCode = url.searchParams.get('dealer_code') || 'All'
     const model = url.searchParams.get('model') || 'All'
     const status = url.searchParams.get('status') || 'All'
+    const startDate = url.searchParams.get('start_date') || ''
+    const endDate = url.searchParams.get('end_date') || ''
     const page = Number(url.searchParams.get('page') || 1)
     const pageSize = Number(url.searchParams.get('pageSize') || 10)
     const offset = (page - 1) * pageSize
@@ -58,6 +60,14 @@ export async function GET(request: Request) {
     // Build filters
     const filters: string[] = ['TRUE']
     if (dealerScopeClause) filters.push(dealerScopeClause)
+    if (startDate) {
+      const escaped = startDate.replace(/'/g, "''")
+      filters.push(`COALESCE(sm.uploaded_at, sm.created_at)::date >= '${escaped}'::date`)
+    }
+    if (endDate) {
+      const escaped = endDate.replace(/'/g, "''")
+      filters.push(`COALESCE(sm.uploaded_at, sm.created_at)::date <= '${escaped}'::date`)
+    }
     if (dealerCode !== 'All') {
       filters.push(`sm.order_dealer = '${dealerCode.replace(/'/g, "''")}'`)
     }
@@ -123,6 +133,14 @@ export async function GET(request: Request) {
     // selected dealer/model at all (the previous bug: metrics ran with no WHERE).
     const scopeFilters: string[] = ['TRUE']
     if (dealerScopeClause) scopeFilters.push(dealerScopeClause)
+    if (startDate) {
+      const escaped = startDate.replace(/'/g, "''")
+      scopeFilters.push(`COALESCE(sm.uploaded_at, sm.created_at)::date >= '${escaped}'::date`)
+    }
+    if (endDate) {
+      const escaped = endDate.replace(/'/g, "''")
+      scopeFilters.push(`COALESCE(sm.uploaded_at, sm.created_at)::date <= '${escaped}'::date`)
+    }
     if (dealerCode !== 'All') scopeFilters.push(`sm.order_dealer = '${dealerCode.replace(/'/g, "''")}'`)
     if (model !== 'All') scopeFilters.push(`sm.model ILIKE '%${model.replace(/'/g, "''")}%'`)
     if (search) {

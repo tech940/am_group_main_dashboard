@@ -190,7 +190,7 @@ function nullableText(value: unknown) {
  * showed 1, because the second booking had already moved to vehicle_allocated. The card and the list
  * disagreeing is the visible symptom; the silent fallback is the cause.
  */
-const PSEUDO_STATUS_FILTERS = new Set(['today', 'not_in_stock', 'in_stock'])
+const PSEUDO_STATUS_FILTERS = new Set(['today', 'not_in_stock', 'in_stock', 'md_remarks'])
 
 function normalizeStatus(value: unknown): KiaBookingStatus {
   const normalized = text(value).toLowerCase()
@@ -628,6 +628,39 @@ function listFilters(input: BookingListInput) {
         )
       )
     `)
+  } else if (text(input.status) && text(input.status).toLowerCase() === 'md_remarks') {
+    filters.push(sql`(
+      EXISTS (
+        SELECT 1 FROM kia_booking_activity act
+        WHERE act.booking_id = kia_bookings.id
+        AND (
+          act.description ILIKE '%[MD%' OR act.description ILIKE '%MD remark%' OR act.description ILIKE '%MD:%' OR act.title ILIKE '%[MD%' OR act.title ILIKE '%MD remark%'
+          OR (
+            (act.actor_role ILIKE '%md%' OR act.actor_role ILIKE '%management%' OR act.actor_role ILIKE '%developer%' OR act.actor_role ILIKE '%ceo%')
+            AND act.title NOT ILIKE 'follow-up%'
+            AND act.title NOT ILIKE 'booking%'
+            AND act.title NOT ILIKE 'status%'
+            AND act.title NOT ILIKE 'quick approved%'
+            AND act.title NOT ILIKE 'approved%'
+            AND act.title NOT ILIKE 'marked as%'
+            AND (act.description IS NOT NULL AND length(trim(coalesce(act.description, ''))) > 3)
+          )
+        )
+      )
+      OR (kia_bookings.notes ILIKE '%[MD%' OR kia_bookings.notes ILIKE '%MD remark%' OR kia_bookings.notes ILIKE '%MD:%')
+      OR (
+        kia_bookings.metadata->'remarks' IS NOT NULL 
+        AND (
+          kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"MD"%'
+          OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"DEVELOPER"%'
+          OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"MANAGEMENT"%'
+          OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"CEO"%'
+          OR kia_bookings.metadata->>'remarks' ILIKE '%[MD%'
+          OR kia_bookings.metadata->>'remarks' ILIKE '%MD remark%'
+          OR kia_bookings.metadata->>'remarks' ILIKE '%MD:%'
+        )
+      )
+    )`)
   } else if (text(input.status) && (text(input.status).toLowerCase() === 'vehicle_allocated' || text(input.status).toLowerCase() === 'payment_pending')) {
     filters.push(inArray(kiaBookings.status, ['vehicle_allocated', 'transferring']))
   } else if (
@@ -709,6 +742,11 @@ export async function getKiaBookingsList(input: BookingListInput) {
     ? sql`AND kb.dealer_code IN ${input.allowedDealers}`
     : sql``
 
+  const dateScopeKb = sql`
+    ${text(input.startDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.startDate)) ? sql`AND kb.created_at >= (${text(input.startDate)}::date AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'` : sql``}
+    ${text(input.endDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.endDate)) ? sql`AND kb.created_at <= ((${text(input.endDate)}::date + INTERVAL '1 day') AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'` : sql``}
+  `
+
   // Page load is dominated by pooler round-trip latency (~225ms/query), not the
   // queries themselves. The status counts, filter option lists and today count
   // are all over the same unfiltered table, so fold them into ONE round trip via
@@ -785,10 +823,47 @@ export async function getKiaBookingsList(input: BookingListInput) {
         -- predicate is a total boolean per booking), so it is derived as eligible_count - not_in_stock_count
         -- in JS. Computing it here re-ran the whole bidirectional-ILIKE stock scan a second time for no
         -- new information — this cheap count replaces that scan.
+        (SELECT count(DISTINCT kb.id)::int FROM kia_bookings kb
+          WHERE kb.deleted_at IS NULL
+            AND (
+              EXISTS (
+                SELECT 1 FROM kia_booking_activity act
+                WHERE act.booking_id = kb.id
+                AND (
+                  act.description ILIKE '%[MD%' OR act.description ILIKE '%MD remark%' OR act.description ILIKE '%MD:%' OR act.title ILIKE '%[MD%' OR act.title ILIKE '%MD remark%'
+                  OR (
+                    (act.actor_role ILIKE '%md%' OR act.actor_role ILIKE '%management%' OR act.actor_role ILIKE '%developer%' OR act.actor_role ILIKE '%ceo%')
+                    AND act.title NOT ILIKE 'follow-up%'
+                    AND act.title NOT ILIKE 'booking%'
+                    AND act.title NOT ILIKE 'status%'
+                    AND act.title NOT ILIKE 'quick approved%'
+                    AND act.title NOT ILIKE 'approved%'
+                    AND act.title NOT ILIKE 'marked as%'
+                    AND (act.description IS NOT NULL AND length(trim(coalesce(act.description, ''))) > 3)
+                  )
+                )
+              )
+              OR (kb.notes ILIKE '%[MD%' OR kb.notes ILIKE '%MD remark%' OR kb.notes ILIKE '%MD:%')
+              OR (
+                kb.metadata->'remarks' IS NOT NULL 
+                AND (
+                  kb.metadata->>'remarks' ILIKE '%"authorRole":"MD"%'
+                  OR kb.metadata->>'remarks' ILIKE '%"authorRole":"DEVELOPER"%'
+                  OR kb.metadata->>'remarks' ILIKE '%"authorRole":"MANAGEMENT"%'
+                  OR kb.metadata->>'remarks' ILIKE '%"authorRole":"CEO"%'
+                  OR kb.metadata->>'remarks' ILIKE '%[MD%'
+                  OR kb.metadata->>'remarks' ILIKE '%MD remark%'
+                  OR kb.metadata->>'remarks' ILIKE '%MD:%'
+                )
+              )
+            )
+            ${dealerScopeKb}
+            ${dateScopeKb}) AS md_remarks_count,
         (SELECT count(*)::int FROM kia_bookings kb
           WHERE kb.deleted_at IS NULL
             AND kb.status NOT IN ('draft', 'delivered', 'cancelled')
-            ${dealerScopeKb}) AS eligible_count,
+            ${dealerScopeKb}
+            ${dateScopeKb}) AS eligible_count,
         COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'variant', variant, 'color', coalesce(color, '—'), 'count', cnt) ORDER BY cnt DESC, model ASC, variant ASC, color ASC) FROM (
           SELECT model, variant, color, count(*)::int AS cnt
           FROM kia_bookings
@@ -837,6 +912,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
     no_payment_count: number
     not_in_stock_count: number
     eligible_count: number
+    md_remarks_count: number
     not_in_stock_breakdown: { model: string; variant: string; color: string; count: number }[] | null
   }>(aggRows)[0]
   const statusCounts = agg?.status_counts || {}
@@ -850,12 +926,14 @@ export async function getKiaBookingsList(input: BookingListInput) {
   // Red-flag bookings whose stock is not available: either the allotted vehicle has left the DMS feed
   // (#15 `vehicleNotInStock` flag) OR the booking has no active allocation AND no free matching vehicle
   // in stock. Computed for the page's in-flight bookings in ONE query (page size is small).
+  const mdRemarksByBooking = new Map<string, { count: number; latest: string | null }>()
+  const bookingIds = bookingRows.map((b) => b.id)
   const stockFlagMap = new Map<string, boolean>()
   const stockAvailableMap = new Map<string, boolean>()
   const flagCandidates = bookingRows.filter((b) => !['draft', 'delivered', 'cancelled'].includes(String(b.status || '')))
 
-  // #2 (proforma approval status) and the stock-availability flag both depend ONLY on bookingRows and
-  // are independent of each other — run them concurrently instead of one after the other.
+  // #2 (proforma approval status), stock-availability flag, and MD remarks all depend ONLY on
+  // bookingRows and are independent of each other — run them concurrently.
   await Promise.all([
     (async () => {
       if (!proformaIds.length) return
@@ -864,6 +942,74 @@ export async function getKiaBookingsList(input: BookingListInput) {
         .from(kiaProformas)
         .where(inArray(kiaProformas.id, proformaIds))
       for (const s of statuses) approvalByProforma.set(s.id, s.approvalStatus)
+    })(),
+    (async () => {
+      if (!bookingIds.length) return
+      const actRows = await db
+        .select({
+          bookingId: kiaBookingActivity.bookingId,
+          description: kiaBookingActivity.description,
+          title: kiaBookingActivity.title,
+          actorRole: kiaBookingActivity.actorRole,
+          actorName: kiaBookingActivity.actorName,
+          createdAt: kiaBookingActivity.createdAt,
+        })
+        .from(kiaBookingActivity)
+        .where(inArray(kiaBookingActivity.bookingId, bookingIds))
+        .orderBy(desc(kiaBookingActivity.createdAt))
+
+      for (const b of bookingRows) {
+        const bActs = actRows.filter((a) => a.bookingId === b.id)
+        const remarksList: string[] = []
+
+        // 1. Check metadata.remarks array
+        if (b.metadata && Array.isArray((b.metadata as any).remarks)) {
+          for (const r of (b.metadata as any).remarks) {
+            if (r && typeof r === 'object' && r.text) {
+              const textStr = String(r.text).trim()
+              const roleStr = String(r.authorRole || '').toLowerCase()
+              const nameStr = String(r.authorName || '').toLowerCase()
+              if (
+                roleStr.includes('md') || roleStr.includes('management') || roleStr.includes('developer') || roleStr.includes('ceo') ||
+                nameStr.includes('md') || nameStr.includes('developer') || /\[md/i.test(textStr) || /md remark/i.test(textStr) || /md:/i.test(textStr)
+              ) {
+                if (textStr && !remarksList.includes(textStr)) remarksList.push(textStr)
+              }
+            }
+          }
+        }
+
+        // 2. Check b.notes
+        if (b.notes) {
+          const textStr = String(b.notes).trim()
+          if (/\[md/i.test(textStr) || /md remark/i.test(textStr) || /md:/i.test(textStr)) {
+            if (textStr && !remarksList.includes(textStr)) remarksList.push(textStr)
+          }
+        }
+
+        // 3. Check activity logs
+        for (const act of bActs) {
+          const textStr = (act.description || act.title || '').trim()
+          if (textStr && textStr.length > 3) {
+            const roleLower = (act.actorRole || '').toLowerCase()
+            const nameLower = (act.actorName || '').toLowerCase()
+            if (
+              roleLower.includes('md') || roleLower.includes('management') || roleLower.includes('developer') || roleLower.includes('ceo') ||
+              nameLower.includes('md') || nameLower.includes('developer') || /\[md/i.test(textStr) || /md remark/i.test(textStr) || /md:/i.test(textStr)
+            ) {
+              const lower = textStr.toLowerCase()
+              const isAutoLog = ['follow-up', 'booking created', 'status set to', 'marked as', 'quick approved', 'approved', 'discount requested', 'proforma generated'].some((p) => lower.startsWith(p))
+              if (!isAutoLog && !remarksList.includes(textStr)) {
+                remarksList.push(textStr)
+              }
+            }
+          }
+        }
+
+        if (remarksList.length > 0) {
+          mdRemarksByBooking.set(b.id, { count: remarksList.length, latest: remarksList[0] })
+        }
+      }
     })(),
     (async () => {
       if (!flagCandidates.length) return
@@ -902,12 +1048,14 @@ export async function getKiaBookingsList(input: BookingListInput) {
   // seeded from getKiaBookingDetail, not from here), so masking them cannot corrupt a write-back.
   const canViewPii = canViewKiaCustomerPii(input.viewer?.role)
   const rowsWithApproval = bookingRows.map((b) => redactKiaBookingPii({
-    ...b,
+    ...(b as unknown as Record<string, unknown>),
     proformaApprovalStatus: b.proformaId ? (approvalByProforma.get(b.proformaId) ?? null) : null,
     stockNotAvailable: Boolean(stockFlagMap.get(b.id)) || Boolean((b.metadata as Record<string, unknown> | null)?.vehicleNotInStock),
     // A matching free vehicle is available to allot (no allocation yet + in-stock match). Mutually
     // exclusive with stockNotAvailable; false once allocated or for terminal bookings.
     stockAvailable: Boolean(stockAvailableMap.get(b.id)),
+    mdRemarksCount: mdRemarksByBooking.get(b.id)?.count || 0,
+    latestMdRemark: mdRemarksByBooking.get(b.id)?.latest || null,
   }, canViewPii))
 
   return {
@@ -929,6 +1077,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
       notInStock: Number(agg?.not_in_stock_count || 0),
       // Exact complement of not-in-stock within the in-flight set (see the SQL note above).
       inStock: Math.max(0, Number(agg?.eligible_count || 0) - Number(agg?.not_in_stock_count || 0)),
+      mdRemarks: Number(agg?.md_remarks_count || 0),
     },
     // #10 Bookings & vehicles summary — full status distribution, allocation state, and top models.
     summary: {
@@ -1170,6 +1319,7 @@ export async function getKiaBookingDetail(id: string) {
       title: kiaBookingActivity.title,
       description: kiaBookingActivity.description,
       actorName: kiaBookingActivity.actorName,
+      actorRole: kiaBookingActivity.actorRole,
       createdAt: kiaBookingActivity.createdAt,
     }).from(kiaBookingActivity).where(eq(kiaBookingActivity.bookingId, id)).orderBy(desc(kiaBookingActivity.createdAt)).limit(100),
     db.select({

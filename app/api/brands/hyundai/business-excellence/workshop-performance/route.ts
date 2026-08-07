@@ -51,6 +51,14 @@ type AddonAggregate = {
   waAmount: number
   wbCount: number
   wbAmount: number
+  /**
+   * True when the figures are workshop-level and carry no service-type attribution.
+   * The Operation Wise report is keyed by op code x model only — it has no service-type
+   * or advisor dimension — so VAS/WA/WB cannot be split across PAID SERVICE, RUNNING
+   * REPAIR, etc. Such rows belong on the Grand Total only and must never be appended
+   * to the per-service-type table as a standalone row.
+   */
+  workshopLevel?: boolean
 }
 
 function toDateInputValue(date: Date) {
@@ -366,17 +374,24 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
 }
 
 async function fetchAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
+  // The Operation Wise report is published as cumulative month-to-date snapshots, so the
+  // narrowest window it can answer is "1st of endDate's month .. latest snapshot". An
+  // arbitrary startDate cannot be honoured from this source.
   void startDate
   if (advisor) return []
   const operation = await fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode)
   if (!operation.available) return []
   return [{
+    // 'MECH' matches the management view's MECH/Accident axis, where VAS is mechanical
+    // work by definition. It intentionally matches no row in the per-service-type table;
+    // workshopLevel keeps it off that table instead of appearing as a 0-JC phantom row.
     serviceType: 'MECH',
     vasAmount: operation.vasAmount,
     waCount: operation.waCount,
     waAmount: operation.waAmount,
     wbCount: operation.wbCount,
     wbAmount: operation.wbAmount,
+    workshopLevel: true,
   }]
 }
 
@@ -711,6 +726,11 @@ function buildRows(serviceRows: ServiceAggregate[], addonRows: AddonAggregate[] 
   addonRows.forEach((addon) => {
     const addonKey = normalizedServiceKey(addon.serviceType)
     if (assignedAddonKeys.has(addonKey)) return
+    // Workshop-level VAS/WA/WB has no service-type attribution. Appending it here produced a
+    // phantom row (0 JC, zero labour, the entire VAS amount) in the per-service-type table,
+    // because no real service type — PAID SERVICE, RUNNING REPAIR, FREE SERVICE … — ever
+    // matches the 'MECH' key. The figures still reach the user via the Grand Total row.
+    if (addon.workshopLevel) return
 
     rows.push({
       serviceType: addon.serviceType || 'Others',
@@ -781,7 +801,10 @@ function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summari
   const totalJc = rows.reduce((total, row) => total + row.totalJc, 0)
   const labourAmount = rows.reduce((total, row) => total + row.labourAmount, 0)
   const lessVas = addonTotals.vasAmount
-  const labMinusVas = rows.reduce((total, row) => total + row.labMinusVas, 0)
+  // Derived from the totals, not summed from rows: VAS is workshop-level and is not
+  // attributed to any individual service type, so the per-row labMinusVas values have
+  // nothing subtracted and would total to plain labour.
+  const labMinusVas = Math.max(labourAmount - lessVas, 0)
   const spareSale = rows.reduce((total, row) => total + row.spareSale, 0)
   const discount = rows.reduce((total, row) => total + row.discount, 0)
   const waCount = addonTotals.waCount

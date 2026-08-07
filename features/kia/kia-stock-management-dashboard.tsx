@@ -285,8 +285,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     if (dealerCode !== 'All') params.set('dealer_code', dealerCode)
     if (model !== 'All') params.set('model', model)
     if (status !== 'All') params.set('status', status)
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
     return params.toString()
-  }, [search, dealerCode, model, status, page])
+  }, [search, dealerCode, model, status, startDate, endDate, page])
 
   // Query stock data
   const { data, isLoading, isError, error, refetch } = useQuery<StockPayload>({
@@ -995,7 +997,34 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             {/* Date Range Filter */}
             <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 shadow-sm">
               <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span className="text-[10px] font-bold text-slate-400 uppercase">From</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const d = new Date()
+                  const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
+                  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0]
+                  setStartDate(firstDay)
+                  setEndDate(lastDay)
+                  setPage(1)
+                }}
+                className="text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-lg transition-colors"
+                title="Current Month"
+              >
+                This Month
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStartDate('')
+                  setEndDate('')
+                  setPage(1)
+                }}
+                className="text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-lg transition-colors"
+                title="All Time Data"
+              >
+                All Time
+              </button>
+              <span className="text-[10px] font-bold text-slate-400 uppercase ml-1">From</span>
               <input
                 type="date"
                 value={startDate}

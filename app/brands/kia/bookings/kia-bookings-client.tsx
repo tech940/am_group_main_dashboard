@@ -20,6 +20,7 @@ import {
   Clock3,
   ClipboardList,
   FileText,
+  Filter,
   Loader2,
   PauseCircle,
   Pencil,
@@ -124,6 +125,21 @@ import {
   getBranchesForBank,
 } from '@/lib/kia-proforma/pricing'
 
+const getCurrentMonthStartDate = () => {
+  const d = new Date()
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}-01`
+}
+
+const getCurrentMonthEndDate = () => {
+  const d = new Date()
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const lastDay = new Date(year, d.getMonth() + 1, 0).getDate()
+  return `${year}-${month}-${String(lastDay).padStart(2, '0')}`
+}
+
 type SearchParamsInput = Record<string, string | string[] | undefined>
 
 type BookingStatus =
@@ -182,6 +198,7 @@ type BookingListPayload = {
     readyDelivery: number
     delivered: number
     cancelled: number
+    mdRemarks?: number
   }
   summary?: {
     totalBookings: number
@@ -1428,14 +1445,95 @@ export function KiaBookingsClient({
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
 
-  const [search, setSearch] = useState(firstParam(initialSearchParams, 'search'))
-  const [debouncedSearch, setDebouncedSearch] = useState(() => firstParam(initialSearchParams, 'search'))
-  const [dealer, setDealer] = useState(firstParam(initialSearchParams, 'dealer_code', ALL_VALUE))
-  const [model, setModel] = useState(firstParam(initialSearchParams, 'model', ALL_VALUE))
-  const [status, setStatus] = useState(firstParam(initialSearchParams, 'status', ALL_VALUE))
-  const [consultant, setConsultant] = useState(firstParam(initialSearchParams, 'consultant', ALL_VALUE))
-  const [startDate, setStartDate] = useState(firstParam(initialSearchParams, 'startDate', ''))
-  const [endDate, setEndDate] = useState(firstParam(initialSearchParams, 'endDate', ''))
+  const defaultStartDate = useMemo(() => firstParam(initialSearchParams, 'startDate', getCurrentMonthStartDate()), [initialSearchParams])
+  const defaultEndDate = useMemo(() => firstParam(initialSearchParams, 'endDate', getCurrentMonthEndDate()), [initialSearchParams])
+
+  // Active / Committed filters
+  const [search, setSearch] = useState(() => firstParam(initialSearchParams, 'search', ''))
+  const [debouncedSearch, setDebouncedSearch] = useState(() => firstParam(initialSearchParams, 'search', ''))
+  const [dealer, setDealer] = useState(() => firstParam(initialSearchParams, 'dealer_code', ALL_VALUE))
+  const [model, setModel] = useState(() => firstParam(initialSearchParams, 'model', ALL_VALUE))
+  const [status, setStatus] = useState(() => firstParam(initialSearchParams, 'status', ALL_VALUE))
+  const [consultant, setConsultant] = useState(() => firstParam(initialSearchParams, 'consultant', ALL_VALUE))
+  const [startDate, setStartDate] = useState(defaultStartDate)
+  const [endDate, setEndDate] = useState(defaultEndDate)
+
+  // Pending filters for UI controls (committed on clicking "Apply Filters")
+  const [pendingSearch, setPendingSearch] = useState(() => firstParam(initialSearchParams, 'search', ''))
+  const [pendingDealer, setPendingDealer] = useState(() => firstParam(initialSearchParams, 'dealer_code', ALL_VALUE))
+  const [pendingModel, setPendingModel] = useState(() => firstParam(initialSearchParams, 'model', ALL_VALUE))
+  const [pendingStatus, setPendingStatus] = useState(() => firstParam(initialSearchParams, 'status', ALL_VALUE))
+  const [pendingConsultant, setPendingConsultant] = useState(() => firstParam(initialSearchParams, 'consultant', ALL_VALUE))
+  const [pendingStartDate, setPendingStartDate] = useState(defaultStartDate)
+  const [pendingEndDate, setPendingEndDate] = useState(defaultEndDate)
+
+  const handleApplyFilters = useCallback((overrides?: Partial<{
+    search: string
+    dealer: string
+    model: string
+    status: string
+    consultant: string
+    startDate: string
+    endDate: string
+  }>) => {
+    const s = overrides?.search !== undefined ? overrides.search : pendingSearch
+    const d = overrides?.dealer !== undefined ? overrides.dealer : pendingDealer
+    const m = overrides?.model !== undefined ? overrides.model : pendingModel
+    const st = overrides?.status !== undefined ? overrides.status : pendingStatus
+    const c = overrides?.consultant !== undefined ? overrides.consultant : pendingConsultant
+    const sd = overrides?.startDate !== undefined ? overrides.startDate : pendingStartDate
+    const ed = overrides?.endDate !== undefined ? overrides.endDate : pendingEndDate
+
+    setSearch(s)
+    setDebouncedSearch(s)
+    setDealer(d)
+    setModel(m)
+    setStatus(st)
+    setConsultant(c)
+    setStartDate(sd)
+    setEndDate(ed)
+    setPage(1)
+  }, [pendingSearch, pendingDealer, pendingModel, pendingStatus, pendingConsultant, pendingStartDate, pendingEndDate])
+
+  const handleResetFilters = useCallback(() => {
+    const sd = getCurrentMonthStartDate()
+    const ed = getCurrentMonthEndDate()
+    setPendingSearch('')
+    setPendingDealer(ALL_VALUE)
+    setPendingModel(ALL_VALUE)
+    setPendingStatus(ALL_VALUE)
+    setPendingConsultant(ALL_VALUE)
+    setPendingStartDate(sd)
+    setPendingEndDate(ed)
+    setSearch('')
+    setDebouncedSearch('')
+    setDealer(ALL_VALUE)
+    setModel(ALL_VALUE)
+    setStatus(ALL_VALUE)
+    setConsultant(ALL_VALUE)
+    setStartDate(sd)
+    setEndDate(ed)
+    setPage(1)
+  }, [])
+
+  const handleSetThisMonth = useCallback(() => {
+    const sd = getCurrentMonthStartDate()
+    const ed = getCurrentMonthEndDate()
+    setPendingStartDate(sd)
+    setPendingEndDate(ed)
+    setStartDate(sd)
+    setEndDate(ed)
+    setPage(1)
+  }, [])
+
+  const handleSetAllDates = useCallback(() => {
+    setPendingStartDate('')
+    setPendingEndDate('')
+    setStartDate('')
+    setEndDate('')
+    setPage(1)
+  }, [])
+
   const [page, setPage] = useState(Number(firstParam(initialSearchParams, 'page', '1')) || 1)
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>(firstParam(initialSearchParams, 'sort', 'desc') === 'asc' ? 'asc' : 'desc')
   const [notInStockModalOpen, setNotInStockModalOpen] = useState(false)
@@ -2719,6 +2817,34 @@ export function KiaBookingsClient({
             )}
           </Button>
 
+          <button
+            type="button"
+            className={cn(
+              "h-10 rounded-2xl px-4 text-sm font-bold sm:h-11 flex items-center gap-2 transition-all shadow-2xs border",
+              status === 'md_remarks'
+                ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-sm"
+                : "border-rose-300 bg-rose-50/90 hover:bg-rose-100 text-rose-900 dark:bg-slate-900 dark:border-rose-800 dark:bg-rose-950/40"
+            )}
+            onClick={() => setStatus(status === 'md_remarks' ? ALL_VALUE : 'md_remarks')}
+          >
+            <MessageSquare className={cn("h-4 w-4 shrink-0", status === 'md_remarks' ? "text-white" : "text-rose-600 dark:text-rose-400")} />
+            <span className={cn("font-bold text-sm", status === 'md_remarks' ? "text-white" : "text-rose-900 dark:text-rose-200")}>
+              MD Remarks
+            </span>
+            {(listQuery.data?.kpis?.mdRemarks ?? (listQuery.data?.rows || []).filter((r: any) => (r.mdRemarksCount || 0) > 0 || Boolean(r.latestMdRemark)).length) > 0 && (
+              <span
+                className={cn(
+                  "ml-0.5 inline-flex items-center justify-center min-w-[20px] h-5 rounded-full px-1.5 text-xs font-black leading-none shrink-0",
+                  status === 'md_remarks'
+                    ? "bg-white text-rose-700 shadow-2xs"
+                    : "bg-rose-600 text-white dark:bg-rose-500"
+                )}
+              >
+                {listQuery.data?.kpis?.mdRemarks ?? (listQuery.data?.rows || []).filter((r: any) => (r.mdRemarksCount || 0) > 0 || Boolean(r.latestMdRemark)).length}
+              </span>
+            )}
+          </button>
+
           {['md', 'ceo', 'developer', 'admin', 'sales_manager', 'general_manager', 'edp'].includes(currentUserRole) && (
             <Button
               variant={crmViewMode === 'discounts' ? 'default' : 'outline'}
@@ -2827,12 +2953,17 @@ export function KiaBookingsClient({
             onSelect={(key) => {
               const cfg = KPI_CONFIG.find((item) => item.key === key)
               if (!cfg) return
-              setPage(1)
-              if (cfg.statusFilter === 'all') { setStatus(ALL_VALUE); return }
+              if (cfg.statusFilter === 'all') {
+                setPendingStatus(ALL_VALUE)
+                handleApplyFilters({ status: ALL_VALUE })
+                return
+              }
               if (cfg.statusFilter === 'not_in_stock') {
                 setNotInStockModalOpen(true)
               }
-              setStatus((prev) => (prev === cfg.statusFilter ? ALL_VALUE : cfg.statusFilter))
+              const nextStatus = status === cfg.statusFilter ? ALL_VALUE : cfg.statusFilter
+              setPendingStatus(nextStatus)
+              handleApplyFilters({ status: nextStatus })
             }}
           />
         )}
@@ -2861,44 +2992,62 @@ export function KiaBookingsClient({
           </div>
         )}
 
-        <section className={cn(PRIMARY_SURFACE, 'sticky top-2 z-20 p-2.5 sm:top-3 sm:p-3')}>
-          <div className="grid gap-2 sm:gap-2.5 lg:grid-cols-[1.2fr_repeat(4,minmax(0,0.85fr))_auto_auto]">
+        <section className={cn(PRIMARY_SURFACE, 'sticky top-2 z-20 p-2.5 sm:top-3 sm:p-3 space-y-2')}>
+          <div className="grid gap-2 sm:gap-2.5 lg:grid-cols-[1.2fr_repeat(4,minmax(0,0.85fr))_auto_auto_auto]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kia-text-faint)]" />
-              <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Search booking, customer, phone, VIN…" className={cn(INPUT_STYLE, '!pl-10 sm:!pl-11')} />
+              <Input
+                value={pendingSearch}
+                onChange={(event) => setPendingSearch(event.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleApplyFilters()
+                  }
+                }}
+                placeholder="Search booking, customer, phone, VIN…"
+                className={cn(INPUT_STYLE, '!pl-10 sm:!pl-11')}
+              />
             </div>
-            <FilterSelect value={dealer} placeholder="Dealer" values={filters.dealers} onChange={(value) => { setDealer(value); setPage(1) }} />
-            <FilterSelect value={model} placeholder="Model" values={filters.models} onChange={(value) => { setModel(value); setPage(1) }} />
-            <FilterSelect value={status} placeholder="Status" values={filters.statuses} onChange={(value) => { setStatus(value); setPage(1) }} labeler={statusLabel} />
-            <FilterSelect value={consultant} placeholder="Consultant" values={filters.consultants} onChange={(value) => { setConsultant(value); setPage(1) }} />
+            <FilterSelect value={pendingDealer} placeholder="Dealer" values={filters.dealers} onChange={(value) => setPendingDealer(value)} />
+            <FilterSelect value={pendingModel} placeholder="Model" values={filters.models} onChange={(value) => setPendingModel(value)} />
+            <FilterSelect value={pendingStatus} placeholder="Status" values={filters.statuses} onChange={(value) => setPendingStatus(value)} labeler={statusLabel} />
+            <FilterSelect value={pendingConsultant} placeholder="Consultant" values={filters.consultants} onChange={(value) => setPendingConsultant(value)} />
             <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white px-3 py-1 shadow-sm">
               <Calendar className="h-4 w-4 shrink-0 text-slate-400" />
               <input
                 type="date"
-                value={startDate}
-                onChange={(e) => { setStartDate(e.target.value); setPage(1) }}
+                value={pendingStartDate}
+                onChange={(e) => setPendingStartDate(e.target.value)}
                 className="h-8 w-28 bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer"
                 title="Start Date"
               />
               <span className="text-xs font-bold text-slate-400">to</span>
               <input
                 type="date"
-                value={endDate}
-                onChange={(e) => { setEndDate(e.target.value); setPage(1) }}
+                value={pendingEndDate}
+                onChange={(e) => setPendingEndDate(e.target.value)}
                 className="h-8 w-28 bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer"
                 title="End Date"
               />
-              {(startDate || endDate) && (
+              {(pendingStartDate || pendingEndDate) && (
                 <button
                   type="button"
-                  onClick={() => { setStartDate(''); setEndDate(''); setPage(1) }}
+                  onClick={() => { setPendingStartDate(''); setPendingEndDate('') }}
                   className="ml-1 rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  title="Clear Date Filter"
+                  title="Clear Pending Date"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
+            <Button
+              type="button"
+              onClick={() => handleApplyFilters()}
+              className="h-10 gap-1.5 rounded-2xl bg-slate-900 px-4 text-xs font-black text-white hover:bg-slate-800 sm:h-11 sm:text-sm shadow-md transition-all active:scale-[0.98]"
+            >
+              <Filter className="h-4 w-4" />
+              Apply Filters
+            </Button>
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -2918,10 +3067,6 @@ export function KiaBookingsClient({
                 variant="outline"
                 className="h-10 flex-1 gap-1.5 rounded-2xl text-xs font-bold sm:h-11 sm:text-sm"
                 onClick={() => {
-                  // Consultant mirrors the on-screen column EXACTLY, metadata fallback included — the
-                  // table shows the consultant but the export omitted it, so an exported sheet could
-                  // not be reconciled against the list it came from. Older bookings only carry the
-                  // name in metadata, so reading r.consultantName alone exports blanks for those.
                   const header = ['Booking ID', 'Customer', 'Phone', 'Vehicle', 'Variant', 'Colour', 'Dealer', 'Consultant', 'Status', 'Booking Date', 'Payment']
                   const body = rows.map((r) => [r.bookingNumber, r.customerName, maskKiaPii(r.customerPhone, canViewPii), r.model, r.variant, r.color || '', r.dealerCode, r.consultantName || (r.metadata && String(r.metadata.consultantName || '')) || '', String(r.status), formatDate(r.createdAt || r.updatedAt), paymentMeta(String(r.status), r.deliveredAt).label])
                   const csv = [header, ...body].map((cols) => cols.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -2936,10 +3081,44 @@ export function KiaBookingsClient({
               >
                 <Download className="h-4 w-4" /> Export
               </Button>
-              <Button variant="outline" className="h-10 flex-1 rounded-2xl text-xs font-bold sm:h-11 sm:text-sm" onClick={() => { setSearch(''); setDealer(ALL_VALUE); setModel(ALL_VALUE); setStatus(ALL_VALUE); setConsultant(ALL_VALUE); setPage(1) }}>
-                Clear
+              <Button variant="outline" className="h-10 flex-1 rounded-2xl text-xs font-bold sm:h-11 sm:text-sm" onClick={handleResetFilters} title="Reset all filters">
+                Reset
               </Button>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-400">Date Presets:</span>
+              <button
+                type="button"
+                onClick={handleSetThisMonth}
+                className={cn(
+                  "rounded-lg px-2.5 py-1 font-bold transition-colors",
+                  startDate === getCurrentMonthStartDate() && endDate === getCurrentMonthEndDate()
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                )}
+              >
+                This Month
+              </button>
+              <button
+                type="button"
+                onClick={handleSetAllDates}
+                className={cn(
+                  "rounded-lg px-2.5 py-1 font-bold transition-colors",
+                  !startDate && !endDate
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                )}
+              >
+                All Time
+              </button>
+            </div>
+            {(startDate || endDate || search || dealer !== ALL_VALUE || model !== ALL_VALUE || status !== ALL_VALUE || consultant !== ALL_VALUE) && (
+              <span className="text-[11px] font-medium text-slate-500">
+                Active Filter Applied
+              </span>
+            )}
           </div>
         </section>
 
@@ -4479,15 +4658,19 @@ function FilterSelect({
   onChange: (value: string) => void
   labeler?: (value: string) => string
 }) {
-  const uniqueValues = Array.from(new Set(values.filter(Boolean)))
+  const uniqueValues = Array.from(new Set(values.filter((v) => Boolean(v) && v !== ALL_VALUE)))
   return (
     <Select value={value || ALL_VALUE} onValueChange={onChange}>
       <SelectTrigger className={INPUT_STYLE}>
-        <SelectValue placeholder={placeholder} />
+        <SelectValue placeholder={`All ${placeholder.toLowerCase()}`} />
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={ALL_VALUE}>All {placeholder.toLowerCase()}</SelectItem>
-        {uniqueValues.map((item) => <SelectItem key={item} value={item}>{labeler(item)}</SelectItem>)}
+        {uniqueValues.map((item) => (
+          <SelectItem key={item} value={item}>
+            {labeler(item) || item}
+          </SelectItem>
+        ))}
       </SelectContent>
     </Select>
   )
@@ -5784,8 +5967,101 @@ function BookingDrawer({
         </div>
       </div>
       <div className="kia-scroll relative min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-3 sm:space-y-5 sm:p-5 w-full min-w-0" style={{ background: 'var(--kia-canvas)' }}>
-        <LoaderOverlay show={actionLoading} variant={actionLoaderVariant} />
         <Stepper status={booking.status} />
+
+        {/* MD / Management Remarks Callout Box */}
+        {(() => {
+          const mdList: { text: string; actorName: string; actorRole: string; createdAt?: string }[] = []
+          
+          const isMdRole = (role?: string, name?: string) => {
+            const r = String(role || '').toLowerCase()
+            const n = String(name || '').toLowerCase()
+            return r.includes('md') || r.includes('management') || r.includes('ceo') || r.includes('director') || r.includes('owner') || n === 'md'
+          }
+
+          const isAutoLogText = (t: string) => {
+            const lower = t.toLowerCase()
+            const prefixes = [
+              'follow-up', 'booking created', 'status set to', 'marked as', 'quick approved',
+              'approved', 'discount requested', 'proforma generated', 'booking updated',
+              'duplicate booking', 'vehicle allocated', 'allocation', 'vin ', 'transferring'
+            ]
+            if (prefixes.some(p => lower.startsWith(p) || lower === p)) return true
+            // Check 17-char VIN strings
+            if (/^[A-Z0-9]{17}$/i.test(t.trim())) return true
+            return false
+          }
+
+          // 1. From metadata.remarks
+          const metaRemarks = Array.isArray((booking.metadata as any)?.remarks) ? ((booking.metadata as any).remarks as any[]) : []
+          for (const r of metaRemarks) {
+            if (r && typeof r === 'object' && r.text) {
+              const text = String(r.text).trim()
+              if (isMdRole(r.authorRole, r.authorName) || /\[MD/i.test(text) || /MD remark/i.test(text) || /MD:/i.test(text)) {
+                if (text && !isAutoLogText(text) && !mdList.some(item => item.text === text)) {
+                  mdList.push({
+                    text,
+                    actorName: r.authorName || 'Management',
+                    actorRole: (r.authorRole || 'MD').toUpperCase(),
+                    createdAt: r.createdAt ? String(r.createdAt) : undefined,
+                  })
+                }
+              }
+            }
+          }
+
+          // 2. From booking.notes
+          if (booking.notes) {
+            const text = String(booking.notes).trim()
+            if (/\[MD/i.test(text) || /MD remark/i.test(text) || /MD:/i.test(text)) {
+              if (text && !isAutoLogText(text) && !mdList.some(item => item.text === text)) {
+                mdList.push({
+                  text,
+                  actorName: 'MD / Management',
+                  actorRole: 'MD',
+                })
+              }
+            }
+          }
+
+          // 3. From activity logs
+          for (const act of ((activities || []) as any[])) {
+            const text = String(act.description || act.message || act.title || '').trim()
+            if (!text || text.length < 3) continue
+            if (isMdRole(act.actorRole, act.actorName) || /\[MD/i.test(text) || /MD remark/i.test(text) || /MD:/i.test(text)) {
+              if (!isAutoLogText(text) && !mdList.some(item => item.text === text)) {
+                mdList.push({
+                  text,
+                  actorName: act.actorName || 'MD / Management',
+                  actorRole: String(act.actorRole || 'MD').toUpperCase(),
+                  createdAt: act.createdAt ? String(act.createdAt) : undefined,
+                })
+              }
+            }
+          }
+
+          if (mdList.length === 0) return null
+          return (
+            <div className="rounded-2xl border-2 border-rose-200 bg-rose-50/90 p-4 shadow-sm space-y-2">
+              <div className="flex items-center gap-2 text-rose-800 font-black">
+                <MessageSquare className="h-4 w-4 text-rose-600" />
+                <h3 className="text-xs uppercase tracking-wider">MD / Management Remarks</h3>
+              </div>
+              <div className="space-y-2">
+                {mdList.map((item, i) => (
+                  <div key={i} className="rounded-xl bg-white p-3 border border-rose-100 shadow-2xs">
+                    <p className="text-xs font-bold text-rose-950 italic">"{item.text}"</p>
+                    <div className="mt-1.5 flex items-center justify-between text-[10px] font-semibold text-rose-700">
+                      <span>{item.actorName}</span>
+                      <span className="rounded bg-rose-100 px-1.5 py-0.5 font-bold uppercase">{item.actorRole}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {personaNote && <div className="rounded-2xl border px-3 py-2.5 text-xs font-semibold leading-5" style={toneSoftStyle('info')}>{personaNote}</div>}
         <section className="kia-surface relative overflow-hidden p-4 sm:p-5" style={{ boxShadow: 'inset 3px 0 0 var(--dashboard-action-bg), var(--kia-elev-2)' }}>
           <Kicker>{nextStep.label}</Kicker>

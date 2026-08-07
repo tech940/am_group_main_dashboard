@@ -143,6 +143,8 @@ export type FollowupRow = {
   /** Null unless the viewer passes canRevealKiaFollowupPhone. Nulled in toRow(), never in the SQL. */
   customerPhone: string | null
   remarksCount: number
+  mdRemarksCount?: number
+  latestMdRemark?: string | null
 }
 
 /** The follow-up's due time has passed — drives the overdue indicator inside the Pending bucket. */
@@ -198,6 +200,47 @@ const displaySelection = {
   bookingStatus: kiaBookings.status,
   dealer: kiaBookings.dealerCode,
   remarksCount: sql<number>`(select count(*)::int from ${kiaBookingActivity} where ${kiaBookingActivity.bookingId} = ${kiaBookings.id})`.as('remarks_count'),
+  mdRemarksCount: sql<number>`(
+    select count(*)::int from ${kiaBookingActivity}
+    where ${kiaBookingActivity.bookingId} = ${kiaBookings.id}
+    and (
+      description ilike '%[MD%' or description ilike '%MD remark%'
+      or (
+        (actor_role ilike '%md%' or actor_role ilike '%management%' or actor_role ilike '%developer%' or actor_role ilike '%ceo%'
+         or actor_name ilike '%md%' or actor_name ilike '%developer%' or actor_name ilike '%management%')
+        and description not ilike 'follow-up%'
+        and description not ilike 'booking%'
+        and description not ilike 'status%'
+        and description not ilike 'quick approved%'
+        and description not ilike 'approved%'
+        and description not ilike 'marked as%'
+        and description not ilike 'bulk%'
+        and description not ilike 'discount%'
+        and description not ilike 'proforma%'
+      )
+    )
+  )`.as('md_remarks_count'),
+  latestMdRemark: sql<string | null>`(
+    select description from ${kiaBookingActivity}
+    where ${kiaBookingActivity.bookingId} = ${kiaBookings.id}
+    and (
+      description ilike '%[MD%' or description ilike '%MD remark%'
+      or (
+        (actor_role ilike '%md%' or actor_role ilike '%management%' or actor_role ilike '%developer%' or actor_role ilike '%ceo%'
+         or actor_name ilike '%md%' or actor_name ilike '%developer%' or actor_name ilike '%management%')
+        and description not ilike 'follow-up%'
+        and description not ilike 'booking%'
+        and description not ilike 'status%'
+        and description not ilike 'quick approved%'
+        and description not ilike 'approved%'
+        and description not ilike 'marked as%'
+        and description not ilike 'bulk%'
+        and description not ilike 'discount%'
+        and description not ilike 'proforma%'
+      )
+    )
+    order by created_at desc limit 1
+  )`.as('latest_md_remark'),
 } as const
 
 function toRow(r: Record<string, unknown>, now: Date, bucket: FollowupBucket, canSeePhone: boolean): FollowupRow {
@@ -230,6 +273,8 @@ function toRow(r: Record<string, unknown>, now: Date, bucket: FollowupBucket, ca
     // numbers must get null — not a masked string, not the value with a flag: null.
     customerPhone: canSeePhone ? ((r.customerPhone as string) || null) : null,
     remarksCount: Number(r.remarksCount || 0),
+    mdRemarksCount: Number(r.mdRemarksCount || 0),
+    latestMdRemark: (r.latestMdRemark as string) ?? null,
   }
 }
 
@@ -777,7 +822,7 @@ export async function createFollowup(appUser: AppUser, input: {
 }
 
 export async function updateFollowup(appUser: AppUser, id: string, patch: {
-  dueAt?: string; reason?: string; priority?: string; notes?: string | null; assignedTo?: string | null
+  dueAt?: string; reason?: string; priority?: string; notes?: string | null; assignedTo?: string | null; bookingStatus?: string
 }) {
   const [existing] = await db.select().from(kiaLeadFollowups).where(eq(kiaLeadFollowups.id, id)).limit(1)
   if (!existing) throw new Error('Follow-up not found.')
@@ -785,10 +830,15 @@ export async function updateFollowup(appUser: AppUser, id: string, patch: {
 
   // A reschedule/reassign is a submission too — say why. Without this the communication history has
   // gaps exactly where someone moved the goalposts.
-  const notes = requireRemarks(patch.notes, Boolean(patch.reason))
+  const notes = requireRemarks(patch.notes, Boolean(patch.reason || patch.bookingStatus))
 
   const updates: Record<string, unknown> = { updatedAt: new Date(), notes }
   const activityBits: string[] = []
+
+  if (patch.bookingStatus) {
+    await db.update(kiaBookings).set({ status: patch.bookingStatus, updatedAt: new Date() }).where(eq(kiaBookings.id, existing.bookingId))
+    activityBits.push(`Booking status set to ${patch.bookingStatus.replace(/_/g, ' ')}`)
+  }
 
   if (patch.dueAt) {
     const due = parseIstDate(patch.dueAt)

@@ -63,6 +63,8 @@ type AnalyticsData = {
     connectedIncoming: number
     missedIncoming: number
     missedOutgoing: number
+    incomingAttempts?: number
+    outgoingAttempts?: number
     totalUnanswered: number
     totalConnected: number
     connectRate: number
@@ -79,9 +81,10 @@ type AnalyticsData = {
     missedIncomingSeries: number[]
     missedOutgoingSeries: number[]
     unansweredSeries: number[]
+    incomingSeries?: number[]
     agentsSeries: number[]
   }
-  dailyTrend: { date: string; calls: number; duration: number; connected?: number; missedIncoming?: number; missedOutgoing?: number }[]
+  dailyTrend: { date: string; calls: number; duration: number; connected?: number; missedIncoming?: number; missedOutgoing?: number; incomingAttempts?: number }[]
   callTypeMix: { name: string; value: number }[]
   crePerformance: CrePerformance[]
   branchPerformance?: BranchPerformance[]
@@ -957,75 +960,68 @@ export function AmGroupCallAnalysis() {
         <CallAnalysisSkeleton />
       ) : (
         <>
-          {/* Summary KPI Cards Grid (6 Columns) */}
-          <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6">
+          {/* Summary KPI Cards Grid (5 Columns) */}
+          <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
             <KpiCard
-          title="TOTAL CRE CALLS"
-          value={d ? d.summary.totalCalls.toLocaleString('en-IN') : '—'}
-          subtitle="Calls logged in the selected range"
-          icon={PhoneCall}
-          colorScheme="teal"
-          chartType="area"
-          chartData={d?.sparklines?.callsSeries ?? []}
-          showChart={hasTrendSeries}
-          trend={{ value: `${d?.summary.connectRate ?? 0}%`, isPositive: true, label: 'connected rate' }}
-        />
-        <KpiCard
-          title="CONNECTED CALLS"
-          value={d ? d.summary.totalConnected.toLocaleString('en-IN') : '—'}
-          subtitle={d ? `${d.summary.connectedOutgoing} out / ${d.summary.connectedIncoming} in` : '—'}
-          icon={PhoneOutgoing}
-          colorScheme="emerald"
-          chartType="line"
-          chartData={d?.sparklines?.recordingsSeries ?? []}
-          showChart={hasTrendSeries}
-          trend={{ value: `${d?.summary.connectRate ?? 0}%`, isPositive: true, label: 'connected' }}
-        />
-        <KpiCard
-          title="MISSED INCOMING"
-          value={d ? d.summary.missedIncoming.toLocaleString('en-IN') : '—'}
-          subtitle="Incoming calls the CRE did not pick up"
-          icon={PhoneMissed}
-          colorScheme="rose"
-          chartType="bar"
-          chartData={d?.sparklines?.missedIncomingSeries ?? []}
-          showChart={hasTrendSeries}
-          trend={{ value: d ? `${Math.round((d.summary.missedIncoming / Math.max(1, d.summary.totalCalls)) * 100)}%` : '0%', isPositive: false, label: 'of total calls' }}
-        />
-        <KpiCard
-          title="NOT ANSWERED OUTGOING"
-          value={d ? d.summary.missedOutgoing.toLocaleString('en-IN') : '—'}
-          subtitle="Customer did not pick up"
-          icon={PhoneMissed}
-          colorScheme="amber"
-          chartType="bar"
-          chartData={d?.sparklines?.missedOutgoingSeries ?? []}
-          showChart={hasTrendSeries}
-          trend={{ value: d ? `${Math.round((d.summary.missedOutgoing / Math.max(1, d.summary.totalCalls)) * 100)}%` : '0%', isPositive: false, label: 'of total calls' }}
-        />
-        <KpiCard
-          title="TOTAL UNANSWERED"
-          value={d ? d.summary.totalUnanswered.toLocaleString('en-IN') : '—'}
-          subtitle={d ? `${d.summary.unansweredRate}% unanswered rate` : '—'}
-          icon={PhoneMissed}
-          colorScheme="purple"
-          chartType="area"
-          chartData={d?.sparklines?.unansweredSeries ?? []}
-          showChart={hasTrendSeries}
-          trend={{ value: `${d?.summary.unansweredRate ?? 0}%`, isPositive: false, label: 'missed / no answer' }}
-        />
-        <KpiCard
-          title="TOTAL TALK TIME"
-          value={d ? d.summary.totalDurationLabel : '—'}
-          subtitle={d ? `Avg ${d.summary.avgDurationLabel} / connected call` : '—'}
-          icon={Clock}
-          colorScheme="blue"
-          chartType="bar"
-          chartData={d?.sparklines?.durationSeries ?? []}
-          showChart={hasTrendSeries}
-          trend={{ value: `${d?.summary.recordingCoverage ?? 0}%`, isPositive: true, label: 'with recording' }}
-        />
-      </div>
+              title="TOTAL CRE CALLS"
+              value={d ? d.summary.totalCalls.toLocaleString('en-IN') : '—'}
+              subtitle="Calls logged in the selected range"
+              icon={PhoneCall}
+              colorScheme="teal"
+              chartType="area"
+              chartData={d?.sparklines?.callsSeries ?? []}
+              showChart={hasTrendSeries}
+              trend={{ value: `${d?.summary.connectRate ?? 0}%`, isPositive: true, label: 'connected rate' }}
+            />
+            <KpiCard
+              title="CONNECTED CALLS"
+              value={d ? d.summary.totalConnected.toLocaleString('en-IN') : '—'}
+              subtitle={d ? `${d.summary.connectedOutgoing} out / ${d.summary.connectedIncoming} in` : '—'}
+              icon={PhoneOutgoing}
+              colorScheme="emerald"
+              chartType="line"
+              chartData={d?.sparklines?.recordingsSeries ?? []}
+              showChart={hasTrendSeries}
+              trend={{ value: `${d?.summary.connectRate ?? 0}%`, isPositive: true, label: 'connected' }}
+            />
+            <KpiCard
+              title="TOTAL INCOMING CALLS"
+              value={d ? (d.summary.incomingAttempts ?? (d.summary.connectedIncoming + d.summary.missedIncoming)).toLocaleString('en-IN') : '—'}
+              subtitle={d ? `${d.summary.connectedIncoming} connected / ${d.summary.missedIncoming} missed` : '—'}
+              icon={PhoneIncoming}
+              colorScheme="amber"
+              chartType="area"
+              chartData={d?.sparklines?.incomingSeries ?? []}
+              showChart={hasTrendSeries}
+              trend={{
+                value: d ? `${Math.round(((d.summary.incomingAttempts ?? (d.summary.connectedIncoming + d.summary.missedIncoming)) / Math.max(1, d.summary.totalCalls)) * 100)}%` : '0%',
+                isPositive: true,
+                label: 'of total calls'
+              }}
+            />
+            <KpiCard
+              title="MISSED INCOMING"
+              value={d ? d.summary.missedIncoming.toLocaleString('en-IN') : '—'}
+              subtitle="Incoming calls the CRE did not pick up"
+              icon={PhoneMissed}
+              colorScheme="rose"
+              chartType="bar"
+              chartData={d?.sparklines?.missedIncomingSeries ?? []}
+              showChart={hasTrendSeries}
+              trend={{ value: d ? `${Math.round((d.summary.missedIncoming / Math.max(1, d.summary.totalCalls)) * 100)}%` : '0%', isPositive: false, label: 'of total calls' }}
+            />
+            <KpiCard
+              title="TOTAL TALK TIME"
+              value={d ? d.summary.totalDurationLabel : '—'}
+              subtitle={d ? `Avg ${d.summary.avgDurationLabel} / connected call` : '—'}
+              icon={Clock}
+              colorScheme="blue"
+              chartType="bar"
+              chartData={d?.sparklines?.durationSeries ?? []}
+              showChart={hasTrendSeries}
+              trend={{ value: `${d?.summary.recordingCoverage ?? 0}%`, isPositive: true, label: 'with recording' }}
+            />
+          </div>
 
       {/* Sub-Tabs Selector */}
       <div className="flex border-b border-slate-200 dark:border-slate-800">

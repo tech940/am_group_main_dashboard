@@ -32,6 +32,7 @@
     "verify:platinum-be": "node scripts/verify-platinum-business-excellence.js",
     "verify:platinum-be-api": "node scripts/verify-platinum-be-api.js",
     "verify:platinum-vas": "tsx scripts/verify-platinum-vas-identifiers.ts",
+    "verify:hyundai-vas": "tsx scripts/verify-hyundai-vas-identifiers.ts",
     "db:sync-platinum-vas": "tsx scripts/sync-platinum-vas-summary.ts",
     "db:enforce-retention": "node scripts/enforce-brand-analytics-retention.js",
     "bq:fix-partition-expiration": "node scripts/bigquery/fix-partition-expiration.js",

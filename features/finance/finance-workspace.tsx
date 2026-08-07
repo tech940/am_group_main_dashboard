@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Clock, AlertTriangle, CheckCircle2, ChevronRight, Inbox, ClipboardCheck, ShieldCheck, XCircle, X, ClipboardList, WalletCards, FileText } from 'lucide-react'
+import { Loader2, Clock, AlertTriangle, CheckCircle2, ChevronRight, Inbox, ClipboardCheck, ShieldCheck, XCircle, X, ClipboardList, WalletCards, FileText, MessageSquare } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 import { FinanceDetail } from './finance-detail'
 import { FinancePayoutsDashboard } from './finance-payouts-dashboard'
 import {
-  formatCountdown, formatCurrency, formatDate, statusMeta, bankStatusMeta, str,
+  formatCountdown, formatCurrency, formatDate, statusMeta, bankStatusMeta, str, getFinanceRowMdRemarks,
   type QueueResponse, type ApprovalQueueRow, type ProcessingRow,
 } from './finance-shared'
 
@@ -37,7 +37,7 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
   const qc = useQueryClient()
   // 'payouts' is the post-delivery ledger — a SUBSECTION of Finance, not a new sidebar item and not
   // a booking stage. It shares this section's `finance.view` gate; editing needs `finance.edit`.
-  const [tab, setTab] = useState<'queue' | 'processing' | 'payouts'>('queue')
+  const [tab, setTab] = useState<'queue' | 'processing' | 'md_remarks' | 'payouts'>('queue')
   const [selected, setSelected] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [declineRow, setDeclineRow] = useState<ApprovalQueueRow | null>(null)
@@ -58,13 +58,27 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
     onError: (e: Error) => setActionError(e.message),
   })
 
+  const approvalQueue = data?.approvalQueue ?? []
+  const processing = data?.processing ?? []
+
+  const mdRemarksList = useMemo(() => {
+    const list: (ApprovalQueueRow | ProcessingRow)[] = []
+    const seen = new Set<string>()
+    for (const r of [...approvalQueue, ...processing]) {
+      const id = 'processingId' in r ? r.processingId : r.id
+      if (!seen.has(id) && getFinanceRowMdRemarks(r).length > 0) {
+        seen.add(id)
+        list.push(r)
+      }
+    }
+    return list
+  }, [approvalQueue, processing])
+
   if (selected) return <FinanceDetail proformaId={selected} canApprove={canApprove} currentUserRole={currentUserRole} onBack={() => setSelected(null)} />
 
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-slate-400" /></div>
   if (isError || !data) return <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm font-bold text-rose-700">{(error as Error)?.message || 'Failed to load finance queue.'}</div>
 
-  const approvalQueue = data.approvalQueue ?? []
-  const processing = data.processing ?? []
   const busy = approval.isPending
 
   const submitDecline = () => {
@@ -91,6 +105,12 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
           <Inbox className="h-4 w-4" /> In Processing
           <span className="rounded-full bg-white/70 px-1.5 text-xs font-black">{processing.length}</span>
         </button>
+        <button onClick={() => setTab('md_remarks')}
+          className={cn('inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold transition-colors',
+            tab === 'md_remarks' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50')}>
+          <MessageSquare className="h-4 w-4 text-rose-600" /> MD Remarks
+          <span className="rounded-full bg-rose-600 text-white px-2 py-0.5 text-xs font-bold">{mdRemarksList.length}</span>
+        </button>
         <button onClick={() => setTab('payouts')}
           className={cn('inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold transition-colors',
             tab === 'payouts' ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50')}>
@@ -102,6 +122,47 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
 
       {tab === 'payouts' ? (
         <FinancePayoutsDashboard />
+      ) : tab === 'md_remarks' ? (
+        <Card className="overflow-hidden p-0">
+          {mdRemarksList.length === 0 ? (
+            <div className="p-10 text-center text-sm font-semibold text-slate-400">No finance records with MD remarks found.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3">Customer</th>
+                    <th className="px-4 py-3">Model / Variant</th>
+                    <th className="px-4 py-3">Bank</th>
+                    <th className="px-4 py-3">MD Remarks</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mdRemarksList.map((r) => {
+                    const proformaId = 'proformaId' in r ? r.proformaId : r.id
+                    const remarks = getFinanceRowMdRemarks(r)
+                    return (
+                      <tr key={'processingId' in r ? r.processingId : r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 cursor-pointer" onClick={() => setSelected(proformaId)}>
+                        <td className="px-4 py-3 font-bold text-slate-800">{str(r.customerName) || '—'}</td>
+                        <td className="px-4 py-3 text-slate-700">{str(r.modelName)} <span className="text-slate-400">· {str(r.trimDescription)}</span></td>
+                        <td className="px-4 py-3 text-slate-600">{str('currentBankName' in r ? r.currentBankName : r.bankName) || '—'}</td>
+                        <td className="px-4 py-3 max-w-xs">
+                          {remarks.map((rem, i) => (
+                            <div key={i} className="rounded-lg bg-rose-50 p-2 border border-rose-100 text-xs font-semibold text-rose-900 italic">
+                              "{rem.remark}"
+                            </div>
+                          ))}
+                        </td>
+                        <td className="px-4 py-3 text-right"><ChevronRight className="ml-auto h-4 w-4 text-slate-300" /></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       ) : tab === 'queue' ? (
         <Card className="overflow-hidden p-0">
           {approvalQueue.length === 0 ? (
@@ -350,6 +411,27 @@ function BookingDetailsDrawer({
 
         {/* Content */}
         <div className="flex-1 space-y-4 overflow-y-auto p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-track]:bg-transparent">
+          {/* MD Remarks Callout Box */}
+          {getFinanceRowMdRemarks(row).length > 0 && (
+            <div className="rounded-2xl border-2 border-rose-200 bg-rose-50/90 p-4 shadow-sm space-y-2">
+              <div className="flex items-center gap-2 text-rose-800">
+                <MessageSquare className="h-4 w-4 text-rose-600" />
+                <h3 className="text-xs font-black uppercase tracking-wider">MD / Management Remarks</h3>
+              </div>
+              <div className="space-y-1.5">
+                {getFinanceRowMdRemarks(row).map((item, i) => (
+                  <div key={i} className="rounded-xl bg-white/90 p-3 border border-rose-100 shadow-2xs">
+                    <p className="text-xs font-bold text-rose-950 italic">"{item.remark}"</p>
+                    <div className="mt-1.5 flex items-center justify-between text-[10px] font-semibold text-rose-700">
+                      <span>{item.user}</span>
+                      <span className="rounded bg-rose-100 px-1.5 py-0.5 font-bold uppercase">{item.role}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Customer Details */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center gap-2">

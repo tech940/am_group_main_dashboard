@@ -10,6 +10,7 @@ import {
   kiaFinanceRemarks,
   kiaFinanceBankAttempts,
   kiaFinanceActivity,
+  kiaBookingActivity,
 } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
@@ -193,6 +194,7 @@ export async function getKiaFinanceApprovalQueue() {
     bookingBankName: kiaBookings.bankName,
     bookingLoanAmount: kiaBookings.loanAmount,
     bookingMetadata: kiaBookings.metadata,
+    financeRemarks: kiaProformas.financeRemarks,
   })
     .from(kiaProformas)
     .leftJoin(kiaBookings, eq(kiaBookings.proformaId, kiaProformas.id))
@@ -220,6 +222,44 @@ export async function getKiaFinanceProcessingList() {
     trimDescription: kiaProformas.trimDescription,
     consultant: kiaProformas.consultant,
     location: kiaProformas.location,
+    financeRemarks: kiaProformas.financeRemarks,
+    mdRemarksCount: sql<number>`(
+      select count(*)::int from ${kiaFinanceRemarks}
+      where ${kiaFinanceRemarks.financeProcessingId} = ${kiaFinanceProcessing.id}
+      and (
+        remark ilike '%[MD%' or remark ilike '%MD remark%'
+        or (
+          (created_by_role ilike '%md%' or created_by_role ilike '%management%' or created_by_role ilike '%ceo%'
+           or created_by_name ilike '%md%' or created_by_name ilike '%management%')
+          and remark not ilike 'quick approved%'
+          and remark not ilike 'approved%'
+          and remark not ilike 'status set to%'
+          and remark not ilike 'marked as%'
+          and remark not ilike 'finance processing%'
+          and remark not ilike 'booking updated%'
+          and remark not ilike 'duplicate booking%'
+        )
+      )
+    )`.as('md_remarks_count'),
+    latestMdRemark: sql<string | null>`(
+      select remark from ${kiaFinanceRemarks}
+      where ${kiaFinanceRemarks.financeProcessingId} = ${kiaFinanceProcessing.id}
+      and (
+        remark ilike '%[MD%' or remark ilike '%MD remark%'
+        or (
+          (created_by_role ilike '%md%' or created_by_role ilike '%management%' or created_by_role ilike '%ceo%'
+           or created_by_name ilike '%md%' or created_by_name ilike '%management%')
+          and remark not ilike 'quick approved%'
+          and remark not ilike 'approved%'
+          and remark not ilike 'status set to%'
+          and remark not ilike 'marked as%'
+          and remark not ilike 'finance processing%'
+          and remark not ilike 'booking updated%'
+          and remark not ilike 'duplicate booking%'
+        )
+      )
+      order by created_at desc limit 1
+    )`.as('latest_md_remark'),
   })
     .from(kiaFinanceProcessing)
     .innerJoin(kiaProformas, eq(kiaProformas.id, kiaFinanceProcessing.proformaId))
