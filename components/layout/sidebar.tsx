@@ -91,6 +91,7 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Booking Payment History', href: '/brands/kia/booking-payment-history' },
+          { name: 'Customer Profile', href: '/brands/kia/customer-profile' },
           { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups' },
           { name: 'Social Media Leads', href: '/social-media-leads' },
         ],

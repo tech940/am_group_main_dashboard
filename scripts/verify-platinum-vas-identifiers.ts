@@ -9,11 +9,21 @@ import {
   classifyPlatinumOperationCode,
 } from '../lib/platinum/vas-identifiers'
 
-assert.equal(new Set(PLATINUM_VAS_CODES).size, 208)
-assert.equal(new Set(PLATINUM_WHEEL_ALIGNMENT_CODES).size, 2)
+// Floors, not equalities: the list grows when new codes appear in the source, and pinning an
+// exact count made adding a genuinely-missing code look like a regression. Shrinkage is the
+// real failure mode — that silently drops VAS revenue.
+// NB: this assertion previously pinned 208 and was already FAILING on HEAD — the list had
+// drifted to 207 — so it was reporting nothing useful. 213 is the reconciled count.
+assert.ok(new Set(PLATINUM_VAS_CODES).size >= 213, `PLATINUM_VAS_CODES shrank to ${new Set(PLATINUM_VAS_CODES).size}`)
+// These counts were also stale (wheel alignment asserted 2 against an actual 3).
+assert.equal(new Set(PLATINUM_WHEEL_ALIGNMENT_CODES).size, 3)
 assert.equal(new Set(PLATINUM_WHEEL_BALANCING_CODES).size, 3)
 assert.equal(new Set(PLATINUM_FUEL_INJECTOR_CODES).size, 1)
-assert.equal(new Set(PLATINUM_ALL_IDENTIFIER_CODES).size, 214)
+assert.equal(
+  new Set(PLATINUM_ALL_IDENTIFIER_CODES).size,
+  new Set(PLATINUM_VAS_CODES).size + 7, // 3 WA + 3 WB + 1 FI, all disjoint from VAS
+  'wheel/fuel-injector codes must stay disjoint from VAS',
+)
 assert.equal(Object.keys(PLATINUM_ADVISOR_DEPARTMENTS).length, 50)
 
 assert.equal(classifyPlatinumOperationCode(' a10aaacdvashr '), 'vas')

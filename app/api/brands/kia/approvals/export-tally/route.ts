@@ -2,9 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests, glAccounts } from '@/lib/db/schema'
 import { eq, and, or } from 'drizzle-orm'
+import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 
 export async function GET(req: NextRequest) {
   try {
+    // ⚠️ This endpoint had NO authentication. An anonymous GET returned a CSV of every fully
+    // approved voucher - 49 rows worth Rs 38,06,954 - with amount, vendor, requester name,
+    // branch, GST and GL code. There is no middleware covering this path, so the guard has to
+    // live here.
+    const denied = await requireBrandApiAccess('kia')
+    if (denied) return denied
+    const appUser = await getAuthenticatedAppUser()
+    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     // Fetch all fully approved requests (or you can filter by selectedIds query param)
     const { searchParams } = new URL(req.url)
     const selectedIdsParam = searchParams.get('ids')

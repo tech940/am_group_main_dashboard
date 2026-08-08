@@ -123,9 +123,20 @@ export async function loadCreDirectory(): Promise<CreDirectory> {
     }),
   ])
 
+  const specialBranch = branchesRaw.find(
+    (b) => (b.code || '').toUpperCase() === 'SPECIAL' || (b.display_name || '').toLowerCase().includes('special team')
+  )
+  const specialBranchId = specialBranch?.id || '4d1d906b-6850-4a90-8309-e2ed9e61c6cb'
+
   const branches = branchesRaw.filter((b) => !EXCLUDED_BRANCH_CODES.has((b.code || '').toUpperCase()))
+  for (const b of branches) {
+    if (!b.brand && (b.id === specialBranchId || (b.code || '').toUpperCase() === 'SPECIAL' || (b.display_name || '').toLowerCase().includes('special team'))) {
+      b.brand = 'Special Team'
+    }
+  }
+
   const profiles = profilesRaw.filter((p) => !p.deleted_at)
-  const creProfiles = profiles.filter((p) => p.role === 'cre' && p.status === 'active')
+  const creProfiles = profiles.filter((p) => (p.role === 'cre' || p.branch_id === specialBranchId) && p.status === 'active')
 
   // ---- Brand grouping + merged-brand collapse ------------------------------------------------
   const brandBranchIds = new Map<string, string[]>()
@@ -528,7 +539,14 @@ export function foldLogRowsToActivity(rows: RawLogRow[], dir: CreDirectory): Act
     if (unanswered) bucket.unanswered_calls += 1
     if (direction === 'incoming') {
       bucket.incoming_attempts += 1
-      if (outcome === OUTCOME_MISSED) bucket.missed_calls += 1
+      // ⚠️ Use the SAME unanswered rule as every other bucket, not `outcome === 'missed'`.
+      //
+      // Counting only the literal 'missed' outcome made the dashboard contradict itself: the
+      // "Missed Incoming" KPI read 13 while the Unanswered Numbers scorecard — which filters on
+      // UNANSWERED_OUTCOMES — read 14 for the same range, and "28 incoming = 14 connected / 13
+      // missed" did not add up. An incoming call the customer got no answer to, or that was
+      // rejected, is a call the CRE did not pick up; the card's own subtitle says exactly that.
+      if (unanswered) bucket.missed_calls += 1
     }
     if (direction === 'outgoing') {
       bucket.outgoing_attempts += 1
@@ -540,9 +558,86 @@ export function foldLogRowsToActivity(rows: RawLogRow[], dir: CreDirectory): Act
 }
 
 /** `YYYY-MM-DD` for an instant, in IST — the timezone every branch in this project uses. */
-function istCalendarDay(instant: string): string {
+export function istCalendarDay(instant: string): string {
   const t = new Date(instant).getTime()
   return new Date(t + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+/**
+ * Fetch and fold `call_recordings` into `ActivityRow` objects.
+ *
+ * Used as a fallback when `v_call_activity` or `call_log_entries` has 0 rows for a given branch or agent
+ * (e.g. Special Team / Rupali CRM, whose handset syncs audio files to `call_recordings` rather than `call_log_entries`).
+ */
+export async function fetchRecordingsAsActivity(
+  filters: ActivityFilters & { branchIds?: string[] | null; search?: string },
+  dir: CreDirectory
+): Promise<ActivityRow[]> {
+  const supabase = getCreSupabase()
+  let query = supabase.from('call_recordings').select('id, cre_id, branch_id, call_type, duration_seconds, recorded_at') as unknown as AnyQuery
+
+  if (filters.startDate) query = query.gte('recorded_at', `${filters.startDate}T00:00:00+05:30`)
+  if (filters.endDate) query = query.lte('recorded_at', `${filters.endDate}T23:59:59+05:30`)
+  if (filters.agent && filters.agent !== 'all') query = query.eq('cre_id', filters.agent)
+  if (filters.branchIds && filters.branchIds.length > 0) {
+    const creIds = creIdsForBranches(filters.branchIds, dir)
+    const clauses = [`branch_id.in.(${filters.branchIds.join(',')})`]
+    if (creIds.length > 0) clauses.push(`cre_id.in.(${creIds.join(',')})`)
+    query = query.or(clauses.join(','))
+  }
+
+  const recs = await fetchAllPaged<any>(() => query.order('recorded_at', { ascending: true }) as any)
+
+  const byKey = new Map<string, ActivityRow>()
+  for (const r of recs) {
+    if (!r.recorded_at) continue
+    const day = istCalendarDay(r.recorded_at)
+    const key = `${day}|${r.cre_id ?? ''}|${r.branch_id ?? ''}`
+    let bucket = byKey.get(key)
+    if (!bucket) {
+      bucket = {
+        day,
+        cre_id: r.cre_id,
+        branch_id: r.branch_id,
+        cre_name: r.cre_id ? dir.profileName.get(r.cre_id) ?? null : null,
+        total_attempts: 0,
+        answered_calls: 0,
+        unanswered_calls: 0,
+        missed_calls: 0,
+        outgoing_attempts: 0,
+        outgoing_unanswered: 0,
+        incoming_attempts: 0,
+        total_talk_time_seconds: 0,
+        answer_rate_pct: null,
+        recorded_calls: 0,
+      }
+      byKey.set(key, bucket)
+    }
+
+    const duration = Number(r.duration_seconds) || 0
+    const callType = (r.call_type || '').toLowerCase()
+    const isAnswered = duration > 0 || (callType !== 'missed' && callType !== 'no_answer' && callType !== 'rejected')
+
+    bucket.total_attempts += 1
+    if (isAnswered) {
+      bucket.answered_calls += 1
+    } else {
+      bucket.unanswered_calls += 1
+    }
+    if (callType === 'missed') {
+      bucket.missed_calls += 1
+    }
+    if (callType === 'outgoing') {
+      bucket.outgoing_attempts += 1
+      if (!isAnswered) bucket.outgoing_unanswered += 1
+    } else if (callType === 'incoming' || callType === 'missed') {
+      bucket.incoming_attempts += 1
+    }
+    bucket.total_talk_time_seconds += duration
+    bucket.recorded_calls += 1
+  }
+
+  return Array.from(byKey.values())
 }
 
 /**

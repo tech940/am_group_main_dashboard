@@ -2,7 +2,8 @@ import { sql } from 'drizzle-orm'
 import { analyticsDb } from '@/lib/analytics/db'
 import { analyticsTableColumnSet } from '@/lib/analytics/table-columns'
 import { analyticsTableExists } from '@/lib/analytics/table-exists'
-import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
+import { platinumSourceDealerFilter, platinumSourceDealerSql } from '@/lib/platinum/dealer-filter'
+import { getPlatinumDealerWeights } from '@/lib/platinum/dealer-branch'
 import {
   PLATINUM_VAS_IDENTIFIER_VERSION,
   platinumKnownCodeSql,
@@ -72,13 +73,35 @@ function hasColumns(columns: Set<string>, required: string[]) {
   return required.every((column) => columns.has(column))
 }
 
+/**
+ * Restricts to the dealer codes that contribute to the requested scope. N5211 is a partial
+ * consolidation covering Jammu + Poonch, so "All Locations" must NOT include Poonch's own
+ * file (it is already inside N5211) and "Jammu" must subtract it. See
+ * `getPlatinumDealerWeights`.
+ */
 function operationDealerFilter(dealerCode: DealerFilter) {
-  return platinumSourceDealerFilter(dealerCode)
+  const codes = Object.keys(getPlatinumDealerWeights(dealerCode))
+  if (!codes.length) return platinumSourceDealerFilter(dealerCode)
+  return sql`AND ${platinumSourceDealerSql()} IN (${sql.join(codes.map((code) => sql`${code}`), sql`, `)})`
+}
+
+/** +1 to add a dealer's rows, -1 to subtract them, 0 to ignore. */
+function operationDealerWeight(dealerCode: DealerFilter) {
+  const weights = Object.entries(getPlatinumDealerWeights(dealerCode))
+  if (!weights.length) return sql`1`
+  // sql.raw for the weight: it must be an integer literal, not a bound parameter. Bound
+  // parameters arrive as text and `numeric * text` has no operator, which silently yielded NaN.
+  // The values are our own -1/0/1 constants, never user input.
+  const cases = weights.map(([code, weight]) => sql`WHEN ${platinumSourceDealerSql()} = ${code} THEN ${sql.raw(String(Math.trunc(weight)))}`)
+  return sql`CASE ${sql.join(cases, sql` `)} ELSE 0 END`
 }
 
 function reportTypeFilter(columns: Set<string>) {
+  // VAS, wheel alignment and wheel balancing are operation codes. No 'part' row carries one
+  // today, so this is a guard rather than a correction -- but admitting 'part' means any
+  // future part code colliding with a VAS code would silently inflate VAS revenue.
   return columns.has('report_type')
-    ? sql`AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')`
+    ? sql`AND LOWER(COALESCE(report_type, '')) = 'operation'`
     : sql``
 }
 
@@ -341,6 +364,7 @@ async function fetchOperationVasForPeriod(
         report_period_start::date AS period_start,
         report_period_end::date AS period_end,
         ${numericText(sql.raw('total_amt'))} AS amount,
+        ${operationDealerWeight(dealerCode)} AS dealer_weight,
         ${codeSql} AS code,
         ${descriptionSql} AS description
       FROM am_platinum_operation_wise_analysis_report
@@ -351,7 +375,9 @@ async function fetchOperationVasForPeriod(
       ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     )
     SELECT
-      COALESCE(SUM(amount) FILTER (WHERE ${vasFilter()}), 0)::float AS vas_amount,
+      -- Weighted, not a plain SUM: Poonch's own rows are already inside the consolidated
+      -- N5211 file, so they are excluded from the group and subtracted for Jammu.
+      COALESCE(SUM(amount * dealer_weight) FILTER (WHERE ${vasFilter()}), 0)::float AS vas_amount,
       COUNT(*)::int AS period_rows,
       COUNT(*) FILTER (WHERE ${vasFilter()})::int AS source_rows,
       COUNT(*) FILTER (WHERE ${unknownCodeFilter()})::int AS unknown_code_rows,

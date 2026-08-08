@@ -89,6 +89,10 @@ type EnrichedRow = {
   isConnectedOutgoing: boolean
   isConnectedIncoming: boolean
   isUnanswered: boolean
+  isConnectedLater?: boolean
+  callbackTime?: string | null
+  callbackCreName?: string | null
+  callbackDelayLabel?: string | null
 }
 
 /** Recover a phone number or contact name from a recording's file name when the column is empty. */
@@ -184,6 +188,7 @@ export async function GET(request: Request) {
   const recordingsOnly = searchParams.get('recordingsOnly') === 'true'
   const pendingOnly = searchParams.get('pendingOnly') === 'true'
   const unansweredOnly = searchParams.get('unansweredOnly') === 'true'
+  const specialTeamOnly = searchParams.get('specialTeamOnly') === 'true'
 
   try {
     const supabase = getCreSupabase()
@@ -194,9 +199,9 @@ export async function GET(request: Request) {
     // `invalid input syntax for type uuid` and 500s the whole tab, so both are resolved to ids here.
     const branchIds = resolveBranchScope(branch, dir)
 
-    // The recording tabs need `storage_path`, which only exists on `call_recordings`; everything
+    // The recording tabs and special team tab need `storage_path`, which only exists on `call_recordings`; everything
     // else is answered by the full call log.
-    const useRecordingsTable = recordingsOnly || pendingOnly
+    const useRecordingsTable = recordingsOnly || pendingOnly || specialTeamOnly
     const table = useRecordingsTable ? 'call_recordings' : 'call_log_entries'
     const dateColumn = useRecordingsTable ? 'recorded_at' : 'started_at'
 
@@ -206,7 +211,22 @@ export async function GET(request: Request) {
     if (startDate) query = query.gte(dateColumn, istDayStart(startDate))
     if (endDate) query = query.lte(dateColumn, istDayEnd(endDate))
     if (agent && agent !== 'all') query = query.eq('cre_id', agent)
-    if (branchIds) query = applyBranchScope(query, branchIds, dir)
+
+    if (specialTeamOnly) {
+      const specialBranch = dir.branches.find(
+        (b) => (b.code || '').toUpperCase() === 'SPECIAL' || (b.display_name || '').toLowerCase().includes('special team')
+      )
+      const specialBranchId = specialBranch?.id || '4d1d906b-6850-4a90-8309-e2ed9e61c6cb'
+      const specialCreIds = dir.profiles.filter((p) => p.branch_id === specialBranchId).map((p) => p.id)
+      const clauses = [`branch_id.eq.${specialBranchId}`]
+      if (specialCreIds.length > 0) {
+        clauses.push(`cre_id.in.(${specialCreIds.join(',')})`)
+      }
+      query = query.or(clauses.join(','))
+    } else if (branchIds) {
+      query = applyBranchScope(query, branchIds, dir)
+    }
+
     if (search) query = applySearch(query, search, dir)
 
     // Every list predicate is pushed into SQL so that `total`, `totalPages` and the returned rows
@@ -214,7 +234,13 @@ export async function GET(request: Request) {
     let impossibleFilter = false
 
     if (useRecordingsTable) {
-      if (recordingsOnly) {
+      if (specialTeamOnly) {
+        if (pendingOnly) {
+          query = query.in('upload_status', [...SYNCING_STATUSES, 'failed'])
+        } else {
+          query = query.not('storage_path', 'is', null)
+        }
+      } else if (recordingsOnly) {
         // "Playable" means the object really exists in the private bucket. `upload_status` is the
         // authority on that: only `uploaded` rows may be signed, so only they belong in this tab.
         // Filtering on `storage_path is not null` alone also let `uploading` rows in, which sign to
@@ -331,6 +357,46 @@ export async function GET(request: Request) {
         isUnanswered: desc.missIn || desc.missOut,
       }
     })
+
+    // Enrich missed incoming call rows with callback recovery status
+    const missedIncomingRows = rows.filter((r) => r.isMissedIncoming && r.phone)
+    if (missedIncomingRows.length > 0) {
+      const missedPhones = Array.from(new Set(missedIncomingRows.map((r) => r.phone)))
+      const { data: answeredCalls } = await supabase
+        .from('call_log_entries')
+        .select('phone, started_at, cre_id')
+        .is('deleted_at', null)
+        .in('phone', missedPhones)
+        .eq('outcome', OUTCOME_ANSWERED)
+        .order('started_at', { ascending: true })
+
+      for (const row of rows) {
+        if (!row.isMissedIncoming || !row.phone) continue
+        const missedTime = new Date(row.recordedAt).getTime()
+        const subsequentAns = (answeredCalls || []).find(
+          (a) => a.phone === row.phone && new Date(a.started_at).getTime() > missedTime
+        )
+        if (subsequentAns) {
+          row.isConnectedLater = true
+          const cbTime = new Date(subsequentAns.started_at).getTime()
+          const diffMins = Math.max(1, Math.round((cbTime - missedTime) / 60000))
+          const cbCreName = dir.profileName.get(subsequentAns.cre_id) || 'CRE Agent'
+          row.callbackCreName = cbCreName
+          row.callbackTime = subsequentAns.started_at
+
+          let delayStr = `${diffMins}m`
+          if (diffMins >= 1440) {
+            delayStr = `${Math.round(diffMins / 1440)}d`
+          } else if (diffMins >= 60) {
+            delayStr = `${Math.round(diffMins / 60)}h`
+          }
+          row.callbackDelayLabel = `Connected in ${delayStr} (${cbCreName})`
+        } else {
+          row.isConnectedLater = false
+          row.callbackDelayLabel = 'Still Remained Missing'
+        }
+      }
+    }
 
     // No signing happens here. Bulk-signing a page of 20 URLs burns 20 storage calls whether or not
     // anyone presses play, and a short-lived URL minted at render time is already dead by the time

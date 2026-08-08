@@ -265,6 +265,17 @@ export const ALL_SECTIONS: SearchSection[] = [
     category: 'kia',
   },
   {
+    id: 'kia_customer_profile',
+    name: 'Customer Profile',
+    description: 'One customer, end to end — enquiry, booking, insurance, service and complaints, plus the gaps between them.',
+    href: '/brands/kia/customer-profile',
+    department: 'sales',
+    brand: 'kia',
+    iconName: 'UserSearch',
+    initials: 'CP',
+    category: 'kia',
+  },
+  {
     id: 'kia_demo_cars_list',
     name: 'Demo Cars List',
     description: 'Current fleet registry of demonstrator vehicles for customer test drives.',
@@ -520,6 +531,7 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/brands/kia/follow-ups',
   '/brands/kia/call-analytics',
   '/brands/kia/booking-payment-history',
+  '/brands/kia/customer-profile',
   // Reached as a tab inside Bookings; the old standalone path stays allowed because it still
   // resolves (it redirects to the tab), so a bookmarked link is not blocked by the href allowlist.
   '/brands/kia/proforma/allocation-history',

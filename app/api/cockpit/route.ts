@@ -4,6 +4,10 @@ import { requirePermission } from '@/lib/permissions/service'
 import { getGroupCockpit } from '@/lib/cockpit/cockpit-data'
 
 export const dynamic = 'force-dynamic'
+// A fully cold build (no fresh key, no stale key — e.g. first hit after a quiet stretch) fans out
+// to every brand's canonical aggregation and runs in-request. At the platform's default duration
+// it was killed mid-flight, which the browser reports as a bare "Failed to fetch".
+export const maxDuration = 60
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 

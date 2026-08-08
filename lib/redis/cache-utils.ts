@@ -77,6 +77,26 @@ async function fetchSingleFlight<T>(
   }
 }
 
+/**
+ * Keep a background promise alive past the end of the request.
+ *
+ * ⚠️ On Vercel the instance is FROZEN the moment the response is sent, so a plain fire-and-forget
+ * promise never completes there. That killed every stale-while-revalidate refresh: the `:stale`
+ * key was served for up to 2 hours without a single rebuild landing, and when it finally expired
+ * the full cold rebuild ran INSIDE a request — the Group Cockpit's intermittent
+ * "Failed to fetch" was that rebuild being killed at the platform time limit.
+ *
+ * `after()` pins the invocation via waitUntil until the promise settles. It only exists inside a
+ * Next request scope — under tsx scripts and crons the import/call throws, and the catch falls
+ * back to plain fire-and-forget, which is correct there because the process outlives the promise
+ * anyway.
+ */
+function keepAlivePastResponse(work: Promise<unknown>) {
+  void import('next/server')
+    .then(({ after }) => after(work))
+    .catch(() => {})
+}
+
 function refreshInBackground<T>(
   key: string,
   fetchFn: () => Promise<T>,
@@ -91,11 +111,12 @@ function refreshInBackground<T>(
     return value
   })()
   pendingFetches.set(key, work)
-  void work.catch((error) => {
+  const settled = work.catch((error) => {
     console.error(`Background cache refresh failed for ${key}:`, error)
   }).finally(() => {
     pendingFetches.delete(key)
   })
+  keepAlivePastResponse(settled)
 }
 
 /**

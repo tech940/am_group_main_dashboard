@@ -23,6 +23,8 @@ export type BrandSalesSnapshot = {
   bookingAchievement: number | null
   deliveryAchievement: number | null
   consultants: number
+  /** 'auto' = no configured target for the month, so it was derived as last month's actual + 10%. */
+  targetBasis: 'configured' | 'auto' | null
 }
 
 export type BrandStockSnapshot = {
@@ -37,8 +39,15 @@ export type BrandStockSnapshot = {
 function num(v: unknown): number { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 
 function emptySales(brand: string, label: string): BrandSalesSnapshot {
-  return { brand, label, available: false, monthLabel: null, bookings: 0, deliveries: 0, conversion: 0, bookingTarget: 0, deliveryTarget: 0, bookingAchievement: null, deliveryAchievement: null, consultants: 0 }
+  return { brand, label, available: false, monthLabel: null, bookings: 0, deliveries: 0, conversion: 0, bookingTarget: 0, deliveryTarget: 0, bookingAchievement: null, deliveryAchievement: null, consultants: 0, targetBasis: null }
 }
+
+/** Previous calendar month, wrapping the year. */
+function previousMonth(year: number, month: number): { year: number; month: number } {
+  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 }
+}
+
+const pctOf = (value: number, target: number) => (target > 0 ? Math.round((value / target) * 100) : null)
 function emptyStock(brand: string, label: string): BrandStockSnapshot {
   return { brand, label, available: false, availableStock: 0, stockValue: 0, avgStockAge: 0 }
 }
@@ -58,17 +67,42 @@ export async function getBrandSalesSnapshot(
       year: input?.year,
       month: input?.month,
     })
+
+    // Configured targets (kia_sales_targets) win. When a month has none — which was every month so
+    // far, so the card read "target 0 · —" — derive each missing target as LAST MONTH'S ACTUAL
+    // + 10% (rounded up), per the MD's rule. Derived targets are labelled `auto` so the card can
+    // say where the number came from.
+    let { bookingTarget, deliveryTarget, bookingAchievement, deliveryAchievement } = p.summary
+    let targetBasis: BrandSalesSnapshot['targetBasis'] = 'configured'
+    if (bookingTarget <= 0 || deliveryTarget <= 0) {
+      const prev = previousMonth(p.context.year, p.context.month)
+      const lm = await getKiaSalesPerformance({ year: prev.year, month: prev.month }).catch(() => null)
+      if (lm) {
+        if (bookingTarget <= 0 && lm.summary.bookings > 0) {
+          bookingTarget = Math.ceil(lm.summary.bookings * 1.1)
+          bookingAchievement = pctOf(p.summary.bookings, bookingTarget)
+          targetBasis = 'auto'
+        }
+        if (deliveryTarget <= 0 && lm.summary.deliveries > 0) {
+          deliveryTarget = Math.ceil(lm.summary.deliveries * 1.1)
+          deliveryAchievement = pctOf(p.summary.deliveries, deliveryTarget)
+          targetBasis = 'auto'
+        }
+      }
+    }
+
     return {
       brand: src.brand, label: src.label, available: true,
       monthLabel: p.context.label,
       bookings: p.summary.bookings,
       deliveries: p.summary.deliveries,
       conversion: p.summary.conversion,
-      bookingTarget: p.summary.bookingTarget,
-      deliveryTarget: p.summary.deliveryTarget,
-      bookingAchievement: p.summary.bookingAchievement,
-      deliveryAchievement: p.summary.deliveryAchievement,
+      bookingTarget,
+      deliveryTarget,
+      bookingAchievement,
+      deliveryAchievement,
       consultants: p.leaderboard.filter(row => row.bookings > 0 || row.deliveries > 0).length,
+      targetBasis,
     }
   }
   // No feed / no reader yet for this brand — a declared-but-inactive source.

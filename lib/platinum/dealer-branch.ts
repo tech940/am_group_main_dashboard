@@ -5,6 +5,61 @@ export const PLATINUM_BRANCH_DEALERS = [
 ] as const
 
 export type PlatinumDealerCode = (typeof PLATINUM_BRANCH_DEALERS)[number]['dealerCode']
+
+/**
+ * N5211 is a PARTIAL consolidation in `am_platinum_operation_wise_analysis_report`.
+ *
+ * Its file covers Jammu **and Poonch (N6828)**, but NOT Rajouri (N6250). Poonch also files
+ * its own report, so those rows are a duplicate subset of N5211. Measured on every complete
+ * month from 2025-01: N6828 never exceeds N5211 on any code (0 containment violations, and
+ * 0 codes present at Poonch but absent from N5211), while N6250 violates containment on
+ * 73-122 codes every month — Rajouri is genuinely separate.
+ *
+ * So:  group   = N5211 + N6250      (summing all three double-counts Poonch)
+ *      Jammu   = N5211 - N6828
+ *      Poonch  = N6828
+ *      Rajouri = N6250
+ *
+ * Measured impact of getting this wrong: group overstated 7.8-10.8%, Jammu 10.8-13.8%.
+ *
+ * ⚠️ The consolidation shape differs per brand and must not be generalised. Hyundai's N5216
+ * consolidates ALL branches; KIA does not consolidate at all.
+ */
+export const PLATINUM_CONSOLIDATED_DEALER_CODE: PlatinumDealerCode = 'N5211'
+
+/** Branches whose rows are already contained inside the consolidated N5211 file. */
+export const PLATINUM_CONSOLIDATED_CONTAINS: readonly PlatinumDealerCode[] = ['N6828']
+
+/** Branches that file independently and are NOT inside the consolidated file. */
+export const PLATINUM_INDEPENDENT_DEALER_CODES: readonly PlatinumDealerCode[] = ['N6250']
+
+/**
+ * Per-dealer weights that turn the raw rows into the requested scope.
+ * `+1` adds a dealer's rows, `-1` subtracts them, absent means excluded.
+ */
+export function getPlatinumDealerWeights(
+  dealerCode: string | null | undefined,
+): Record<string, number> {
+  const normalized = normalizePlatinumDealerCode(dealerCode)
+
+  if (!normalized) {
+    // All Locations: the consolidated file plus only the branches it does not contain.
+    return {
+      [PLATINUM_CONSOLIDATED_DEALER_CODE]: 1,
+      ...Object.fromEntries(PLATINUM_INDEPENDENT_DEALER_CODES.map((code) => [code, 1])),
+    }
+  }
+
+  if (normalized === PLATINUM_CONSOLIDATED_DEALER_CODE) {
+    // Jammu has no file of its own; it exists only as the consolidated file minus Poonch.
+    return {
+      [PLATINUM_CONSOLIDATED_DEALER_CODE]: 1,
+      ...Object.fromEntries(PLATINUM_CONSOLIDATED_CONTAINS.map((code) => [code, -1])),
+    }
+  }
+
+  return { [normalized]: 1 }
+}
 export const PLATINUM_ALL_LOCATIONS_CODE = 'all'
 export type PlatinumDealerSelection = PlatinumDealerCode | typeof PLATINUM_ALL_LOCATIONS_CODE
 

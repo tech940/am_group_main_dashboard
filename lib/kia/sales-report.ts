@@ -77,7 +77,14 @@ const TABLES: Record<SourceKey, TableConfig> = {
     label: 'Enquiry Report',
     table: KIA_TABLES.enquiry,
     dateColumn: 'enquiry_date',
-    dealerColumns: ['dealer_code', 'dealer_code_2', 'main_dealer_code'],
+  // ⚠️ dealer_code_2 FIRST. On 2026-07-22 the KIA feed changed shape: `dealer_code` became the
+  // PARENT code JK402 on every row and the real outlet moved into `dealer_code_2`. Because
+  // `dealer_code` is never empty, a COALESCE that reads it first never reaches dealer_code_2 —
+  // so JK501 rendered ZERO enquiries for May/Jun/Jul/Aug-26 against a true 275/216/232/45, and
+  // the Jul-26 retail split read 51/0 instead of 35/16.
+  // Reading dealer_code_2 first is a provable no-op before Jul-2026 (the column is NULL on 100%
+  // of those rows) and reproduces the MD's own deck on 14 of 14 outlet-months.
+    dealerColumns: ['dealer_code_2', 'dealer_code', 'main_dealer_code'],
     defaultVisibleColumns: ['enquiry_date', 'enquiry_no', 'name_of_the_customer', 'contact_number', 'model', 'source', 'consultant_name', 'enquiry_status', 'booking_date', 'retail_date', 'lost_reason'],
     searchColumns: ['enquiry_no', 'customer_id', 'name_of_the_customer', 'contact_number', 'model', 'variant', 'consultant_name', 'source', 'enquiry_status', 'lost_reason'],
     sourceColumn: 'source',
@@ -90,7 +97,14 @@ const TABLES: Record<SourceKey, TableConfig> = {
     label: 'Booking Report',
     table: KIA_TABLES.booking,
     dateColumn: 'booking_date',
-    dealerColumns: ['dealer_code', 'dealer_code_2', 'main_dealer'],
+  // ⚠️ dealer_code_2 FIRST. On 2026-07-22 the KIA feed changed shape: `dealer_code` became the
+  // PARENT code JK402 on every row and the real outlet moved into `dealer_code_2`. Because
+  // `dealer_code` is never empty, a COALESCE that reads it first never reaches dealer_code_2 —
+  // so JK501 rendered ZERO enquiries for May/Jun/Jul/Aug-26 against a true 275/216/232/45, and
+  // the Jul-26 retail split read 51/0 instead of 35/16.
+  // Reading dealer_code_2 first is a provable no-op before Jul-2026 (the column is NULL on 100%
+  // of those rows) and reproduces the MD's own deck on 14 of 14 outlet-months.
+    dealerColumns: ['dealer_code_2', 'dealer_code', 'main_dealer'],
     defaultVisibleColumns: ['booking_date', 'booking_no', 'name_of_the_customer', 'contact_number', 'model', 'main_source', 'consultant_name', 'status', 'amount_received', 'mode_of_purchase'],
     searchColumns: ['booking_no', 'customer_id', 'name_of_the_customer', 'contact_number', 'model', 'variant', 'consultant_name', 'main_source', 'status'],
     sourceColumn: 'main_source',
@@ -103,7 +117,14 @@ const TABLES: Record<SourceKey, TableConfig> = {
     label: 'Sales Report',
     table: KIA_TABLES.sales,
     dateColumn: 'delivery_date',
-    dealerColumns: ['dealer_code', 'dealer_code_2', 'main_dealer_code'],
+  // ⚠️ dealer_code_2 FIRST. On 2026-07-22 the KIA feed changed shape: `dealer_code` became the
+  // PARENT code JK402 on every row and the real outlet moved into `dealer_code_2`. Because
+  // `dealer_code` is never empty, a COALESCE that reads it first never reaches dealer_code_2 —
+  // so JK501 rendered ZERO enquiries for May/Jun/Jul/Aug-26 against a true 275/216/232/45, and
+  // the Jul-26 retail split read 51/0 instead of 35/16.
+  // Reading dealer_code_2 first is a provable no-op before Jul-2026 (the column is NULL on 100%
+  // of those rows) and reproduces the MD's own deck on 14 of 14 outlet-months.
+    dealerColumns: ['dealer_code_2', 'dealer_code', 'main_dealer_code'],
     defaultVisibleColumns: ['delivery_date', 'invoice_date', 'invoice_no', 'registration_name', 'contact_num1', 'model', 'variant', 'color', 'consultant_name', 'source', 'mode_of_purchase', 'dsa_financier', 'ex_showroom_price'],
     searchColumns: ['invoice_no', 'booking_no', 'customerid', 'registration_name', 'contact_num1', 'model', 'variant', 'consultant_name', 'source', 'dsa_financier', 'vin_number', 'vin_no'],
     sourceColumn: 'source',
@@ -116,7 +137,9 @@ const TABLES: Record<SourceKey, TableConfig> = {
     label: 'Accessories Counter Sales Report',
     table: KIA_TABLES.accessories,
     dateColumn: 'csr_date',
-    dealerColumns: ['dealer_code', 'dealer_code_2'],
+    // Accessories was NOT affected by the changeover (both columns agree on every row),
+    // but the same order is used so a future consolidation cannot silently break it too.
+    dealerColumns: ['dealer_code_2', 'dealer_code'],
     defaultVisibleColumns: ['csr_date', 'csr_bill_no', 'accessories_invoice_no', 'customer_name', 'customer_mobile', 'model', 'variant', 'vin', 'accessories_description', 'accessories_qty', 'accessory_taxable_amount', 'tax_amount', 'bill_status'],
     searchColumns: ['csr_bill_no', 'accessories_invoice_no', 'customer_name', 'customer_mobile', 'model', 'variant', 'vin', 'reg_no', 'accessories_description'],
     modelColumn: 'model',
@@ -758,6 +781,20 @@ function buildDeduplicationKey(config: TableConfig, row: Row) {
   }
 
   if (config.key === 'sales') {
+    // ⚠️ Key on VIN, never on invoice_no, and never namespaced by dealer.
+    //
+    // KIA REUSES INVOICE NUMBERS: 16 numbers (K202600044-K202600059) map to 32 distinct VINs
+    // spanning Apr/May-26 and Jul-26. Keying on invoice_no made the later upload win and silently
+    // DROPPED the earlier retail — May-26 rendered 48 against a true 62 (-22.6%).
+    //
+    // The dealer namespace made it worse. When the feed re-tagged a car's dealer_code mid-month
+    // the same vehicle produced two keys and BOTH survived, so Jul-26 rendered 62 against a true
+    // 51 (+21.6%). One car is one VIN regardless of which outlet the feed credits it to.
+    //
+    // VIN hygiene is perfect across KIA (every value 17 chars, no case/whitespace variance), so
+    // this is a safe primary key. Falls back to the old composite only when VIN is absent.
+    const vin = upperText(getFirstText(row, ['vin_number', 'vin_no']))
+    if (vin) return `sales:${vin}`
     const invoiceNo = upperText(row.invoice_no)
     if (invoiceNo) return `sales:${dealer}:${invoiceNo}`
     return [

@@ -7,6 +7,29 @@ import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout } from '@/lib/email/templates/layout'
 import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
 import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
+import { createResubmitToken } from '@/lib/kia/approval-resubmit'
+
+/**
+ * Human labels for the workflow stage that sent a request back, so the email can say WHICH stage
+ * returned it rather than leaking the internal key.
+ */
+const SEND_BACK_STAGE_LABELS: Record<string, string> = {
+  ed: 'ED',
+  hr: 'HR',
+  ea: 'EA',
+  md: 'MD',
+  accounts: 'Accounts',
+  payment_done: 'Payment',
+}
+
+/** Same resolution order as lib/delegation/emails.ts so every outbound link agrees on the host. */
+function getAppBaseUrl(): string {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+    || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'))
+  return String(baseUrl).replace(/\/$/, '')
+}
+
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -181,22 +204,55 @@ export async function POST(
 
       // Send email to submitter in background
       try {
+        // WHO sent it back, and FROM WHICH STAGE.
+        // ⚠️ The stage label comes from `stage` (the workflow step being acted on) and the person
+        // from `appUser.fullName`. These are NOT interchangeable: in the `history` jsonb the field
+        // named `role` holds the STAGE LABEL, not the actor's job role, so reading a person out of
+        // it would name the stage twice and drop the human entirely.
+        const senderName = appUser.fullName || 'An approver'
+        const senderStage = SEND_BACK_STAGE_LABELS[stage] || stage.toUpperCase()
+
+        // vendorName is nullable (many requests are not vendor payments at all), and interpolating
+        // it blind printed "for null" in the email. Drop the clause entirely when it is absent.
+        const vendorLabel = (requestRow.vendorName || '').trim()
+
+        // ⚠️ A SIGNED token, not the row id. Submitters have no dashboard login, so this link
+        // cannot sit behind a session — which makes the link itself the credential. A bare id
+        // would let anyone enumerate ids and read every vendor payment in the system.
+        const resubmitUrl = `${getAppBaseUrl()}/brands/kia/payment-approvals/submit?resubmit=${createResubmitToken(requestRow.id)}`
+
         const bodyHtml = `
           <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${requestRow.name},</p>
           <p style="margin:0 0 16px;font-size:15px;color:#334155">
-            Your vendor payment approval request for <strong>${requestRow.vendorName}</strong> of <strong>INR ${requestRow.amount}</strong> has been sent back for clarification / additional information.
+            Your payment approval request${vendorLabel ? ` for <strong>${vendorLabel}</strong>` : ''} of <strong>INR ${requestRow.amount}</strong> has been sent back for clarification / additional information.
           </p>
           <div style="margin:20px 0;padding:16px;border:1px solid #e6e8f0;border-radius:12px;background:#fbfbfd;">
-            <h4 style="margin:0 0 6px 0;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#d97706;">Comments from Approver:</h4>
+            <h4 style="margin:0 0 6px 0;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#d97706;">Sent back by:</h4>
+            <p style="margin:0 0 12px;font-size:14px;color:#111827;"><strong>${senderName}</strong> &middot; ${senderStage} stage</p>
+            <h4 style="margin:0 0 6px 0;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#d97706;">Comments:</h4>
             <p style="margin:0;font-size:14px;color:#4b5563;white-space:pre-wrap;line-height:1.5;">${remarks || 'No remarks provided.'}</p>
           </div>
-          <p style="margin:0 0 16px;font-size:15px;color:#334155">
-            Please log in, review the feedback, upload any missing invoice/bills, and re-submit the request.
+          <p style="margin:0 0 20px;font-size:15px;color:#334155">
+            Use the button below to reopen your request with everything you submitted already filled in,
+            make the changes asked for, and send it back through.
+          </p>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+            <tr>
+              <td style="border-radius:10px;background:#0f766e;">
+                <a href="${resubmitUrl}"
+                   style="display:inline-block;padding:12px 26px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;">
+                  Re-submit request
+                </a>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:0;font-size:12px;color:#94a3b8;">
+            This link is unique to your request and expires in 30 days. No sign-in is needed.
           </p>
         `
         void sendEmail({
           to: requestRow.email,
-          subject: `Clarification Needed: Vendor Payment Request for ${requestRow.vendorName}`,
+          subject: `Clarification Needed: Payment Request${vendorLabel ? ` for ${vendorLabel}` : ''}`,
           html: emailLayout({
             heading: 'Payment Request Sent Back',
             eyebrow: 'AM Group · Approvals',

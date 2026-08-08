@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests, glAccounts } from '@/lib/db/schema'
-import { asc, eq, or } from 'drizzle-orm'
+import { and, asc, eq, or } from 'drizzle-orm'
+import { verifyResubmitToken } from '@/lib/kia/approval-resubmit'
 
 export async function POST(request: NextRequest) {
   try {
+    // ⚠️ DELIBERATELY UNAUTHENTICATED. The people who raise vendor payment requests do NOT have
+    // dashboard logins — they reach this from a public form. An auth guard here locks out the
+    // entire intake path, so protection has to come from validation and rate limiting, not a
+    // session check. See the security note in the section README / owner discussion.
     const body = await request.json()
     const {
       email,
@@ -67,6 +72,113 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.warn('Fallback GL Account query error:', e)
       }
+    }
+
+    // Re-submission of a sent-back request: UPDATE the original row instead of creating a second
+    // request the approvers would have to reconcile against the first.
+    //
+    // ⚠️ The SIGNED TOKEN is the credential, not the row id. This endpoint is unauthenticated
+    // (submitters have no login), so accepting a bare `resubmitId` would let anyone overwrite any
+    // payment request by guessing ids. The token is the same one the send-back email carried.
+    const resubmitToken = typeof body.resubmitToken === 'string' ? body.resubmitToken.trim() : ''
+    if (resubmitToken) {
+      const verified = verifyResubmitToken(resubmitToken)
+      if (!verified.ok) {
+        const message = verified.reason === 'expired'
+          ? 'This re-submit link has expired. Please ask for the request to be sent back again.'
+          : 'This re-submit link is not valid.'
+        return NextResponse.json({ error: message, reason: verified.reason }, { status: 400 })
+      }
+
+      const [original] = await db
+        .select()
+        .from(kiaApprovalRequests)
+        .where(eq(kiaApprovalRequests.id, verified.requestId))
+        .limit(1)
+
+      if (!original) {
+        return NextResponse.json({ error: 'The original request could not be found.' }, { status: 404 })
+      }
+      if (original.emailSendStatus !== 'SentBack') {
+        return NextResponse.json({
+          error: 'This request is no longer awaiting re-submission. It may have already been re-submitted or actioned.',
+          reason: 'not_sent_back',
+        }, { status: 409 })
+      }
+
+      const historyList = Array.isArray(original.history) ? [...original.history] : []
+      historyList.push({
+        id: Math.random().toString(36).substring(7),
+        role: 'Submitter',
+        roleKey: 'submitter',
+        user: name.trim(),
+        action: 'RESUBMITTED',
+        // The send-back reason is cleared from the row below, so preserve it in the audit trail.
+        remarks: original.sendBackReason
+          ? `Re-submitted (was sent back: ${original.sendBackReason})`
+          : 'Re-submitted after send-back',
+        timestamp: new Date().toISOString(),
+      })
+
+      const [updated] = await db
+        .update(kiaApprovalRequests)
+        .set({
+          email: email.trim(),
+          name: name.trim(),
+          employeeId: employeeId?.trim() || null,
+          location: location || null,
+          dealerCode: dealerCode || null,
+          dealerName: dealerName || null,
+          department: department || null,
+          specifyOtherDepartment: specifyOtherDepartment?.trim() || null,
+          approvalType: approvalType || null,
+          vendorName: vendorName?.trim() || null,
+          specifyOtherApprovalType: specifyOtherApprovalType?.trim() || null,
+          previousAdvance: previousAdvance?.trim() || null,
+          amount: String(amount),
+          typeOfPayment: typeOfPayment || null,
+          remarks: remarks?.trim() || null,
+          // The re-submit form does not always carry the original attachments back, so a missing
+          // URL means "keep what was uploaded before", never "delete it".
+          uploadBillUrl1: uploadBillUrl1 || original.uploadBillUrl1 || null,
+          uploadBillUrl2: uploadBillUrl2 || original.uploadBillUrl2 || null,
+          uploadDocUrl: uploadDocUrl || original.uploadDocUrl || null,
+          glAccountId: finalGlAccountId,
+          gst: gst?.trim() || null,
+          // Reset the chain to the same state a fresh submission starts in; SEND_BACK already
+          // nulled the per-stage approvals, and the who-did-what lives in `history`.
+          vpApproval: '',
+          hrApproval: '',
+          accountApproval: '',
+          eaApproval: '',
+          managementApproval: '',
+          managementRemarks: '',
+          sendBackReason: null,
+          emailSendStatus: 'Mail Sent',
+          history: historyList,
+          updatedAt: new Date(),
+        })
+        // The status guard in the WHERE (not just the read above) makes a double-click or a
+        // concurrently used link lose cleanly instead of silently re-running the reset.
+        .where(and(
+          eq(kiaApprovalRequests.id, verified.requestId),
+          eq(kiaApprovalRequests.emailSendStatus, 'SentBack'),
+        ))
+        .returning()
+
+      if (!updated) {
+        return NextResponse.json({
+          error: 'This request is no longer awaiting re-submission. It may have already been re-submitted or actioned.',
+          reason: 'not_sent_back',
+        }, { status: 409 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        id: updated.id,
+        resubmitted: true,
+        message: 'Request re-submitted successfully.',
+      })
     }
 
     const [inserted] = await db

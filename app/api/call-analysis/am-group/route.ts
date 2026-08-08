@@ -9,6 +9,7 @@ import {
   creRosterForBranches,
   fetchActivityRows,
   fetchAllPaged,
+  fetchRecordingsAsActivity,
   foldLogRowsToActivity,
   formatSeconds,
   istDayEnd,
@@ -17,6 +18,10 @@ import {
   resolveBranchId,
   resolveBranchScope,
   OUTCOME_ANSWERED,
+  OUTCOME_MISSED,
+  OUTCOME_NO_ANSWER,
+  OUTCOME_REJECTED,
+  UNANSWERED_OUTCOMES,
   UNASSIGNED_BRANCH_ID,
   type ActivityRow,
   type CreDirectory,
@@ -149,6 +154,118 @@ function groupTotals<K>(rows: ActivityRow[], keyOf: (r: ActivityRow) => K): Map<
 const pct = (numerator: number, denominator: number) =>
   denominator > 0 ? Math.round((numerator / denominator) * 100) : 0
 
+/**
+ * Calculates missed incoming recovery metrics:
+ * Total Missed Incoming, Connected Later (callback completed), and Still Remained Missing.
+ */
+async function fetchMissedIncomingRecovery(filters: Filters, dir: CreDirectory) {
+  try {
+    const supabase = getCreSupabase()
+    let query = supabase
+      .from('call_log_entries')
+      .select('id, phone, started_at, outcome, cre_id, branch_id')
+      .is('deleted_at', null)
+      .eq('direction', 'incoming')
+      // UNANSWERED_OUTCOMES is the single definition of "the customer did not get through"
+      // (missed / no_answer / rejected) — see lib/cre-calls/directory.ts. Listing the three
+      // constants here instead would be a second definition that could drift from it.
+      .in('outcome', UNANSWERED_OUTCOMES)
+
+    if (filters.startDate) query = query.gte('started_at', istDayStart(filters.startDate))
+    if (filters.endDate) query = query.lte('started_at', istDayEnd(filters.endDate))
+    if (filters.agent && filters.agent !== 'all') query = query.eq('cre_id', filters.agent)
+    if (filters.branchIds) query = applyBranchScope(query, filters.branchIds, dir)
+    if (filters.search) query = applySearch(query, filters.search, dir)
+
+    const { data: missedRows, error } = await query
+    if (error || !missedRows || missedRows.length === 0) {
+      return {
+        totalMissedIncoming: 0,
+        connectedLater: 0,
+        remainedMissing: 0,
+        recoveryRatePct: 0,
+        totalUniqueCallers: 0,
+        connectedLaterCallers: 0,
+        remainedMissingCallers: 0,
+      }
+    }
+
+    const validMissed = missedRows.filter(
+      (c) => c.phone && c.phone !== 'null' && c.phone !== 'Unknown Phone'
+    )
+    const phones = Array.from(new Set(validMissed.map((c) => c.phone)))
+
+    let answeredCalls: { phone: string; started_at: string }[] = []
+    if (phones.length > 0) {
+      for (let i = 0; i < phones.length; i += 100) {
+        const batch = phones.slice(i, i + 100)
+        const { data: batchAns } = await supabase
+          .from('call_log_entries')
+          .select('phone, started_at')
+          .is('deleted_at', null)
+          .in('phone', batch)
+          .eq('outcome', OUTCOME_ANSWERED)
+        if (batchAns) answeredCalls.push(...batchAns)
+      }
+    }
+
+    let connectedLater = 0
+    let remainedMissing = 0
+    const callerMap = new Map<string, { connectedLater: boolean }>()
+
+    for (const missed of validMissed) {
+      const p = missed.phone
+      const missedTime = new Date(missed.started_at).getTime()
+      const isConnected = answeredCalls.some(
+        (a) => a.phone === p && new Date(a.started_at).getTime() > missedTime
+      )
+
+      if (isConnected) {
+        connectedLater++
+      } else {
+        remainedMissing++
+      }
+
+      const caller = callerMap.get(p) || { connectedLater: false }
+      if (isConnected) caller.connectedLater = true
+      callerMap.set(p, caller)
+    }
+
+    const totalUniqueCallers = callerMap.size
+    let connectedLaterCallers = 0
+    let remainedMissingCallers = 0
+
+    for (const c of callerMap.values()) {
+      if (c.connectedLater) connectedLaterCallers++
+      else remainedMissingCallers++
+    }
+
+    const totalMissedIncoming = validMissed.length
+    const recoveryRatePct = pct(connectedLater, totalMissedIncoming)
+
+    return {
+      totalMissedIncoming,
+      connectedLater,
+      remainedMissing,
+      recoveryRatePct,
+      totalUniqueCallers,
+      connectedLaterCallers,
+      remainedMissingCallers,
+    }
+  } catch (err) {
+    console.error('[fetchMissedIncomingRecovery] Error:', err)
+    return {
+      totalMissedIncoming: 0,
+      connectedLater: 0,
+      remainedMissing: 0,
+      recoveryRatePct: 0,
+      totalUniqueCallers: 0,
+      connectedLaterCallers: 0,
+      remainedMissingCallers: 0,
+    }
+  }
+}
+
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) {
@@ -178,7 +295,7 @@ export async function GET(request: Request) {
     // `brandReportingBranchIds` is the MERGED view: Kia's two locations collapse to one AM Kia
     // entry, which also means `subBranches.length` drops to 1 and the client stops drawing the
     // Jammu / Udhampur location pills. Ordering is by slug so relabelling a brand cannot reshuffle it.
-    const brandOrder = ['kia', 'hyundai', 'honda', 'ktm']
+    const brandOrder = ['kia', 'hyundai', 'honda', 'ktm', 'special_team']
     const branchOptions = [...dir.brandReportingBranchIds.entries()]
       .filter(([slug]) => slug !== 'am_group')
       .map(([slug, ids]) => ({
@@ -196,7 +313,7 @@ export async function GET(request: Request) {
     // No search: read the view (Postgres does the GROUP BY). With a search: page the narrow log
     // projection and fold it into the identical shape. Both are paged — an unbounded select would
     // be silently capped at 1000 rows.
-    const activity: ActivityRow[] = search
+    let activity: ActivityRow[] = search
       ? foldLogRowsToActivity(
           await fetchAllPaged<RawLogRow>(() =>
             buildLogQuery(
@@ -209,14 +326,35 @@ export async function GET(request: Request) {
         )
       : await fetchActivityRows({ startDate, endDate, agent, branchIds }, dir)
 
+    if (activity.length === 0) {
+      activity = await fetchRecordingsAsActivity({ startDate, endDate, agent, branchIds, search }, dir)
+    }
+
     const totals = activity.reduce((t, r) => addRow(t, r), ZERO_TOTALS())
 
-    // The two splits the view cannot express exactly. Counted by Postgres, not derived from
+    // The splits the view cannot express exactly. Counted by Postgres, not derived from
     // `outgoing_attempts - outgoing_unanswered` (which would absorb unknown-outcome calls).
-    const [connectedOutgoing, connectedIncoming] = await Promise.all([
+    //
+    // The three incoming-unanswered outcomes are counted separately so the Missed Incoming KPI can
+    // (a) use their SUM — the same rule as the Unanswered Numbers tab, which this card used to
+    // contradict (view said 116, tab said 129) because `v_call_activity.missed_calls` counts only
+    // the literal 'missed' outcome — and (b) show the per-outcome breakdown.
+    let [connectedOutgoing, connectedIncoming, missedIncomingRecovery,
+      incomingMissed, incomingNoAnswer, incomingRejected] = await Promise.all([
       countWhere(filters, dir, (q) => q.eq('direction', 'outgoing').eq('outcome', OUTCOME_ANSWERED)),
       countWhere(filters, dir, (q) => q.eq('direction', 'incoming').eq('outcome', OUTCOME_ANSWERED)),
+      fetchMissedIncomingRecovery(filters, dir),
+      countWhere(filters, dir, (q) => q.eq('direction', 'incoming').eq('outcome', OUTCOME_MISSED)),
+      countWhere(filters, dir, (q) => q.eq('direction', 'incoming').eq('outcome', OUTCOME_NO_ANSWER)),
+      countWhere(filters, dir, (q) => q.eq('direction', 'incoming').eq('outcome', OUTCOME_REJECTED)),
     ])
+
+    const missedIncomingAll = incomingMissed + incomingNoAnswer + incomingRejected
+
+    if (connectedOutgoing === 0 && connectedIncoming === 0 && activity.length > 0) {
+      connectedOutgoing = activity.reduce((acc, r) => acc + Math.max(0, r.outgoing_attempts - r.outgoing_unanswered), 0)
+      connectedIncoming = activity.reduce((acc, r) => acc + Math.max(0, r.incoming_attempts - r.missed_calls), 0)
+    }
 
     // Calls the handset logged but could not classify. Kept visible instead of reconciled away.
     const unclassified = Math.max(0, totals.attempts - totals.answered - totals.unanswered)
@@ -410,7 +548,13 @@ export async function GET(request: Request) {
         uniquePhones: null as number | null,
         connectedOutgoing,
         connectedIncoming,
-        missedIncoming: totals.missedIncoming,
+        // Sum of all three unanswered incoming outcomes, NOT the view's `missed_calls` (which
+        // counts only 'missed' and made this KPI contradict the Unanswered Numbers tab). The view
+        // total is the fallback for the recordings-only path, where `call_log_entries` is empty.
+        missedIncoming: missedIncomingAll || totals.missedIncoming,
+        missedIncomingBreakdown: missedIncomingAll > 0
+          ? { missed: incomingMissed, noAnswer: incomingNoAnswer, rejected: incomingRejected }
+          : null,
         missedOutgoing: totals.outgoingUnanswered,
         outgoingAttempts: totals.outgoingAttempts,
         incomingAttempts: totals.incomingAttempts,
@@ -422,6 +566,7 @@ export async function GET(request: Request) {
         unansweredRate: pct(totals.unanswered, totals.attempts),
         // CREs who made or received at least one call in range — NOT the roster size.
         agentCount: activeCreCount,
+        missedIncomingRecovery,
       },
       sparklines,
       dailyTrend,

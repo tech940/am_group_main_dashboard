@@ -335,7 +335,8 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
 export async function getGroupCockpit(input?: { endDate?: string | null }): Promise<CockpitPayload> {
   const win = monthWindows(input?.endDate)
   // Cache-key on the anchor month so a new day/month busts it; short TTL keeps it lively for exec use.
-  // v4: per-brand status/coverage + like-for-like LY windows. The key MUST be bumped with a shape or
-  // semantics change — a v3 payload has no `status`, so every brand would fall through as not-ok.
-  return getCachedData(`cockpit:group:v4:${win.monthStart}:${win.end}`, () => buildCockpit(input?.endDate), CACHE_TTL.SHORT)
+  // v5: sales targets fall back to last-month-actual + 10% (`targetBasis`). The key MUST be bumped
+  // with a shape or semantics change — e.g. a v3 payload has no `status`, so every brand would fall
+  // through as not-ok, and a v4 one would keep showing "target 0" until it expired.
+  return getCachedData(`cockpit:group:v5:${win.monthStart}:${win.end}`, () => buildCockpit(input?.endDate), CACHE_TTL.SHORT)
 }

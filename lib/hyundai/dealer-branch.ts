@@ -17,6 +17,29 @@ export const HYUNDAI_BRANCH_DEALERS = [
 
 export type HyundaiDealerCode = (typeof HYUNDAI_BRANCH_DEALERS)[number]['dealerCode']
 
+/**
+ * N5216 is Hyundai's MAIN dealer code, not a peer branch.
+ *
+ * In `hyundai_operation_wise_analysis_report` the file filed under N5216 is a
+ * CONSOLIDATED, all-branch report: the other five codes are its sub-dealers and their
+ * rows are a duplicate subset of it. Confirmed independently against
+ * `hyundai_ro_billing_report`, where `main_dealer_code = 'N5216'` for all six source
+ * dealers, and where ops(N5216) equals the WHOLE GROUP's billed labour to the rupee in
+ * 7 of 15 months — never the Jammu-only figure.
+ *
+ * Consequences, both of which callers must handle explicitly:
+ *   - the group total is N5216 ALONE; summing all six double-counts five branches
+ *   - the Jammu-only figure exists in that table only as N5216 MINUS the other five
+ *
+ * ⚠️ This is specific to the Hyundai operation report. Do NOT generalise it: Platinum's
+ * N5211 consolidates only Jammu + Poonch (not Rajouri) and KIA does not consolidate at
+ * all, so a blanket "use the biggest code" would silently delete real branches.
+ */
+export const HYUNDAI_CONSOLIDATED_DEALER_CODE = 'N5216'
+
+/** The branch that the consolidated file is filed under, and whose own figure is a residual. */
+export const HYUNDAI_CONSOLIDATED_BRANCH: HyundaiDealerCode = 'JAMMU'
+
 export function normalizeHyundaiDealerCode(value: string | null | undefined): HyundaiDealerCode | null {
   const normalized = String(value || '').trim().toUpperCase()
   if (!normalized || normalized === 'ALL' || normalized === 'ALL_LOCATIONS') return null

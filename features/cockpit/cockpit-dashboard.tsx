@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 
 type ServiceBrand = { brand: string; brandLabel: string; available: boolean; status: 'ok' | 'no_data' | 'unavailable'; coverageThrough: string | null; lastUploadedAt: string | null; lagging: boolean; revenue: number; labour: number; parts: number; roCount: number; lyRevenue: number; growthPct: number | null }
 type CashBrand = { brand: string; brandLabel: string; poAmount: number; poCount: number; fundingAmount: number; spendAmount: number }
-type SalesBrand = { brand: string; label: string; available: boolean; monthLabel: string | null; bookings: number; deliveries: number; conversion: number; bookingTarget: number; deliveryTarget: number; bookingAchievement: number | null; deliveryAchievement: number | null; consultants: number }
+type SalesBrand = { brand: string; label: string; available: boolean; monthLabel: string | null; bookings: number; deliveries: number; conversion: number; bookingTarget: number; deliveryTarget: number; bookingAchievement: number | null; deliveryAchievement: number | null; consultants: number; targetBasis?: 'configured' | 'auto' | null }
 type StockBrand = { brand: string; label: string; available: boolean; availableStock: number; stockValue: number; avgStockAge: number }
 type Cockpit = {
   meta: { monthLabel: string; startDate: string; endDate: string; throughDay: number; generatedAt: string }
@@ -227,6 +227,9 @@ export function CockpitDashboard() {
               <MiniStat label="Conversion" value={formatPct(b.conversion)} sub="bookings → deliveries" />
               <MiniStat label="Consultants" value={formatInt(b.consultants)} sub="active this month" />
             </div>
+            {b.targetBasis === 'auto' && (
+              <p className="mt-3 text-[10px] font-semibold text-slate-400">Targets auto-set: last month + 10% (no target configured for this month)</p>
+            )}
           </Card>
         ))}
         {sales.brands.length === 0 && (

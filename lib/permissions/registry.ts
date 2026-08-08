@@ -306,6 +306,21 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    // One customer's whole relationship with us — enquiry, booking, insurance, service and
+    // complaints — plus the gaps between them.
+    //
+    // Restricted-by-default ON PURPOSE: it is absent from DEFAULT_VISIBLE_SECTIONS below and
+    // from every ROLE_PERMISSION_TEMPLATES entry, so it resolves to MD + Developer only until
+    // somebody is granted it explicitly from the Access Map. It concentrates more customer
+    // contact detail on one screen than anything else in the dashboard.
+    key: 'kia.customer_profile',
+    name: 'Customer Profile',
+    parentKey: 'kia.sales',
+    description: 'AM KIA single-customer view across enquiry, booking, insurance, service and complaints, with gap detection.',
+    sortOrder: 46,
+    actions: ['view'],
+  },
+  {
     // Read-only audit trail over kia_vehicle_allocations. Restricted-by-default (not in
     // DEFAULT_VISIBLE_SECTIONS): it names the user who allocated each vehicle and why it was pulled
     // back, which is oversight information, not day-to-day booking work. Only 'view' exists because
@@ -810,6 +825,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   scrap_erp: { href: '/scrap-erp' },
   insurance_analysis: { href: '/insurance' },
   'kia.booking_payment_history': { href: '/brands/kia/booking-payment-history' },
+  'kia.customer_profile': { href: '/brands/kia/customer-profile' },
   'kia.business_excellence': { href: '/brands/kia/business-excellence', aliases: ['/brands/kia/business-excellence/executive-dashboard', '/brands/kia/business-excellence/overview'] },
   'kia.service_appointment': { href: '/brands/kia/service-appointment' },
   'kia.demo_job_cards': { href: '/brands/kia/demo-job-cards' },
@@ -1294,7 +1310,17 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
-  hr: allPermissionKeys,
+  // HR previously read `allPermissionKeys` — literally every permission in the system, the same
+  // as `admin` and `developer`, and broader than `md`. That silently defeated deny-by-default:
+  // any section added to SECTION_ROUTES and deliberately kept OUT of DEFAULT_VISIBLE_SECTIONS
+  // still reached HR through this template, so "restricted-by-default" was never true for them.
+  // It was caught when Customer Profile — a screen full of customer phone numbers and email
+  // addresses — resolved as visible to HR despite being specified MD + Developer only.
+  //
+  // HR now gets everything EXCEPT the restricted-default sections. Anyone in HR who genuinely
+  // needs one of those is granted it explicitly from the Access Map, which is the mechanism that
+  // was designed for exactly this.
+  hr: allPermissionKeys.filter((key) => !RESTRICTED_DEFAULT_PERMISSION_KEYS.has(key)),
 }
 
 export function getTemplateMap(role: PermissionRole) {

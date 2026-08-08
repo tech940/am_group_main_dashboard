@@ -146,11 +146,18 @@ const CSS = `
 }
 `
 
+/**
+ * Global master switch for homepage animations.
+ * Set `ENABLE_HOMEPAGE_ANIMATIONS = false` to pause all homepage animations (3D physics, vehicle loops, helicopter, camera sway & tilt).
+ * Set `ENABLE_HOMEPAGE_ANIMATIONS = true` to re-enable animations whenever needed.
+ */
+export const ENABLE_HOMEPAGE_ANIMATIONS = false
+
 export default function DashboardPortal() {
   const reduce = useReducedMotion()
   const isClient = useSyncExternalStore(NEVER_CHANGES, onClient, onServer)
   const isDesktop = useIsDesktop()
-  const animated = !reduce
+  const animated = ENABLE_HOMEPAGE_ANIMATIONS && !reduce
 
   // Power gate: the whole animated layer (physics sim, 3 vehicle loops, helicopter, walkers,
   // pulses, dusk cycle) unmounts when the hero is scrolled out of view OR the tab is hidden —
@@ -206,7 +213,7 @@ export default function DashboardPortal() {
   const rotX = useTransform(sy, [-0.5, 0.5], [64, 52])
 
   const onMove = useCallback((e: React.PointerEvent) => {
-    if (reduce) return
+    if (reduce || !ENABLE_HOMEPAGE_ANIMATIONS) return
     const el = sceneRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
@@ -222,7 +229,7 @@ export default function DashboardPortal() {
   // starts AND ends at the value it began from, so each 22s cycle wraps seamlessly.
   useEffect(() => {
     // Also parked while the scene is off-screen/hidden — no point swaying an invisible campus.
-    if (reduce || !sceneActive) return
+    if (reduce || !sceneActive || !ENABLE_HOMEPAGE_ANIMATIONS) return
     let sway: ReturnType<typeof animate> | null = null
     let timer = 0
     const startSway = () => {
@@ -245,7 +252,6 @@ export default function DashboardPortal() {
       sway?.stop()
     }
   }, [reduce, mx, sceneActive])
-  
 
   return (
     <MainLayout title="Operations Hub" subtitle="AM Group Corporate Gateway">
@@ -287,9 +293,9 @@ export default function DashboardPortal() {
             />
           </div>
 
-          {/* ── Background field: real collision physics, not fixed paths ─── */}
-          {/* Desktop-only: on a phone-sized canvas 17 colliding bodies pile onto the copy. */}
-          {decor && isDesktop && <PhysicsField />}
+          {/* ── Background field: capability words floating in space ─── */}
+          {/* Desktop-only: on a phone-sized canvas 17 bodies pile onto the copy. */}
+          {isDesktop && <PhysicsField />}
 
           {/* ── Copy ────────────────────────────────────────────────────── */}
           <motion.div
@@ -587,8 +593,8 @@ function ServiceLoop() {
       <motion.div
         aria-hidden
         className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
-        initial={false}
-        animate={{ x: LOOP_X, y: LOOP_Y, rotateZ: LOOP_ROT }}
+        initial={{ x: BAY.x, y: BAY.y, rotateZ: 90 }}
+        animate={ENABLE_HOMEPAGE_ANIMATIONS ? { x: LOOP_X, y: LOOP_Y, rotateZ: LOOP_ROT } : false}
         transition={{ ...loop, times: LOOP_TIMES }}
       >
         {/* The before/after swap is a SCALE step, never opacity: an ancestor with animated opacity
@@ -717,8 +723,8 @@ function NewStockDelivery() {
       <motion.div
         aria-hidden
         className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
-        initial={false}
-        animate={{ x: TRUCK_X, y: [-80, -80, -80, -80, -80] }}
+        initial={{ x: DROP.x, y: -80 }}
+        animate={ENABLE_HOMEPAGE_ANIMATIONS ? { x: TRUCK_X, y: [-80, -80, -80, -80, -80] } : false}
         transition={{ ...loop, times: TRUCK_TIMES }}
       >
         {/* six wheels */}
@@ -743,15 +749,12 @@ function NewStockDelivery() {
         />
       </motion.div>
 
-      {/* the cargo: rides the flatbed in perfect sync, then slides off into the slot */}
+      {/* the cargo: rides the flatbed in perfect sync */}
       <motion.div
         aria-hidden
         className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
-        initial={false}
-        // Hidden via a SCALE step, never opacity: animated opacity on this ancestor would force
-        // transform-style flat (Motion pins will-change for the animation's life) and pancake the
-        // 3D car — the "punched/meshed" bug.
-        animate={{ x: CARGO_X, y: CARGO_Y, z: CARGO_Z, scale: [1, 1, 1, 1, 1, 0, 0] }}
+        initial={{ x: DROP.x, y: -80, z: 14 }}
+        animate={ENABLE_HOMEPAGE_ANIMATIONS ? { x: CARGO_X, y: CARGO_Y, z: CARGO_Z, scale: [1, 1, 1, 1, 1, 0, 0] } : false}
         transition={{
           ...loop,
           x: { ...loop, times: CARGO_TIMES },
@@ -801,10 +804,8 @@ function CustomerHandover() {
       <motion.div
         aria-hidden
         className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
-        initial={false}
-        // Same rule as the cargo: hide with a SCALE step — animated opacity here would flatten the
-        // 3D car into a pancake.
-        animate={{ x: HAND_X, y: HAND_Y, rotateZ: HAND_ROT, scale: [1, 1, 1, 1, 1, 1, 0, 0, 1, 1] }}
+        initial={{ x: HANDOVER.x, y: HANDOVER.y, rotateZ: 0 }}
+        animate={ENABLE_HOMEPAGE_ANIMATIONS ? { x: HAND_X, y: HAND_Y, rotateZ: HAND_ROT, scale: [1, 1, 1, 1, 1, 1, 0, 0, 1, 1] } : false}
         transition={{
           ...loop,
           x: { ...loop, times: HAND_TIMES },
@@ -930,10 +931,8 @@ function Walker({ path, dur, delay, shirt }: {
     <motion.div
       aria-hidden
       className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
-      // Explicit initial: with a start delay, a keyframe animation applies NO transform until it
-      // begins — without this the walker would stand at the campus centre during its delay.
       initial={{ x: xs[0], y: ys[0], scale: 1 }}
-      animate={{ x: [...xs, xs[xs.length - 1]], y: [...ys, ys[ys.length - 1]], scale: [1, 1, 0, 0] }}
+      animate={ENABLE_HOMEPAGE_ANIMATIONS ? { x: [...xs, xs[xs.length - 1]], y: [...ys, ys[ys.length - 1]], scale: [1, 1, 0, 0] } : false}
       transition={{
         ...loop,
         x: { ...loop, times: posTimes },
@@ -945,7 +944,7 @@ function Walker({ path, dur, delay, shirt }: {
       <motion.div
         className="hub-3d"
         initial={false}
-        animate={{ z: [0, 1.6, 0] }}
+        animate={ENABLE_HOMEPAGE_ANIMATIONS ? { z: [0, 1.6, 0] } : false}
         transition={{ duration: 0.55, repeat: Infinity, ease: 'easeInOut' }}
       >
         <Person shirt={shirt} />
@@ -1034,7 +1033,7 @@ function Helicopter() {
       aria-hidden
       className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
       initial={{ x: 154, y: -390, z: 190, rotateZ: 54 }}
-      animate={{ x: HELI_X, y: HELI_Y, z: HELI_Z, rotateZ: HELI_ROT }}
+      animate={ENABLE_HOMEPAGE_ANIMATIONS ? { x: HELI_X, y: HELI_Y, z: HELI_Z, rotateZ: HELI_ROT } : false}
       transition={{ ...loop, times: HELI_TIMES }}
     >
       {/* skids */}
@@ -1043,8 +1042,7 @@ function Helicopter() {
       {/* cabin + tail boom */}
       <Box w={14} d={10} h={8} dz={2} radius={4} glowTop />
       <Box w={12} d={3} h={3} dx={-12} dz={6} radius={1} />
-      {/* rotor: static-lift wrapper + spinning blade — the kia-spin keyframe REPLACES transform,
-          so the translateZ that holds the rotor at mast height must live on a parent. */}
+      {/* rotor: static-lift wrapper + spinning blade */}
       <span aria-hidden className="absolute left-1/2 top-1/2 block" style={{ transform: 'translateZ(13px)' }}>
         <span
           data-kia-motion=""
@@ -1052,7 +1050,7 @@ function Helicopter() {
           style={{
             width: '34px', height: '2.5px', marginLeft: '-17px', marginTop: '-1px',
             background: 'linear-gradient(90deg, transparent, var(--lume-2), transparent)',
-            animation: 'kia-spin .22s linear infinite', opacity: '0.85',
+            animation: ENABLE_HOMEPAGE_ANIMATIONS ? 'kia-spin .22s linear infinite' : 'none', opacity: '0.85',
           }}
         />
       </span>
@@ -1060,7 +1058,7 @@ function Helicopter() {
       <span
         aria-hidden
         data-kia-motion=""
-        className="absolute left-1/2 top-1/2 block animate-pulse rounded-full"
+        className={`absolute left-1/2 top-1/2 block rounded-full ${ENABLE_HOMEPAGE_ANIMATIONS ? 'animate-pulse' : ''}`}
         style={{
           width: '4px', height: '4px', marginLeft: '-20px', marginTop: '-2px',
           transform: 'translateZ(9px)',
@@ -1087,7 +1085,7 @@ function HoloPanel() {
       <motion.div
         className="hub-3d grid place-items-center"
         initial={false}
-        animate={{ z: [0, 14, 0] }}
+        animate={ENABLE_HOMEPAGE_ANIMATIONS ? { z: [0, 14, 0] } : false}
         transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
       >
         <div
@@ -1228,22 +1226,22 @@ function Campus({ active, setActive, decor, counts }: {
         hovered === p.hint ? <PlotHint key={p.key} dx={p.dx} dy={p.dy} z={p.hintZ}>{p.hint}</PlotHint> : null
       ))}
 
-      {/* the animated service visit — a car drives in, waits, gets serviced, leaves renewed */}
-      {traffic && <ServiceLoop />}
+      {/* the service visit car at the service bay */}
+      <ServiceLoop />
 
       {/* the transporter bringing new stock to the yard */}
-      {traffic && <NewStockDelivery />}
+      <NewStockDelivery />
 
-      {/* a sold car leaves the Ready row, gets handed over at the showroom, and drives off */}
-      {traffic && <CustomerHandover />}
+      {/* a sold car at the showroom handover */}
+      <CustomerHandover />
 
       {/* the patrol helicopter, and the system the whole campus feeds */}
-      {traffic && <Helicopter />}
-      {traffic && <HoloPanel />}
-      {traffic && <DataPulses />}
+      <Helicopter />
+      <HoloPanel />
+      {ENABLE_HOMEPAGE_ANIMATIONS && <DataPulses />}
 
       {/* foot traffic in and out of the showroom, service centre and offices */}
-      {traffic && <CampusPeople />}
+      <CampusPeople />
     </>
   )
 }
@@ -1740,6 +1738,22 @@ function PhysicsField() {
       H = wrap.clientHeight || H
     })
     ro.observe(wrap)
+
+    if (!ENABLE_HOMEPAGE_ANIMATIONS) {
+      // Write static initial layout for chips and do not start animation loop
+      bodiesRef.current.forEach((b, i) => {
+        const node = nodeRefs.current[i]
+        if (node) {
+          node.style.transform = `translate3d(${(b.x - b.r).toFixed(1)}px, ${(b.y - b.r).toFixed(1)}px, ${FIELD[i].depth}px)`
+        }
+        const inner = innerRefs.current[i]
+        if (inner) {
+          inner.style.transform = `perspective(680px) rotateX(56deg) rotateZ(-42deg)`
+          inner.style.filter = 'none'
+        }
+      })
+      return () => ro.disconnect()
+    }
 
     let raf = 0
     let last = 0

@@ -4,6 +4,8 @@ import { db } from '@/lib/db'
 import { kiaApprovalRequests } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { requirePermission } from '@/lib/permissions/service'
+import { sendEmail } from '@/lib/email/email-service'
+import { emailLayout } from '@/lib/email/templates/layout'
 
 export async function POST(
   request: NextRequest,
@@ -61,6 +63,37 @@ export async function POST(
       })
       .where(eq(kiaApprovalRequests.id, id))
       .returning()
+
+    // Notify the submitter when the MD comments — and ONLY the MD. Remarks from other stages are
+    // internal working notes; an email for every one of those would drown the submitter.
+    if (['md', 'ceo'].includes(appUser.role) && requestRow.email) {
+      const vendorLabel = (requestRow.vendorName || '').trim()
+      const bodyHtml = `
+        <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${requestRow.name},</p>
+        <p style="margin:0 0 16px;font-size:15px;color:#334155">
+          The MD has added a remark on your payment approval request${vendorLabel ? ` for <strong>${vendorLabel}</strong>` : ''} of <strong>INR ${requestRow.amount}</strong>.
+        </p>
+        <div style="margin:20px 0;padding:16px;border:1px solid #e6e8f0;border-radius:12px;background:#fbfbfd;">
+          <h4 style="margin:0 0 6px 0;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#0f766e;">Remark:</h4>
+          <p style="margin:0;font-size:14px;color:#4b5563;white-space:pre-wrap;line-height:1.5;">${remarks}</p>
+        </div>
+        <p style="margin:0;font-size:12px;color:#94a3b8;">
+          No action is needed unless the remark asks for something — this is for your information.
+        </p>
+      `
+      void sendEmail({
+        to: requestRow.email,
+        subject: `MD Remark on your Payment Request${vendorLabel ? ` for ${vendorLabel}` : ''}`,
+        html: emailLayout({
+          heading: 'MD Remark Added',
+          eyebrow: 'AM Group · Approvals',
+          preheader: 'MD remark on your payment request',
+          bodyHtml
+        })
+      }).catch((err) => {
+        console.error('[approvals-remark] Failed to send MD remark email:', err)
+      })
+    }
 
     return NextResponse.json({
       success: true,

@@ -1399,9 +1399,10 @@ async function buildOverviewPayload(
           ? [`RO Billing is available through ${effectiveRoBillingCoverage.latestAvailableDate || 'no date'}; comparison and health scoring are suppressed for the requested end date ${endDate}.`]
           : []),
         ...(!operationCoverage.available ? ['No contained Hyundai Operation Wise snapshot exists for the selected period.'] : []),
-        ...(operationCoverage.available && operationCoverage.classifiedRows === 0 && normalizeHyundaiDealerCode(dealerCode) !== 'JAMMU'
+        ...(operationCoverage.available && operationCoverage.classifiedRows === 0
           ? ['Hyundai Operation Wise snapshot exists but contains no classified VAS/WA/WB rows. Reload the complete report before treating zero values as business performance.']
           : []),
+        ...(operationCoverage.coverageWarning ? [operationCoverage.coverageWarning] : []),
         ...(includeComparison && !lyOperationCoverage?.available ? ['No comparable Hyundai Operation Wise snapshot exists for the comparison period.'] : []),
       ],
       dateBases: {

@@ -7,6 +7,11 @@ import { formatBusinessFreshness, formatBusinessFreshnessShort } from '@/lib/bus
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -188,9 +193,19 @@ type BusinessDateFilter = {
 
 type AppliedBusinessDateFilter = NonNullable<BusinessDateFilter>
 
+function formatBusinessDateLabel(value: string | null | undefined) {
+  if (!value) return ''
+  const trimmed = String(value).slice(0, 10)
+  const parts = trimmed.split('-').map(Number)
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return value
+  const date = new Date(parts[0], parts[1] - 1, parts[2])
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 function AnalyticsDateRangePicker({
-  title = 'Date Range',
-  clearLabel = 'Clear range',
+  title = 'Select date range',
+  clearLabel = 'Clear',
   startDate,
   endDate,
   onChange,
@@ -205,7 +220,10 @@ function AnalyticsDateRangePicker({
   const [viewDate, setViewDate] = useState(() => new Date(initialViewDate.getFullYear(), initialViewDate.getMonth(), 1))
   const selectedStart = parseBusinessDate(startDate)
   const selectedEnd = parseBusinessDate(endDate)
+
   const monthLabel = viewDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  const todayKey = getInputDate(new Date())
+
   const dayCells = useMemo(() => {
     const monthStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1)
     const gridStart = new Date(monthStart)
@@ -226,50 +244,73 @@ function AnalyticsDateRangePicker({
     onChange(startDate, selected)
   }
 
+  const rangeStatusText = useMemo(() => {
+    if (startDate && endDate) {
+      return `${formatBusinessDateLabel(startDate)} – ${formatBusinessDateLabel(endDate)}`
+    }
+    if (startDate) {
+      return `Start: ${formatBusinessDateLabel(startDate)}`
+    }
+    return 'Click a start day, then an end day.'
+  }, [startDate, endDate])
+
   return (
-    <div className="solid-calendar-surface rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-2.5 shadow-sm transition">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="w-full rounded-[1.5rem] border border-[#d8e2ec] bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+      <div className="flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => setViewDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
-          className="app-outline-action flex h-9 w-9 items-center justify-center rounded-xl"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d8e2ec] bg-white text-slate-600 transition hover:border-[#071a2b]/35 hover:text-[#071a2b]"
           aria-label="Previous month"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
+
         <div className="text-center">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</p>
-          <p className="text-sm font-black text-slate-950 dark:text-white">{monthLabel}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+            {startDate && !endDate ? 'Pick end date' : (title || 'Select date range')}
+          </p>
+          <p className="mt-0.5 text-[15px] font-black text-slate-950">{monthLabel}</p>
         </div>
+
         <button
           type="button"
           onClick={() => setViewDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
-          className="app-outline-action flex h-9 w-9 items-center justify-center rounded-xl"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d8e2ec] bg-white text-slate-600 transition hover:border-[#071a2b]/35 hover:text-[#071a2b]"
           aria-label="Next month"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-black uppercase tracking-widest text-slate-400">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <div key={`${day}-${index}`} className="py-0.5">{day}</div>)}
+
+      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+          <div key={`${day}-${index}`} className="py-1">{day}</div>
+        ))}
       </div>
+
       <div className="mt-1 grid grid-cols-7 gap-1">
         {dayCells.map((date) => {
           const dateValue = getInputDate(date)
           const inCurrentMonth = date.getMonth() === viewDate.getMonth()
           const isStart = dateValue === startDate
           const isEnd = dateValue === endDate
-          const inRange = selectedStart && selectedEnd && date >= selectedStart && date <= selectedEnd
+          const isSelected = isStart || isEnd
+          const inRange = selectedStart && selectedEnd && date > selectedStart && date < selectedEnd
+          const isToday = dateValue === todayKey
+
           return (
             <button
               key={dateValue}
               type="button"
               onClick={() => selectDate(date)}
               className={cn(
-                'h-8 rounded-lg text-[11px] font-black transition',
-                inCurrentMonth ? 'text-slate-700 dark:text-slate-100' : 'text-slate-300 dark:text-slate-600',
-                inRange && 'bg-[var(--dashboard-primary-soft)] text-[var(--dashboard-action-bg)]',
-                (isStart || isEnd) && 'app-primary-action shadow-sm'
+                'flex h-10 items-center justify-center rounded-xl text-[12px] font-black transition',
+                inCurrentMonth ? 'text-slate-700' : 'text-slate-300',
+                'hover:bg-[#edf4fb] hover:text-[#071a2b]',
+                inRange && 'bg-[#e6f2fb] text-[#071a2b]',
+                isToday && 'ring-2 ring-[#18a7d0]/50 ring-offset-2',
+                isSelected && 'bg-[#071a2b] text-white shadow-[0_10px_18px_rgba(7,26,43,0.18)] hover:bg-[#071a2b]'
               )}
             >
               {date.getDate()}
@@ -277,19 +318,27 @@ function AnalyticsDateRangePicker({
           )
         })}
       </div>
-      <div className="mt-2 flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-[11px] font-bold text-slate-600">
-        <div className="flex items-center justify-between gap-3">
-          <span>Start</span>
-          <span className="font-black text-slate-950 dark:text-white">{startDate || 'Select date'}</span>
+
+      <div className="mt-3 space-y-2">
+        <div className="rounded-[1.1rem] border border-[#e4ebf2] bg-[#f8fbfd] px-3.5 py-2.5">
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+            {startDate && !endDate ? 'Pick end date' : (title || 'Date range')}
+          </p>
+          <p className="mt-1 text-[13px] font-semibold text-slate-700">
+            {rangeStatusText}
+          </p>
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <span>End</span>
-          <span className="font-black text-slate-950 dark:text-white">{endDate || 'Select date'}</span>
-        </div>
+
         {(startDate || endDate) && (
-          <button type="button" onClick={() => onChange('', '')} className="mt-1 text-left text-[11px] font-black text-rose-600">
-            {clearLabel}
-          </button>
+          <div className="flex items-center justify-end">
+            <button
+              type="button"
+              onClick={() => onChange('', '')}
+              className="rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-black text-rose-500 shadow-none hover:bg-rose-50 transition"
+            >
+              {clearLabel || 'Clear'}
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -2092,31 +2141,191 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                           )}
 
                           {usesDateControls && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openDatePanel('current')}
-                              className="h-9 rounded-xl border border-teal-200/80 bg-white/65 px-3 text-xs font-black text-slate-700 shadow-sm hover:border-teal-300 hover:bg-white/85"
+                            <DropdownMenu
+                              open={showDateControls && datePanelMode === 'current'}
+                              onOpenChange={(open) => {
+                                if (open) {
+                                  openDatePanel('current')
+                                } else {
+                                  setShowDateControls(false)
+                                }
+                              }}
                             >
-                              <SlidersHorizontal className="mr-2 h-3.5 w-3.5" />
-                              {showDateControls && datePanelMode === 'current' ? 'Hide Date' : 'Select Date'}
-                            </Button>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className={cn(
+                                    'h-9 rounded-xl border border-teal-200/80 bg-white/65 px-3 text-xs font-black text-slate-700 shadow-sm hover:border-teal-300 hover:bg-white/85',
+                                    showDateControls && datePanelMode === 'current' && 'border-teal-600 bg-teal-50 text-teal-900 font-extrabold'
+                                  )}
+                                >
+                                  <SlidersHorizontal className="mr-2 h-3.5 w-3.5" />
+                                  {showDateControls && datePanelMode === 'current' ? 'Hide Date' : 'Select Date'}
+                                  <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-60" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-[360px] sm:w-[420px] rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.18)] z-[100] max-h-[85vh] overflow-y-auto">
+                                <div className="space-y-3">
+                                  <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Selected Range</p>
+                                    <p className="mt-1 text-xs font-black text-slate-900">{draftDateLabel}</p>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Hyundai Year</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {hyundaiYearOptions.map((year) => (
+                                        <button
+                                          key={year}
+                                          type="button"
+                                          onClick={() => selectHyundaiYear(year)}
+                                          className={cn(
+                                            'h-8 min-w-[3.5rem] rounded-lg border px-2 text-[11px] font-black transition-all',
+                                            selectedYear === year
+                                              ? 'border-[var(--dashboard-action-bg)] bg-[var(--dashboard-action-bg)] text-white shadow-sm'
+                                              : 'border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:text-slate-950'
+                                          )}
+                                        >
+                                          {year}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <AnalyticsDateRangePicker
+                                    title="Select Range"
+                                    clearLabel="Clear range"
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    onChange={(nextStart, nextEnd) => {
+                                      setSelectedYear(null)
+                                      setSelectedPreset('custom')
+                                      setStartDate(nextStart)
+                                      setEndDate(nextEnd)
+                                    }}
+                                  />
+                                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                    {appliedDateFilter && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={isApplyingFilter}
+                                        onClick={() => {
+                                          clearDateFilter()
+                                          setShowDateControls(false)
+                                        }}
+                                        className="h-8 rounded-xl px-3 text-xs font-black text-slate-600 hover:bg-slate-100"
+                                      >
+                                        Clear
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      className="app-primary-action h-8 rounded-xl px-4 text-xs font-black"
+                                      disabled={isApplyingFilter}
+                                      onClick={() => {
+                                        applyDateFilter()
+                                        setShowDateControls(false)
+                                      }}
+                                    >
+                                      {isApplyingFilter ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Apply'}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           )}
                           {supportsComparison && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openDatePanel('compare')}
-                              className={cn(
-                                'h-9 rounded-xl px-3 text-xs font-black shadow-sm',
-                                (showDateControls && datePanelMode === 'compare') || activeComparisonText ? 'app-primary-action' : 'app-outline-action'
-                              )}
+                            <DropdownMenu
+                              open={showDateControls && datePanelMode === 'compare'}
+                              onOpenChange={(open) => {
+                                if (open) {
+                                  openDatePanel('compare')
+                                } else {
+                                  setShowDateControls(false)
+                                }
+                              }}
                             >
-                              <CalendarDays className="mr-2 h-3.5 w-3.5" />
-                              {showDateControls && datePanelMode === 'compare' ? 'Hide Compare' : 'Compare Dates'}
-                            </Button>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className={cn(
+                                    'h-9 rounded-xl px-3 text-xs font-black shadow-sm',
+                                    (showDateControls && datePanelMode === 'compare') || activeComparisonText ? 'app-primary-action' : 'app-outline-action'
+                                  )}
+                                >
+                                  <CalendarDays className="mr-2 h-3.5 w-3.5" />
+                                  {showDateControls && datePanelMode === 'compare' ? 'Hide Compare' : 'Compare Dates'}
+                                  <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-60" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-[360px] sm:w-[460px] rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.18)] z-[100] max-h-[85vh] overflow-y-auto">
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
+                                    <div>
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">CY Range</p>
+                                      <p className="mt-0.5 text-xs font-black text-slate-900">{draftDateLabel}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">LY Range</p>
+                                      <p className="mt-0.5 text-xs font-black text-slate-900">{draftComparisonLabel}</p>
+                                    </div>
+                                  </div>
+                                  <div className="grid gap-3 sm:grid-cols-2">
+                                    <AnalyticsDateRangePicker
+                                      title="CY Date Range"
+                                      clearLabel="Clear CY"
+                                      startDate={startDate}
+                                      endDate={endDate}
+                                      onChange={(nextStart, nextEnd) => {
+                                        setSelectedYear(null)
+                                        setSelectedPreset('custom')
+                                        setStartDate(nextStart)
+                                        setEndDate(nextEnd)
+                                      }}
+                                    />
+                                    <AnalyticsDateRangePicker
+                                      title="LY Date Range"
+                                      clearLabel="Clear LY"
+                                      startDate={comparisonStartDate}
+                                      endDate={comparisonEndDate}
+                                      onChange={(nextStart, nextEnd) => {
+                                        setComparisonStartDate(nextStart)
+                                        setComparisonEndDate(nextEnd)
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                    {appliedDateFilter && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={isApplyingFilter}
+                                        onClick={clearDateFilter}
+                                        className="h-8 rounded-xl px-3 text-xs font-black text-slate-600 hover:bg-slate-100"
+                                      >
+                                        Clear
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      className="app-primary-action h-8 rounded-xl px-4 text-xs font-black"
+                                      disabled={isApplyingFilter}
+                                      onClick={() => {
+                                        applyDateFilter()
+                                        setShowDateControls(false)
+                                      }}
+                                    >
+                                      {isApplyingFilter ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Apply Comparison'}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           )}
                           {usesDateControls && appliedDateFilter && (
                             <Button
@@ -2287,130 +2496,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                     </Dialog>
                     <CardContent className="p-0">
                       <>
-                          {showDateControls && (
-                            <div className="solid-calendar-surface border-b border-slate-100 bg-white p-3">
-                              <div className={cn(
-                                'solid-calendar-surface rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-3 shadow-sm',
-                                datePanelMode === 'current' ? 'max-w-[640px]' : 'max-w-[860px]'
-                              )}>
-                                <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-3">
-                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                                    <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                                      <div>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                          {datePanelMode === 'compare' ? 'CY Range' : 'Selected Range'}
-                                        </p>
-                                        <p className="mt-1 text-sm font-black text-slate-950">{draftDateLabel}</p>
-                                      </div>
-                                      {datePanelMode === 'compare' && (
-                                        <div>
-                                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">LY Range</p>
-                                          <p className="mt-1 text-sm font-black text-slate-950">{draftComparisonLabel}</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 lg:justify-end">
-                                      <Button
-                                        size="sm"
-                                        className="app-primary-action calendar-apply-action h-10 rounded-2xl px-5 text-xs font-black"
-                                        disabled={isApplyingFilter}
-                                        onClick={applyDateFilter}
-                                      >
-                                        {isApplyingFilter ? (
-                                          <>
-                                            <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                                            Applying
-                                          </>
-                                        ) : (
-                                          'Apply'
-                                        )}
-                                      </Button>
-                                      {appliedDateFilter && (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="sm"
-                                          disabled={isApplyingFilter}
-                                          onClick={clearDateFilter}
-                                          className="app-outline-action h-10 rounded-2xl px-4 text-xs font-black"
-                                        >
-                                          Clear
-                                        </Button>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                                    <div>
-                                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                        Hyundai Year
-                                      </p>
-                                      <p className="mt-1 text-xs font-bold text-slate-600">
-                                        {firstHyundaiYear} to {hyundaiYearOptions[hyundaiYearOptions.length - 1]}
-                                      </p>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 lg:justify-end">
-                                      {hyundaiYearOptions.map((year) => (
-                                        <button
-                                          key={year}
-                                          type="button"
-                                          onClick={() => selectHyundaiYear(year)}
-                                          className={cn(
-                                            'h-9 min-w-[4rem] rounded-xl border px-3 text-[11px] font-black transition-all',
-                                            selectedYear === year
-                                              ? 'border-[var(--dashboard-action-bg)] bg-[var(--dashboard-action-bg)] text-white shadow-sm'
-                                              : 'border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:text-slate-950'
-                                          )}
-                                        >
-                                          {year}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                                {datePanelMode === 'current' ? (
-                                  <AnalyticsDateRangePicker
-                                    title="Current Date Range"
-                                    clearLabel="Clear current range"
-                                    startDate={startDate}
-                                    endDate={endDate}
-                                    onChange={(nextStart, nextEnd) => {
-                                      setSelectedYear(null)
-                                      setSelectedPreset('custom')
-                                      setStartDate(nextStart)
-                                      setEndDate(nextEnd)
-                                    }}
-                                  />
-                                ) : (
-                                  <div className="grid gap-3 md:grid-cols-2">
-                                    <AnalyticsDateRangePicker
-                                      title="CY Date Range"
-                                      clearLabel="Clear CY range"
-                                      startDate={startDate}
-                                      endDate={endDate}
-                                      onChange={(nextStart, nextEnd) => {
-                                        setSelectedYear(null)
-                                        setSelectedPreset('custom')
-                                        setStartDate(nextStart)
-                                        setEndDate(nextEnd)
-                                      }}
-                                    />
-                                    <AnalyticsDateRangePicker
-                                      title="LY Date Range"
-                                      clearLabel="Clear LY range"
-                                      startDate={comparisonStartDate}
-                                      endDate={comparisonEndDate}
-                                      onChange={(nextStart, nextEnd) => {
-                                        setComparisonStartDate(nextStart)
-                                        setComparisonEndDate(nextEnd)
-                                      }}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
+
                         {/* Executive health panel is opt-in from the report header. */}
                         {showHealthPanel && supportsHealthPanel && !isApplyingFilter && (
                           <BusinessExecutiveDecisionLayer

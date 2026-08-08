@@ -204,6 +204,73 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     vehicleNumber: ''
   })
 
+
+  /**
+   * Re-submit: hydrate the form from a send-back email link.
+   *
+   * The submitter has no dashboard login, so the `resubmit` param is a SIGNED TOKEN, not a row id
+   * — the endpoint verifies the signature and returns an allowlist of the fields they originally
+   * typed. Approval history, approver remarks and payment details are never returned.
+   *
+   * The token is carried into the POST so the server updates the ORIGINAL row and appends a
+   * "resubmitted" history entry, rather than creating a second request the approvers have to
+   * reconcile against the first.
+   */
+  const [resubmitId, setResubmitId] = useState<string | null>(null)
+  // The raw signed token, kept so the POST can prove it may update the original row — the create
+  // endpoint is unauthenticated, so the token (not the id) is the credential there too.
+  const [resubmitToken, setResubmitToken] = useState<string | null>(null)
+  const [resubmitReason, setResubmitReason] = useState<string | null>(null)
+  const [resubmitError, setResubmitError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const token = new URLSearchParams(window.location.search).get('resubmit')
+    if (!token) return
+
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/brands/${brand}/approvals/resubmit?token=${encodeURIComponent(token)}`)
+        const payload = await res.json().catch(() => ({}))
+        if (cancelled) return
+        if (!res.ok) {
+          setResubmitError(payload.error || 'This re-submit link could not be opened.')
+          return
+        }
+        const prefill = (payload.prefill || {}) as Record<string, unknown>
+        const text = (value: unknown) => (value === null || value === undefined ? '' : String(value))
+        setForm((previous) => ({
+          ...previous,
+          email: text(prefill.email) || previous.email,
+          name: text(prefill.name) || previous.name,
+          location: text(prefill.location) || previous.location,
+          dealerCode: text(prefill.dealerCode) || previous.dealerCode,
+          dealerName: text(prefill.dealerName) || previous.dealerName,
+          department: text(prefill.department) || previous.department,
+          specifyOtherDepartment: text(prefill.specifyOtherDepartment),
+          approvalType: text(prefill.approvalType) || previous.approvalType,
+          vendorName: text(prefill.vendorName) || previous.vendorName,
+          specifyOtherApprovalType: text(prefill.specifyOtherApprovalType),
+          previousAdvance: text(prefill.previousAdvance),
+          amount: text(prefill.amount),
+          typeOfPayment: text(prefill.typeOfPayment),
+          remarks: text(prefill.remarks),
+          uploadDocUrl: text(prefill.uploadDocUrl),
+          glAccountId: text(prefill.glAccountId),
+          gst: text(prefill.gst),
+          vehicleNumber: text(prefill.vehicleNumber),
+        }))
+        setResubmitId(text(prefill.id) || null)
+        setResubmitToken(token)
+        setResubmitReason(payload.sendBackReason || null)
+      } catch {
+        if (!cancelled) setResubmitError('This re-submit link could not be opened.')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [brand])
+
   const [uploads, setUploads] = useState<UploadState>({
     bill1: { name: '', loading: false, error: '' },
     bill2: { name: '', loading: false, error: '' },
@@ -469,7 +536,10 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     const finalVendorName = form.vendorName || vendorSearch.trim()
     const submissionForm = {
       ...form,
-      vendorName: finalVendorName
+      vendorName: finalVendorName,
+      // Present only when the form was opened from a send-back email link: tells the server to
+      // update the original request instead of creating a duplicate.
+      ...(resubmitToken ? { resubmitToken } : {})
     }
 
     try {
@@ -642,6 +712,26 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
             {brandDisplayName} अनुमोदन फॉर्म
           </p>
         </div>
+
+        {resubmitError && (
+          <div className="flex gap-3 items-center rounded-2xl bg-rose-50 border border-rose-100 p-4 text-xs font-semibold text-rose-700">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <span>{resubmitError}</span>
+          </div>
+        )}
+
+        {resubmitId && !resubmitError && (
+          <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4 space-y-1">
+            <p className="text-xs font-black uppercase tracking-wider text-amber-700">
+              Re-submitting a sent-back request / वापस भेजा गया अनुरोध
+            </p>
+            <p className="text-xs font-semibold text-amber-800 whitespace-pre-wrap">
+              {resubmitReason
+                ? `Reason it was sent back: ${resubmitReason}`
+                : 'Your earlier details are filled in below. Make the changes asked for and submit again.'}
+            </p>
+          </div>
+        )}
 
         {/* Form Container */}
         <form onSubmit={handleSubmit} className="bg-white rounded-[2.5rem] border border-slate-100 shadow-[0_30px_70px_rgba(15,23,42,0.06)] p-6 sm:p-10 space-y-8">
@@ -950,12 +1040,12 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               {(form.approvalType.toLowerCase().includes('stock transfer') || form.approvalType === 'Stock Transfer') && (
                 <div className="sm:col-span-2 space-y-1.5 animate-in fade-in duration-200">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                    Vehicle Number / वाहन संख्या <span className="text-rose-500">*</span>
+                    Chassis Number / चेसिस नंबर <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="Enter vehicle registration number (e.g. JK02AB1234 or Chassis / VIN)"
+                    placeholder="Enter chassis number (VIN)"
                     value={form.vehicleNumber}
                     onChange={e => handleTextChange('vehicleNumber', e.target.value)}
                     className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800"

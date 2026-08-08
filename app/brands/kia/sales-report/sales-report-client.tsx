@@ -59,9 +59,10 @@ import type {
   SalesReportSummaryPayload,
 } from '@/lib/kia/sales-report-types'
 import { cn } from '@/lib/utils'
+import { KiaRetailReviewPanel } from './retail-review-panel'
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
-type PageTab = 'overview' | 'models' | 'sources' | 'team' | 'testdrives' | 'trend' | 'lost' | 'retail' | 'reports'
+type PageTab = 'overview' | 'models' | 'sources' | 'team' | 'testdrives' | 'trend' | 'lost' | 'retail' | 'review' | 'reports'
 
 const PAGE_TABS: Array<{ key: PageTab; label: string }> = [
   { key: 'overview', label: 'Overview' },
@@ -72,6 +73,10 @@ const PAGE_TABS: Array<{ key: PageTab; label: string }> = [
   { key: 'trend', label: 'Trend' },
   { key: 'lost', label: 'Lost' },
   { key: 'retail', label: 'Retail' },
+  // The MD's monthly retail review. Its own tab and its own API route: the shared `summary`
+  // endpoint resolves ONE period and ONE dealer, and this is a two-year x twelve-month x
+  // two-outlet matrix that would either break that cache key or be fetched on every page load.
+  { key: 'review', label: 'MD Review' },
   { key: 'reports', label: 'Reports' },
 ]
 
@@ -2386,6 +2391,10 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
             </div>
           </TabsContent>
 
+          <TabsContent value="review" className="space-y-5">
+            <KiaRetailReviewPanel />
+          </TabsContent>
+
           <TabsContent value="lost" className="space-y-5">
             <div className="grid gap-5 xl:grid-cols-2">
               <ChartCard title="Lowest Bookings" subtitle="Across all dealerships · min 5 enquiries">
@@ -2484,7 +2493,7 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                   Vehicles Retailed — {activePeriodLabel}
                 </h2>
                 <p className="relative mt-3 text-[15px] font-medium text-slate-300">
-                  {selectedDealerCode || 'JK402'} · Invoice confirmed retail deliveries
+                  {selectedDealerCode || 'All outlets'} · Retail deliveries by delivery date
                 </p>
                 <div className="relative mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-5">
                   {(summary?.retail.kpis || []).map((item, index) => (

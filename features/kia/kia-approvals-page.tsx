@@ -232,8 +232,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return new Date(d.getFullYear(), d.getMonth(), 1)
   })
 
-  // Filter Scope: 'pending' (Pending My Approval), 'all' (All requests), 'md_remarks' (MD Remarks), 'vendors' (Vendor Ledgers), or 'gl_categories' (GL Category Ledgers)
-  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'md_remarks' | 'vendors' | 'gl_categories'>('pending')
+  // Filter Scope: 'pending' (Pending My Approval), 'all' (All requests), 'sent_back' (Sent Back Orders), 'md_remarks' (MD Remarks), 'vendors' (Vendor Ledgers), or 'gl_categories' (GL Category Ledgers)
+  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'sent_back' | 'md_remarks' | 'vendors' | 'gl_categories'>('pending')
 
   // Bulk selection & popup modal states
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([])
@@ -1348,13 +1348,43 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return data.rows.filter(hasMdRemarks).length
   }, [data?.rows, hasMdRemarks])
 
+  const isPaidOrder = useCallback((req: ApprovalRequest) => {
+    const pendingLabel = getPendingStageLabel(req)
+    return pendingLabel === 'Paid' || req.paymentStatus === 'PAID'
+  }, [])
+
+  const isSentBackOrder = useCallback((req: ApprovalRequest) => {
+    const pendingLabel = getPendingStageLabel(req)
+    return pendingLabel === 'Sent Back / Clarification' || req.emailSendStatus === 'SentBack'
+  }, [])
+
+  const sentBackCount = useMemo(() => {
+    if (!data?.rows) return 0
+    return data.rows.filter(isSentBackOrder).length
+  }, [data?.rows, isSentBackOrder])
+
+  const activeRequestsCount = useMemo(() => {
+    if (!data?.rows) return 0
+    return data.rows.filter(r => !isPaidOrder(r) && !isSentBackOrder(r)).length
+  }, [data?.rows, isPaidOrder, isSentBackOrder])
+
   // Filter logic
   const filteredRows = useMemo(() => {
     if (!data?.rows) return []
     return data.rows.filter(row => {
-      // 1. Pending for me vs All vs MD Remarks filter
+      // 1. Pending for me vs All vs Sent Back vs MD Remarks filter
       if (filterScope === 'pending' && !getIsPendingForUser(row)) {
         return false
+      }
+      if (filterScope === 'all') {
+        if (isPaidOrder(row) || isSentBackOrder(row)) {
+          return false
+        }
+      }
+      if (filterScope === 'sent_back') {
+        if (!isSentBackOrder(row)) {
+          return false
+        }
       }
       if (filterScope === 'md_remarks' && !hasMdRemarks(row)) {
         return false
@@ -2151,47 +2181,122 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     <MainLayout title="Kia Approvals" subtitle="Manage payment requests and multi-stage approval workflows">
       <div className="space-y-6 max-w-full overflow-x-hidden">
 
-        {/* SUB-VIEW SWITCHER HEADER */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-2.5 rounded-3xl border border-slate-200/80 shadow-2xs w-full max-w-full">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-1 bg-slate-100/80 rounded-2xl border border-slate-200/60 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => setMainSubView('requests')}
-              className={cn(
-                'px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer border-none',
-                mainSubView === 'requests'
-                  ? 'bg-[#004e5a] text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
-              )}
-            >
-              <FileText className="w-4 h-4" />
-              <span>Active Workflow Requests</span>
-              <span className={cn(
-                'ml-1 px-2 py-0.5 rounded-full text-[10px] font-black',
-                mainSubView === 'requests' ? 'bg-[#003c46] text-teal-100' : 'bg-slate-200 text-slate-700'
-              )}>
-                {totalCount}
-              </span>
-            </button>
 
+
+        {/* Clean, modern single navigation tab bar */}
+        <div className="border-b border-slate-100 pb-1">
+          <div className="flex items-center gap-6 text-sm font-bold overflow-x-auto whitespace-nowrap scrollbar-none pb-2 w-full">
             <button
-              type="button"
-              onClick={() => setMainSubView('completed_spend')}
-              className={cn(
-                'px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer border-none',
-                mainSubView === 'completed_spend'
-                  ? 'bg-[#004e5a] text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
-              )}
+              onClick={() => {
+                setFilterScope('pending')
+                setMainSubView('requests')
+              }}
+              className={`pb-2.5 relative transition-all flex-shrink-0 cursor-pointer ${
+                mainSubView === 'requests' && filterScope === 'pending' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
+              }`}
             >
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>Completed &amp; Paid Orders</span>
-              <span className={cn(
-                'ml-1 px-2 py-0.5 rounded-full text-[10px] font-black',
-                mainSubView === 'completed_spend' ? 'bg-[#003c46] text-teal-100' : 'bg-emerald-100 text-emerald-800'
-              )}>
+              <span>Pending My Approval ({pendingForMeCount})</span>
+              {mainSubView === 'requests' && filterScope === 'pending' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setFilterScope('all')
+                setMainSubView('requests')
+              }}
+              className={`pb-2.5 relative transition-all flex-shrink-0 cursor-pointer ${
+                mainSubView === 'requests' && filterScope === 'all' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
+              }`}
+            >
+              <span>All Requests ({activeRequestsCount})</span>
+              {mainSubView === 'requests' && filterScope === 'all' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setFilterScope('sent_back')
+                setMainSubView('requests')
+              }}
+              className={`pb-2.5 relative transition-all flex-shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                mainSubView === 'requests' && filterScope === 'sent_back' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
+              }`}
+            >
+              <span>Sent Back Orders</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold shadow-2xs transition-all ${
+                sentBackCount > 0 
+                  ? 'bg-amber-600 text-white shadow-amber-500/30' 
+                  : 'bg-slate-200 text-slate-600'
+              }`}>
+                {sentBackCount}
+              </span>
+              {mainSubView === 'requests' && filterScope === 'sent_back' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setFilterScope('md_remarks')
+                setMainSubView('requests')
+              }}
+              className={`pb-2.5 relative transition-all flex-shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                mainSubView === 'requests' && filterScope === 'md_remarks' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
+              }`}
+            >
+              <span>MD Remarks</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold shadow-2xs transition-all ${
+                mdRemarksCount > 0 
+                  ? 'bg-rose-600 text-white shadow-rose-500/30 animate-pulse' 
+                  : 'bg-slate-200 text-slate-600'
+              }`}>
+                {mdRemarksCount}
+              </span>
+              {mainSubView === 'requests' && filterScope === 'md_remarks' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+              )}
+            </button>
+            <button
+              onClick={() => setMainSubView('completed_spend')}
+              className={`pb-2.5 relative transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0 ${
+                mainSubView === 'completed_spend' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
+              }`}
+            >
+              <span>Completed &amp; Paid Orders ({completedPaymentsList.length})</span>
+              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0.5 rounded-full">
                 ₹{totalCompletedSpend.toLocaleString('en-IN')}
               </span>
+              {mainSubView === 'completed_spend' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setFilterScope('vendors')
+                setMainSubView('requests')
+              }}
+              className={`pb-2.5 relative transition-all flex-shrink-0 cursor-pointer ${
+                mainSubView === 'requests' && filterScope === 'vendors' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
+              }`}
+            >
+              <span>Vendors ({vendorSummary.length})</span>
+              {mainSubView === 'requests' && filterScope === 'vendors' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setFilterScope('gl_categories')
+                setMainSubView('requests')
+              }}
+              className={`pb-2.5 relative transition-all flex-shrink-0 cursor-pointer ${
+                mainSubView === 'requests' && filterScope === 'gl_categories' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
+              }`}
+            >
+              <span>GL Categories ({glSummary.length})</span>
+              {mainSubView === 'requests' && filterScope === 'gl_categories' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+              )}
             </button>
           </div>
         </div>
@@ -2825,97 +2930,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           </div>
         )}
 
-        {/* Tab switch bar for Pending My Approval vs All Requests */}
-        <div className="border-b border-slate-100 pb-1">
-          <div className="flex items-center gap-4 text-sm font-bold overflow-x-auto whitespace-nowrap scrollbar-none pb-2 w-full">
-            <button
-              onClick={() => {
-                setFilterScope('pending')
-                setMainSubView('requests')
-              }}
-              className={`pb-2.5 relative transition-all flex-shrink-0 ${
-                filterScope === 'pending' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              <span>Pending My Approval ({pendingForMeCount})</span>
-              {filterScope === 'pending' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setFilterScope('all')
-                setMainSubView('requests')
-              }}
-              className={`pb-2.5 relative transition-all flex-shrink-0 ${
-                filterScope === 'all' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              <span>All Requests ({totalCount})</span>
-              {filterScope === 'all' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setFilterScope('md_remarks')
-                setMainSubView('requests')
-              }}
-              className={`pb-2.5 relative transition-all flex-shrink-0 flex items-center gap-1.5 ${
-                filterScope === 'md_remarks' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              <span>MD Remarks</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold shadow-2xs transition-all ${
-                mdRemarksCount > 0 
-                  ? 'bg-rose-600 text-white shadow-rose-500/30 animate-pulse' 
-                  : 'bg-slate-200 text-slate-600'
-              }`}>
-                {mdRemarksCount}
-              </span>
-              {filterScope === 'md_remarks' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
-              )}
-            </button>
-            <button
-              onClick={() => setMainSubView('completed_spend')}
-              className="pb-2.5 relative transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0 text-slate-400 hover:text-slate-600"
-            >
-              <span>Completed &amp; Paid Orders ({completedPaymentsList.length})</span>
-              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0.5 rounded-full">
-                ₹{totalCompletedSpend.toLocaleString('en-IN')}
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                setFilterScope('vendors')
-                setMainSubView('requests')
-              }}
-              className={`pb-2.5 relative transition-all flex-shrink-0 ${
-                filterScope === 'vendors' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              <span>Vendors ({vendorSummary.length})</span>
-              {filterScope === 'vendors' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setFilterScope('gl_categories')
-                setMainSubView('requests')
-              }}
-              className={`pb-2.5 relative transition-all flex-shrink-0 ${
-                filterScope === 'gl_categories' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              <span>GL Categories ({glSummary.length})</span>
-              {filterScope === 'gl_categories' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
-              )}
-            </button>
-          </div>
-        </div>
+
 
         {/* 3. APPROVALS TABLE LIST */}
         {isLoading ? (

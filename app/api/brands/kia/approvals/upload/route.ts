@@ -4,6 +4,10 @@ import { optimizeImage } from '@/lib/images/optimize'
 
 export async function POST(request: NextRequest) {
   try {
+    // ⚠️ DELIBERATELY UNAUTHENTICATED — same reason as the create endpoint: the public submit
+    // form has to attach invoices and the submitter has no login. It still writes with the
+    // service-role key into a public bucket, which is the part that needs tightening (size/type
+    // limits and a non-public bucket), NOT a session gate.
     const formData = await request.formData()
     const file = formData.get('file') as File | null
     if (!file) {

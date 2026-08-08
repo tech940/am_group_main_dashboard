@@ -966,9 +966,14 @@ async function buildWorkshopPayload(
       },
       sourceWarnings: [
         ...(!operationCoverage.available ? ['No contained Hyundai Operation Wise snapshot exists for the selected period.'] : []),
-        ...(operationCoverage.available && operationCoverage.classifiedRows === 0 && normalizeHyundaiDealerCode(dealerCode) !== 'JAMMU'
+        // Jammu is no longer excluded here. The exclusion existed because Jammu's figures come
+        // from the consolidated N5216 file, which made the old row counts read as zero; the
+        // reader now carries that file's diagnostics through, so the check is meaningful again
+        // -- and Jammu, being a derived residual, is the selection that most needs the caveat.
+        ...(operationCoverage.available && operationCoverage.classifiedRows === 0
           ? ['Hyundai Operation Wise snapshot exists but contains no classified VAS/WA/WB rows. Reload the complete report before treating zero values as business performance.']
           : []),
+        ...(operationCoverage.coverageWarning ? [operationCoverage.coverageWarning] : []),
         ...(dealerCode && auxiliaryCounts.rsaCount > 0 ? ['RSA source is not dealer-scoped unless a verified dealer column is present.'] : []),
       ],
       unsupportedComparisonSources: {

@@ -62,6 +62,8 @@ type AnalyticsData = {
     connectedOutgoing: number
     connectedIncoming: number
     missedIncoming: number
+    /** Per-outcome split of `missedIncoming` (missed / no_answer / rejected); null on the recordings-only fallback path. */
+    missedIncomingBreakdown?: { missed: number; noAnswer: number; rejected: number } | null
     missedOutgoing: number
     incomingAttempts?: number
     outgoingAttempts?: number
@@ -70,6 +72,15 @@ type AnalyticsData = {
     connectRate: number
     unansweredRate: number
     agentCount: number
+    missedIncomingRecovery?: {
+      totalMissedIncoming: number
+      connectedLater: number
+      remainedMissing: number
+      recoveryRatePct: number
+      totalUniqueCallers: number
+      connectedLaterCallers: number
+      remainedMissingCallers: number
+    }
   }
   /** Real per-day series for the last 7 days in range. Empty when the range spans under 2 days. */
   sparklines?: {
@@ -126,6 +137,11 @@ type RecordingRow = {
   /** Still `pending`/`uploading` hours after the call. Normal sync is ~10 minutes. */
   isStaleSync: boolean
   deviceModel: string | null
+  isMissedIncoming?: boolean
+  isConnectedLater?: boolean
+  callbackTime?: string | null
+  callbackCreName?: string | null
+  callbackDelayLabel?: string | null
 }
 
 type FleetDevice = {
@@ -693,6 +709,8 @@ export function AmGroupCallAnalysis() {
     },
   })
 
+
+
   /**
    * Fleet health is CURRENT STATE, so it is keyed on the BRANCH ALONE — deliberately not on
    * `filterParams`. Feeding it the section's date range (which defaults to "Today") would hide every
@@ -796,6 +814,10 @@ export function AmGroupCallAnalysis() {
                 {logoUrl ? (
                   <div className="flex h-5 w-5 items-center justify-center rounded-md bg-white p-0.5 shadow-2xs shrink-0 overflow-hidden">
                     <img src={logoUrl} alt={b.name} className="h-full w-full object-contain" />
+                  </div>
+                ) : b.id === 'special_team' || b.name.toLowerCase().includes('special team') ? (
+                  <div className="flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 p-0.5 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 shrink-0">
+                    <ShieldCheck className="h-4 w-4" />
                   </div>
                 ) : (
                   <Building2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
@@ -1002,7 +1024,9 @@ export function AmGroupCallAnalysis() {
             <KpiCard
               title="MISSED INCOMING"
               value={d ? d.summary.missedIncoming.toLocaleString('en-IN') : '—'}
-              subtitle="Incoming calls the CRE did not pick up"
+              subtitle={d?.summary.missedIncomingBreakdown
+                ? `${d.summary.missedIncomingBreakdown.missed} missed · ${d.summary.missedIncomingBreakdown.noAnswer} no answer · ${d.summary.missedIncomingBreakdown.rejected} rejected`
+                : 'Incoming calls the CRE did not pick up'}
               icon={PhoneMissed}
               colorScheme="rose"
               chartType="bar"
@@ -1107,6 +1131,8 @@ export function AmGroupCallAnalysis() {
           <Clock className="h-4 w-4" />
           <span>Uploading & Pending Calls</span>
         </button>
+
+
 
         <button
           onClick={() => setSubTab('fleet_health')}
@@ -1356,91 +1382,181 @@ export function AmGroupCallAnalysis() {
 
       {/* TAB 4 NEW: UNANSWERED NUMBERS DETAIL */}
       {subTab === 'unanswered' && (
-        <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-                <PhoneOff className="h-4 w-4 text-rose-500" />
-                Unanswered &amp; Missed Call Numbers
-              </CardTitle>
-              <p className="mt-0.5 text-xs font-medium text-slate-500">
-                All calls where the customer did not answer (outgoing not answered) or CRE missed an incoming call. Click a CRE row in the scorecard to filter here.
-              </p>
-            </div>
-            {agent !== 'all' && (
-              <Button variant="outline" size="sm" onClick={() => { setAgent('all'); setDraftAgent('all'); setPage(1) }} className="h-8 rounded-xl text-xs font-bold border-slate-200 text-slate-600">
-                <X className="h-3.5 w-3.5 mr-1" /> Clear CRE Filter
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent className="p-0 overflow-x-auto">
-            {unansweredCallsQuery.isFetching ? (
-              <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
-                <Loader2 className="h-4 w-4 animate-spin text-rose-500" />
-                <span>Loading unanswered calls...</span>
-              </div>
-            ) : (unansweredCallsQuery.data?.rows || []).length === 0 ? (
-              <div className="py-16 text-center">
-                <PhoneOff className="h-10 w-10 mx-auto text-emerald-400 mb-3" />
-                <p className="text-sm font-black text-emerald-600">No unanswered calls found!</p>
-                <p className="text-xs font-medium text-slate-400 mt-1">All calls were answered in this date range.</p>
-              </div>
-            ) : (
-              <>
-                <div className="px-4 py-2 bg-rose-50 border-b border-rose-100 flex items-center gap-2">
-                  <PhoneOff className="h-3.5 w-3.5 text-rose-500" />
-                  <span className="text-[11px] font-black text-rose-700">
-                    {unansweredCallsQuery.data?.pagination.total} unanswered calls
-                    {agent !== 'all' && ` for selected CRE`}
-                    {startDate && ` from ${startDate}`}{endDate && ` to ${endDate}`}
-                  </span>
+        <div className="space-y-6">
+          {/* Missed Incoming Call Recovery Scorecard */}
+          {analyticsQuery.data?.summary?.missedIncomingRecovery && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-black uppercase text-slate-400 tracking-wider">Total Missed Incoming</p>
+                    <h4 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                      {analyticsQuery.data.summary.missedIncomingRecovery.totalMissedIncoming}
+                    </h4>
+                    <p className="text-xs font-medium text-slate-500 mt-1">
+                      Across {analyticsQuery.data.summary.missedIncomingRecovery.totalUniqueCallers} unique customer numbers
+                    </p>
+                  </div>
+                  <div className="h-12 w-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 font-bold">
+                    <PhoneMissed className="h-6 w-6" />
+                  </div>
                 </div>
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
-                      <th className="py-3 px-4">#</th>
-                      <th className="py-3 px-4">CRE</th>
-                      <th className="py-3 px-4">Branch</th>
-                      <th className="py-3 px-4">Phone Number</th>
-                      <th className="py-3 px-4">Contact Name</th>
-                      <th className="py-3 px-4 text-center">Call Type</th>
-                      <th className="py-3 px-4 whitespace-nowrap">Date &amp; Time</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {unansweredCallsQuery.data?.rows.map((row, idx) => (
-                      <tr key={row.id} className="hover:bg-rose-50/30 transition-colors">
-                        <td className="py-3 px-4 text-[10px] font-black text-slate-400">
-                          {(page - 1) * 50 + idx + 1}
-                        </td>
-                        <td className="py-3 px-4 font-bold text-slate-900">
-                          <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-rose-100 text-rose-700 font-black flex items-center justify-center text-[9px] flex-shrink-0">
-                              {row.creName.slice(0, 2).toUpperCase()}
-                            </div>
-                            {row.creName}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 font-bold text-slate-500">{row.branchName || 'General'}</td>
-                        <td className="py-3 px-4">
-                          <span className="font-black text-slate-900 tracking-wide">{row.phone}</span>
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-slate-600">
-                          {row.contactName || <span className="text-slate-300 font-medium">—</span>}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className={cn(
-                            'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
-                            row.statusBadgeClass || 'bg-amber-50 text-amber-700 border-amber-200'
-                          )}>
-                            {row.statusLabel}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-slate-500 whitespace-nowrap">{formatDate(row.recordedAt)}</td>
+              </Card>
+
+              <Card className="rounded-3xl border border-emerald-200 bg-emerald-50/40 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-black uppercase text-emerald-800 tracking-wider">Callback Connected (Recovered)</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <h4 className="text-2xl font-black text-emerald-700 dark:text-emerald-400">
+                        {analyticsQuery.data.summary.missedIncomingRecovery.connectedLater}
+                      </h4>
+                      <span className="text-xs font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
+                        {analyticsQuery.data.summary.missedIncomingRecovery.recoveryRatePct}% Recovery
+                      </span>
+                    </div>
+                    <p className="text-xs font-medium text-emerald-700/80 mt-1">
+                      {analyticsQuery.data.summary.missedIncomingRecovery.connectedLaterCallers} unique callers reached back
+                    </p>
+                  </div>
+                  <div className="h-12 w-12 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold">
+                    <CircleCheck className="h-6 w-6" />
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="rounded-3xl border border-rose-200 bg-rose-50/40 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-black uppercase text-rose-800 tracking-wider">Still Remained Unrecovered</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <h4 className="text-2xl font-black text-rose-700 dark:text-rose-400">
+                        {analyticsQuery.data.summary.missedIncomingRecovery.remainedMissing}
+                      </h4>
+                      <span className="text-xs font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">
+                        {100 - analyticsQuery.data.summary.missedIncomingRecovery.recoveryRatePct}% Unrecovered
+                      </span>
+                    </div>
+                    <p className="text-xs font-medium text-rose-700/80 mt-1">
+                      {analyticsQuery.data.summary.missedIncomingRecovery.remainedMissingCallers} callers haven't been connected yet
+                    </p>
+                  </div>
+                  <div className="h-12 w-12 rounded-2xl bg-rose-100 flex items-center justify-center text-rose-600 font-bold">
+                    <TriangleAlert className="h-6 w-6" />
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+
+          <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                  <PhoneOff className="h-4 w-4 text-rose-500" />
+                  Unanswered &amp; Missed Call Numbers
+                </CardTitle>
+                <p className="mt-0.5 text-xs font-medium text-slate-500">
+                  All calls where the customer did not answer (outgoing not answered) or CRE missed an incoming call. Includes callback recovery tracking for missed incoming calls.
+                </p>
+              </div>
+              {agent !== 'all' && (
+                <Button variant="outline" size="sm" onClick={() => { setAgent('all'); setDraftAgent('all'); setPage(1) }} className="h-8 rounded-xl text-xs font-bold border-slate-200 text-slate-600">
+                  <X className="h-3.5 w-3.5 mr-1" /> Clear CRE Filter
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              {unansweredCallsQuery.isFetching ? (
+                <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
+                  <Loader2 className="h-4 w-4 animate-spin text-rose-500" />
+                  <span>Loading unanswered calls...</span>
+                </div>
+              ) : (unansweredCallsQuery.data?.rows || []).length === 0 ? (
+                <div className="py-16 text-center">
+                  <PhoneOff className="h-10 w-10 mx-auto text-emerald-400 mb-3" />
+                  <p className="text-sm font-black text-emerald-600">No unanswered calls found!</p>
+                  <p className="text-xs font-medium text-slate-400 mt-1">All calls were answered in this date range.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="px-4 py-2 bg-rose-50 border-b border-rose-100 flex items-center gap-2">
+                    <PhoneOff className="h-3.5 w-3.5 text-rose-500" />
+                    <span className="text-[11px] font-black text-rose-700">
+                      {unansweredCallsQuery.data?.pagination.total} unanswered calls
+                      {agent !== 'all' && ` for selected CRE`}
+                      {startDate && ` from ${startDate}`}{endDate && ` to ${endDate}`}
+                    </span>
+                  </div>
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
+                        <th className="py-3 px-4">#</th>
+                        <th className="py-3 px-4">CRE</th>
+                        <th className="py-3 px-4">Branch</th>
+                        <th className="py-3 px-4">Phone Number</th>
+                        <th className="py-3 px-4">Contact Name</th>
+                        <th className="py-3 px-4 text-center">Call Type</th>
+                        <th className="py-3 px-4">Callback Recovery Status</th>
+                        <th className="py-3 px-4 whitespace-nowrap">Date &amp; Time</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {unansweredCallsQuery.data?.rows.map((row, idx) => (
+                        <tr key={row.id} className="hover:bg-rose-50/30 transition-colors">
+                          <td className="py-3 px-4 text-[10px] font-black text-slate-400">
+                            {(page - 1) * 50 + idx + 1}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-slate-900">
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-full bg-rose-100 text-rose-700 font-black flex items-center justify-center text-[9px] flex-shrink-0">
+                                {row.creName.slice(0, 2).toUpperCase()}
+                              </div>
+                              {row.creName}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-bold text-slate-500">{row.branchName || 'General'}</td>
+                          <td className="py-3 px-4">
+                            <span className="font-black text-slate-900 tracking-wide">{row.phone}</span>
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-slate-600">
+                            {row.contactName || <span className="text-slate-300 font-medium">—</span>}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={cn(
+                              'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
+                              row.statusBadgeClass || 'bg-amber-50 text-amber-700 border-amber-200'
+                            )}>
+                              {row.statusLabel}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {row.isMissedIncoming ? (
+                              row.isConnectedLater ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
+                                    <CircleCheck className="h-3 w-3 text-emerald-600" /> Connected ({row.callbackDelayLabel || 'Later'})
+                                  </span>
+                                  {row.callbackCreName && (
+                                    <span className="text-[9px] text-slate-400 font-semibold pl-1">
+                                      by {row.callbackCreName}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
+                                  <TriangleAlert className="h-3 w-3 text-rose-600" /> Still Unrecovered
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-[10px] font-medium text-slate-400">Outgoing No Answer</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-slate-500 whitespace-nowrap">{formatDate(row.recordedAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
 
                 {/* Pagination */}
                 {unansweredCallsQuery.data?.pagination && unansweredCallsQuery.data.pagination.totalPages > 1 && (
@@ -1462,6 +1578,7 @@ export function AmGroupCallAnalysis() {
             )}
           </CardContent>
         </Card>
+        </div>
       )}
 
       {/* TAB 5: UPLOADED AUDIO RECORDINGS & PLAYER */}
@@ -1679,7 +1796,7 @@ export function AmGroupCallAnalysis() {
         </Card>
       )}
 
-      {/* TAB 7: CRE HANDSET FLEET HEALTH */}
+
       {subTab === 'fleet_health' && (
         <div className="space-y-6">
           {fleetHealthQuery.isLoading ? (

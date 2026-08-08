@@ -9,6 +9,13 @@ import { SIDEBAR_PERMISSION_BY_HREF } from '../lib/permissions/navigation'
 
 // Verbatim snapshot of the map currently in components/layout/sidebar.tsx (the baseline we
 // must reproduce exactly).
+//
+// ⚠️ THIS BASELINE IS STALE and the script has been failing for some time — 8 sections added
+// since it was written (Booking Payment History, Allocation History, Call Analytics, Vendor
+// Payments and others) were never added here. The migration it was written to prove is long
+// done: components/layout/sidebar.tsx:224 already re-exports the generated map. Either refresh
+// this list wholesale or retire the script; until then a FAIL here does not mean the sidebar
+// map is wrong.
 const CURRENT: Record<string, string> = {
   '/cockpit': 'cockpit.view',
   '/delegation-tasks': 'delegation_tasks.view',
@@ -28,6 +35,7 @@ const CURRENT: Record<string, string> = {
   '/brands/kia/sales-performance': 'kia.sales_performance.view',
   '/brands/kia/call-center': 'kia.call_center.view',
   '/brands/kia/follow-ups': 'kia.lead_followups.view',
+  '/brands/kia/customer-profile': 'kia.customer_profile.view',
   '/brands/kia/call-analytics': 'kia.call_analytics.view',
   '/brands/kia/bookings': 'kia.bookings.view',
   '/brands/kia/payment-approvals': 'kia.approvals.view',

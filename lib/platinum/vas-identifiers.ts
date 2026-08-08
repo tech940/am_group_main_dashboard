@@ -210,6 +210,14 @@ export const PLATINUM_VAS_CODES = [
   'A10AAUBCAL0WTAA',
   'A10AAUBCAS0HRHW',
   'A10AAUBCAS0WTHW',
+  // Reconciled 2026-08 against the dealer-supplied N5211/N6250/N6828 code lists and every
+  // code present in the loaded snapshots. Worth Rs26,043 (0.06% of Platinum VAS).
+  'A10AA1MCERAWT',
+  'A10AAACDVAS3MHW',
+  'A10AAATMVASHRAA',
+  'A10AAHLRVASWT',
+  'A10AASPSVAS3MHW',
+  'A10AAUBCAL03MHW',
 ] as const
 
 export const PLATINUM_WHEEL_ALIGNMENT_CODES = [
