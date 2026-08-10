@@ -156,28 +156,14 @@ export async function POST(request: Request) {
         updates.hrApproval = statusVal
       } else if (activeStageKey === 'ea') {
         updates.eaApproval = statusVal
-        if (action === 'APPROVE' && (isSuperUser || isTester)) {
-          updates.managementApproval = 'APPROVED'
-          updates.emailSendStatus = 'MDApproved'
-          void sendMdApprovalNotificationEmail({
-            toEmail: row.email,
-            requesterName: row.name,
-            vendorName: row.vendorName || 'Vendor',
-            amount: row.amount,
-            purpose: row.remarks,
-            department: row.department,
-            approvalType: row.approvalType,
-            approvalTime: new Date(),
-          })
-        }
       } else if (activeStageKey === 'md') {
+        if (row.eaApproval !== 'APPROVED') {
+          failedRows.push({ id: row.id, error: 'EA approval is required before MD approval.' })
+          continue
+        }
         updates.managementApproval = statusVal
         if (action === 'APPROVE') {
           updates.vpApproval = 'APPROVED'
-          // EA is optional — auto-mark it approved so the workflow moves straight to Accounts.
-          if (!row.eaApproval || row.eaApproval === '') {
-            updates.eaApproval = 'APPROVED'
-          }
           updates.emailSendStatus = 'MDApproved'
 
           // Trigger email notification to requester that MD approved the payment order

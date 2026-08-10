@@ -177,13 +177,16 @@ export async function POST(
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval must be completed first for Salary/PF/Incentive/Training/Uniform/ESI requests.' }, { status: 400 })
         }
-        // EA is optional — no eaApproval check needed. The server auto-sets it below.
+        if (requestRow.eaApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'EA approval must be completed first.' }, { status: 400 })
+        }
       } else if ((stage === 'accounts' || stage === 'payment_done') && !isTester) {
         if (
           requestRow.vpApproval !== 'APPROVED' ||
+          requestRow.eaApproval !== 'APPROVED' ||
           requestRow.managementApproval !== 'APPROVED'
         ) {
-          return NextResponse.json({ error: 'MD approval must be completed before Accounts stage.' }, { status: 400 })
+          return NextResponse.json({ error: 'MD and EA approvals must be completed before Accounts stage.' }, { status: 400 })
         }
       }
     }
@@ -204,21 +207,9 @@ export async function POST(
 
       // Send email to submitter in background
       try {
-        // WHO sent it back, and FROM WHICH STAGE.
-        // ⚠️ The stage label comes from `stage` (the workflow step being acted on) and the person
-        // from `appUser.fullName`. These are NOT interchangeable: in the `history` jsonb the field
-        // named `role` holds the STAGE LABEL, not the actor's job role, so reading a person out of
-        // it would name the stage twice and drop the human entirely.
         const senderName = appUser.fullName || 'An approver'
         const senderStage = SEND_BACK_STAGE_LABELS[stage] || stage.toUpperCase()
-
-        // vendorName is nullable (many requests are not vendor payments at all), and interpolating
-        // it blind printed "for null" in the email. Drop the clause entirely when it is absent.
         const vendorLabel = (requestRow.vendorName || '').trim()
-
-        // ⚠️ A SIGNED token, not the row id. Submitters have no dashboard login, so this link
-        // cannot sit behind a session — which makes the link itself the credential. A bare id
-        // would let anyone enumerate ids and read every vendor payment in the system.
         const resubmitUrl = `${getAppBaseUrl()}/brands/kia/payment-approvals/submit?resubmit=${createResubmitToken(requestRow.id)}`
 
         const bodyHtml = `
@@ -272,32 +263,10 @@ export async function POST(
         updates.hrApproval = statusVal
       } else if (stage === 'ea') {
         updates.eaApproval = statusVal
-        if (action === 'APPROVE' && (isSuperUser || isTester)) {
-          // When MD/CEO approves at EA stage, automatically approve Management stage as well!
-          updates.managementApproval = 'APPROVED'
-          updates.emailSendStatus = 'MDApproved'
-          void sendMdApprovalNotificationEmail({
-            toEmail: requestRow.email,
-            requesterName: requestRow.name,
-            vendorName: requestRow.vendorName || 'Vendor',
-            amount: requestRow.amount,
-            purpose: requestRow.remarks,
-            department: requestRow.department,
-            approvalType: requestRow.approvalType,
-            approvalTime: new Date(),
-          })
-        }
       } else if (stage === 'md') {
         updates.managementApproval = statusVal
         if (action === 'APPROVE') {
           updates.vpApproval = 'APPROVED'
-          // EA is an optional stage. When MD approves directly (either because EA already
-          // approved or because MD is bypassing the optional EA stage), mark eaApproval as
-          // APPROVED so that getPendingStageLabel() skips it and the request moves straight
-          // to "Pending Accounts" — no more "EA stage approved by MD" appearing in history.
-          if (!requestRow.eaApproval || requestRow.eaApproval === '') {
-            updates.eaApproval = 'APPROVED'
-          }
           updates.emailSendStatus = 'MDApproved'
 
           // Trigger email notification to requester that MD approved the payment order

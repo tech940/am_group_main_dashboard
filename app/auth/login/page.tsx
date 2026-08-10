@@ -210,7 +210,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            <form onSubmit={handleLogin} autoComplete="off" className="mt-8 space-y-6">
+            <form onSubmit={handleLogin} autoComplete="off" className="mt-8 space-y-6" suppressHydrationWarning>
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
                   Email

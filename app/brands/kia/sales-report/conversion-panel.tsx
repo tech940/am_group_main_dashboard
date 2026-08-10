@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import React, { type ReactNode } from 'react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
@@ -40,6 +40,28 @@ function ReviewCard({
 const HEAD_CLASS = 'font-black uppercase tracking-[0.14em] text-slate-500'
 const HEAD_ROW = 'bg-[#f6f9fc] hover:bg-[#f6f9fc]'
 const TABLE_CLASS = '[&_td]:text-[12px] [&_td]:font-medium [&_th]:text-[10px]'
+
+/**
+ * Per-outlet colour bands — one distinct palette per dealer so rows are
+ * instantly scannable without reading the code label.
+ *
+ * JK402 Jammu  → teal/navy (matches the brand primary)
+ * JK501 Udhampur → warm amber/orange
+ * Fallback for any future third outlet → slate
+ */
+const OUTLET_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  JK402: { bg: '#0d4f6c', text: '#ffffff', border: '#0a3d55' },
+  JK501: { bg: '#7c3d12', text: '#ffffff', border: '#6b3410' },
+}
+
+function outletHeaderStyle(outlet: string): React.CSSProperties {
+  const c = OUTLET_COLORS[outlet] ?? { bg: '#1f2937', text: '#ffffff', border: '#111827' }
+  return { backgroundColor: c.bg, borderColor: c.border }
+}
+
+function outletHeaderTextClass(outlet: string) {
+  return 'font-black uppercase tracking-[0.10em] text-white'
+}
 
 /** Grand-total rows: dark slate band with yellow figures, per the owner's spec. Inline style for
  *  the background — Tailwind arbitrary bg classes silently fail on <tr> in this app. Same
@@ -95,15 +117,15 @@ export function KiaConversionPanelView({
             </TableHeader>
             <TableBody>
               {panel.outlets.flatMap((outlet) => [
-                <TableRow key={outlet.outlet} style={TOTAL_ROW_STYLE}>
-                  <TableCell className={cn('font-black uppercase tracking-[0.08em]', TOTAL_TEXT)}>{outlet.label}</TableCell>
-                  <TableCell className={cn('text-right font-black tabular-nums', TOTAL_TEXT)}>{outlet.total.enquiries.toLocaleString('en-IN')}</TableCell>
-                  <TableCell className={cn('text-right font-black tabular-nums', TOTAL_TEXT)}>{outlet.total.testDrives.toLocaleString('en-IN')}</TableCell>
-                  <TableCell className={cn('text-right font-black tabular-nums', TOTAL_TEXT)}>{outlet.total.bookings.toLocaleString('en-IN')}</TableCell>
-                  <TableCell className={cn('text-right font-black tabular-nums', TOTAL_TEXT)}>{outlet.total.retails.toLocaleString('en-IN')}</TableCell>
-                  <TableCell className={cn('text-right font-black tabular-nums', TOTAL_TEXT)}>{outlet.total.e2td.toFixed(1)}%</TableCell>
-                  <TableCell className={cn('text-right font-black tabular-nums', TOTAL_TEXT)}>{outlet.total.e2bkg.toFixed(1)}%</TableCell>
-                  <TableCell className={cn('text-right font-black tabular-nums', TOTAL_TEXT)}>{outlet.total.e2ret.toFixed(1)}%</TableCell>
+                <TableRow key={outlet.outlet} style={outletHeaderStyle(outlet.outlet)}>
+                  <TableCell className={cn('font-black uppercase tracking-[0.10em]', outletHeaderTextClass(outlet.outlet))}>{outlet.label}</TableCell>
+                  <TableCell className="text-right font-black tabular-nums text-white">{outlet.total.enquiries.toLocaleString('en-IN')}</TableCell>
+                  <TableCell className="text-right font-black tabular-nums text-white">{outlet.total.testDrives.toLocaleString('en-IN')}</TableCell>
+                  <TableCell className="text-right font-black tabular-nums text-white">{outlet.total.bookings.toLocaleString('en-IN')}</TableCell>
+                  <TableCell className="text-right font-black tabular-nums text-white">{outlet.total.retails.toLocaleString('en-IN')}</TableCell>
+                  <TableCell className="text-right font-black tabular-nums text-white">{outlet.total.e2td.toFixed(1)}%</TableCell>
+                  <TableCell className="text-right font-black tabular-nums text-white">{outlet.total.e2bkg.toFixed(1)}%</TableCell>
+                  <TableCell className="text-right font-black tabular-nums text-white">{outlet.total.e2ret.toFixed(1)}%</TableCell>
                 </TableRow>,
                 ...outlet.sources.map((row) => (
                   <TableRow key={row.key}>
@@ -137,9 +159,16 @@ export function KiaConversionPanelView({
             .filter((row) => row.months.some((month) => month.enquiries > 0))
             .map((row) => (
               <div key={`${row.outlet}-${row.source}`}>
-                <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
-                  {row.outlet} · {row.source}
-                </p>
+                <div
+                  className="mb-1.5 inline-flex items-center gap-2 rounded-lg px-3 py-1.5"
+                  style={outletHeaderStyle(row.outlet)}
+                >
+                  <span className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
+                    {row.outlet}
+                  </span>
+                  <span className="text-[11px] text-white/70">·</span>
+                  <span className="text-[11px] font-semibold text-white/90">{row.source}</span>
+                </div>
                 <div className="overflow-x-auto rounded-[1.5rem] border border-[#e0e7ef]">
                   <Table className={TABLE_CLASS}>
                     <TableHeader>
@@ -186,12 +215,12 @@ export function KiaConversionPanelView({
             </TableHeader>
             <TableBody>
               {panel.outletMonths.flatMap((row) => [
-                <TableRow key={`${row.outlet}-enq`} className={HEAD_ROW}>
-                  <TableCell className="font-black uppercase tracking-[0.08em] text-slate-800">
+                <TableRow key={`${row.outlet}-enq`} style={outletHeaderStyle(row.outlet)}>
+                  <TableCell className={outletHeaderTextClass(row.outlet)}>
                     {row.outlet} · Enquiries
                   </TableCell>
                   {row.months.slice(0, visible).map((month, index) => (
-                    <TableCell key={index} className="text-right font-black tabular-nums text-slate-900">{month.enquiries}</TableCell>
+                    <TableCell key={index} className="text-right font-black tabular-nums text-white">{month.enquiries}</TableCell>
                   ))}
                 </TableRow>,
                 <TableRow key={`${row.outlet}-bkg`}>

@@ -173,21 +173,44 @@ function toRow(key: string, label: string, enq: number, td: number, bkg: number,
 const FOCUS_SOURCES = ['Hyperlocal', 'Walkin']
 
 export async function getKiaConversionPanel(year: number): Promise<KiaConversionPanel> {
-  const result = await db.execute(sql`
-    WITH ${enquiryCohortCte(year)}
-    SELECT mo, outlet, source, SUM(enq)::int AS enq, SUM(td)::int AS td, SUM(bkg)::int AS bkg, SUM(ret)::int AS ret
-    FROM (
-      SELECT c.mo, c.outlet, c.source,
-        COUNT(*)::int AS enq,
-        COUNT(*) FILTER (WHERE c.has_td)::int AS td,
-        COUNT(*) FILTER (WHERE c.has_booking)::int AS bkg,
-        0 AS ret
-      FROM cohort c GROUP BY c.mo, c.outlet, c.source
-      UNION ALL
-      SELECT r.mo, r.outlet, r.source, 0, 0, 0, COUNT(*)::int
-      FROM retailed r GROUP BY r.mo, r.outlet, r.source
-    ) u GROUP BY mo, outlet, source
-  `)
+  const [result, bookingResult] = await Promise.all([
+    db.execute(sql`
+      WITH ${enquiryCohortCte(year)}
+      SELECT mo, outlet, source, SUM(enq)::int AS enq, SUM(td)::int AS td, SUM(bkg)::int AS bkg, SUM(ret)::int AS ret
+      FROM (
+        SELECT c.mo, c.outlet, c.source,
+          COUNT(*)::int AS enq,
+          COUNT(*) FILTER (WHERE c.has_td)::int AS td,
+          COUNT(*) FILTER (WHERE c.has_booking)::int AS bkg,
+          0 AS ret
+        FROM cohort c GROUP BY c.mo, c.outlet, c.source
+        UNION ALL
+        SELECT r.mo, r.outlet, r.source, 0, 0, 0, COUNT(*)::int
+        FROM retailed r GROUP BY r.mo, r.outlet, r.source
+      ) u GROUP BY mo, outlet, source
+    `),
+    // ⚠️ Real booking counts for the Outlet by Month table.
+    // The enquiry-cohort `has_booking` flag counts enquiries that generated a booking number —
+    // a different number from "how many bookings were made this month". The booking panel
+    // (kia_booking_report) is the source of truth for the MD's booking intake figures.
+    db.execute(sql`
+      SELECT EXTRACT(MONTH FROM booking_date)::int AS mo,
+        UPPER(BTRIM(COALESCE(NULLIF(BTRIM(dealer_code_2), ''), NULLIF(BTRIM(dealer_code), ''), ''))) AS outlet,
+        COUNT(*)::int AS booked
+      FROM (
+        SELECT DISTINCT ON (UPPER(BTRIM(COALESCE(customer_id, ''))), UPPER(BTRIM(COALESCE(booking_no, ''))))
+          booking_date,
+          dealer_code_2,
+          dealer_code
+        FROM kia_booking_report
+        WHERE COALESCE(booking_no, '') <> ''
+          AND booking_date IS NOT NULL
+          AND EXTRACT(YEAR FROM booking_date) = ${year}
+        ORDER BY UPPER(BTRIM(COALESCE(customer_id, ''))), UPPER(BTRIM(COALESCE(booking_no, ''))), uploaded_at DESC NULLS LAST
+      ) b
+      GROUP BY 1, 2
+    `),
+  ])
 
   const raw = rows(result).map((row) => ({
     mo: num(row.mo),
@@ -195,6 +218,16 @@ export async function getKiaConversionPanel(year: number): Promise<KiaConversion
     source: String(row.source || 'Unspecified'),
     enq: num(row.enq), td: num(row.td), bkg: num(row.bkg), ret: num(row.ret),
   }))
+
+  // Real booking counts keyed by [mo, outlet] for the Outlet by Month table.
+  const realBookings = rows(bookingResult).map((row) => ({
+    mo: num(row.mo),
+    outlet: String(row.outlet || '').trim().toUpperCase(),
+    booked: num(row.booked),
+  }))
+
+  const realBookingCount = (mo: number, outlet: string): number =>
+    realBookings.filter((r) => r.mo === mo && r.outlet === outlet).reduce((sum, r) => sum + r.booked, 0)
 
   const outlets: KiaOutletConversion[] = KIA_RETAIL_OUTLETS.map((outlet) => {
     const mine = raw.filter((row) => row.outlet === outlet.code)
@@ -238,8 +271,20 @@ export async function getKiaConversionPanel(year: number): Promise<KiaConversion
     }
   }
 
-  const outletMonths: KiaMonthlySourceRow[] = KIA_RETAIL_OUTLETS.map((outlet) =>
-    monthlyFor((row) => row.outlet === outlet.code, 'All sources', outlet.code))
+  // Outlet by Month: enquiries and test drives stay cohort-based; bookings use the real
+  // kia_booking_report intake so the numbers match the pipeline/bookings panel exactly.
+  const outletMonths: KiaMonthlySourceRow[] = KIA_RETAIL_OUTLETS.map((outlet) => {
+    const months: KiaConversionRow[] = Array.from({ length: 12 }, (_, index) => {
+      const mo = index + 1
+      const monthRows = raw.filter((row) => row.mo === mo && row.outlet === outlet.code)
+      const enq = monthRows.reduce((sum, row) => sum + row.enq, 0)
+      const td = monthRows.reduce((sum, row) => sum + row.td, 0)
+      const bkg = realBookingCount(mo, outlet.code)
+      const ret = monthRows.reduce((sum, row) => sum + row.ret, 0)
+      return toRow(`${outlet.code}:All sources:${mo}`, String(mo), enq, td, bkg, ret)
+    })
+    return { source: 'All sources', outlet: outlet.code, months }
+  })
 
   return {
     year,
@@ -250,6 +295,8 @@ export async function getKiaConversionPanel(year: number): Promise<KiaConversion
       'Cohort basis: an enquiry is counted in the month it was raised, together with whatever it later '
       + 'became. Recent months therefore show a lower retail conversion — those enquiries have not had '
       + 'time to close yet.',
+      'Bookings (Outlet by Month) use the actual booking intake from the booking register, matching '
+      + 'the pipeline panel. E2BKG% in the source table uses the enquiry-cohort booking flag.',
       'Retail is attributed to a source through the DMS customer id, which links enquiry to sale on '
       + '99.9% of records.',
     ],

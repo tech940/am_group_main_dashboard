@@ -31,12 +31,13 @@ export const vendorPaymentRequiresHr = isHrApprovalRequired
 export const VP_STAGE_VALUES = ['APPROVED', 'NOT APPROVED', 'HELD', 'SENT BACK'] as const
 export type VpStageValue = (typeof VP_STAGE_VALUES)[number]
 
-export type VendorPaymentStageKey = 'sales_manager' | 'hr' | 'md' | 'accounts' | 'done'
+export type VendorPaymentStageKey = 'sales_manager' | 'hr' | 'ea' | 'md' | 'accounts' | 'done'
 
 /** The subset of columns the stage inference needs. Kept minimal so any row shape can satisfy it. */
 export type VendorPaymentStageInput = {
   vpApproval?: string | null
   hrApproval?: string | null
+  eaApproval?: string | null
   managementApproval?: string | null
   accountApproval?: string | null
   approvalType?: string | null
@@ -60,28 +61,20 @@ function needsAction(value: string | null | undefined): boolean {
 }
 
 /**
- * The stage this request is currently waiting on — the server's own ordering:
- * ED → HR (conditional) → MD → Accounts.
+ * The stage this request is currently waiting on — strict ordering:
+ * ED → HR (conditional) → EA → MD → Accounts.
  *
- * EA is deliberately absent: the server's inference skips it entirely, and the chain guard at
- * `action/route.ts:150` never requires EA before MD either. EA is an optional side review, not a
- * gate, whatever the UI label implies.
+ * EA approval is strictly required before a request reaches the MD stage.
  */
 export function vendorPaymentActiveStage(row: VendorPaymentStageInput): VendorPaymentStageKey {
   const requiresHr = vendorPaymentRequiresHr(row.approvalType)
 
   if (needsAction(row.vpApproval)) return 'sales_manager'
 
-  // ⚠️ HR only gates a request that has NOT yet cleared the MD.
-  //
-  // When the HR routing rule was corrected (lib/kia/approval-hr-routing.ts), payroll-type requests
-  // that had already been approved by the MD — and in some cases paid — would have been dragged back
-  // into HR's queue for a review that is now moot. Owner decision: what is completed stays
-  // completed. Only the requests still in flight pick up the HR step.
-  //
-  // Measured at the time of the fix: this keeps 2 already-approved requests at 'done' while the 5
-  // still awaiting the MD correctly move to 'hr'.
   if (requiresHr && needsAction(row.hrApproval) && !isApproved(row.managementApproval)) return 'hr'
+
+  // EA approval is required before MD can act
+  if (needsAction(row.eaApproval) && !isApproved(row.managementApproval)) return 'ea'
 
   if (needsAction(row.managementApproval)) return 'md'
   if (isApproved(row.managementApproval) && needsAction(row.accountApproval)) return 'accounts'
@@ -97,6 +90,7 @@ export function isAwaitingVendorPaymentMd(row: VendorPaymentStageInput): boolean
 export const VENDOR_PAYMENT_STAGE_LABEL: Record<VendorPaymentStageKey, string> = {
   sales_manager: 'With ED',
   hr: 'With HR',
+  ea: 'With EA',
   md: 'Awaiting MD',
   accounts: 'With Accounts',
   done: 'Completed',

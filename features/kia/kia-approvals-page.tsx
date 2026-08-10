@@ -1149,23 +1149,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (pendingLabel === 'Pending HR') return 'hr'
     if (pendingLabel.startsWith('Pending ED') || pendingLabel.startsWith('Pending VP') || pendingLabel.startsWith('Pending General Service Manager')) return 'sales_manager'
 
-    // developer/admin keep the full fallback for support purposes.
-    if (['developer', 'admin'].includes(currentUser.role)) {
-      if (!req.managementApproval || req.managementApproval === '' || req.managementApproval === 'HELD') return 'md'
-      if (req.managementApproval === 'APPROVED' && req.accountApproval !== 'APPROVED') return 'accounts'
-    }
-
-    if (['md', 'ceo'].includes(effectiveRole)) {
-      if (!req.managementApproval || req.managementApproval === '' || req.managementApproval === 'HELD') return 'md'
-      // SEPARATION OF DUTIES — once the MD has approved, this is NO LONGER their stage, so we
-      // return null rather than falling through to 'accounts'.
-      // The old fallback returned 'accounts' FOR THE MD the instant they approved: the row
-      // re-rendered and the SAME green quick-approve button silently became the Accounts /
-      // Record-Payment action. A second click — or a double-click — recorded the payment.
-      // That is how requests Accounts never approved were marked PAID ("MD Approved" and
-      // "Payment Recorded" seconds apart, same MD, on 13 requests). Only Accounts may pay.
-      return null
-    }
     return null
   }
 
@@ -1288,9 +1271,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       )
     }
 
-    // md/ceo/eba can approve Pending EA and Held by EA since EA stage is optional
+    // Pending EA stage is ONLY pending for EA / EBA / Admin roles. MD/CEO must NOT see it in Pending My Approval.
     if (pendingLabel === 'Pending EA' || pendingLabel === 'Held by EA') {
-      return ['ea', 'eba'].includes(effectiveRole) || ['ea', 'eba'].includes(currentUser.role) || ['md', 'ceo'].includes(effectiveRole) || ['md', 'ceo'].includes(currentUser.role) || ['developer', 'admin'].includes(currentUser.role)
+      return ['ea', 'eba'].includes(effectiveRole) || ['ea', 'eba'].includes(currentUser.role) || ['developer', 'admin'].includes(currentUser.role)
     }
 
     if (pendingLabel === 'Pending MD' || pendingLabel === 'Held by MD') {
@@ -3885,10 +3868,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             const pendingStageKey = (() => {
               if (pendingLabel === 'Pending ED') return 'sales_manager'
               if (pendingLabel === 'Pending Accounts') return 'accounts'
-              // EA is optional. If the current user is MD/CEO, they skip the EA stage
-              // and act directly at the 'md' stage — preventing "EA stage approved by MD"
-              // being recorded in history. The backend auto-marks eaApproval when MD approves.
-              if (pendingLabel === 'Pending EA') return isMD ? 'md' : 'ea'
+              if (pendingLabel === 'Pending EA') return 'ea'
               if (pendingLabel === 'Pending MD') return 'md'
               if (pendingLabel === 'Pending Payment') return 'payment_done'
               return null
@@ -4035,7 +4015,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 { key: 'created', label: 'Created', status: 'APPROVED' },
                 { key: 'sales_manager', label: firstStageLabel, status: req.vpApproval },
                 ...(requiresHrStage ? [{ key: 'hr', label: 'HR Approval', status: req.hrApproval }] : []),
-                { key: 'ea', label: 'EA Review (Optional)', status: req.eaApproval },
+                { key: 'ea', label: 'EA Review', status: req.eaApproval },
                 { key: 'md', label: 'MD Approval', status: req.managementApproval },
                 { key: 'accounts', label: 'Accounts Processing', status: req.accountApproval },
                 { key: 'paid', label: 'Paid', status: (req.paymentStatus === 'PAID' || req.accountApproval === 'APPROVED') ? 'APPROVED' : null },
