@@ -99,10 +99,12 @@ export function KiaConversionPanelView({
     ...panel.outletMonths.flatMap((row) => row.months.map((month, index) => (month.enquiries > 0 ? index + 1 : 1))),
   )
 
+  const titleLabel = panel.monthLabel ? `Source-wise Conversion (${panel.monthLabel})` : `Source-wise Conversion CY${panel.year}`
+
   return (
     <div className="space-y-5">
       <ReviewCard
-        title={`Source-wise Conversion CY${panel.year}`}
+        title={titleLabel}
         subtitle="Enquiry to test drive to booking to retail, by lead source"
         action={action}
       >

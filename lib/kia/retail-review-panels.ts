@@ -135,6 +135,8 @@ export type KiaMonthlySourceRow = {
 
 export type KiaConversionPanel = {
   year: number
+  month?: number | null
+  monthLabel?: string | null
   outlets: KiaOutletConversion[]
   /** Slide 6 — Hyperlocal and Walk-in, month on month, per outlet. */
   focusSources: KiaMonthlySourceRow[]
@@ -171,8 +173,9 @@ function toRow(key: string, label: string, enq: number, td: number, bkg: number,
 }
 
 const FOCUS_SOURCES = ['Hyperlocal', 'Walkin']
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export async function getKiaConversionPanel(year: number): Promise<KiaConversionPanel> {
+export async function getKiaConversionPanel(year: number, month?: number | null): Promise<KiaConversionPanel> {
   const [result, bookingResult] = await Promise.all([
     db.execute(sql`
       WITH ${enquiryCohortCte(year)}
@@ -229,8 +232,11 @@ export async function getKiaConversionPanel(year: number): Promise<KiaConversion
   const realBookingCount = (mo: number, outlet: string): number =>
     realBookings.filter((r) => r.mo === mo && r.outlet === outlet).reduce((sum, r) => sum + r.booked, 0)
 
+  const monthLabel = month && month >= 1 && month <= 12 ? `${MONTH_NAMES[month - 1]} ${year}` : `CY${year}`
+
   const outlets: KiaOutletConversion[] = KIA_RETAIL_OUTLETS.map((outlet) => {
-    const mine = raw.filter((row) => row.outlet === outlet.code)
+    // If a month filter is passed from the top date picker, filter source-wise conversion by that month!
+    const mine = raw.filter((row) => row.outlet === outlet.code && (month ? row.mo === month : true))
     const bySource = new Map<string, { enq: number; td: number; bkg: number; ret: number }>()
     let t = { enq: 0, td: 0, bkg: 0, ret: 0 }
     for (const row of mine) {
@@ -288,6 +294,8 @@ export async function getKiaConversionPanel(year: number): Promise<KiaConversion
 
   return {
     year,
+    month: month ?? null,
+    monthLabel,
     outlets,
     focusSources,
     outletMonths,

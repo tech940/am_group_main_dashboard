@@ -85,18 +85,22 @@ const REVIEW_TABS: { key: ReviewTab; label: string }[] = [
 const TAB_BASE =
   'rounded-full border border-[#d5dfea] bg-white px-4 py-2 text-[13px] font-black text-slate-600 shadow-sm transition'
 
-export function KiaRetailReviewPanel() {
-  const [year, setYear] = useState<number>(new Date().getFullYear())
+export function KiaRetailReviewPanel({ year: propYear, month: propMonth }: { year?: number; month?: number | null } = {}) {
+  const [internalYear, setInternalYear] = useState<number>(propYear || new Date().getFullYear())
   const [tab, setTab] = useState<ReviewTab>('retail')
 
-  // One query per (tab, year). The route serves one panel per request on purpose — the panels sit
+  const activeYear = propYear || internalYear
+  const activeMonth = propMonth ?? null
+
+  // One query per (tab, year, month). The route serves one panel per request on purpose — the panels sit
   // on different data spines with very different costs, so switching tabs never waits on another
   // tab's scan, and each stays cached for the session once loaded.
   const active = useQuery<unknown>({
-    queryKey: ['kia-retail-review', tab, year],
+    queryKey: ['kia-retail-review', tab, activeYear, activeMonth],
     queryFn: async () => {
       const panelParam = tab === 'retail' ? '' : `panel=${tab}&`
-      const res = await fetch(`/api/brands/kia/sales-report/retail-review?${panelParam}year=${year}`)
+      const monthParam = activeMonth ? `&month=${activeMonth}` : ''
+      const res = await fetch(`/api/brands/kia/sales-report/retail-review?${panelParam}year=${activeYear}${monthParam}`)
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load')
       return res.json()
     },
@@ -112,8 +116,8 @@ export function KiaRetailReviewPanel() {
     <label className="flex items-center gap-2 text-[12px] font-black uppercase tracking-[0.14em] text-slate-500">
       Year
       <select
-        value={year}
-        onChange={(event) => setYear(Number(event.target.value))}
+        value={activeYear}
+        onChange={(event) => setInternalYear(Number(event.target.value))}
         className="rounded-full border border-[#d5dfea] bg-white px-3 py-1.5 text-[13px] font-black text-slate-700 shadow-sm"
       >
         {yearOptions.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -169,7 +173,7 @@ export function KiaRetailReviewPanel() {
 
   if (tab !== 'retail') {
     const panelView =
-      tab === 'conversion' ? <KiaConversionPanelView panel={active.data as KiaConversionPanel} action={yearPicker} />
+      tab === 'conversion' ? <KiaConversionPanelView panel={active.data as KiaConversionPanel} />
       : tab === 'bookings' ? <KiaBookingsPanelView panel={active.data as KiaBookingsPanel} action={yearPicker} />
       : tab === 'enquiries' ? <KiaEnquiryPanelView panel={active.data as KiaEnquiryPanel} action={yearPicker} />
       : tab === 'exchange' ? <KiaExchangePanelView panel={active.data as KiaExchangePanel} action={yearPicker} />

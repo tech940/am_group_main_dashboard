@@ -138,9 +138,10 @@ export const KpiCard: React.FC<KpiCardProps> = ({
 
     const width = 130
     const height = 36
+    const rightPadding = 5
 
     const points = normalizedData.map((val, idx) => {
-      const x = (idx / (normalizedData.length - 1)) * width
+      const x = (idx / (normalizedData.length - 1)) * (width - rightPadding)
       const y = height - ((val - nMin) / nRange) * (height - 12) - 6
       return { x, y }
     })
@@ -153,12 +154,12 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       pathD += ` C ${cpX} ${current.y}, ${cpX} ${next.y}, ${next.x} ${next.y}`
     }
 
-    const areaD = `${pathD} L ${width} ${height} L 0 ${height} Z`
+    const areaD = `${pathD} L ${width - rightPadding} ${height} L 0 ${height} Z`
     const lastPoint = points[points.length - 1]
     const gradientId = `kpi-grad-${colorScheme}-${title.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`
 
     return (
-      <svg className="w-full h-9 overflow-visible" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      <svg className="w-full h-9 overflow-hidden" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={schemeStyles.fillFrom} stopOpacity="0.25" />
@@ -178,13 +179,13 @@ export const KpiCard: React.FC<KpiCardProps> = ({
     const max = Math.max(...data, 1)
 
     return (
-      <div className="flex items-end justify-end gap-1.5 h-8 w-full">
+      <div className="flex items-end justify-end gap-1.5 h-8 w-full overflow-hidden">
         {data.map((val, idx) => {
           const heightPct = Math.max(Math.round((val / max) * 100), 18)
           return (
             <div
               key={idx}
-              className={`w-[5px] rounded-t-xs ${schemeStyles.barBg} transition-all duration-300 hover:scale-y-110 shrink-0`}
+              className={`w-[4px] sm:w-[5px] rounded-t-xs ${schemeStyles.barBg} transition-all duration-300 hover:scale-y-110 shrink-0`}
               style={{ height: `${heightPct}%` }}
             />
           )
@@ -260,22 +261,22 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`group rounded-3xl ${schemeStyles.containerBg} p-5 flex flex-col justify-between relative transition-all duration-300 hover:-translate-y-1 ${
+      className={`group rounded-3xl ${schemeStyles.containerBg} p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 hover:-translate-y-1 ${
         onClick ? 'cursor-pointer active:translate-y-0 active:shadow-md' : ''
       }`}
     >
       {/* Top Row: Soft pastel icon badge on left, Title + Value + Subtitle in middle, More button on right */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-start gap-3">
           {/* Soft pastel rounded icon badge */}
-          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${schemeStyles.iconBg} shrink-0 transition-transform duration-300 group-hover:scale-105`}>
-            <Icon className="w-6 h-6 stroke-[2]" />
+          <div className={`flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl ${schemeStyles.iconBg} shrink-0 transition-transform duration-300 group-hover:scale-105`}>
+            <Icon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2]" />
           </div>
 
-          <div>
-            <span className={`text-[10px] font-black uppercase tracking-wider block ${schemeStyles.titleColor}`}>{title}</span>
-            <span className={`text-2xl font-black leading-none mt-1.5 block ${schemeStyles.valueColor}`}>{value}</span>
-            {subtitle && <span className={`text-[10px] font-medium block mt-1.5 ${schemeStyles.subtitleColor}`}>{subtitle}</span>}
+          <div className="min-w-0">
+            <span className={`text-[10px] font-black uppercase tracking-wider block truncate ${schemeStyles.titleColor}`}>{title}</span>
+            <span className={`text-xl sm:text-2xl font-black leading-none mt-1.5 block truncate ${schemeStyles.valueColor}`}>{value}</span>
+            {subtitle && <span className={`text-[10px] font-medium block mt-1.5 truncate ${schemeStyles.subtitleColor}`}>{subtitle}</span>}
           </div>
         </div>
 
@@ -293,12 +294,12 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       </div>
 
       {/* Bottom Row: Trend Badge on left, Right-Aligned Compact Sparkline Visual on right */}
-      <div className="flex items-end justify-between gap-3 mt-5 pt-1">
+      <div className="flex items-end justify-between gap-2 mt-4 pt-1">
         {/* Left: Trend Badge Pill */}
         {trend ? (
-          <div className="flex items-center justify-start text-[11px] shrink-0">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50/90 border border-slate-100 px-3 py-1 font-semibold text-slate-400">
-              <span className={`flex items-center gap-1 ${schemeStyles.trendValColor}`}>
+          <div className="flex items-center justify-start text-[10px] sm:text-[11px] min-w-0">
+            <span className="inline-flex items-center gap-1 sm:gap-1.5 rounded-full bg-slate-50/90 border border-slate-100 px-2.5 sm:px-3 py-1 font-semibold text-slate-400 truncate">
+              <span className={`flex items-center gap-1 ${schemeStyles.trendValColor} shrink-0`}>
                 {trend.isPositive !== false ? (
                   <TrendingUp className="w-3.5 h-3.5 stroke-[2.5]" />
                 ) : (
@@ -306,14 +307,14 @@ export const KpiCard: React.FC<KpiCardProps> = ({
                 )}
                 <span>{trend.value}</span>
               </span>
-              {trend.label && <span className="text-slate-400 font-medium ml-0.5">{trend.label}</span>}
+              {trend.label && <span className="text-slate-400 font-medium ml-0.5 truncate">{trend.label}</span>}
             </span>
           </div>
         ) : <div />}
 
         {/* Right: Compact Right-Aligned Sparkline Chart */}
         {showChart && (
-          <div className="w-28 sm:w-32 h-9 flex items-end justify-end shrink-0 overflow-hidden">
+          <div className="w-20 sm:w-24 h-9 flex items-end justify-end shrink-0 overflow-hidden">
             {chartType === 'area' && renderAreaChart()}
             {chartType === 'bar' && renderBarChart()}
             {chartType === 'progress' && renderProgressBar()}

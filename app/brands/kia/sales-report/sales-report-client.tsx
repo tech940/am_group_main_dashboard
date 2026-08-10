@@ -2392,7 +2392,10 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
           </TabsContent>
 
           <TabsContent value="review" className="space-y-5">
-            <KiaRetailReviewPanel />
+            <KiaRetailReviewPanel
+              year={hasCompleteCustomRange ? parseInt(selectedRangeStart.slice(0, 4)) : (effectiveSelectedYear || new Date().getFullYear())}
+              month={hasCompleteCustomRange ? null : (effectiveSelectedMonth !== null ? effectiveSelectedMonth + 1 : null)}
+            />
           </TabsContent>
 
           <TabsContent value="lost" className="space-y-5">

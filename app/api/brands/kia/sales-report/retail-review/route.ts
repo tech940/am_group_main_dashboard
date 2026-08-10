@@ -49,6 +49,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url)
     const currentYear = parseYear(url.searchParams.get('year'))
     const previousYear = parseYear(url.searchParams.get('compare_year'))
+    const rawMonth = url.searchParams.get('month')
+    const month = rawMonth ? Number(rawMonth) : null
 
     // One route, one panel per request. The four panels sit on different data spines and have
     // very different costs — fetching them together would make the retail chart wait for the
@@ -56,13 +58,10 @@ export async function GET(request: Request) {
     const panel = url.searchParams.get('panel') || 'retail'
     const year = currentYear || new Date().getUTCFullYear()
 
-    // Short-cached per (panel, year): the same matrix for every viewer (no per-user scoping), and
-    // the feeds only move on upload. After the TTL the stale copy is served instantly while the
-    // rebuild lands in the background — nobody waits on the scan twice.
-    const cacheKey = `kia:retail-review:v1:${panel}:${year}:${previousYear ?? 'auto'}`
+    const cacheKey = `kia:retail-review:v2:${panel}:${year}:${month ?? 'all'}:${previousYear ?? 'auto'}`
     const payload = await timer.time('query', () => getCachedData(cacheKey, async () => {
       switch (panel) {
-        case 'conversion': return getKiaConversionPanel(year)
+        case 'conversion': return getKiaConversionPanel(year, month)
         case 'bookings': return getKiaBookingsPanel(year)
         case 'enquiries': return getKiaEnquiryPanel(year)
         case 'exchange': return getKiaExchangePanel(year)
