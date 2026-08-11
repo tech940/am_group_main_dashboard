@@ -460,3 +460,14 @@
 [2026-08-08T07:41:39.124Z] ENV DATABASE_URL: postgresql://postgres.crreoeautoqzcgtlwlsd:%40Sahilkatoch1998@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true
 [2026-08-08T07:41:39.129Z] GET /api/scrap-erp: User authenticated. Email: sahil.katoch@gmail.com, Role: developer
 [2026-08-08T07:41:41.623Z] GET /api/scrap-erp success. Total mapped: 284
+[2026-08-11T12:52:00.122Z] GET /api/scrap-erp called
+[2026-08-11T12:52:00.129Z] GET /api/scrap-erp called
+[2026-08-11T12:52:04.317Z] GET /api/scrap-erp called
+[2026-08-11T12:52:05.449Z] GET /api/scrap-erp called
+[2026-08-11T12:52:07.418Z] GET /api/scrap-erp called
+[2026-08-11T12:52:09.121Z] GET /api/scrap-erp called
+[2026-08-11T12:56:18.800Z] GET /api/scrap-erp called
+[2026-08-11T12:57:23.349Z] GET /api/scrap-erp called
+[2026-08-11T12:57:25.382Z] GET /api/scrap-erp called
+[2026-08-11T13:02:30.397Z] GET /api/scrap-erp called
+[2026-08-11T13:02:32.423Z] GET /api/scrap-erp called

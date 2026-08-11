@@ -1133,6 +1133,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.demo_job_cards',
     'kia.service_appointment',
     'kia.demo_cars_list',
+    'kia.bookings',
     'kia.proforma',
     'purchase_orders',
     'finance_orders',

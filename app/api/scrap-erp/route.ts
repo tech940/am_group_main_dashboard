@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
-import { ScrapTransaction } from '@/lib/scrap-erp/types'
+import { ScrapTransaction, ScrapAttachment } from '@/lib/scrap-erp/types'
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
 
@@ -28,12 +28,38 @@ function toIsoDate(value: unknown): string {
   return String(value).slice(0, 10)
 }
 
-function mapDbRowToTransaction(row: any): ScrapTransaction {
+let attachmentsColumnChecked = false
+async function ensureScrapAttachmentsColumn() {
+  if (attachmentsColumnChecked) return
+  try {
+    await db.execute(sql.raw(`
+      ALTER TABLE scrap_transactions ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+    `))
+    attachmentsColumnChecked = true
+  } catch (e) {
+    console.error('Failed to ensure attachments column:', e)
+  }
+}
+
+function parseAttachments(val: unknown): ScrapAttachment[] {
+  if (Array.isArray(val)) {
+    return val as ScrapAttachment[]
+  }
+  if (typeof val === 'string' && val.trim()) {
+    try {
+      const parsed = JSON.parse(val)
+      if (Array.isArray(parsed)) return parsed as ScrapAttachment[]
+    } catch {}
+  }
+  return []
+}
+
+function mapDbRowToTransaction(row: Record<string, unknown>): ScrapTransaction {
   const soldDate = toIsoDate(row.sold_date)
-  const timestamp = row.timestamp ? new Date(row.timestamp).toISOString() : new Date().toISOString()
-  const createdAt = row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString()
-  const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString()
-  const accountsReceivedAt = row.accounts_received_at ? new Date(row.accounts_received_at).toISOString() : undefined
+  const timestamp = row.timestamp ? new Date(String(row.timestamp)).toISOString() : new Date().toISOString()
+  const createdAt = row.created_at ? new Date(String(row.created_at)).toISOString() : new Date().toISOString()
+  const updatedAt = row.updated_at ? new Date(String(row.updated_at)).toISOString() : createdAt
+  const accountsReceivedAt = row.accounts_received_at ? new Date(String(row.accounts_received_at)).toISOString() : undefined
 
   const dateStr = (soldDate || timestamp || createdAt).slice(0, 10)
   const isDistributed = dateStr >= DISTRIBUTION_START_DATE ? Boolean(row.is_distributed) : false
@@ -42,9 +68,12 @@ function mapDbRowToTransaction(row: any): ScrapTransaction {
   const status: 'COMPLETED' | 'FLAGGED' | 'DRAFT' =
     rawStatus === 'FLAGGED' ? 'FLAGGED' : rawStatus === 'DRAFT' ? 'DRAFT' : 'COMPLETED'
 
+  const txnNum = String(row.transaction_number || '')
+  const scrapTypeName = String(row.scrap_type_name || '')
+
   return {
     id: String(row.id),
-    transactionNumber: String(row.transaction_number || ''),
+    transactionNumber: txnNum,
     timestamp,
     groupId: row.group_id ? String(row.group_id) : 'grp-1',
     groupName: String(row.group_name || 'JAM'),
@@ -53,7 +82,7 @@ function mapDbRowToTransaction(row: any): ScrapTransaction {
     departmentId: row.department_id ? String(row.department_id) : 'dept-1',
     departmentName: String(row.department_name || ''),
     scrapTypeId: row.scrap_type_id ? String(row.scrap_type_id) : 'type-1',
-    scrapTypeName: String(row.scrap_type_name || ''),
+    scrapTypeName,
     unit: String(row.unit || 'Kg'),
     description: String(row.description || ''),
     weightQty: Number(row.weight_qty || 0),
@@ -71,7 +100,7 @@ function mapDbRowToTransaction(row: any): ScrapTransaction {
     paymentHandoverToName: String(row.payment_handover_to_name || ''),
     remarks: row.remarks ? String(row.remarks) : '',
     status,
-    attachments: Array.isArray(row.attachments) ? row.attachments : [],
+    attachments: parseAttachments(row.attachments),
     isDistributed,
     sentToAccounts: Boolean(row.sent_to_accounts),
     accountsReceivedAt,
@@ -91,20 +120,15 @@ function logToFile(msg: string) {
 
 export async function GET(request: Request) {
   logToFile('GET /api/scrap-erp called')
-  logToFile(`ENV DATABASE_URL: ${process.env.DATABASE_URL}`)
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) {
-    logToFile('GET /api/scrap-erp: Unauthorized')
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  logToFile(`GET /api/scrap-erp: User authenticated. Email: ${appUser.email}, Role: ${appUser.role}`)
-  // Must mirror app/scrap/page.tsx exactly — a page that renders while its own API 403s is the
-  // same broken experience as a link that leads to "access restricted".
   if (!canAccessScrapErp(appUser.role) && !(await isPermissionExplicitlyAllowed(appUser, 'scrap_erp.view'))) {
-    logToFile(`GET /api/scrap-erp: Forbidden. Role ${appUser.role} does not have access`)
     return NextResponse.json({ error: 'You do not have access to Scrap ERP.' }, { status: 403 })
   }
   try {
+    await ensureScrapAttachmentsColumn()
     const { searchParams } = new URL(request.url)
     const search = (searchParams.get('search') || '').toLowerCase().trim()
     const location = searchParams.get('location')
@@ -143,7 +167,6 @@ export async function GET(request: Request) {
       transactions = transactions.filter((tx) => tx.scrapTypeId === scrapType || tx.scrapTypeName === scrapType)
     }
 
-    logToFile(`GET /api/scrap-erp success. Total mapped: ${transactions.length}`)
     return NextResponse.json({
       success: true,
       transactions,
@@ -158,6 +181,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const appUser = await getAuthenticatedAppUser()
+    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!canAccessScrapErp(appUser.role) && !(await isPermissionExplicitlyAllowed(appUser, 'scrap_erp.edit'))) {
+      return NextResponse.json({ error: 'You do not have permission to create scrap records.' }, { status: 403 })
+    }
+
+    await ensureScrapAttachmentsColumn()
     const body = await request.json()
 
     const weightQty = Number(body.weightQty || 0)
@@ -166,7 +196,6 @@ export async function POST(request: Request) {
     const amountReceived = Number(body.amountReceived !== undefined ? body.amountReceived : calculatedTotal)
     const outstandingAmount = Math.max(0, calculatedTotal - amountReceived)
 
-    // Compute next transaction number SCRAP-2026-0XXX
     const maxNumRes = await db.execute(sql.raw(`
       SELECT transaction_number FROM scrap_transactions 
       WHERE transaction_number LIKE 'SCRAP-2026-%' 
@@ -195,6 +224,7 @@ export async function POST(request: Request) {
     const paymentModeName = body.paymentModeName || 'CASH'
     const paymentHandoverToName = body.paymentHandoverToName || 'Accounts Team'
     const remarks = body.remarks || ''
+    const attachmentsJson = JSON.stringify(Array.isArray(body.attachments) ? body.attachments : []).replace(/'/g, "''")
 
     const inserted = await db.execute(sql.raw(`
       INSERT INTO scrap_transactions (
@@ -202,7 +232,7 @@ export async function POST(request: Request) {
         scrap_type_name, unit, description, weight_qty, rate_per_unit,
         calculated_total, amount_received, outstanding_amount, sold_by_name,
         sold_to, sold_date, payment_mode_name, payment_handover_to_name,
-        remarks, status, is_distributed, sent_to_accounts, created_at, updated_at
+        remarks, status, is_distributed, sent_to_accounts, attachments, created_at, updated_at
       ) VALUES (
         '${nextNumber}',
         '${timestamp}',
@@ -226,6 +256,7 @@ export async function POST(request: Request) {
         '${status}',
         FALSE,
         FALSE,
+        '${attachmentsJson}'::jsonb,
         NOW(),
         NOW()
       )
@@ -336,6 +367,10 @@ export async function PUT(request: Request) {
       if (/^\d{4}-\d{2}-\d{2}$/.test(d)) textUpdates.push(`sold_date = ${q(d)}`)
     }
 
+    const attachmentsUpdateSql = body.attachments !== undefined
+      ? `attachments = '${JSON.stringify(Array.isArray(body.attachments) ? body.attachments : []).replace(/'/g, "''")}'::jsonb,`
+      : ''
+
     const updatedRes = await db.execute(sql.raw(`
       UPDATE scrap_transactions
       SET
@@ -349,6 +384,7 @@ export async function PUT(request: Request) {
         sent_to_accounts = ${sentToAccounts ? 'TRUE' : 'FALSE'},
         payment_handover_to_name = '${paymentHandoverToName.replace(/'/g, "''")}',
         accounts_note = '${accountsNote.replace(/'/g, "''")}',
+        ${attachmentsUpdateSql}
         ${textUpdates.length ? `${textUpdates.join(',\n        ')},` : ''}
         ${body.accountsReceivedAt ? `accounts_received_at = '${new Date(body.accountsReceivedAt).toISOString()}',` : ''}
         updated_at = NOW()

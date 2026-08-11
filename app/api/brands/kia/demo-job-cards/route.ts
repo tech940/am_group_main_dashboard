@@ -196,13 +196,30 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
     enriched AS (
       SELECT
         latest_vehicle.*,
-        (latest_vehicle.last_bill_date + INTERVAL '15 days')::date AS next_demo_due_date,
-        ((latest_vehicle.last_bill_date + INTERVAL '15 days')::date - CURRENT_DATE)::int AS days_remaining,
+        GREATEST(
+          latest_vehicle.last_bill_date,
+          COALESCE(latest_remarks.created_at::date, latest_vehicle.last_bill_date)
+        ) AS effective_last_date,
+        (GREATEST(
+          latest_vehicle.last_bill_date,
+          COALESCE(latest_remarks.created_at::date, latest_vehicle.last_bill_date)
+        ) + INTERVAL '15 days')::date AS next_demo_due_date,
+        ((GREATEST(
+          latest_vehicle.last_bill_date,
+          COALESCE(latest_remarks.created_at::date, latest_vehicle.last_bill_date)
+        ) + INTERVAL '15 days')::date - CURRENT_DATE)::int AS days_remaining,
         CASE
-          WHEN ((latest_vehicle.last_bill_date + INTERVAL '15 days')::date - CURRENT_DATE)::int < 0 THEN 'Overdue'
-          WHEN ((latest_vehicle.last_bill_date + INTERVAL '15 days')::date - CURRENT_DATE)::int <= 5 THEN 'Due Soon'
+          WHEN ((GREATEST(
+            latest_vehicle.last_bill_date,
+            COALESCE(latest_remarks.created_at::date, latest_vehicle.last_bill_date)
+          ) + INTERVAL '15 days')::date - CURRENT_DATE)::int < 0 THEN 'Overdue'
+          WHEN ((GREATEST(
+            latest_vehicle.last_bill_date,
+            COALESCE(latest_remarks.created_at::date, latest_vehicle.last_bill_date)
+          ) + INTERVAL '15 days')::date - CURRENT_DATE)::int <= 5 THEN 'Due Soon'
           ELSE 'Scheduled'
         END AS due_status,
+        (latest_remarks.created_at IS NOT NULL AND latest_remarks.created_at >= (CURRENT_DATE - INTERVAL '15 days')) AS jc_opened_recently,
         latest_remarks.id AS latest_remark_id,
         latest_remarks.remark AS latest_remark,
         latest_remarks.created_by_name AS latest_remark_by,
@@ -261,6 +278,7 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
         'nextDemoDueDate', next_demo_due_date,
         'daysRemaining', days_remaining,
         'dueStatus', due_status,
+        'jcOpenedRecently', jc_opened_recently,
         'serviceAdvisor', service_advisor,
         'status', status,
         'latestRemarkId', latest_remark_id,

@@ -27,6 +27,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         notes: body.notes,
         notInterestedReason: body.notInterestedReason,
         nextDueAt: body.nextDueAt,
+        bookingStatus: body.bookingStatus,
       })
       return NextResponse.json(result)
     }

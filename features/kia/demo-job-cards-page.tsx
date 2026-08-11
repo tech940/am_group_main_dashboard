@@ -9,6 +9,7 @@ import {
   CalendarClock,
   Car,
   Clock,
+  ClipboardList,
   Download,
   Edit3,
   History,
@@ -38,6 +39,7 @@ type DemoVehicleRow = {
   nextDemoDueDate: string
   daysRemaining: number
   dueStatus: DemoDueStatus
+  jcOpenedRecently?: boolean
   serviceAdvisor: string
   status: string
   latestRemarkId: string | null
@@ -125,7 +127,8 @@ function buildQueryString(params: Record<string, string | number>) {
   return searchParams.toString()
 }
 
-function getDueBadgeClass(status: DemoDueStatus) {
+function getDueBadgeClass(status: DemoDueStatus, jcOpenedRecently?: boolean) {
+  if (jcOpenedRecently && status === 'Scheduled') return 'border-emerald-200 bg-emerald-50 text-emerald-700 font-black'
   if (status === 'Overdue') return 'border-rose-200 bg-rose-50 text-rose-700'
   if (status === 'Due Soon') return 'border-amber-200 bg-amber-50 text-amber-700'
   return 'border-slate-200 bg-slate-50 text-slate-700'
@@ -367,7 +370,7 @@ function RemarksModal({
       <div className="demo-remarks-modal demo-remarks-surface isolate mx-auto flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 text-slate-950 shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-[var(--dashboard-action-bg)] px-5 py-4 text-white">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/70">Remarks Management</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/70">Job Card (JC) Management</p>
             <h2 className="mt-1 text-2xl font-black">{row.registrationNumber}</h2>
             <p className="mt-1 text-xs font-bold text-white/70">{row.vin}</p>
           </div>
@@ -401,14 +404,19 @@ function RemarksModal({
           </div>
 
           <div className="demo-remarks-panel mt-5 rounded-3xl border border-slate-200 p-4 shadow-sm">
-            <label className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
-              {editingRemarkId ? 'Edit latest remark' : 'Add remark'}
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
+                {editingRemarkId ? 'Edit JC Opening Remark' : 'Open Job Card & Log Remark'}
+              </label>
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                Resets 15-Day SLA Countdown
+              </span>
+            </div>
             <textarea
               value={remark}
               onChange={(event) => setRemark(event.target.value)}
               rows={4}
-              placeholder="Customer contacted, vehicle unavailable, demo postponed..."
+              placeholder="Enter Job Card details (e.g., Job Card #JC9812 opened for 15-day scheduled maintenance)..."
               className="demo-remarks-input mt-3 w-full resize-none rounded-2xl border border-slate-200 p-4 text-sm font-semibold text-slate-900 shadow-inner outline-none transition placeholder:text-slate-500 focus:border-[var(--dashboard-primary-border)] focus:ring-4 focus:ring-[var(--dashboard-primary-soft)]"
             />
             {saveMutation.error && (
@@ -425,12 +433,12 @@ function RemarksModal({
               )}
               <Button
                 type="button"
-                className="app-primary-action rounded-2xl"
+                className="app-primary-action rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                 disabled={saveMutation.isPending || remark.trim().length < 2}
                 onClick={() => saveMutation.mutate()}
               >
-                {saveMutation.isPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquarePlus className="mr-2 h-4 w-4" />}
-                Save Remark
+                {saveMutation.isPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <ClipboardList className="mr-2 h-4 w-4" />}
+                Save &amp; Open Job Card
               </Button>
             </div>
           </div>
@@ -849,8 +857,8 @@ export function DemoJobCardsPage() {
                         <td className="border border-slate-200 px-4 py-4 text-center text-[13px] font-bold text-slate-700">{formatDate(row.lastBillDate)}</td>
                         <td className="border border-slate-200 px-4 py-4 text-center text-[13px] font-black text-slate-950">{formatDate(row.nextDemoDueDate)}</td>
                         <td className="border border-slate-200 px-4 py-4 text-center">
-                          <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-black', getDueBadgeClass(row.dueStatus))}>
-                            {daysRemainingLabel(row.daysRemaining)}
+                          <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-black', getDueBadgeClass(row.dueStatus, row.jcOpenedRecently))}>
+                            {row.jcOpenedRecently && row.dueStatus === 'Scheduled' ? `JC Opened · ${daysRemainingLabel(row.daysRemaining)}` : daysRemainingLabel(row.daysRemaining)}
                           </span>
                         </td>
                         <td className="border border-slate-200 px-4 py-4 text-center">
@@ -858,7 +866,7 @@ export function DemoJobCardsPage() {
                             {row.latestRemark && (
                               <Button
                                 type="button"
-                                className="app-outline-action h-10 shrink-0 rounded-2xl px-4"
+                                className="app-outline-action h-10 shrink-0 rounded-2xl px-4 font-bold"
                                 onClick={() => setViewingRemarkVehicle(row)}
                               >
                                 View
@@ -866,11 +874,11 @@ export function DemoJobCardsPage() {
                             )}
                             <Button
                               type="button"
-                              className="app-primary-action h-10 shrink-0 rounded-2xl px-4"
+                              className="app-primary-action h-10 shrink-0 rounded-2xl px-4 font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
                               onClick={() => setSelectedVehicle(row)}
                             >
-                              {row.latestRemark ? <Edit3 className="mr-2 h-4 w-4" /> : <MessageSquarePlus className="mr-2 h-4 w-4" />}
-                              Remarks
+                              <ClipboardList className="mr-2 h-4 w-4" />
+                              JC Open
                             </Button>
                           </div>
                         </td>

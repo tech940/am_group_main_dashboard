@@ -97,7 +97,7 @@ const RESCHEDULE_REASONS = [
   { value: 'payment_delay', label: 'Payment delay' },
   { value: 'document_pending', label: 'Documents pending' },
   { value: 'customer_concern', label: 'Customer Concern' },
-  { value: '__custom__', label: '✏️ Custom reason…' },
+  { value: 'personal_reason', label: 'Personal reason' },
 ]
 const NOT_INTERESTED_REASONS = [
   { value: 'price', label: 'Price' },
@@ -494,13 +494,13 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
       } else if (action === 'cancelled') {
         await patch(f.id, { action: 'cancel', notes: 'Booking Cancelled' }, 'Booking Cancelled')
       } else if (action === 'fake_booking') {
-        await patch(f.id, { action: 'update', bookingStatus: 'fake_booking', notes: 'Marked as Fake Booking', reason: 'fake_booking' }, 'Marked as Fake Booking')
+        await patch(f.id, { action: 'complete', outcome: 'done', bookingStatus: 'fake_booking', notes: 'Marked as Fake / Duplicate Booking', reason: 'fake_booking' }, 'Marked as Fake / Duplicate Booking')
       } else if (action === 'pending') {
         await patch(f.id, { action: 'update', bookingStatus: 'pending', notes: 'Status set to Pending', reason: 'pending' }, 'Status set to Pending')
       } else if (action === 'demo_vehicle') {
-        await patch(f.id, { action: 'update', bookingStatus: 'demo_vehicle', notes: 'Marked as Demo Vehicle', reason: 'demo_vehicle' }, 'Marked as Demo Vehicle')
+        await patch(f.id, { action: 'complete', outcome: 'done', bookingStatus: 'demo_vehicle', notes: 'Marked as Demo Vehicle', reason: 'demo_vehicle' }, 'Marked as Demo Vehicle')
       } else if (action === 'repeated_booking') {
-        await patch(f.id, { action: 'update', bookingStatus: 'repeated_booking', notes: 'Marked as Repeated Booking', reason: 'repeated_booking' }, 'Marked as Repeated Booking')
+        await patch(f.id, { action: 'complete', outcome: 'done', bookingStatus: 'repeated_booking', notes: 'Marked as Repeated Booking', reason: 'repeated_booking' }, 'Marked as Repeated Booking')
       }
     } catch (e) {
       toast({ title: 'Action Failed', description: e instanceof Error ? e.message : '', variant: 'error' })
@@ -673,8 +673,9 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
     const seen = new Set<string>()
     const list: Followup[] = []
     for (const r of data?.rows || []) {
-      if (!seen.has(r.id)) {
-        seen.add(r.id)
+      const key = `${r.bucket}:${r.bookingId}`
+      if (!seen.has(key)) {
+        seen.add(key)
         list.push(r)
       }
     }
@@ -2184,24 +2185,43 @@ function RescheduleDialog({ f, onClose, onSaved }: { f: Followup; onClose: () =>
   const [dueAt, setDueAt] = useState(defaultLocal(1))
   const [priority, setPriority] = useState(f.priority)
   const [rescheduleReason, setRescheduleReason] = useState('')
-  const [customReason, setCustomReason] = useState('')
+  const [personalReasonDetail, setPersonalReasonDetail] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const isCustomReason = rescheduleReason === '__custom__'
+  const isPersonalReason = rescheduleReason === 'personal_reason'
   const remarksOk = countWords(notes) >= MIN_REMARK_WORDS
 
   async function save() {
+    if (isPersonalReason && !personalReasonDetail.trim()) {
+      toast({ title: 'Personal reason required', description: 'Please enter the personal reason in detail.', variant: 'error' })
+      return
+    }
     setSaving(true)
     try {
+      const fullNotes = isPersonalReason && personalReasonDetail.trim()
+        ? `[Personal Reason: ${personalReasonDetail.trim()}] ${notes}`.trim()
+        : notes
+
       const res = await fetch(`/api/brands/kia/follow-ups/${f.id}`, {
-        method: 'PATCH', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'update', dueAt: toIstIso(dueAt), priority, notes }),
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          dueAt: toIstIso(dueAt),
+          priority,
+          reason: rescheduleReason || f.reason,
+          notes: fullNotes,
+        }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed')
       toast({ title: 'Rescheduled', variant: 'success' })
       onSaved()
-    } catch (err) { toast({ title: 'Could not reschedule', description: err instanceof Error ? err.message : 'Try again', variant: 'error' }) } finally { setSaving(false) }
+    } catch (err) {
+      toast({ title: 'Could not reschedule', description: err instanceof Error ? err.message : 'Try again', variant: 'error' })
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -2217,14 +2237,18 @@ function RescheduleDialog({ f, onClose, onSaved }: { f: Followup; onClose: () =>
               <SelectTrigger className="mt-1 h-10 rounded-xl"><SelectValue placeholder="Select reason" /></SelectTrigger>
               <SelectContent>{RESCHEDULE_REASONS.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
             </Select>
-            {isCustomReason && (
-              <input
-                autoFocus
-                value={customReason}
-                onChange={(e) => setCustomReason(e.target.value)}
-                placeholder="Type your custom reason…"
-                className="mt-2 w-full rounded-xl border border-indigo-300 bg-indigo-50/50 px-3 py-2 text-sm font-semibold outline-none focus:border-indigo-500 placeholder-slate-400"
-              />
+            {isPersonalReason && (
+              <div className="mt-2 space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-indigo-600">Personal Reason Detail *</label>
+                <textarea
+                  autoFocus
+                  value={personalReasonDetail}
+                  onChange={(e) => setPersonalReasonDetail(e.target.value)}
+                  rows={2}
+                  placeholder="Describe the personal reason in detail…"
+                  className="w-full rounded-xl border border-indigo-300 bg-indigo-50/50 px-3 py-2 text-sm font-semibold outline-none focus:border-indigo-500 placeholder-slate-400"
+                />
+              </div>
             )}
           </div>
           <div>
@@ -2257,7 +2281,7 @@ function RescheduleDialog({ f, onClose, onSaved }: { f: Followup; onClose: () =>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" className="h-10 rounded-xl font-bold" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button className="h-10 gap-2 rounded-xl bg-indigo-600 px-6 font-bold text-white hover:bg-indigo-700" onClick={() => void save()} disabled={saving || !remarksOk}>
+          <Button className="h-10 gap-2 rounded-xl bg-indigo-600 px-6 font-bold text-white hover:bg-indigo-700" onClick={() => void save()} disabled={saving || !remarksOk || (isPersonalReason && !personalReasonDetail.trim())}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarClock className="h-4 w-4" />} Save
           </Button>
         </div>

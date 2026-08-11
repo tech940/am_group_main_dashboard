@@ -6,7 +6,7 @@
 
 export function canViewKiaCustomerPii(role?: string | null): boolean {
   const r = String(role || '').trim().toLowerCase()
-  return r === 'md' || r === 'developer' || r === 'finance_head'
+  return r === 'md' || r === 'developer' || r === 'finance_head' || r === 'ea' || r === 'eba' || r === 'ed' || r === 'ceo' || r === 'vp'
 }
 
 /**

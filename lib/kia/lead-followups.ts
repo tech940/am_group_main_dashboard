@@ -27,7 +27,7 @@ import { createFinancePayoutForDeliveredBooking } from './bookings'
 const REASONS = new Set([
   'callback', 'payment_pending', 'document_pending', 'delivery', 'general',
   'fake_booking', 'demo_vehicle', 'repeated_booking', 'pending',
-  'followup_call', 'customer_request', 'no_answer', 'payment_delay', 'customer_concern', '__custom__'
+  'followup_call', 'customer_request', 'no_answer', 'payment_delay', 'customer_concern', 'personal_reason', '__custom__'
 ])
 const PRIORITIES = new Set(['low', 'normal', 'high'])
 const OUTCOMES = new Set(['reached', 'no_answer', 'rescheduled', 'not_interested', 'converted', 'done'])
@@ -469,7 +469,7 @@ export async function listFollowups(appUser: AppUser, input: {
   }
 
   const [pending, nextDay, scheduled, notConnected, cancelled, rescheduled, noAnswerRetry, customerConcerns, delivered] = await Promise.all([
-    // Open follow-ups due today and overdue, excluding explicitly rescheduled ones.
+    // Open follow-ups due BEFORE today (yesterday & earlier overdue), excluding same-day & rescheduled ones.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
@@ -477,7 +477,7 @@ export async function listFollowups(appUser: AppUser, input: {
         ...where,
         eq(kiaLeadFollowups.status, 'pending'),
         ne(kiaLeadFollowups.source, 'rescheduled'),
-        ...(hasDateFilter && dateField === 'due_date' ? [] : [lte(kiaLeadFollowups.dueAt, endOfTodayUtc)]),
+        ...(hasDateFilter && dateField === 'due_date' ? [] : [lt(kiaLeadFollowups.dueAt, startOfTodayUtc)]),
       ))
       .orderBy(kiaLeadFollowups.dueAt)
       .limit(500),
@@ -604,7 +604,7 @@ export async function listFollowups(appUser: AppUser, input: {
 
   // Decided ONCE, here, from the viewer's role — then every row goes through toRow with it.
   const canSeePhone = canRevealKiaFollowupPhone(appUser.role)
-  const rows = [
+  const rawRows = [
     ...customerConcerns.map((r) => toRow(r as Record<string, unknown>, now, 'customer_concerns', canSeePhone)),
     ...notConnected.map((r) => toRow(r as Record<string, unknown>, now, 'not_connected', canSeePhone)),
     ...noAnswerRetry.map((r) => toRow(r as Record<string, unknown>, now, 'not_connected', canSeePhone)),
@@ -615,15 +615,27 @@ export async function listFollowups(appUser: AppUser, input: {
     ...rescheduled.map((r) => toRow(r as Record<string, unknown>, now, 'rescheduled', canSeePhone)),
     ...delivered.map((r) => toRow(r as Record<string, unknown>, now, 'delivered', canSeePhone)),
   ]
+
+  // Deduplicate per (bucket, bookingId) so no booking is repeated within a bucket or across buckets
+  const seenKey = new Set<string>()
+  const rows: FollowupRow[] = []
+  for (const r of rawRows) {
+    const key = `${r.bucket}:${r.bookingId}`
+    if (!seenKey.has(key)) {
+      seenKey.add(key)
+      rows.push(r)
+    }
+  }
+
   const counts = {
-    customer_concerns: customerConcerns.length,
-    not_connected: notConnected.length + noAnswerRetry.length,
-    pending: pending.length,
-    next_day: nextDay.length,
-    scheduled: scheduled.length,
-    cancelled: cancelled.length,
-    delivered: delivered.length,
-    rescheduled: rescheduled.length,
+    customer_concerns: rows.filter((r) => r.bucket === 'customer_concerns').length,
+    not_connected: rows.filter((r) => r.bucket === 'not_connected').length,
+    pending: rows.filter((r) => r.bucket === 'pending').length,
+    next_day: rows.filter((r) => r.bucket === 'next_day').length,
+    scheduled: rows.filter((r) => r.bucket === 'scheduled').length,
+    cancelled: rows.filter((r) => r.bucket === 'cancelled').length,
+    delivered: rows.filter((r) => r.bucket === 'delivered').length,
+    rescheduled: rows.filter((r) => r.bucket === 'rescheduled').length,
     overdue: rows.filter((r) => r.overdue && r.bucket !== 'cancelled' && r.bucket !== 'delivered').length,
   }
 
@@ -781,6 +793,11 @@ export async function createFollowup(appUser: AppUser, input: {
   const reason = input.reason && REASONS.has(input.reason) ? input.reason : 'general'
   const priority = input.priority && PRIORITIES.has(input.priority) ? input.priority : 'normal'
 
+  // Close any existing pending follow-ups for this booking to prevent duplicate open follow-ups
+  await db.update(kiaLeadFollowups)
+    .set({ status: 'done', updatedAt: new Date() })
+    .where(and(eq(kiaLeadFollowups.bookingId, bookingId), eq(kiaLeadFollowups.status, 'pending')))
+
   const [created] = await db.insert(kiaLeadFollowups).values({
     bookingId,
     assignedTo: assignee.id,
@@ -888,6 +905,7 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
   notes?: string | null
   notInterestedReason?: string | null
   nextDueAt?: string | null
+  bookingStatus?: string | null
 }) {
   return db.transaction(async (tx) => {
     const [existing] = await tx.select().from(kiaLeadFollowups).where(eq(kiaLeadFollowups.id, id)).limit(1)
@@ -899,7 +917,7 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
     if (!outcome) throw new Error('Select the outcome of this follow-up.')
     if (!OUTCOMES.has(outcome)) throw new Error(`Unknown follow-up outcome "${outcome}".`)
 
-    const notes = requireRemarks(input.notes, outcome === 'converted')
+    const notes = requireRemarks(input.notes, outcome === 'converted' || Boolean(input.bookingStatus))
 
     // "Not Interested" must capture WHY, as a preset (so the analytics dashboard can rank reasons)
     // plus the mandatory detail already in notes.
@@ -910,6 +928,14 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
       if (!NOT_INTERESTED_REASON_SET.has(notInterestedReason)) {
         throw new Error(`Unknown reason "${notInterestedReason}".`)
       }
+    }
+
+    if (input.bookingStatus) {
+      await tx.update(kiaBookings).set({
+        status: input.bookingStatus,
+        updatedBy: appUser.id,
+        updatedAt: new Date()
+      }).where(eq(kiaBookings.id, existing.bookingId))
     }
 
     await tx.update(kiaLeadFollowups).set({

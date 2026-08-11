@@ -120,6 +120,11 @@ export function canViewAllKiaBookings(role?: string | null) {
   return (
     isKiaWorkflowAdmin(r) ||
     canApproveKiaProforma(r) ||
+    r === 'ea' ||
+    r === 'eba' ||
+    r === 'ed' ||
+    r === 'vp' ||
+    r === 'ceo' ||
     r === 'accounts' ||
     r === 'finance_head' ||
     r === 'idt' ||
