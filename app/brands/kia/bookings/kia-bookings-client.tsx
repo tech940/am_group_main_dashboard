@@ -2282,6 +2282,7 @@ export function KiaBookingsClient({
   const data = listQuery.data
   const priceModels = priceOptions?.models || proformaOptionsQuery.data?.models || []
   const priceTrims = useMemo(() => priceOptions?.trims || proformaOptionsQuery.data?.trims || [], [priceOptions?.trims, proformaOptionsQuery.data?.trims])
+  const activePrices = useMemo(() => priceOptions?.prices || proformaOptionsQuery.data?.prices || [], [priceOptions?.prices, proformaOptionsQuery.data?.prices])
   const rows = data?.rows || []
   const filters = data?.filters || { dealers: ['JK402', 'JK501'], models: [], statuses: Object.keys(STATUS_LABELS), consultants: [] }
   const bookingModelOptionsBase = priceModels.length > 0 ? priceModels : filters.models
@@ -2292,14 +2293,50 @@ export function KiaBookingsClient({
     if (editModel && !base.includes(editModel)) return [...base, editModel]
     return base
   }, [bookingModelOptionsBase, editForm.model])
-  const bookingVariantOptions = useMemo(() => {
-    // Use whichever form is currently active (create or edit) to filter variants
-    const modelValue = (createForm.model || editForm.model || '').trim()
-    return Array.from(new Set(priceTrims
-      .filter((trim) => !modelValue || trim.model === modelValue)
-      .map((trim) => trim.trim_description)
-      .filter(Boolean)))
-  }, [createForm.model, editForm.model, priceTrims])
+
+  const getVariantOptionsForModel = useCallback((selectedModel: string, currentVariant?: string) => {
+    const normModel = (selectedModel || '').trim().toLowerCase()
+    
+    // 1. From priceTrims
+    const fromTrims = priceTrims
+      .filter((t) => !normModel || String(t.model || '').trim().toLowerCase() === normModel)
+      .map((t) => t.trim_description)
+      .filter(Boolean)
+
+    // 2. From activePrices (kia_price_details rows)
+    const fromPrices = activePrices
+      .filter((p) => !normModel || String(p.model || '').trim().toLowerCase() === normModel)
+      .map((p) => (p as any).trimDescription || (p as any).trim_description)
+      .filter(Boolean)
+
+    // Combined unique list
+    const combined = Array.from(new Set([...fromTrims, ...fromPrices]))
+
+    // Fallback: if model filter yielded nothing, return all available trims/prices
+    const list = combined.length > 0 ? combined : Array.from(new Set([
+      ...priceTrims.map((t) => t.trim_description).filter(Boolean),
+      ...activePrices.map((p) => (p as any).trimDescription || (p as any).trim_description).filter(Boolean),
+    ]))
+
+    // Always preserve current selected variant if present
+    const resultSet = new Set<string>()
+    if (currentVariant && currentVariant.trim()) {
+      resultSet.add(currentVariant.trim())
+    }
+    list.forEach((v) => {
+      if (v && v.trim()) resultSet.add(v.trim())
+    })
+
+    return Array.from(resultSet).sort((a, b) => a.localeCompare(b))
+  }, [priceTrims, activePrices])
+
+  const createVariantOptions = useMemo(() => {
+    return getVariantOptionsForModel(createForm.model, createForm.variant)
+  }, [createForm.model, createForm.variant, getVariantOptionsForModel])
+
+  const editVariantOptions = useMemo(() => {
+    return getVariantOptionsForModel(editForm.model, editForm.variant)
+  }, [editForm.model, editForm.variant, getVariantOptionsForModel])
   const priceBanks = useMemo(() => priceOptions?.banks || proformaOptionsQuery.data?.banks || [], [priceOptions?.banks, proformaOptionsQuery.data?.banks])
   const bookingBankOptions = useMemo(() => {
     const names = priceBanks.map((b) => b.bank_name || '').filter(Boolean)
@@ -3612,7 +3649,7 @@ export function KiaBookingsClient({
         currentUserRole={currentUserRole}
         activeTab={createTab}
         modelOptions={bookingModelOptions}
-        variantOptions={bookingVariantOptions}
+        variantOptions={createVariantOptions}
         bankOptions={bookingBankOptions}
         masterLoading={proformaOptionsQuery.isLoading}
         error={formError || (createMutation.error instanceof Error ? createMutation.error.message : '')}
@@ -4225,7 +4262,7 @@ export function KiaBookingsClient({
           currentUserRole={currentUserRole}
           activeTab={editTab}
           modelOptions={bookingModelOptions}
-          variantOptions={bookingVariantOptions}
+          variantOptions={editVariantOptions}
           bankOptions={bookingBankOptions}
           masterLoading={proformaOptionsQuery.isLoading}
           error={formError || (editMutation.error instanceof Error ? editMutation.error.message : '')}

@@ -13,13 +13,12 @@
 import Link from 'next/link'
 import {
   ChevronDown,
-  ChevronRight,
   Bookmark,
   LayoutGrid,
   Building2,
   type LucideIcon,
 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 export type NavNode = {
@@ -39,25 +38,6 @@ export type NavNode = {
 }
 
 export type NavGroup = { key: string; label?: string; nodes: NavNode[] }
-
-function useTropicalTheme() {
-  const [isTropical, setIsTropical] = useState(false)
-  useEffect(() => {
-    const update = () => {
-      if (typeof window === 'undefined') return
-      const accent = document.documentElement.getAttribute('data-dashboard-accent') || ''
-      setIsTropical(accent === 'tropical-teal')
-    }
-    update()
-    window.addEventListener('dashboard-accent-change', update)
-    window.addEventListener('storage', update)
-    return () => {
-      window.removeEventListener('dashboard-accent-change', update)
-      window.removeEventListener('storage', update)
-    }
-  }, [])
-  return isTropical
-}
 
 export function CascadingNav({
   groups,
@@ -166,7 +146,8 @@ function FavBookmark({
         e.stopPropagation()
         favourite.onToggle()
       }}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition-transform hover:scale-110 cursor-pointer ml-auto"
+      // before:-inset-2.5 grows the 24px star to a 44px hit target without growing the visual.
+      className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition-transform hover:scale-110 cursor-pointer ml-auto before:absolute before:-inset-2.5 before:content-['']"
       aria-label={favourite.active ? `Remove ${label} from favourites` : `Add ${label} to favourites`}
       title={favourite.active ? 'Remove from favourites' : 'Add to favourites'}
     >
@@ -251,11 +232,10 @@ function AccordionRow({
   const Icon = node.icon
   const iconBadgeClass = getIconBadgeStyle(node.label, node.active)
 
-  const isTropical = useTropicalTheme()
-
-  // Floating White Card vs Active Gradient Card
+  // min-h-11: every row is a ≥44px touch target (submenu rows without icon badges used to
+  // bottom out around 31px).
   const rowClass = cn(
-    'group flex w-full items-center gap-2.5 rounded-xl p-2 text-[11px] font-bold transition-all duration-200 select-none cursor-pointer',
+    'group flex w-full min-h-11 items-center gap-2.5 rounded-xl p-2 text-[11px] font-bold transition-all duration-200 select-none cursor-pointer',
     node.active
       ? 'sidebar-active-card text-white shadow-md'
       : 'bg-white text-slate-800 border border-slate-200/70 shadow-xs hover:border-slate-300 hover:shadow-sm hover:translate-y-[-1px]',
@@ -337,6 +317,7 @@ function AccordionRow({
             onClick={onNavigate}
             className={cn(rowClass, 'w-full')}
             style={activeStyle}
+            aria-current={node.active ? 'page' : undefined}
           >
             {inner}
           </Link>
@@ -351,6 +332,7 @@ function AccordionRow({
             }}
             className={cn(rowClass, 'w-full')}
             style={activeStyle}
+            aria-expanded={hasChildren ? expanded : undefined}
           >
             {inner}
           </button>

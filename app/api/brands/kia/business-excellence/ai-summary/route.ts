@@ -1,6 +1,8 @@
 import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
+import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { canAccessDealer } from '@/lib/auth/dealer-scope'
 import { appendKiaDealerCodeParam, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -128,7 +130,10 @@ function compactOpenRoPayload(data: Record<string, unknown>) {
     workTypeDistribution: pickRows(charts.workTypeDistribution, 6, ['name', 'value']),
     agingTrend: pickRows(charts.agingTrend, 14, ['date', 'openRo', 'avgAging'], true),
     alertSummary: pickRows(alerts.summary, 8, ['label', 'count']),
-    highPriorityVehicles: pickRows(alerts.highPriority, 8, ['roNo', 'regNo', 'serviceCategory', 'advisor', 'agingDays', 'delayStatus', 'promiseDate', 'alerts']),
+    // ⚠️ NO CUSTOMER PII IN THE MODEL PAYLOAD. `regNo` (vehicle registration) was here and left the
+    // building on every call — this payload is posted to Groq, a third-party LLM provider. `roNo` is
+    // an internal reference and is enough for the summary to point at a specific job.
+    highPriorityVehicles: pickRows(alerts.highPriority, 8, ['roNo', 'serviceCategory', 'advisor', 'agingDays', 'delayStatus', 'promiseDate', 'alerts']),
     meta: data.meta,
   }
 }
@@ -158,7 +163,9 @@ function compactComplaintsPayload(data: Record<string, unknown>) {
     dealers: pickRows(charts.dealerPerformance, 8, ['dealer', 'dealerCode', 'total', 'open', 'avgDays', 'over15']),
     models: pickRows(charts.modelBreakdown, 6, ['model', 'total', 'avgDays']),
     sources: pickRows(charts.sourceBreakdown, 6, ['source', 'total']),
-    criticalRows: pickRows(data.rows as unknown[], 10, ['complaintNo', 'statusGroup', 'customerName', 'dealerCode', 'complaintDate', 'closeDate', 'srArea', 'srSubArea', 'signalArea', 'resolutionDays']),
+    // ⚠️ `customerName` removed — see the note on highPriorityVehicles above. `complaintNo`
+    // identifies the case internally without shipping a real person's name to a third party.
+    criticalRows: pickRows(data.rows as unknown[], 10, ['complaintNo', 'statusGroup', 'dealerCode', 'complaintDate', 'closeDate', 'srArea', 'srSubArea', 'signalArea', 'resolutionDays']),
     metadata: data.metadata,
   }
 }
@@ -295,10 +302,34 @@ async function buildReportDataset(request: NextRequest, report: string, startDat
   return compactRoBillingPayload({ table, trend, analytics, leaderboard, intelligence })
 }
 
+/**
+ * True when the dataset carries no non-zero number anywhere.
+ *
+ * ⚠️ An LLM handed an all-zero payload does not answer "there is no data" — it writes fluent,
+ * confident prose about a workshop that billed nothing and complaints that all closed. That
+ * narrative then sits on an executive screen indistinguishable from a real one. When the upstream
+ * reads fail or the window is genuinely empty, refuse to generate rather than invent.
+ */
+function datasetHasNumbers(value: unknown, depth = 0): boolean {
+  if (depth > 6 || value == null) return false
+  if (typeof value === 'number') return Number.isFinite(value) && value !== 0
+  if (typeof value === 'string') {
+    const n = Number(value.replace(/[,\s₹%]/g, ''))
+    return Number.isFinite(n) && n !== 0
+  }
+  if (Array.isArray(value)) return value.some((item) => datasetHasNumbers(item, depth + 1))
+  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some((item) => datasetHasNumbers(item, depth + 1))
+  return false
+}
+
 async function createAiSummary(report: string, startDate: string, endDate: string, dataset: unknown) {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
     throw new Error('GROQ_API_KEY is not configured')
+  }
+
+  if (!datasetHasNumbers(dataset)) {
+    throw new Error('No data available for this report and date range — summary not generated.')
   }
 
   const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
@@ -473,7 +504,7 @@ function createCacheKey(report: string, startDate: string, endDate: string, data
 }
 
 export async function POST(request: NextRequest) {
-  const accessError = await requireBrandSectionApiAccess('kia', 'kia.business_excellence.view')
+  const accessError = await requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request)
   if (accessError) return accessError
 
   try {
@@ -485,6 +516,19 @@ export async function POST(request: NextRequest) {
 
     const { startDate, endDate } = getDateRange(body.dateFilter || null)
     const dealerCode = normalizeKiaDealerCode(body.dealerCode) || null
+
+    // ⚠️ Dealer scope must be checked HERE, against the BODY. `enforceDealerScope` (run above via
+    // requireBrandSectionApiAccess) reads `dealer_code` from the QUERY STRING — this route is a
+    // POST that takes `dealerCode` in the JSON body, so that check cannot see it and passes a
+    // branch-pinned user straight through. Everything below fans the value out to the report
+    // endpoints, so an unchecked value here is a cross-branch read.
+    const appUser = await getAuthenticatedAppUser()
+    if (!canAccessDealer(appUser, 'kia', dealerCode)) {
+      return NextResponse.json(
+        { error: 'You are restricted to your assigned branch and cannot view this data.' },
+        { status: 403 },
+      )
+    }
     const dataset = await buildReportDataset(request, report, startDate, endDate, dealerCode)
     const cacheKey = createCacheKey(report, startDate, endDate, dataset, dealerCode)
     const result = await getCachedData(
@@ -504,7 +548,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Failed to generate Business Excellence AI summary:', error)
     const message = error instanceof Error ? error.message : 'Failed to generate AI summary'
-    const status = message.includes('GROQ_API_KEY') ? 503 : 500
+    // "no data in this window" is a legitimate answer, not a server fault — 422 so the client can
+    // say so plainly instead of showing a scary 500 for an empty date range.
+    const status = message.includes('GROQ_API_KEY') ? 503
+      : message.startsWith('No data available') ? 422
+      : 500
     return NextResponse.json({ error: message }, { status })
   }
 }

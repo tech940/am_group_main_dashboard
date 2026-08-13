@@ -1434,7 +1434,15 @@ function normalizeGroupBy(value: string) {
 export async function GET(request: Request) {
   const timer = createApiTimer('ro-billing-analysis')
   try {
-    const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request))
+    // Gate on THIS report's own sub-permission, not just the parent section key. The registry has
+    // shipped `kia.business_excellence.ro_billing` since the branch roles were added, and
+    // lib/branch-module-access.ts grants deliberate SUBSETS with it (branch_operations gets
+    // workshop_performance + open_ro but NOT this revenue book; branch_customer_ops gets complaints
+    // only) — but no route ever read the key, so every one of those users was served everything.
+    // Measured before landing: 0 of 33 roles lose access, because every role that can see Business
+    // Excellence today already holds all 7 children. The only behaviour change is that the branch
+    // presets finally mean what the Access Map says they mean.
+    const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.ro_billing.view', request))
     if (accessError) return accessError
 
     const { searchParams } = new URL(request.url)
@@ -1697,6 +1705,20 @@ export async function GET(request: Request) {
         dateRange: {
           startDate: toDateInputValue(startDate),
           endDate: toDateInputValue(endDate),
+        },
+        /**
+         * What the TD/MTD/QTD/YTD columns ACTUALLY contain, so the client stops hardcoding "MTD".
+         *
+         * ⚠️ When a comparison range is chosen, `buildPeriodWindows` replaces the MTD window with
+         * that arbitrary span (`customPeriodWindow`) while QTD and YTD stay calendar-based — so the
+         * row mixes one custom comparison with two calendar ones under three identical-looking
+         * headers, and "MTD" is simply false. The label travels with the data instead.
+         */
+        periodLabels: {
+          td: 'TD',
+          mtd: comparisonRange ? 'Selected Range' : 'MTD',
+          qtd: 'QTD',
+          ytd: 'YTD',
         },
         filterOptions: buildFilterOptions(rowsWithBillDate),
         rowCounts: {

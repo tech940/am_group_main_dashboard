@@ -1,0 +1,76 @@
+{
+  "source": "http://localhost:3000/md-approvals",
+  "capturedAt": "2026-08-10",
+  "captureMethod": "code-derived (authenticated page; no live screenshot — values exact from source, surface percentages approximate)",
+  "designMap": {
+    "colors": {
+      "accent": "var(--dashboard-primary) — #4B49AC (default theme; theme-swappable)",
+      "accentDark": "var(--dashboard-primary-dark) — #373482",
+      "accentTints": { "rowSelection": "rgba(75,73,172,0.12)", "iconChip": "rgba(75,73,172,0.08)", "hover": "rgba(75,73,172,0.06)" },
+      "neutrals": { "surface": "#ffffff", "border": "slate-200/80", "textRamp": ["slate-400", "slate-500", "slate-600", "slate-700", "slate-800"] },
+      "verdicts": {
+        "reject_failure": ["rose-50", "rose-200", "rose-700", "rose-800"],
+        "hold_aging": ["amber-50", "amber-200", "amber-700", "amber-800"],
+        "success": ["emerald-50", "emerald-200", "emerald-800"]
+      },
+      "filledSurfaces": ["table header banner: linear-gradient(135deg, var(--dashboard-primary), var(--dashboard-primary-dark))"]
+    },
+    "typography": {
+      "family": "Inter",
+      "scale": {
+        "headlineNumber": { "size": "30px", "weight": 900 },
+        "tableBody": { "size": "12px", "weight": "500-700" },
+        "buttons": { "size": "11-12px", "weight": 900 },
+        "microLabels": { "size": "9-10px", "weight": 900, "transform": "uppercase", "tracking": "0.10-0.14em" }
+      },
+      "numerals": "tabular-nums on amounts",
+      "weightsUsed": [600, 700, 900],
+      "note": "regular (400) effectively absent"
+    },
+    "spacing": {
+      "pageRhythm": "20px (space-y-5)",
+      "cardPadding": "20px (p-5)",
+      "tableCell": "16px x 12px (px-4 py-3)",
+      "kpiGrid": "1 / 2 / 4 columns, 12px gap",
+      "controlHeight": "40px (h-10) locked across inputs, selects, buttons"
+    },
+    "radii": { "cards": "24px (rounded-3xl)", "controls": "12px (rounded-xl)", "rowButtons": "8px (rounded-lg)", "badges": "rounded-full", "rule": "bigger surface = bigger radius, three fixed tiers" },
+    "shadows": {
+      "cards": "shadow-xs (borders carry elevation)",
+      "exception": "bulk bar: 0 18px 40px -12px rgba(5,91,101,0.35) — HARDCODED teal, does not follow theme token (leak)"
+    },
+    "motion": { "transitions": "150ms colors only", "entrances": "none", "loaders": "animate-spin" },
+    "structure": ["headline card", "source tabs + count badges", "4 KPI cards", "conditional outcome panels", "filter row", "conditional sticky bulk bar", "7-column full-width table with row-click selection"]
+  },
+  "tasteDNA": [
+    {
+      "name": "Authority comes from weight, not size",
+      "trigger": "Executive money queue; 7 columns must fit without per-row scrolling",
+      "decision": "9-12px type at weights 700-900 with letterspaced uppercase micro-labels; only the MD's two scan targets (waiting counter, amounts) get size or darkness",
+      "reason": "Density buys triage speed; heavy weight preserves scannability at small sizes. 14px comfortable type was the rejected alternative",
+      "evidence": "text-[9px] font-black uppercase tracking-[0.12em] table headers; 30px font-black counter (md-approvals-client.tsx:495-499,836)"
+    },
+    {
+      "name": "One filled surface per screen",
+      "trigger": "All-white card pages decay accent color into decoration",
+      "decision": "Exactly one gradient-filled surface (the table header banner, documented in a code comment); accent elsewhere only as text, rings, tints <=12%, active tab",
+      "reason": "The banner anchors where work starts; rupee amounts stay the darkest ink on the page",
+      "evidence": "HEADER_BANNER gradient (line 104) vs CARD 'bg-white ... shadow-xs' (line 108); one leak: bulk bar's hardcoded rgba(5,91,101,0.35) shadow"
+    },
+    {
+      "name": "State is flat color - never motion, never elevation",
+      "type": "restraint",
+      "trigger": "Bulk-selection tables invite card-lift, scale and checkbox theatrics",
+      "decision": "Selection = 5px left accent + 12% tint with the gutter reserved even when unselected; hover = flat slate-50; non-actionable rows get no affordance at all",
+      "reason": "Where a click approves money, layout must be still under the pointer; the cursor, not the stage column, answers 'can I act on this?'",
+      "evidence": "borderLeft 5px solid transparent|primary inline (lines 879-882); role/tabIndex/hover gated on row.awaitingMd (867-887)"
+    },
+    {
+      "name": "Semantic color is reserved for verdicts",
+      "trigger": "Three verdict actions on every row of a monochrome page",
+      "decision": "Rose/amber/emerald appear only on verdict surfaces; approve wears the brand primary, not green; chrome stays slate + primary",
+      "reason": "When color always means a decision or its consequence, peripheral rose IS the alert; green-for-approve was rejected so the commonest action reads neutral",
+      "evidence": "approve bg-primary (803); reject rose-200/700 (812); days>=7 badge slate->amber (908-915); failure panel rose (636)"
+    }
+  ]
+}

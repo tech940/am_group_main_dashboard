@@ -14,6 +14,7 @@ import {
   kiaActiveBillStatusSql,
   kiaOpenRoActiveStateSql,
   kiaOpenRoDealerFilter,
+  kiaOpenRoPromiseDateSql,
   kiaRoBillingDealerFilter,
   kiaServiceCategoryExpression,
 } from '@/lib/kia/business-excellence-contract'
@@ -68,7 +69,7 @@ function openRoBaseSql(filters: OpenRoFilters) {
         status,
         new_r_o_status,
         ro_sub_status,
-        COALESCE(NULLIF(revised_promise_date_time, ''), NULLIF(promise_date_time, ''))::timestamp AS promise_date,
+        ${kiaOpenRoPromiseDateSql()} AS promise_date,
         promise_date_time,
         revised_promise_date_time,
         mileage,
@@ -115,8 +116,8 @@ function openRoBaseSql(filters: OpenRoFilters) {
         END AS aging_bucket,
         ${kiaServiceCategoryExpression('work_type')} AS service_category,
         CASE
-          WHEN COALESCE(NULLIF(revised_promise_date_time, ''), NULLIF(promise_date_time, '')) IS NOT NULL
-            AND COALESCE(${filters.endDate}::date, CURRENT_DATE) > COALESCE(NULLIF(revised_promise_date_time, ''), NULLIF(promise_date_time, ''))::timestamp
+          WHEN ${kiaOpenRoPromiseDateSql()} IS NOT NULL
+            AND COALESCE(${filters.endDate}::date, CURRENT_DATE) > ${kiaOpenRoPromiseDateSql()}
             THEN 'Delayed'
           ELSE 'On Track'
         END AS delay_status
@@ -493,7 +494,11 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       dateRange: { startDate: filters.startDate, endDate: filters.endDate },
       statusDefinition: "open status; excludes closed, final inspection, ready and ready for delivery; excludes billed ROs",
       agingDefinition: 'selected end date - ro_date',
-      promiseDateDefinition: 'COALESCE(revised_promise_date_time, promise_date_time)',
+      // ⚠️ Parsed via kiaOpenRoPromiseDateSql, NOT a bare ::timestamp cast. The columns are TEXT
+      // holding BOTH 'YYYY-MM-DD' and day-first 'DD/MM/YYYY HH24:MI:SS'; a raw cast threw 22008 on
+      // the 52 rows whose day is > 12, which took this whole tab (and the Open-RO AI summary) to a
+      // 500, and silently mis-read the day<=12 slash dates as US month-first.
+      promiseDateDefinition: 'kiaOpenRoPromiseDateSql(COALESCE(revised_promise_date_time, promise_date_time)) — accepts ISO and DD/MM/YYYY, NULL otherwise',
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       source: buildKiaSourceMetadata({
         dealerCode: filters.dealerCode,
@@ -519,7 +524,8 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
 
 export async function GET(request: Request) {
   const timer = createApiTimer('open-ro')
-  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request))
+  // Sub-permission, not just the parent — see the note in ro-billing-analysis/route.ts.
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.open_ro.view', request))
   if (accessError) return accessError
 
   const { searchParams } = new URL(request.url)

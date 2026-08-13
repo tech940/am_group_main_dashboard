@@ -19,7 +19,10 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      // No backdrop-blur here: a backdrop-filter on a full-viewport layer whose opacity animates
+      // forces the blur to recomposite through the whole fade — the main source of dialog-open
+      // stutter on weaker machines. The 55% scrim provides the separation on its own.
+      "fixed inset-0 z-50 bg-slate-950/55 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props}

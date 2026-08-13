@@ -16,6 +16,7 @@ import type { AppUser } from '@/lib/auth/app-user'
 import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
+import { normalizeBankName } from '@/lib/kia/bank-utils'
 
 // ── Finance status model ────────────────────────────────────────────────────────────────────────
 export type KiaFinanceStatus = 'pending' | 'in_progress' | 'delayed' | 'completed'
@@ -41,25 +42,26 @@ function financeHoursForBooking(booking: { metadata?: unknown } | null | undefin
 export type FinanceBankRow = { bank_name: string; bank_branch: string }
 
 export async function loadFinanceBankOptions(): Promise<{ banks: FinanceBankRow[] }> {
-  return getCachedData('finance:bank-options', async () => {
-    const priceRows = await db.select({ bankName: kiaPriceDetails.bankName, hyp: kiaPriceDetails.hyp, bankBranch: kiaPriceDetails.bankBranch })
-      .from(kiaPriceDetails)
+  const priceRows = await db.select({ bankName: kiaPriceDetails.bankName, hyp: kiaPriceDetails.hyp, bankBranch: kiaPriceDetails.bankBranch })
+    .from(kiaPriceDetails)
 
-    // Extra branches that are not yet in the Excel price sheet but should appear in the dropdown
-    const extraBanks: FinanceBankRow[] = [
-      { bank_name: 'JK GRAMEEN', bank_branch: 'JK Grameen Bank Jagti' },
-    ]
+  // Extra branches that should always appear in the dropdown
+  const extraBanks: FinanceBankRow[] = [
+    { bank_name: 'JK GRAMEEN', bank_branch: 'JK Grameen Bank Jagti' },
+    { bank_name: 'SBI', bank_branch: 'SBI Trikuta Nagar' },
+    { bank_name: 'SBI', bank_branch: 'SBI Trikuta Nagar Jammu' },
+    { bank_name: 'SBI', bank_branch: 'Trikuta Nagar' },
+  ]
 
-    const banks: FinanceBankRow[] = [
-      ...priceRows
-        .map((r) => ({ bank_name: text(r.bankName) || text(r.hyp), bank_branch: text(r.bankBranch) }))
-        .filter((r) => r.bank_name && r.bank_branch),
-      ...extraBanks,
-    ]
-      .filter((r, i, s) => s.findIndex((c) => c.bank_name === r.bank_name && c.bank_branch === r.bank_branch) === i)
-      .sort((a, b) => a.bank_name.localeCompare(b.bank_name) || a.bank_branch.localeCompare(b.bank_branch))
-    return { banks }
-  }, CACHE_TTL.DASHBOARD)
+  const banks: FinanceBankRow[] = [
+    ...priceRows
+      .map((r) => ({ bank_name: normalizeBankName(text(r.bankName) || text(r.hyp)), bank_branch: text(r.bankBranch) }))
+      .filter((r) => r.bank_name && r.bank_branch),
+    ...extraBanks,
+  ]
+    .filter((r, i, s) => s.findIndex((c) => c.bank_name === r.bank_name && c.bank_branch === r.bank_branch) === i)
+    .sort((a, b) => a.bank_name.localeCompare(b.bank_name) || a.bank_branch.localeCompare(b.bank_branch))
+  return { banks }
 }
 
 // ── Immutable activity writer (append-only; a DB trigger also blocks UPDATE/DELETE) ──────────────

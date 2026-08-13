@@ -913,7 +913,8 @@ async function buildWorkshopPayload(
 
 export async function GET(request: Request) {
   const timer = createApiTimer('workshop-performance')
-  const authResponse = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request))
+  // Sub-permission, not just the parent — see the note in ro-billing-analysis/route.ts.
+  const authResponse = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.workshop_performance.view', request))
   if (authResponse) return authResponse
 
   const { searchParams } = new URL(request.url)

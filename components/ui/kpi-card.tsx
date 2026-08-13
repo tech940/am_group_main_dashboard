@@ -185,7 +185,9 @@ export const KpiCard: React.FC<KpiCardProps> = ({
           return (
             <div
               key={idx}
-              className={`w-[4px] sm:w-[5px] rounded-t-xs ${schemeStyles.barBg} transition-all duration-300 hover:scale-y-110 shrink-0`}
+              // transition-transform, NOT transition-all: `all` also captured the inline height,
+              // so every data refresh animated layout on every bar of every card for 300ms.
+              className={`w-[4px] sm:w-[5px] rounded-t-xs ${schemeStyles.barBg} transition-transform duration-300 hover:scale-y-110 shrink-0`}
               style={{ height: `${heightPct}%` }}
             />
           )
@@ -204,9 +206,10 @@ export const KpiCard: React.FC<KpiCardProps> = ({
           <span className="font-mono">{pct}%</span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden p-0.5 shadow-inner">
+          {/* scaleX, not width: width transitions re-run layout every frame; scaleX composites. */}
           <div
-            className={`h-full rounded-full ${schemeStyles.barBg} transition-all duration-500`}
-            style={{ width: `${pct}%` }}
+            className={`h-full w-full origin-left rounded-full ${schemeStyles.barBg} transition-transform duration-500`}
+            style={{ transform: `scaleX(${Math.min(Math.max(pct, 0), 100) / 100})` }}
           />
         </div>
       </div>

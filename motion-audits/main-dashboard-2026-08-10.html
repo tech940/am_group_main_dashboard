@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>main-dashboard motion audit — 2026-08-10</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink:        oklch(0.155 0.006 255);
+      --surface:    oklch(0.195 0.007 255);
+      --surface-2:  oklch(0.235 0.008 255);
+      --paper:      oklch(0.945 0.004 255);
+      --paper-dim:  oklch(0.800 0.006 255);
+      --muted:      oklch(0.680 0.008 255);
+      --faint:      oklch(0.505 0.008 255);
+      --line:       oklch(0.95 0.01 255 / 0.09);
+      --line-strong:oklch(0.95 0.01 255 / 0.16);
+
+      --sev-crit: oklch(0.655 0.185 25);
+      --sev-imp:  oklch(0.805 0.125 78);
+      --sev-opp:  oklch(0.745 0.135 152);
+      --t-good: var(--sev-opp);
+      --t-mid:  var(--sev-imp);
+      --t-slow: var(--sev-crit);
+
+      --accent: var(--paper);
+      --accent-soft: var(--paper-dim);
+      --accent-tint: oklch(0.95 0.01 255 / 0.06);
+
+      --display: "Familjen Grotesk", "Hanken Grotesk", system-ui, sans-serif;
+      --sans: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    :root:has(#theme-light:checked) {
+      --ink:        oklch(0.985 0.003 255);
+      --surface:    oklch(0.965 0.004 255);
+      --surface-2:  oklch(0.940 0.005 255);
+      --paper:      oklch(0.180 0.006 255);
+      --paper-dim:  oklch(0.330 0.008 255);
+      --muted:      oklch(0.475 0.010 255);
+      --faint:      oklch(0.640 0.009 255);
+      --line:       oklch(0.180 0.010 255 / 0.12);
+      --line-strong:oklch(0.180 0.010 255 / 0.22);
+      --sev-crit: oklch(0.560 0.200 25);
+      --sev-imp:  oklch(0.640 0.140 78);
+      --sev-opp:  oklch(0.560 0.140 152);
+      --accent-tint: oklch(0.180 0.010 255 / 0.05);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: auto; }
+    body { background: var(--ink); color: var(--paper); font-family: var(--sans); margin: 0; padding: 40px 20px 80px; font-size: 15px; line-height: 1.6; }
+    .wrap { max-width: 1000px; margin: 0 auto; }
+    a { color: inherit; }
+    code { font-family: var(--mono); font-size: 0.85em; background: var(--accent-tint); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+    .vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+    .theme-switch { display: flex; justify-content: flex-end; margin-bottom: 28px; }
+    .theme-switch .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 100px; overflow: hidden; }
+    .theme-switch label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 5px 12px; cursor: pointer; user-select: none; }
+    :root:has(#theme-dark:checked) label[for="theme-dark"],
+    :root:has(#theme-light:checked) label[for="theme-light"] { background: color-mix(in oklch, var(--paper) 12%, transparent); color: var(--paper); }
+
+    .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); margin: 0 0 10px; }
+    h1.title { font-family: var(--display); font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin: 0 0 12px; }
+    p.lede { color: var(--paper-dim); max-width: 62ch; margin: 0 0 14px; }
+    .meta-row { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-bottom: 22px; }
+    .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 48px; }
+    .stats a { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line-strong); border-radius: 10px; padding: 8px 14px; text-decoration: none; font-size: 13px; font-weight: 600; }
+    .stats .dot { width: 9px; height: 9px; border-radius: 50%; }
+    .d-crit { background: var(--sev-crit); } .d-imp { background: var(--sev-imp); } .d-opp { background: var(--sev-opp); } .d-total { background: var(--paper-dim); }
+
+    section { margin-bottom: 56px; }
+    .mono-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); margin: 0 0 14px; }
+    .assessment p { font-family: var(--display); font-size: 20px; line-height: 1.5; font-weight: 500; max-width: 70ch; margin: 0; }
+
+    table.lens-table { width: 100%; border-collapse: collapse; }
+    .lens-table th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); font-weight: 500; padding: 0 14px 10px 0; border-bottom: 1px solid var(--line-strong); }
+    .lens-table td { padding: 14px 14px 14px 0; border-bottom: 1px solid var(--line); vertical-align: top; transition: border-color 0.2s ease; }
+    .lens-name { font-weight: 700; }
+    .chip { display: inline-block; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; border: 1px solid var(--line-strong); border-radius: 100px; padding: 2px 9px; color: var(--muted); margin-left: 8px; }
+    .verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
+    .verdict .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+    .timing-grid { display: grid; grid-template-columns: 1fr 260px; gap: 24px; align-items: start; }
+    .timing-figure svg { width: 100%; height: auto; display: block; }
+    .timing-key { font-size: 13px; }
+    .timing-key li { margin-bottom: 8px; list-style: none; }
+    .timing-key ul { padding: 0; margin: 0; }
+    .timing-key .k-num { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line-strong); align-items: center; justify-content: center; font-family: var(--mono); font-size: 10px; margin-right: 8px; }
+    .timing-key .k-t { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .whats-off { border: 1px solid var(--line-strong); border-radius: 12px; padding: 16px 18px; margin-top: 20px; font-size: 13.5px; color: var(--paper-dim); }
+
+    .lens-sec__head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+    .lens-sec__head h3 { font-family: var(--display); font-size: 21px; font-weight: 700; margin: 0; }
+    .lens-sec__verdict { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--paper-dim); margin: 0 0 20px; }
+    .lens-block { margin-bottom: 26px; }
+    ul.lens-list { padding: 0; margin: 0; }
+    ul.lens-list li { list-style: none; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--paper-dim); }
+    ul.lens-list li::before { margin-right: 10px; }
+    ul.lens-list.good li::before { content: "✓"; color: var(--sev-opp); font-weight: 700; }
+    ul.lens-list.opp li::before { content: "💡"; }
+    .lens-take { background: var(--accent-tint); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; font-size: 14px; color: var(--paper-dim); }
+    .lens-take strong { color: var(--paper); }
+    .lens-empty { color: var(--faint); font-style: italic; font-size: 13.5px; }
+
+    .finding-row { display: grid; grid-template-columns: 1fr 380px; gap: 24px; border: 1px solid var(--line-strong); border-radius: 14px; padding: 20px; margin-bottom: 18px; transition: border-color 0.2s ease; }
+    .find-tags { display: flex; gap: 8px; margin-bottom: 10px; }
+    .sev-chip { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; border-radius: 100px; padding: 3px 10px; font-weight: 600; }
+    [data-sev="crit"] .sev-chip.sev { background: color-mix(in oklch, var(--sev-crit) 18%, transparent); color: var(--sev-crit); border: 1px solid color-mix(in oklch, var(--sev-crit) 45%, transparent); }
+    [data-sev="imp"] .sev-chip.sev { background: color-mix(in oklch, var(--sev-imp) 16%, transparent); color: var(--sev-imp); border: 1px solid color-mix(in oklch, var(--sev-imp) 45%, transparent); }
+    .sev-chip.lens { border: 1px solid var(--line-strong); color: var(--muted); }
+    h4.find-title { font-family: var(--display); font-size: 17px; font-weight: 700; margin: 0 0 10px; }
+    .find-body p { margin: 0 0 10px; font-size: 13.5px; color: var(--paper-dim); }
+    .find-body .label { display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-bottom: 2px; }
+    .fix { background: var(--accent-tint); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+    .fix p { margin: 0; }
+    .find-loc { font-size: 12px; }
+
+    .demo { position: relative; width: 100%; align-self: start; }
+    .demo__bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .demo__meta { min-width: 0; }
+    .demo__title { display: block; font-size: 13.5px; font-weight: 600; color: var(--paper); line-height: 1.3; }
+    .demo__timing { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .demo__controls { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .demo__loop { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+    .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 100px; overflow: hidden; }
+    .seg label { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 4px 9px; cursor: pointer; user-select: none; transition: background 0.15s ease, color 0.15s ease; }
+    .demo input[id$="-a"]:checked ~ .demo__bar .seg label[for$="-a"],
+    .demo input[id$="-l"]:checked ~ .demo__bar .seg label[for$="-l"],
+    .demo input[id$="-d"]:checked ~ .demo__bar .seg label[for$="-d"] { background: color-mix(in oklch, var(--paper) 12%, transparent); color: var(--paper); }
+    .demo__stage {
+      --st-bg: var(--surface-2); --st-fg: var(--paper);
+      --st-line: var(--line-strong); --st-dim: color-mix(in oklch, var(--paper) 55%, transparent);
+      background: var(--st-bg); color: var(--st-fg);
+      border: 1px solid var(--line); border-radius: 10px;
+      padding: 28px 22px; min-height: 168px;
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .demo input[id$="-l"]:checked ~ .demo__stage { --st-bg: oklch(0.985 0.003 255); --st-fg: oklch(0.180 0.006 255); --st-line: oklch(0.180 0.010 255 / 0.18); --st-dim: oklch(0.180 0.010 255 / 0.45); }
+    .demo input[id$="-d"]:checked ~ .demo__stage { --st-bg: oklch(0.180 0.006 255); --st-fg: oklch(0.985 0.003 255); --st-line: oklch(0.985 0.010 255 / 0.18); --st-dim: oklch(0.985 0.010 255 / 0.50); }
+    .ui-card { background: var(--st-bg); border: 1px solid var(--st-line); border-radius: 10px; padding: 14px 16px; min-width: 200px; box-shadow: 0 8px 24px oklch(0 0 0 / 0.12); }
+    .ui-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--st-fg); }
+    .ui-btn { display: inline-flex; align-items: center; justify-content: center; padding: 7px 14px; border-radius: 8px; background: var(--st-fg); color: var(--st-bg); font-family: var(--sans); font-size: 12px; font-weight: 600; }
+    .ui-btn.ghost { background: transparent; color: var(--st-fg); border: 1px solid var(--st-line); }
+    .ui-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--st-dim); }
+    .ui-pillcount { display: inline-flex; align-items: center; justify-content: center; border-radius: 100px; background: var(--st-fg); color: var(--st-bg); font-family: var(--mono); font-size: 10px; font-weight: 700; padding: 2px 9px; }
+
+    table.rec { width: 100%; border-collapse: collapse; margin-bottom: 34px; font-size: 13.5px; }
+    .rec th { text-align: left; font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); font-weight: 500; padding: 0 12px 8px 0; border-bottom: 1px solid var(--line-strong); }
+    .rec td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--paper-dim); }
+    .tier-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; margin: 0 0 10px; font-weight: 600; }
+    #rec-crit .tier-label { color: var(--sev-crit); } #rec-imp .tier-label { color: var(--sev-imp); } #rec-opp .tier-label { color: var(--sev-opp); }
+
+    .ref-summary { border: 1px solid var(--line-strong); border-radius: 14px; padding: 20px 22px; font-size: 14px; color: var(--paper-dim); }
+    .ref-lean { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-top: 12px; }
+    footer { font-family: var(--mono); font-size: 11px; color: var(--faint); border-top: 1px solid var(--line); padding-top: 18px; margin-top: 60px; }
+
+    @media (max-width: 860px) {
+      .finding-row { grid-template-columns: 1fr; }
+      .timing-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) { .ref-lean { grid-template-columns: 1fr; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .demo__loop { display: none; }
+      [class*="__mt"], [class*="__mt"] * { animation: none !important; transition: none !important; }
+    }
+
+    /* ── per-finding motion ─────────────────────────────────────────── */
+    @media (prefers-reduced-motion: no-preference) {
+      /* m1 — reduce-safe dialog enter: fade only, no zoom/slide */
+      @keyframes m1 {
+        0%   { opacity: 0; }
+        20%  { opacity: 0; }
+        60%  { opacity: 1; }
+        100% { opacity: 1; }
+      }
+      .demo-1__mt { animation: m1 3s ease-out infinite; }
+
+      /* m2 — bulk bar enter: fade + small rise, fast */
+      @keyframes m2 {
+        0%   { opacity: 0; transform: translateY(-8px); }
+        16%  { opacity: 0; transform: translateY(-8px); }
+        60%  { opacity: 1; transform: translateY(0); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+      .demo-2__mt { animation: m2 3s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+
+      /* m3 — outcome panel enter: fade + rise, slightly softer */
+      @keyframes m3 {
+        0%   { opacity: 0; transform: translateY(6px); }
+        16%  { opacity: 0; transform: translateY(6px); }
+        60%  { opacity: 1; transform: translateY(0); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+      .demo-3__mt { animation: m3 3s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="theme-switch">
+    <input class="vh" type="radio" name="theme" id="theme-dark" checked>
+    <input class="vh" type="radio" name="theme" id="theme-light">
+    <div class="seg">
+      <label for="theme-dark">Dark</label>
+      <label for="theme-light">Light</label>
+    </div>
+  </div>
+
+  <p class="eyebrow">MOTION AUDIT · DESIGN-MOTION-PRINCIPLES</p>
+  <h1 class="title">MD Approvals — a money queue that is rightly quiet, with three loud silences</h1>
+  <p class="lede">The MD Approvals section aggregates purchase orders, petty cash and vendor payments into one executive work queue. Motion today is minimal by design: 150ms color transitions, spinners during requests, a 200ms dialog — and nothing else.</p>
+  <p class="meta-row">app/md-approvals/md-approvals-client.tsx (1,247 lines) · Next.js 16 + Tailwind + Radix Dialog · audited 2026-08-10</p>
+  <div class="stats">
+    <a href="#rec-crit"><span class="dot d-total"></span>6 findings</a>
+    <a href="#rec-crit"><span class="dot d-crit"></span>1 critical</a>
+    <a href="#rec-imp"><span class="dot d-imp"></span>2 important</a>
+    <a href="#rec-opp"><span class="dot d-opp"></span>3 opportunities</a>
+  </div>
+
+  <section class="assessment">
+    <p class="mono-label">OVERALL</p>
+    <p>This is one of the most restrained screens an audit of this kind will see — no pulse rings, no stagger spam, no hover-scale carpets, and the highest-frequency action (approve) is correctly instant. The problems are the opposite kind: three UI surfaces that <em>should</em> move don't. The bulk action bar and the outcome panels snap into the document flow and shove the table around with zero transition, and the OS reduced-motion setting is only honored by KIA-branded animations, not by this section's dialog or spinners. Fix the three silences and this screen is genuinely done.</p>
+  </section>
+
+  <section>
+    <p class="mono-label">01 · LENS SUMMARY</p>
+    <table class="lens-table">
+      <tr><th>Lens</th><th>Verdict</th><th>Read</th></tr>
+      <tr>
+        <td><span class="lens-name">Emil Kowalski</span><span class="chip">Primary</span></td>
+        <td><span class="verdict"><span class="dot d-opp"></span>Strong</span></td>
+        <td>The frequency gate is respected everywhere it matters. Approvals are instant, tabs are instant, nothing celebrates.</td>
+      </tr>
+      <tr>
+        <td><span class="lens-name">Jakub Krehel</span><span class="chip">Secondary</span></td>
+        <td><span class="verdict"><span class="dot d-imp"></span>Mixed</span></td>
+        <td>Hover polish is present, but flow-inserted panels snapping in without enter motion reads unfinished, not fast.</td>
+      </tr>
+      <tr>
+        <td><span class="lens-name">Jhey Tompkins</span><span class="chip">Selective</span></td>
+        <td><span class="verdict"><span class="dot d-imp"></span>Mixed</span></td>
+        <td>Zero delight anywhere — acceptable for a money queue, but the empty "all clear" state is the one earned moment.</td>
+      </tr>
+    </table>
+  </section>
+
+  <section>
+    <p class="mono-label">02 · WHERE THE TIMINGS LAND</p>
+    <div class="timing-grid">
+      <div class="timing-figure">
+        <svg viewBox="0 0 660 300" role="img" aria-label="Duration budget diagram: animations plotted on a 0 to 600 millisecond scale">
+          <style>
+            .zone-good { fill: color-mix(in oklch, var(--t-good) 14%, transparent); }
+            .zone-mid  { fill: color-mix(in oklch, var(--t-mid) 14%, transparent); }
+            .zone-slow { fill: color-mix(in oklch, var(--t-slow) 14%, transparent); }
+            .zlab { font: 500 10px var(--mono); fill: var(--faint); letter-spacing: 0.08em; }
+            .axis { stroke: var(--line-strong); }
+            .tick { font: 500 10px var(--mono); fill: var(--faint); }
+            .pt   { fill: var(--paper); }
+            .ptn  { font: 700 10px var(--mono); fill: var(--ink); }
+            .hollow { fill: none; stroke: var(--sev-crit); stroke-dasharray: 3 3; stroke-width: 1.5; }
+            .hn { font: 700 10px var(--mono); fill: var(--sev-crit); }
+          </style>
+          <rect class="zone-good" x="40" y="40" width="300" height="180"/>
+          <rect class="zone-mid"  x="340" y="40" width="200" height="180"/>
+          <rect class="zone-slow" x="540" y="40" width="100" height="180"/>
+          <text class="zlab" x="44" y="32">INSTANT–RESPONSIVE 0–300</text>
+          <text class="zlab" x="344" y="32">DELIBERATE 300–500</text>
+          <text class="zlab" x="544" y="32">SLUGGISH 500+</text>
+          <line class="axis" x1="40" y1="220" x2="640" y2="220"/>
+          <text class="tick" x="36" y="238">0</text>
+          <text class="tick" x="130" y="238">100</text>
+          <text class="tick" x="230" y="238">200</text>
+          <text class="tick" x="330" y="238">300</text>
+          <text class="tick" x="430" y="238">400</text>
+          <text class="tick" x="530" y="238">500</text>
+          <text class="tick" x="620" y="238">600ms</text>
+          <!-- plotted: 1=hover 150, 2=dialog 200, 3=sparkline 300, 4=progress 500 -->
+          <circle class="pt" cx="190" cy="120" r="11"/><text class="ptn" x="186" y="124">1</text>
+          <circle class="pt" cx="240" cy="90" r="11"/><text class="ptn" x="236" y="94">2</text>
+          <circle class="pt" cx="340" cy="150" r="11"/><text class="ptn" x="336" y="154">3</text>
+          <circle class="pt" cx="540" cy="110" r="11"/><text class="ptn" x="536" y="114">4</text>
+          <!-- no-transition events at x=40 -->
+          <circle class="hollow" cx="40" cy="80" r="11"/><text class="hn" x="36" y="84">5</text>
+          <circle class="hollow" cx="40" cy="130" r="11"/><text class="hn" x="36" y="134">6</text>
+          <circle class="hollow" cx="40" cy="180" r="11"/><text class="hn" x="36" y="184">7</text>
+        </svg>
+      </div>
+      <div class="timing-key">
+        <ul>
+          <li><span class="k-num">1</span>Button/row hover <span class="k-t">150ms · default ease</span></li>
+          <li><span class="k-num">2</span>Details dialog enter <span class="k-t">200ms · fade+zoom-95</span></li>
+          <li><span class="k-num">3</span>KPI sparkline bar hover <span class="k-t">300ms · transition-all</span></li>
+          <li><span class="k-num">4</span>KPI progress bar fill <span class="k-t">500ms · transition-all</span></li>
+          <li><span class="k-num">5</span>Bulk action bar enter <span class="k-t">none — snaps</span></li>
+          <li><span class="k-num">6</span>Success / failure panels <span class="k-t">none — snaps</span></li>
+          <li><span class="k-num">7</span>Row departure after approve <span class="k-t">none — vanishes</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="whats-off"><strong>What's off:</strong> everything that IS animated sits comfortably in budget — the problem cluster is at zero. Three structural UI changes (5, 6, 7) happen with no transition at all, and two of them (5, 6) also shift the layout under the cursor when they appear.</div>
+  </section>
+
+  <section>
+    <div class="lens-sec__head"><h3>Emil Kowalski — Restraint &amp; Speed</h3><span class="chip">Primary</span></div>
+    <p class="lens-sec__verdict"><span class="dot d-opp" style="width:8px;height:8px;border-radius:50%;display:inline-block"></span> Strong — the restraint here is the correct kind, not the lazy kind.</p>
+
+    <div class="lens-block">
+      <p class="mono-label">WHAT'S WORKING WELL</p>
+      <ul class="lens-list good">
+        <li>Approve / reject — the actions an MD fires dozens of times a session — complete with zero celebratory motion. The row simply leaves on refetch. <code>md-approvals-client.tsx:942</code></li>
+        <li>Tab and scope switches swap content instantly. For a work queue this is right; a crossfade would only slow triage. <code>md-approvals-client.tsx:415-426</code></li>
+        <li>The selection accent reserves its 4px gutter even when unselected, so clicking a row causes no layout jump. <code>md-approvals-client.tsx:879-882</code></li>
+        <li>Zero AI-slop patterns: no pulsing indicators, no stagger spam, no hover-scale carpets, no blur entrances anywhere in 1,247 lines.</li>
+        <li>Spinners appear only where a real request is in flight, and in-flight rows lock their own buttons. <code>md-approvals-client.tsx:805,946</code></li>
+      </ul>
+    </div>
+
+    <div class="lens-block">
+      <p class="mono-label">ISSUES TO ADDRESS</p>
+
+      <div class="finding-row" data-sev="crit">
+        <div class="finding-row__prose">
+          <div class="find-tags"><span class="sev-chip sev">Critical</span><span class="sev-chip lens">Emil</span><span class="sev-chip lens">Accessibility</span></div>
+          <h4 class="find-title">Reduced-motion is only honored by KIA-branded animations</h4>
+          <div class="find-body">
+            <p><span class="label">What</span>The global <code>@media (prefers-reduced-motion: reduce)</code> block in <code>globals.css:1992</code> targets only <code>.kia-skeleton</code>, <code>.kia-anim-*</code> and <code>[data-kia-motion]</code>. This section's motion — the Radix dialog's zoom+slide enter, three <code>animate-spin</code> loops, and every transition — plays at full strength for users who asked the OS to reduce motion.</p>
+            <p><span class="label">Why it matters</span>Accessibility handling is the one non-negotiable in this audit's rulebook, and the current guard gives a false sense of coverage: it exists, it just doesn't apply to most of the app. The dialog's zoom+slide is exactly the class of motion the preference exists to suppress.</p>
+            <div class="fix"><p><span class="label">Recommended motion</span>Widen the global guard (or use Tailwind's <code>motion-reduce:</code> variants) so dialogs collapse to a plain 150ms fade and decorative transitions drop to 0.001ms under reduce. Spinners may keep rotating — progress indication is functional — but zoom, slide and hover polish should flatten.</p></div>
+            <p class="find-loc"><code>app/globals.css:1992 · components/ui/dialog.tsx:39</code></p>
+          </div>
+        </div>
+        <div class="demo">
+          <input class="vh" type="radio" name="st1" id="st1-a" checked>
+          <input class="vh" type="radio" name="st1" id="st1-l">
+          <input class="vh" type="radio" name="st1" id="st1-d">
+          <div class="demo__bar">
+            <div class="demo__meta">
+              <span class="demo__title">Reduce-safe dialog enter (fade only)</span>
+              <span class="demo__timing">150ms · ease-out · no zoom, no slide</span>
+            </div>
+            <div class="demo__controls">
+              <div class="seg"><label for="st1-a">Auto</label><label for="st1-l">Light</label><label for="st1-d">Dark</label></div>
+              <span class="demo__loop">↻</span>
+            </div>
+          </div>
+          <div class="demo__stage">
+            <div class="demo-1__mt">
+              <div class="ui-card">
+                <div class="ui-label" style="margin-bottom:8px;">PO-2231 · Details</div>
+                <div class="ui-row" style="margin-bottom:10px;">Tyre stock replenishment — ₹1,84,200</div>
+                <div style="display:flex; gap:8px;"><span class="ui-btn">Approve</span><span class="ui-btn ghost">Reject</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lens-take"><strong>Through Emil's lens:</strong> the team already made the hard call correctly — high-frequency money actions don't animate. The single failure is that the app decides <em>for</em> reduced-motion users instead of honoring the OS preference everywhere.</div>
+  </section>
+
+  <section>
+    <div class="lens-sec__head"><h3>Jakub Krehel — Production Polish</h3><span class="chip">Secondary</span></div>
+    <p class="lens-sec__verdict"><span class="dot d-imp" style="width:8px;height:8px;border-radius:50%;display:inline-block"></span> Mixed — hover polish is done; structural appearances are not.</p>
+
+    <div class="lens-block">
+      <p class="mono-label">WHAT'S WORKING WELL</p>
+      <ul class="lens-list good">
+        <li>Every interactive element has a hover transition (150ms color) — nothing changes state instantly under the pointer. <code>md-approvals-client.tsx:510+</code></li>
+        <li>The details dialog uses the shared 200ms fade+zoom-95 — subtle, standard, under budget. <code>components/ui/dialog.tsx:39</code></li>
+        <li>Disabled and busy states are visually distinct (opacity 50/60) rather than just unresponsive.</li>
+      </ul>
+    </div>
+
+    <div class="lens-block">
+      <p class="mono-label">ISSUES TO ADDRESS</p>
+
+      <div class="finding-row" data-sev="imp">
+        <div class="finding-row__prose">
+          <div class="find-tags"><span class="sev-chip sev">Important</span><span class="sev-chip lens">Jakub</span><span class="sev-chip lens">Motion gap</span></div>
+          <h4 class="find-title">The bulk action bar snaps into flow and shoves the table</h4>
+          <div class="find-body">
+            <p><span class="label">What</span><code>{selected.length &gt; 0 &amp;&amp; …}</code> inserts a ~72px sticky card into the document the instant the first row is clicked — no enter, no exit, and every row below jumps down under the cursor mid-selection.</p>
+            <p><span class="label">Why it matters</span>The MD is usually mid-click-run when this appears. Content shifting under the pointer between clicks is how the wrong row gets selected — on this screen, that's the wrong payment approved. The jump also reads as a glitch, not a feature arriving.</p>
+            <div class="fix"><p><span class="label">Recommended motion</span>Fast fade + 8px rise on the bar (160ms, ease-out custom curve), and animate the container's height so rows below settle rather than teleport. Exit mirrors at 120ms. Under reduced motion: instant, as today.</p></div>
+            <p class="find-loc"><code>md-approvals-client.tsx:783-829</code></p>
+          </div>
+        </div>
+        <div class="demo">
+          <input class="vh" type="radio" name="st2" id="st2-a" checked>
+          <input class="vh" type="radio" name="st2" id="st2-l">
+          <input class="vh" type="radio" name="st2" id="st2-d">
+          <div class="demo__bar">
+            <div class="demo__meta">
+              <span class="demo__title">Bulk bar enter</span>
+              <span class="demo__timing">160ms · cubic-bezier(0.22, 1, 0.36, 1)</span>
+            </div>
+            <div class="demo__controls">
+              <div class="seg"><label for="st2-a">Auto</label><label for="st2-l">Light</label><label for="st2-d">Dark</label></div>
+              <span class="demo__loop">↻</span>
+            </div>
+          </div>
+          <div class="demo__stage">
+            <div class="demo-2__mt" style="width:100%;">
+              <div class="ui-card" style="display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0;">
+                <span class="ui-pillcount">3 selected</span>
+                <div style="display:flex; gap:8px;"><span class="ui-btn">Approve 3</span><span class="ui-btn ghost">Reject</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="finding-row" data-sev="imp">
+        <div class="finding-row__prose">
+          <div class="find-tags"><span class="sev-chip sev">Important</span><span class="sev-chip lens">Jakub</span><span class="sev-chip lens">Motion gap</span></div>
+          <h4 class="find-title">Success and failure panels appear with no transition</h4>
+          <div class="find-body">
+            <p><span class="label">What</span>The outcome panels — including the persistent partial-failure panel this screen is rightly proud of — pop into the flow above the table with zero motion, shifting everything below. Dismissing them snaps the layout back.</p>
+            <p><span class="label">Why it matters</span>The failure panel is the single most important element on the page when it shows. An abrupt appearance is easy to attribute to "the page glitched" rather than "something needs your attention" — the opposite of what a money-failure surface wants. A brief enter says <em>this arrived on purpose</em>.</p>
+            <div class="fix"><p><span class="label">Recommended motion</span>180ms fade + 6px rise on enter, no exit animation needed on dismiss beyond a 120ms fade. Same reduce-motion collapse as everywhere else.</p></div>
+            <p class="find-loc"><code>md-approvals-client.tsx:618-661</code></p>
+          </div>
+        </div>
+        <div class="demo">
+          <input class="vh" type="radio" name="st3" id="st3-a" checked>
+          <input class="vh" type="radio" name="st3" id="st3-l">
+          <input class="vh" type="radio" name="st3" id="st3-d">
+          <div class="demo__bar">
+            <div class="demo__meta">
+              <span class="demo__title">Outcome panel enter</span>
+              <span class="demo__timing">180ms · cubic-bezier(0.22, 1, 0.36, 1)</span>
+            </div>
+            <div class="demo__controls">
+              <div class="seg"><label for="st3-a">Auto</label><label for="st3-l">Light</label><label for="st3-d">Dark</label></div>
+              <span class="demo__loop">↻</span>
+            </div>
+          </div>
+          <div class="demo__stage">
+            <div class="demo-3__mt" style="width:100%;">
+              <div class="ui-card" style="min-width:0;">
+                <div class="ui-row"><span style="font-weight:700;">⚠ 2 items did not go through</span></div>
+                <div class="ui-label" style="margin-top:6px;">VP-1042 · approval chain moved — re-read the queue</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lens-take"><strong>Through Jakub's lens:</strong> the micro-polish (hover, busy, disabled) is production-grade. What's missing is macro-polish — structural surfaces need to <em>arrive</em>, briefly and quietly, instead of teleporting into the layout.</div>
+  </section>
+
+  <section>
+    <div class="lens-sec__head"><h3>Jhey Tompkins — Experimentation &amp; Delight</h3><span class="chip">Selective</span></div>
+    <p class="lens-sec__verdict"><span class="dot d-imp" style="width:8px;height:8px;border-radius:50%;display:inline-block"></span> Mixed — correctly boring, with one earned moment left on the table.</p>
+
+    <div class="lens-block">
+      <p class="mono-label">ISSUES TO ADDRESS</p>
+      <p class="lens-empty">No issues found at this severity level.</p>
+    </div>
+
+    <div class="lens-block">
+      <p class="mono-label">OPPORTUNITIES</p>
+      <ul class="lens-list opp">
+        <li>The empty "Needs my approval" state is the one moment delight is earned — reaching zero is rare and positive. A one-shot 400ms check-draw beside "nothing queued" (never looping) would land, and reduce-motion users just see the static check. <code>md-approvals-client.tsx:994-999</code></li>
+        <li>After an approve succeeds, the row vanishes on refetch with no departure cue. A 150ms fade-out (or a brief background tint before removal) would confirm <em>which</em> row just left — feedback, not decoration. <code>md-approvals-client.tsx:393</code></li>
+      </ul>
+    </div>
+
+    <div class="lens-take"><strong>Through Jhey's lens:</strong> this screen shouldn't be playful — but a work queue that celebrates reaching zero, once, quietly, is the kind of detail people remember.</div>
+  </section>
+
+  <section>
+    <p class="mono-label">06 · COMBINED RECOMMENDATIONS</p>
+
+    <div id="rec-crit">
+      <p class="tier-label">Critical · must fix — 1</p>
+      <table class="rec">
+        <tr><th>Issue</th><th>File</th><th>Fix</th></tr>
+        <tr><td>Reduced-motion guard covers only <code>.kia-*</code> animations; dialog zoom/slide and section transitions ignore the OS setting</td><td><code>globals.css:1992</code></td><td>Widen the reduce block to all animations/transitions (or adopt <code>motion-reduce:</code> variants); dialogs fall back to fade-only</td></tr>
+      </table>
+    </div>
+
+    <div id="rec-imp">
+      <p class="tier-label">Important · should fix — 2</p>
+      <table class="rec">
+        <tr><th>Issue</th><th>File</th><th>Fix</th></tr>
+        <tr><td>Bulk action bar snaps into flow, shifting rows under the cursor mid-selection</td><td><code>md-approvals-client.tsx:783</code></td><td>160ms fade + 8px rise enter, 120ms exit; settle the height instead of teleporting it</td></tr>
+        <tr><td>Success/failure outcome panels appear and disappear with zero transition</td><td><code>md-approvals-client.tsx:618-661</code></td><td>180ms fade + 6px rise on enter; 120ms fade on dismiss</td></tr>
+      </table>
+    </div>
+
+    <div id="rec-opp">
+      <p class="tier-label">Opportunities · could enhance — 3</p>
+      <table class="rec">
+        <tr><th>Enhancement</th><th>Where</th><th>Impact</th></tr>
+        <tr><td>Replace <code>transition-all</code> with <code>transition-colors</code> on tab/scope/sort pills (and add one shared custom curve)</td><td><code>md-approvals-client.tsx:550,677,703</code></td><td>Precision — never animates a layout property by accident</td></tr>
+        <tr><td>150ms row fade-out (or brief tint) when an approved row leaves the queue</td><td><code>md-approvals-client.tsx:393</code></td><td>Confirms which row just moved — feedback on a money action</td></tr>
+        <tr><td>One-shot check-draw on the empty "all clear" state; drop the sparkline bar <code>hover:scale-y-110</code> in the shared KPI card</td><td><code>md-approvals-client.tsx:994 · kpi-card.tsx:188</code></td><td>Delight where it's earned; less fidget where it isn't</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="mono-label">07 · LENS REFERENCE SUMMARY</p>
+    <div class="ref-summary">
+      <p style="margin:0 0 6px;"><strong>Lens referenced most:</strong> Emil Kowalski — Restraint &amp; Speed. This is a high-frequency executive money queue; speed-over-spectacle is the correct posture, and the codebase already largely follows it.</p>
+      <div class="ref-lean">
+        <div>· To follow Emil more strictly: leave rows vanishing instantly; fix only the reduce-motion guard and the layout shifts.</div>
+        <div>· To follow Jakub more strictly: add the enter motions above plus 120ms exits everywhere something is dismissed.</div>
+        <div>· To follow Jhey more strictly: build the "all clear" moment — and stop there.</div>
+        <div>· Current balance: right for this screen. Don't add more motion than the four fixes above.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>main-dashboard · MD Approvals · 1 critical / 2 important / 3 opportunities · design-motion-principles</footer>
+</div>
+</body>
+</html>

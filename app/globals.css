@@ -12,6 +12,12 @@
     --dashboard-action-bg: #4B49AC;
     --dashboard-action-hover: #373482;
     --dashboard-action-fg: #ffffff;
+    /* Sidebar chrome. Values are IDENTICAL to what was hardcoded in sidebar.tsx — these tokens
+       exist so a theme can override them (tropical-teal does, below) without JS ternaries. */
+    --sidebar-surface: linear-gradient(180deg, #F7F4FF 0%, #EEF4FF 45%, #DDF7F8 100%);
+    --sidebar-dots: #4f46e5;
+    --sidebar-avatar-bg: linear-gradient(135deg, #6366F1, #3B82F6);
+    --sidebar-logout-bg: rgba(255, 255, 255, 0.15);
     /* Sidebar gradient stops. Default to the primary ladder so existing themes
        (skydash / corona / executive-navy) are unchanged; bright themes override
        these with a dark, accent-tinted ladder while keeping bright action colors. */
@@ -169,6 +175,9 @@
   }
 
   :root[data-dashboard-accent="tropical-teal"] {
+    /* Sidebar chrome — was a useTropicalTheme() JS hook with per-element ternaries. */
+    --sidebar-avatar-bg: linear-gradient(135deg, #055B65, #033A41);
+    --sidebar-logout-bg: rgba(5, 91, 101, 0.15);
     --dashboard-primary: #055B65;
     --dashboard-primary-dark: #033a41;
     --dashboard-primary-light: #2f8f83;
@@ -1988,14 +1997,31 @@
   }
 }
 
-/* Respect reduced-motion: kill ambient/looping motion, keep essential fades. */
+/* One-shot entrances for conditional panels (MD Approvals bulk bar / outcome panels).
+   Compositor-only (opacity + transform); collapsed by the reduce block below. */
+@keyframes panel-enter-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes panel-enter-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.anim-bar-enter { animation: panel-enter-down 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+.anim-alert-enter { animation: panel-enter-up 180ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* Respect reduced-motion EVERYWHERE — the previous guard only covered .kia-* classes, so
+   dialogs (zoom+slide) and every section's transitions ignored the OS setting. Spinners are
+   exempted below: progress indication is functional, not decorative. */
 @media (prefers-reduced-motion: reduce) {
-  .kia-skeleton,
-  .kia-anim-float,
-  .kia-anim-road,
-  .kia-premium [data-kia-motion] {
+  *, *::before, *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
   }
 }

@@ -114,8 +114,11 @@ export function FinanceDetail({ proformaId, canApprove, currentUserRole, onBack 
   }, [bankOptionsQuery.data])
   const branchesForBank = useMemo(() => {
     if (!bankName) return []
+    const norm = bankName.trim().toLowerCase()
     const set = new Set<string>()
-    for (const b of bankOptionsQuery.data?.banks ?? []) if (b.bank_name === bankName && b.bank_branch) set.add(b.bank_branch)
+    for (const b of bankOptionsQuery.data?.banks ?? []) {
+      if (b.bank_name?.trim().toLowerCase() === norm && b.bank_branch) set.add(b.bank_branch)
+    }
     return Array.from(set).sort((a, b) => a.localeCompare(b))
   }, [bankOptionsQuery.data, bankName])
 

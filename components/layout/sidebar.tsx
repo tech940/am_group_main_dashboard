@@ -8,14 +8,11 @@ import {
   CalendarClock,
   ClipboardCheck,
   KeyRound,
-  Menu,
   X,
   Shield,
   ShoppingCart,
   Banknote,
-  Landmark,
   Gauge,
-  HandCoins,
   ClipboardList,
   FileCheck,
   Users,
@@ -37,7 +34,7 @@ import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
-import { isAmFinanceViewRole, isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
+import { isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
 
 const VEHICLE_TRACKER_HREF = '/brands/kia/vehicle-tracker'
 const BOOKING_PAYMENT_HISTORY_HREF = '/brands/kia/booking-payment-history'
@@ -179,41 +176,6 @@ const brandNavigation: SidebarBrand[] = [
       },
     ],
   },
-  // {
-  //   name: 'AM MG',
-  //   key: 'mg',
-  //   href: '/brands/mg',
-  //   logo: '',
-  //   logoClassName: '',
-  //   logoContainerClassName: '',
-  //   color: 'text-blue-100',
-  //   icon: Activity,
-  //   comingSoon: false,
-  //   sections: [
-  //     {
-  //       name: 'Service',
-  //       key: 'service',
-  //       submenus: [
-  //         { name: 'Business Excellence', href: '/brands/mg/business-excellence/overview' },
-  //         { name: 'Service Appointment', href: '/brands/mg/service-appointment' },
-  //         { name: 'MG Proforma', href: '/brands/mg/proforma' },
-  //       ],
-  //     },
-  //     {
-  //       name: 'Sales',
-  //       key: 'sales',
-  //       submenus: [
-  //         { name: 'Demo Job Cards', href: '/brands/mg/demo-job-cards' },
-  //         { name: 'Demo Cars List', href: '/brands/mg/demo-cars-list' },
-  //       ],
-  //     },
-  //     {
-  //       name: 'H Promise',
-  //       key: 'h-promise',
-  //       submenus: [],
-  //     },
-  //   ],
-  // },
 ]
 
 const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
@@ -235,31 +197,9 @@ function isSidebarHrefActive(href: string, pathname: string | null) {
   return pathname === href
 }
 
-function useTropicalTheme() {
-  const [isTropical, setIsTropical] = useState(false)
-  useEffect(() => {
-    const update = () => {
-      if (typeof window === 'undefined') return
-      const accent = document.documentElement.getAttribute('data-dashboard-accent') || ''
-      const stored = window.localStorage.getItem('dashboard-accent') || ''
-      setIsTropical(
-        accent === 'tropical-teal'
-      )
-    }
-    update()
-    window.addEventListener('dashboard-accent-change', update)
-    window.addEventListener('storage', update)
-    return () => {
-      window.removeEventListener('dashboard-accent-change', update)
-      window.removeEventListener('storage', update)
-    }
-  }, [])
-  return isTropical
-}
-
 export function Sidebar() {
   const { collapsed, setCollapsed } = useSidebar()
-  const sidebarRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     if (collapsed) return
@@ -268,14 +208,26 @@ export function Sidebar() {
         setCollapsed(true)
       }
     }
+    // Escape closes the drawer — previously the only keyboard-free exits were clicking outside
+    // or the X button, so keyboard users were stuck behind the open overlay.
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCollapsed(true)
+    }
     document.addEventListener('mousedown', handlePointerDown)
     document.addEventListener('touchstart', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('mousedown', handlePointerDown)
       document.removeEventListener('touchstart', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
     }
   }, [collapsed, setCollapsed])
-  const isTropical = useTropicalTheme()
+
+  // Move focus into the drawer when it opens, so the next Tab lands on the nav instead of on
+  // whatever sat behind the backdrop.
+  useEffect(() => {
+    if (!collapsed) sidebarRef.current?.focus()
+  }, [collapsed])
   const pathname = usePathname()
   const router = useRouter()
   const { userRole, fullName, email, canAccessAdmin, userBrand, loading } = useUserRole()
@@ -297,7 +249,6 @@ export function Sidebar() {
   // page rejects. These predicates are the single source of truth shared with the page guards
   // (lib/permissions/legacy-module-roles.ts) so they can never drift.
   const canAccessPettyCash = isPettyCashViewRole(userRole)
-  const canAccessAmFinance = isAmFinanceViewRole(userRole)
   const canAccessDelegationTasks = ['ea', 'eba', 'md', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
   // Call Analysis + Insurance Analysis: MD + Developer only, and deliberately NOT permission-backed.
   // A permission is grantable from the Access Map, so "only these two roles" would hold exactly until
@@ -535,10 +486,6 @@ export function Sidebar() {
         active: pathname.startsWith('/brands/kia/vendors'),
       })
     }
-    // if (canAccessAmFinance && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
-    // Finance — customer vehicle-financing workflow. Deny-by-default (registry), gated purely on the
-    // permission snapshot like Group Cockpit: MD/Developer always + explicitly-granted finance roles.
-    // if (hasPermission('finance.view')) commonNodes.push({ key: '/finance', label: 'Finance', href: '/finance', icon: HandCoins, external: true, active: pathname.startsWith('/finance') })
     // Call Analysis — MD + Developer only, role-gated (see lib/callyzer/access.ts).
     // Sits beside Insurance and shares its gate — the queue carries customer names and registration
     // numbers for ~3,700 vehicles, so it cannot be wider than the section it is derived from.
@@ -738,7 +685,7 @@ export function Sidebar() {
 
     return groups
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, canAccessPettyCash, canAccessAmFinance, canAccessDelegationTasks, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
+  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, canAccessPettyCash, canAccessDelegationTasks, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
 
   return (
     <>
@@ -746,24 +693,38 @@ export function Sidebar() {
         Semi-transparent backdrop (closes sidebar on mobile tap)
     ────────────────────────────────────────────────────────────────────── */}
     {!collapsed && (
+      // No backdrop-blur: a full-viewport backdrop-filter for a 1px blur paid compositor cost
+      // for an imperceptible effect. The 20% scrim does the separating on its own.
       <div
-        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] cursor-pointer"
+        className="fixed inset-0 z-40 bg-black/20 cursor-pointer"
         onClick={() => setCollapsed(true)}
         aria-hidden
       />
     )}
 
     {/* ──────────────────────────────────────────────────────────────────────
-        SIDEBAR PANEL
+        SIDEBAR PANEL — slides via transform at a constant width. Animating the
+        WIDTH (the old w-0 ↔ w-[368px]) re-laid-out and re-wrapped every nav row
+        on every frame of the 300ms open. `visibility` rides along so the hidden
+        panel is untabbable; `inert` covers the rest (and `tabIndex={-1}` lets
+        the open-focus effect land on the panel itself).
     ────────────────────────────────────────────────────────────────────── */}
-    <div
+    <aside
       ref={sidebarRef}
+      id="app-sidebar"
+      aria-label="Primary navigation"
+      tabIndex={-1}
+      inert={collapsed || undefined}
       className={cn(
-        'app-sidebar-brand fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden border-r border-slate-200/80 shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-        collapsed ? 'w-0 border-none' : 'w-[368px] max-w-[92vw]'
+        'app-sidebar-brand fixed inset-y-0 left-0 z-50 flex w-[442px] max-w-[92vw] flex-col overflow-hidden border-r border-slate-200/80 shadow-2xl transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] focus:outline-none',
+        collapsed ? '-translate-x-full invisible' : 'translate-x-0 visible'
       )}
       style={{
-        background: 'linear-gradient(180deg, #F7F4FF 0%, #EEF4FF 45%, #DDF7F8 100%)',
+        // The literal gradient rides along as the var() fallback: if the stylesheet defining
+        // --sidebar-surface is ever stale (mid-HMR), the panel must never go transparent —
+        // a see-through panel over a dark page read as a giant black box.
+        backgroundColor: '#EEF4FF',
+        background: 'var(--sidebar-surface, linear-gradient(180deg, #F7F4FF 0%, #EEF4FF 45%, #DDF7F8 100%))',
       }}
     >
       {/* Decorative Radial Glow Accent (Bottom Right) */}
@@ -782,17 +743,14 @@ export function Sidebar() {
         }}
       />
 
-      {/* Header with Hamburger */}
-      <div className={cn(
-        "relative z-10 flex shrink-0 items-center border-b border-slate-200/60 bg-white/60 backdrop-blur-md transition-all duration-500",
-        collapsed ? "h-20 justify-center px-0" : "h-20 justify-between px-4"
-      )}>
+      {/* Header — the panel keeps its full width even while hidden (it slides, not shrinks),
+          so the collapsed-state layout ternaries are gone. */}
+      <div className="relative z-10 flex h-20 shrink-0 items-center justify-between border-b border-slate-200/60 bg-white/60 px-4 backdrop-blur-md">
         {/* Subtle Decorative Dot Pattern Header Accent */}
-        <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#4f46e5_1px,transparent_1px)] [background-size:12px_12px]" />
+        <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(var(--sidebar-dots)_1px,transparent_1px)] [background-size:12px_12px]" />
 
         {!collapsed && (
           <div className="relative flex items-center gap-3 h-14 flex-1 ml-0.5">
-            {/* Increased Logo Container Size */}
             <div className="rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-xs flex items-center justify-center h-14 w-14 shrink-0">
               <img
                 src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg"
@@ -811,29 +769,30 @@ export function Sidebar() {
           </div>
         )}
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => setCollapsed(true)}
+          // before:-inset-1 grows the hit target from 36px to 44px without growing the visual.
           className={cn(
-            "relative h-9 w-9 rounded-2xl flex items-center justify-center transition-all duration-300 cursor-pointer shadow-xs",
+            "relative h-9 w-9 rounded-2xl flex items-center justify-center transition-colors cursor-pointer shadow-xs",
+            "before:absolute before:-inset-1 before:content-['']",
             "border border-slate-200/80 bg-white/80 text-slate-600 hover:bg-white hover:text-slate-900"
           )}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-label="Toggle sidebar"
+          title="Collapse sidebar"
+          aria-label="Collapse sidebar"
+          aria-expanded={!collapsed}
+          aria-controls="app-sidebar"
         >
-          {collapsed ? <Menu className="h-5 w-5" /> : <X className="h-4 w-4" />}
+          <X className="h-4 w-4" />
         </button>
       </div>
 
       {/* Navigation */}
-      <div className={cn(
-        "relative z-10 flex-1 overflow-y-auto py-4 scrollbar-none transition-all duration-500",
-        collapsed ? "px-0" : "px-3.5"
-      )}>
+      <nav aria-label="Dashboard sections" className="relative z-10 flex-1 overflow-y-auto px-3.5 py-4 scrollbar-none">
         {permissionsReady || isSuperAdminRole(userRole) ? (
           <CascadingNav groups={navGroups} collapsed={collapsed} onNavigate={handleSidebarLinkClick} />
         ) : (
           <SidebarNavSkeleton collapsed={collapsed} />
         )}
-      </div>
+      </nav>
 
       {/* User Profile Footer Card */}
       {!collapsed && (
@@ -846,23 +805,20 @@ export function Sidebar() {
             }}
           >
             <div className="flex items-center gap-2.5 overflow-hidden">
-              {/* Profile Avatar Gradient */}
+              {/* Avatar and logout follow --sidebar-* tokens (tropical-teal overrides them in
+                  globals.css). Text colors are NOT set here: `.sidebar-footer-card *` forces
+                  white with !important, which is also why the old per-theme ternaries were dead. */}
               <div
                 className="sidebar-footer-avatar flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-black text-xs shadow-xs border border-white/20"
-                style={{
-                  background: isTropical
-                    ? 'linear-gradient(135deg, #055B65, #033A41)'
-                    : 'linear-gradient(135deg, #6366F1, #3B82F6)',
-                  color: '#FFFFFF',
-                }}
+                style={{ background: 'var(--sidebar-avatar-bg)' }}
               >
                 {userInitials}
               </div>
               <div className="truncate">
-                <p className="text-xs font-black tracking-tight truncate leading-tight" style={{ color: isTropical ? '#033A41' : '#FFFFFF' }}>
+                <p className="text-xs font-black tracking-tight truncate leading-tight">
                   {displayName}
                 </p>
-                <p className="text-[10px] font-bold capitalize truncate" style={{ color: isTropical ? '#055B65' : 'rgba(224, 231, 255, 0.8)' }}>
+                <p className="text-[10px] font-bold capitalize truncate">
                   {userRole || 'User'}
                 </p>
               </div>
@@ -874,11 +830,9 @@ export function Sidebar() {
                 await fetch('/api/auth/logout', { method: 'POST' })
                 window.location.href = '/login'
               }}
-              className="sidebar-footer-logout flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors cursor-pointer"
-              style={{
-                background: isTropical ? 'rgba(5, 91, 101, 0.15)' : 'rgba(255, 255, 255, 0.15)',
-                color: isTropical ? '#033A41' : '#FFFFFF',
-              }}
+              // before:-inset-1.5 grows the 32px button to a 44px hit target, visual unchanged.
+              className="sidebar-footer-logout relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors cursor-pointer before:absolute before:-inset-1.5 before:content-['']"
+              style={{ background: 'var(--sidebar-logout-bg)' }}
               title="Sign Out"
               aria-label="Sign Out"
             >
@@ -887,7 +841,7 @@ export function Sidebar() {
           </div>
         </div>
       )}
-    </div>
+    </aside>
     </>
   )
 }

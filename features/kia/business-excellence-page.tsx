@@ -92,7 +92,7 @@ import {
   getEffectiveBusinessDateFilter,
   normalizeBusinessYear,
 } from '@/lib/business-excellence/comparison'
-import { EXECUTIVE_TARGETS } from '@/lib/business-excellence/executive-targets'
+import { EXECUTIVE_TARGETS, TARGET_SOURCE_NOTE } from '@/lib/business-excellence/executive-targets'
 import {
   DEFAULT_KIA_DEALER_CODE,
   KIA_BRANCH_DEALERS,
@@ -119,6 +119,25 @@ interface StatRow {
   ytdGrowth: string
   subRows: StatRow[]
 }
+
+/**
+ * ⚠️ THIS IS A HOUSE HEURISTIC, NOT A TARGET ANYONE AGREED TO.
+ *
+ * Every "Target" figure in this section — Month Target, MTD Target, Shortfall T.D, Monthly
+ * Shortfall, Asking Rate and the dashed reference line on the trend charts — is derived as
+ * LAST YEAR'S SAME-PERIOD ACTUAL x this multiplier. There is no target table, no admin screen and
+ * no management input anywhere behind it; the number was a literal `* 1.1` written inline at four
+ * separate sites, and a service manager reading "Monthly Shortfall Rs 18.4L" in red reasonably
+ * believed they were behind a figure the business had set.
+ *
+ * It is kept because a LY+10% pace line is genuinely useful, but every label that renders off it
+ * now says so (see TARGET_BASIS_LABEL). If real targets are ever configured, replace this constant
+ * with that lookup and drop the suffix — do NOT route it through lib/kia/executive-targets.ts,
+ * whose numbers are placeholder literals with the same problem.
+ */
+const LY_GROWTH_TARGET_MULTIPLIER = 1.1
+/** Rendered next to any figure derived from the multiplier above, so its provenance is on screen. */
+const TARGET_BASIS_LABEL = 'LY +10%'
 
 type BusinessFreshnessResponse = {
   sourceUpdatedAt: string | null
@@ -2869,7 +2888,10 @@ function formatPlainNumber(value: number) {
 function targetCard(label: string, target: number, achieved: number, mode: 'higher' | 'lower' = 'higher', formatter: (value: number) => string = formatPlainNumber) {
   const percent = targetPercent(achieved, target, mode)
   return {
-    label,
+    // EXECUTIVE_TARGETS are placeholder literals with no business sign-off, and the revenue ones
+    // are period-blind (the same ₹30L for a day, a month or a year). Say so on the card rather
+    // than presenting them as agreed numbers — see TARGET_SOURCE_NOTE.
+    label: `${label} (${TARGET_SOURCE_NOTE})`,
     target: formatter(target),
     achieved: formatter(achieved),
     percent,
@@ -3397,7 +3419,13 @@ function buildOverviewHealth(payload: unknown): ExecutiveHealthModel {
   return {
     title: 'Business Health',
     score,
-    previousScore: data.comparison?.revenue ? 70 : null,
+    // ⚠️ Was `data.comparison?.revenue ? 70 : null` — a HARDCODED 70 rendered by
+    // scoreTrendLabel() as "70 previous / +12 improvement", i.e. a fabricated prior-period
+    // comparison. The health score is computed from this period's figures only; there is no stored
+    // history to compare against, so the honest answer is "insufficient history" (which the label
+    // function already handles for null). Restore a real value only when a prior score is actually
+    // persisted and read back.
+    previousScore: null,
     status: executiveStatus(score),
     confidence: data.comparison?.revenue ? 'High Confidence' : 'Medium Confidence',
     scoreDrivers: {
@@ -3490,7 +3518,7 @@ function BusinessExecutiveDecisionLayer({
   dealerCode?: string | null
 }) {
   const request = useMemo(() => buildExecutiveRequest(reportName, dateFilter, dealerCode), [dateFilter, dealerCode, reportName])
-  const { data, isLoading } = useQuery<unknown, Error>({
+  const { data, isLoading, isError, error, refetch } = useQuery<unknown, Error>({
     queryKey: ['business-excellence', 'executive-decision-layer', reportName, request.endpoint],
     queryFn: async () => {
       const response = await fetch(request.endpoint)
@@ -3516,6 +3544,32 @@ function BusinessExecutiveDecisionLayer({
         <div className="grid gap-3 lg:grid-cols-[320px_1fr]">
           <div className="h-56 animate-pulse rounded-[1.5rem] bg-white" />
           <div className="h-56 animate-pulse rounded-[1.5rem] bg-white" />
+        </div>
+      </div>
+    )
+  }
+
+  // ⚠️ A FAILED READ MUST NOT RENDER AS A SCORE. Without this branch `isLoading` flips false, `data`
+  // stays undefined, and the health builders below score `undefined` — painting a confident
+  // "0 / 100" and "Alerts Found 0" that is indistinguishable from a genuinely calm workshop. That
+  // exact failure mode under-reported group revenue by 53% elsewhere in this app.
+  if (isError) {
+    return (
+      <div className="border-b border-slate-100 bg-rose-50/60 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.5rem] border border-rose-200 bg-white p-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-rose-700">Executive read unavailable</p>
+            <p className="mt-1 text-xs font-bold text-slate-600">
+              {error?.message || 'This section could not be loaded.'} No score is shown because the data did not arrive — this is not a reading of zero.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-xs font-black text-rose-700 transition-colors hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-400"
+          >
+            Retry
+          </button>
         </div>
       </div>
     )
@@ -4286,7 +4340,7 @@ function BusinessExecutiveDashboard({
         ly: Number(point[activeTrendMeta.lyKey] || 0),
       }
     })
-    const monthTarget = metricRows.reduce((total, point) => total + point.ly, 0) * 1.1
+    const monthTarget = metricRows.reduce((total, point) => total + point.ly, 0) * LY_GROWTH_TARGET_MULTIPLIER
     const dailyTarget = daysInMonth > 0 ? monthTarget / daysInMonth : 0
     const mtdTarget = dailyTarget * throughDay
     const mtdAchieved = metricRows
@@ -4302,13 +4356,13 @@ function BusinessExecutiveDashboard({
     return {
       dailyTarget,
       cards: [
-        { label: 'Month Target', value: formatStat(monthTarget) },
-        { label: 'MTD Target', value: formatStat(mtdTarget) },
+        { label: `Month Target (${TARGET_BASIS_LABEL})`, value: formatStat(monthTarget) },
+        { label: `MTD Target (${TARGET_BASIS_LABEL})`, value: formatStat(mtdTarget) },
         { label: 'MTD Achieved', value: formatStat(mtdAchieved) },
-        { label: 'Shortfall T.D', value: formatStat(shortfallTd), color: shortfallTd > 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700' },
-        { label: 'Monthly Shortfall', value: formatStat(monthlyShortfall), color: monthlyShortfall > 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700' },
+        { label: `Shortfall T.D (${TARGET_BASIS_LABEL})`, value: formatStat(shortfallTd), color: shortfallTd > 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700' },
+        { label: `Monthly Shortfall (${TARGET_BASIS_LABEL})`, value: formatStat(monthlyShortfall), color: monthlyShortfall > 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700' },
         { label: 'Projected Closing', value: formatStat(projectedClosing) },
-        { label: 'Asking Rate', value: formatStat(askingRate), color: askingRate > 0 ? 'text-slate-950' : 'text-emerald-700' },
+        { label: `Asking Rate (${TARGET_BASIS_LABEL})`, value: formatStat(askingRate), color: askingRate > 0 ? 'text-slate-950' : 'text-emerald-700' },
       ],
     }
   }, [activeTrendMeta, dateFilter, trendData])
@@ -4330,13 +4384,45 @@ function BusinessExecutiveDashboard({
   }, [fyQuery.data])
 
   const isLoading = tableQuery.isLoading || branchTableQuery.isLoading || trendQuery.isLoading || fyQuery.isLoading
+  // ⚠️ Errors are aggregated exactly like loading is. Without this the four queries fail, isLoading
+  // flips false, every `?.` below yields undefined, and the dashboard paints a full set of
+  // confident zeroes — revenue Rs 0, growth 0%, Jammu/Udhampur/Total all 0 — which reads as "the
+  // workshop did no business", not "the data never arrived".
+  const failedQueries = [
+    ['Summary table', tableQuery] as const,
+    ['Branch comparison', branchTableQuery] as const,
+    ['Trend', trendQuery] as const,
+    ['Financial year', fyQuery] as const,
+  ].filter(([, query]) => query.isError)
+  const isErrored = failedQueries.length > 0
   const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (!item.dealerCode && selectedLocation === 'all'))?.label || 'All Locations'
+
+  const retryFailed = () => {
+    for (const [, query] of failedQueries) void query.refetch()
+  }
 
   return (
     <div className="space-y-4">
 
       {isLoading ? (
         <SheetContentSkeleton />
+      ) : isErrored ? (
+        <div className="rounded-[1.5rem] border border-rose-200 bg-rose-50/70 p-6">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-rose-700">Executive dashboard unavailable</p>
+          <p className="mt-2 text-xs font-bold text-slate-700">
+            {failedQueries.length === 1
+              ? `The ${failedQueries[0][0].toLowerCase()} data could not be loaded.`
+              : `${failedQueries.length} of 4 data sources could not be loaded (${failedQueries.map(([name]) => name.toLowerCase()).join(', ')}).`}
+            {' '}No figures are shown, because a missing read is not a zero.
+          </p>
+          <button
+            type="button"
+            onClick={retryFailed}
+            className="mt-4 rounded-xl border border-rose-200 bg-white px-4 py-2 text-xs font-black text-rose-700 transition-colors hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-400"
+          >
+            Retry
+          </button>
+        </div>
       ) : (
         <>
           <div className="grid gap-4 xl:grid-cols-3">
@@ -5345,10 +5431,15 @@ function LegacyROBillingAnalytics({
 function ROBillingRevenueSummarySection({
   rowsByMetric,
   isLoading,
+  errorMessage,
   dateFilter,
 }: {
   rowsByMetric: Partial<Record<ROAnalysisType, StatRow[]>>
   isLoading: boolean
+  /** Set when the parent's fetch REJECTED. Distinct from "resolved with no rows" — see the
+   *  three-state fallback row below; conflating them is what made this table claim to be
+   *  loading forever. */
+  errorMessage?: string | null
   dateFilter: BusinessDateFilter
 }) {
   const [activeRevenueTab, setActiveRevenueTab] = useState<'labour' | 'parts' | 'growth'>('labour')
@@ -5530,8 +5621,18 @@ function ROBillingRevenueSummarySection({
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={10} className="px-6 py-10 text-center text-sm font-bold text-slate-500">
-                      Revenue summary is loading.
+                    {/* Three DISTINCT states. This cell used to say "Revenue summary is loading."
+                        for all of them, so a resolved-but-empty range and a failed fetch both sat
+                        there claiming to be mid-load forever. */}
+                    <td colSpan={10} className={cn(
+                      'px-6 py-10 text-center text-sm font-bold',
+                      errorMessage ? 'text-rose-700' : 'text-slate-500',
+                    )}>
+                      {isLoading
+                        ? 'Revenue summary is loading.'
+                        : errorMessage
+                          ? `Couldn't load the revenue summary — ${errorMessage}`
+                          : 'No billing recorded for this date range.'}
                     </td>
                   </tr>
                 )}
@@ -5620,6 +5721,9 @@ function ServiceTypePerformance({
   const [cancelledSummary, setCancelledSummary] = useState<CancelledBillingSummary | null>(null)
   const [isServerViewLoading, setIsServerViewLoading] = useState(false)
   const [isServerTableLoading, setIsServerTableLoading] = useState(true)
+  // The fetch below used to only console.error on failure, so a failed load was indistinguishable
+  // from an empty one — and the table's fallback row said "Revenue summary is loading." forever.
+  const [serverTableError, setServerTableError] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<string[]>([])
   const [activeTrend, setActiveTrend] = useState("Load Trend")
   const [activeDailyMetric, setActiveDailyMetric] = useState<DailyProgressMetric>('all')
@@ -5891,9 +5995,13 @@ function ServiceTypePerformance({
         if (isActive) {
           setServerTableRowsByMetric(convertedRowsByMetric)
           setCancelledSummary(result.cancelledSummary || null)
+          setServerTableError(null)
         }
       } catch (error) {
-        if (isActive) console.error('Failed to fetch RO Billing table summary:', error)
+        if (isActive) {
+          console.error('Failed to fetch RO Billing table summary:', error)
+          setServerTableError(error instanceof Error ? error.message : 'Failed to load the revenue summary.')
+        }
       } finally {
         if (isActive) setIsServerTableLoading(false)
       }
@@ -6679,7 +6787,7 @@ function ServiceTypePerformance({
   )
 
   const applyRollingCalendarTargets = useCallback(<T extends { cy: number; ly: number; target?: number }>(rows: T[]) => {
-    const monthTarget = rows.reduce((acc, point) => acc + Number(point.ly || 0), 0) * 1.1
+    const monthTarget = rows.reduce((acc, point) => acc + Number(point.ly || 0), 0) * LY_GROWTH_TARGET_MULTIPLIER
     let achievedTillPreviousDay = 0
 
     return rows.map((point, index) => {
@@ -6820,13 +6928,13 @@ function ServiceTypePerformance({
   const kpiStats = useMemo(() => {
     if (trendData.length === 0) {
       return [
-        { label: 'Month Target', value: 'N/A' },
-        { label: 'MTD Target', value: 'N/A' },
+        { label: `Month Target (${TARGET_BASIS_LABEL})`, value: 'N/A' },
+        { label: `MTD Target (${TARGET_BASIS_LABEL})`, value: 'N/A' },
         { label: 'MTD Achieved', value: 'N/A' },
-        { label: 'Shortfall T.D', value: 'N/A', color: 'text-rose-600' },
-        { label: 'Monthly Shortfall', value: 'N/A', color: 'text-rose-600' },
+        { label: `Shortfall T.D (${TARGET_BASIS_LABEL})`, value: 'N/A', color: 'text-rose-600' },
+        { label: `Monthly Shortfall (${TARGET_BASIS_LABEL})`, value: 'N/A', color: 'text-rose-600' },
         { label: 'Projected Closing', value: 'N/A' },
-        { label: 'Asking Rate', value: 'N/A' }
+        { label: `Asking Rate (${TARGET_BASIS_LABEL})`, value: 'N/A' }
       ]
     }
 
@@ -6843,7 +6951,7 @@ function ServiceTypePerformance({
           ? today.getDate()
           : daysInMonth
       const elapsedDays = Math.min(Math.max(selectedThroughDay, 1), daysInMonth)
-      const monthTarget = trendData.reduce((acc, day) => acc + Number(day.ly || 0), 0) * 1.1
+      const monthTarget = trendData.reduce((acc, day) => acc + Number(day.ly || 0), 0) * LY_GROWTH_TARGET_MULTIPLIER
       const mtdTarget = monthTarget * (elapsedDays / daysInMonth)
       const mtdAchieved = trendData.slice(0, elapsedDays).reduce((acc, day) => acc + Number(day.cy || 0), 0)
       const shortfall = Math.max(mtdTarget - mtdAchieved, 0)
@@ -6853,13 +6961,13 @@ function ServiceTypePerformance({
       const askingRate = remainingDays > 0 ? Math.max(monthTarget - mtdAchieved, 0) / remainingDays : 0
 
       return [
-        { label: 'Month Target', value: formatValue(monthTarget) },
-        { label: 'MTD Target', value: formatValue(mtdTarget) },
+        { label: `Month Target (${TARGET_BASIS_LABEL})`, value: formatValue(monthTarget) },
+        { label: `MTD Target (${TARGET_BASIS_LABEL})`, value: formatValue(mtdTarget) },
         { label: 'MTD Achieved', value: formatValue(mtdAchieved) },
-        { label: 'Shortfall T.D', value: formatValue(shortfall), color: shortfall > 0 ? 'text-rose-600' : 'text-emerald-600' },
-        { label: 'Monthly Shortfall', value: formatValue(monthlyShortfall), color: monthlyShortfall > 0 ? 'text-rose-600' : 'text-emerald-600' },
+        { label: `Shortfall T.D (${TARGET_BASIS_LABEL})`, value: formatValue(shortfall), color: shortfall > 0 ? 'text-rose-600' : 'text-emerald-600' },
+        { label: `Monthly Shortfall (${TARGET_BASIS_LABEL})`, value: formatValue(monthlyShortfall), color: monthlyShortfall > 0 ? 'text-rose-600' : 'text-emerald-600' },
         { label: 'Projected Closing', value: formatValue(projectedClosing), color: projectedClosing < 0 ? 'text-rose-600' : undefined },
-        { label: 'Asking Rate', value: formatValue(askingRate), color: askingRate < 0 ? 'text-rose-600' : askingRate > 0 ? 'text-teal-700' : undefined },
+        { label: `Asking Rate (${TARGET_BASIS_LABEL})`, value: formatValue(askingRate), color: askingRate < 0 ? 'text-rose-600' : askingRate > 0 ? 'text-teal-700' : undefined },
       ]
     }
 
@@ -6909,7 +7017,7 @@ function ServiceTypePerformance({
 
     const achTillDate = measureMonth(targetYear, currentDay)
     const lyTotal = measureMonth(targetYear - 1)
-    const monthTarget = lyTotal * 1.1
+    const monthTarget = lyTotal * LY_GROWTH_TARGET_MULTIPLIER
     const mtdAchieved = achTillDate
     const mtdTarget = monthTarget * (currentDay / daysInMonth)
     const shortfall = Math.max(mtdTarget - mtdAchieved, 0)
@@ -6920,26 +7028,26 @@ function ServiceTypePerformance({
     const askingRate = remainingDays > 0 ? Math.max(monthTarget - mtdAchieved, 0) / remainingDays : 0
 
     return [
-      { label: 'Month Target', value: formatValue(monthTarget) },
-      { label: 'MTD Target', value: formatValue(mtdTarget) },
+      { label: `Month Target (${TARGET_BASIS_LABEL})`, value: formatValue(monthTarget) },
+      { label: `MTD Target (${TARGET_BASIS_LABEL})`, value: formatValue(mtdTarget) },
       { label: 'MTD Achieved', value: formatValue(mtdAchieved) },
       {
-        label: 'Shortfall T.D',
+        label: `Shortfall T.D (${TARGET_BASIS_LABEL})`,
         value: formatValue(shortfall),
         color: shortfall > 0 ? 'text-rose-600' : 'text-emerald-600'
       },
       {
-        label: 'Monthly Shortfall',
+        label: `Monthly Shortfall (${TARGET_BASIS_LABEL})`,
         value: formatValue(monthlyShortfall),
         color: monthlyShortfall > 0 ? 'text-rose-600' : 'text-emerald-600'
       },
       { label: 'Projected Closing', value: formatValue(projectedClosing), color: projectedClosing < 0 ? 'text-rose-600' : undefined },
-      { label: 'Asking Rate', value: formatValue(askingRate), color: askingRate < 0 ? 'text-rose-600' : askingRate > 0 ? 'text-teal-700' : undefined },
+      { label: `Asking Rate (${TARGET_BASIS_LABEL})`, value: formatValue(askingRate), color: askingRate < 0 ? 'text-rose-600' : askingRate > 0 ? 'text-teal-700' : undefined },
     ]
   }, [trendData, activeTrend, dateFilter, data])
   // Calculate daily target for the trend chart reference line
   const dailyTarget = trendData.length > 0
-    ? (trendData.reduce((acc, day) => acc + day.ly, 0) * 1.1) / trendData.length
+    ? (trendData.reduce((acc, day) => acc + day.ly, 0) * LY_GROWTH_TARGET_MULTIPLIER) / trendData.length
     : 0
   const roBillingCalendar = useMemo(() => {
     const selectedRange = getSelectedBusinessDateRange(dateFilter)
@@ -8698,6 +8806,7 @@ function ServiceTypePerformance({
                   <ROBillingRevenueSummarySection
                     rowsByMetric={serverTableRowsByMetric}
                     isLoading={isServerTableLoading}
+                    errorMessage={serverTableError}
                     dateFilter={dateFilter}
                   />
                 </div>

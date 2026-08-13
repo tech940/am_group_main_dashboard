@@ -404,3 +404,43 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'Failed to update scrap transaction' }, { status: 500 })
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const appUser = await getAuthenticatedAppUser()
+    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!canAccessScrapErp(appUser.role) && !(await isPermissionExplicitlyAllowed(appUser, 'scrap_erp.edit'))) {
+      return NextResponse.json({ error: 'You do not have permission to delete scrap records.' }, { status: 403 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    const transactionNumber = searchParams.get('transactionNumber')
+
+    if (!id && !transactionNumber) {
+      return NextResponse.json({ error: 'Missing id or transactionNumber' }, { status: 400 })
+    }
+
+    const whereClause = id
+      ? `id = '${id}'`
+      : `transaction_number ILIKE '%${transactionNumber?.replace(/'/g, "''")}%'`
+
+    const deleted = await db.execute(sql.raw(`
+      DELETE FROM scrap_transactions
+      WHERE ${whereClause}
+      RETURNING id, transaction_number
+    `))
+
+    if ((deleted as any[]).length === 0) {
+      return NextResponse.json({ error: 'Record not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Scrap record ${(deleted as any[])[0].transaction_number} deleted successfully`,
+    })
+  } catch (error) {
+    console.error('Error in DELETE /api/scrap-erp:', error)
+    return NextResponse.json({ error: 'Failed to delete scrap transaction' }, { status: 500 })
+  }
+}

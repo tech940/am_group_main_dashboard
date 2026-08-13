@@ -11,13 +11,13 @@ if (!dbUrl) {
 const sql = postgres(dbUrl, { prepare: false })
 
 async function deleteRecord() {
-  console.log('Searching for scrap transaction #SCRAP-2026-0273...')
+  console.log('Searching for scrap transaction #SCRAP-2026-0287...')
   
   const deleted = await sql`
     DELETE FROM scrap_transactions 
-    WHERE transaction_number ILIKE '%SCRAP-2026-0273%' 
-       OR transaction_number ILIKE '%2026-0273%'
-       OR transaction_number ILIKE '%0273%'
+    WHERE transaction_number ILIKE '%SCRAP-2026-0287%' 
+       OR transaction_number ILIKE '%2026-0287%'
+       OR transaction_number ILIKE '%0287%'
     RETURNING id, transaction_number, description, amount_received
   `
   

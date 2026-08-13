@@ -108,9 +108,11 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
         complaint_no,
         sr_no,
         type,
-        cust_name,
-        mobile_no,
-        vin_no,
+        -- ⚠️ cust_name / mobile_no / vin_no are NOT selected. Nothing renders them: the complaints
+        -- table shows complaint_no, status, area and dates only. Shipping a customer's name,
+        -- mobile number and VIN to the browser for every complaint — where anyone with devtools or
+        -- a proxy log can read them — is an exposure with no feature behind it. Re-add only
+        -- alongside the masking helper (lib/kia/pii.ts) and a UI that actually needs them.
         dealer_name,
         dealer_code,
         region,
@@ -489,9 +491,11 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         status_group,
         status,
         type,
-        cust_name,
-        mobile_no,
-        vin_no,
+        -- ⚠️ cust_name / mobile_no / vin_no are NOT selected. Nothing renders them: the complaints
+        -- table shows complaint_no, status, area and dates only. Shipping a customer's name,
+        -- mobile number and VIN to the browser for every complaint — where anyone with devtools or
+        -- a proxy log can read them — is an exposure with no feature behind it. Re-add only
+        -- alongside the masking helper (lib/kia/pii.ts) and a UI that actually needs them.
         dealer_name,
         dealer_code,
         region,
@@ -678,9 +682,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       status: stringValue(row.status, '-'),
       statusGroup: stringValue(row.status_group, 'Open'),
       type: stringValue(row.type, '-'),
-      customerName: stringValue(row.cust_name, '-'),
-      mobileNo: stringValue(row.mobile_no, '-'),
-      vinNo: stringValue(row.vin_no, '-'),
+      // customerName / mobileNo / vinNo intentionally absent — see the SELECT note above.
       dealerName: stringValue(row.dealer_name, '-'),
       dealerCode: stringValue(row.dealer_code, '-'),
       region: stringValue(row.region, '-'),
@@ -732,7 +734,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
 
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-complaints')
-  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request))
+  // Sub-permission, not just the parent — see the note in ro-billing-analysis/route.ts.
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.complaints.view', request))
   if (accessError) return accessError
 
   try {

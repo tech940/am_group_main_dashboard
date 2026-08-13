@@ -616,7 +616,7 @@ export function MdApprovalsClient() {
 
         {/* ---- outcome panels ---- */}
         {success && !failures && (
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+          <div className="anim-alert-enter flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
             <span className="flex items-center gap-2">
               <Check className="h-4 w-4" /> {success}
             </span>
@@ -633,7 +633,9 @@ export function MdApprovalsClient() {
         {/* ⚠️ Persistent, not a toast. A partial batch is the normal failure here and the MD has to be
             able to read exactly which ids did not move and why. */}
         {failures && failures.length > 0 && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+          // The enter animation is deliberate on this one: an abrupt appearance reads as "the page
+          // glitched"; a brief arrival says "this is here on purpose — read it".
+          <div className="anim-alert-enter rounded-2xl border border-rose-200 bg-rose-50 p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2 text-sm font-black text-rose-800">
                 <AlertTriangle className="h-4 w-4" />
@@ -781,8 +783,11 @@ export function MdApprovalsClient() {
 
         {/* ---- bulk bar ---- */}
         {selected.length > 0 && (
-          <div className="sticky top-2 z-30 mb-3">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_40px_-12px_rgba(5,91,101,0.35)]">
+          // anim-bar-enter: 160ms fade+drop so the bar visibly ARRIVES instead of teleporting the
+          // layout — this appears mid-click-run, and content jumping under the cursor on a money
+          // screen is a misclick risk. One-shot, compositor-only, collapsed under reduced motion.
+          <div className="anim-bar-enter sticky top-2 z-30 mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_40px_-12px_rgba(var(--dashboard-primary-rgb),0.35)]">
               <div className="flex items-center gap-3">
                 <span className="rounded-full bg-[var(--dashboard-primary)] px-3 py-1 text-xs font-black text-white">
                   {selected.length} selected

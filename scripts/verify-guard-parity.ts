@@ -84,9 +84,19 @@ console.log('\n3) Legacy role-gated modules keep a single source of truth (anti-
 const sidebar = readFileSync(join(ROOT, 'components/layout/sidebar.tsx'), 'utf8')
 const amFinanceAccess = readFileSync(join(ROOT, 'lib/am-finance/access.ts'), 'utf8')
 const pettyCashAccess = readFileSync(join(ROOT, 'lib/petty-cash/access.ts'), 'utf8')
+// The invariant is "the sidebar never inlines a role array for these modules", not "the sidebar
+// imports both predicates unconditionally". AM Finance has no sidebar entry today (the link is
+// gone, so its import was dead weight and was removed), and asserting a dead import just forces an
+// unused symbol back into the file. Each predicate is therefore required only WHEN that module is
+// actually linked — which still fails loudly the moment someone re-adds the link with an inline
+// role list instead of the shared helper.
 assert(
-  'sidebar imports the shared legacy-module-roles predicates',
-  sidebar.includes('legacy-module-roles') && sidebar.includes('isPettyCashViewRole') && sidebar.includes('isAmFinanceViewRole'),
+  'sidebar gates Petty Cash through the shared legacy-module-roles predicate',
+  sidebar.includes('legacy-module-roles') && sidebar.includes('isPettyCashViewRole'),
+)
+assert(
+  'sidebar gates AM Finance through the shared predicate (only required while it is linked)',
+  !sidebar.includes("'/am-finance'") || sidebar.includes('isAmFinanceViewRole'),
 )
 assert('am-finance access imports the shared role list', amFinanceAccess.includes('legacy-module-roles'))
 assert('petty-cash access imports the shared role predicate', pettyCashAccess.includes('legacy-module-roles'))

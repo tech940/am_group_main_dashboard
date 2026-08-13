@@ -121,6 +121,23 @@ export function operationDealerFilter(dealerCode: KiaServiceDealerFilter, alias 
   return dealerInListFilter(codes, [`${alias}dealer_code`])
 }
 
+/**
+ * ⚠️ NO `OR <col> IS NULL` ESCAPE IN ANY OF THESE THREE.
+ *
+ * The add-on feeds arrive largely unattributed — measured 2026-08-13: `kia_ew_report` has a NULL
+ * `dealer_code` on 159 of 197 rows (81%), `kia_mcp_report` on 10 of 12 (83%). An `OR dealer_code
+ * IS NULL` escape made every one of those rows match EVERY branch at once, so the same row was
+ * counted under Jammu AND Udhampur:
+ *
+ *   EW, filtered: Jammu showed 194 and Udhampur 162 — summing to 356 against a true total of 197,
+ *   with Udhampur's real count of 3 inflated 54x. Add-on attachment is a headline KPI on both
+ *   Overview and Workshop Performance, and it also skews addOnPerJc whenever a dealer is selected.
+ *
+ * A branch view now counts only rows that name that branch. Unattributed rows still appear in the
+ * ALL-DEALERS view (no filter is applied there at all), so nothing disappears from the group total
+ * — they are simply no longer misattributed to a specific outlet. If a branch total looks low, the
+ * fix is the ingestion gap, not a filter that guesses.
+ */
 export function ewDealerFilter(dealerCode: KiaServiceDealerFilter) {
   const codes = getKiaDealerFilterValues(dealerCode)
   if (!codes?.length) return sql``
@@ -128,7 +145,6 @@ export function ewDealerFilter(dealerCode: KiaServiceDealerFilter) {
     UPPER(TRIM(COALESCE(dealer_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
     OR UPPER(TRIM(COALESCE(outlet_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
     OR UPPER(TRIM(COALESCE(main_dealer_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
-    OR dealer_code IS NULL
   )`)
 }
 
@@ -137,7 +153,6 @@ export function mcpDealerFilter(dealerCode: KiaServiceDealerFilter) {
   if (!codes?.length) return sql``
   return sql.raw(`AND (
     UPPER(TRIM(COALESCE(dealer_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
-    OR dealer_code IS NULL
   )`)
 }
 
@@ -146,7 +161,6 @@ export function rsaDealerFilter(dealerCode: KiaServiceDealerFilter) {
   if (!codes?.length) return sql``
   return sql.raw(`AND (
     UPPER(TRIM(COALESCE(dealer_workshop_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
-    OR dealer_workshop_code IS NULL
   )`)
 }
 

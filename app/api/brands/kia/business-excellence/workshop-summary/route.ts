@@ -10,7 +10,11 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-workshop-summary')
-  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view'))
+  // `request` is REQUIRED here, not decorative: requireBrandSectionApiAccess only enforces the
+  // caller's dealer/branch scope when it can see the query string. Without it this route read
+  // `dealer_code` (below) with no check, so a user pinned to one outlet could read the other's
+  // numbers by editing the URL.
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request))
   if (accessError) return accessError
 
   try {

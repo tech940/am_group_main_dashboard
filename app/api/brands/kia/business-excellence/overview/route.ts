@@ -290,17 +290,29 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
         ) AS row_rank
       FROM raw
     ),
+    -- ⚠️ ONE WINNING ROW PER JOB CARD — never per-column max-abs picks.
+    --
+    -- This used to take report_date/advisor/service_category from the winning row but labour, parts
+    -- and total from three INDEPENDENT (ARRAY_AGG(x ORDER BY ABS(x) DESC))[1] picks, so a job card
+    -- with duplicate rows could be billed labour from one row and parts from another — a total
+    -- belonging to no actual bill. The canonical KPI path (lib/kia/ro-billing-kpis.ts) always took
+    -- the whole winning row, so the charts on this page could not reconcile to the KPI card beside
+    -- them: measured over full history, 298 duplicated keys / 52 differing rows / ₹58,813 of
+    -- phantom revenue (₹3,83,86,637 split-rule vs ₹3,83,27,824 winning-row).
+    --
+    -- Currently a no-op for Apr-2026-onward windows (zero duplicate keys there), which is exactly
+    -- why it survived — it only corrupts historical and multi-year views.
     base AS (
       SELECT
         jc_key,
-        (ARRAY_AGG(report_date ORDER BY row_rank ASC))[1] AS report_date,
-        (ARRAY_AGG(advisor ORDER BY row_rank ASC))[1] AS advisor,
-        (ARRAY_AGG(service_category ORDER BY row_rank ASC))[1] AS service_category,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+        report_date,
+        advisor,
+        service_category,
+        labour_amt,
+        part_amt,
+        total_amt
       FROM ranked
-      GROUP BY jc_key
+      WHERE row_rank = 1
     ),
     enriched AS (
       SELECT
