@@ -489,14 +489,15 @@ export function Sidebar() {
     // Call Analysis — MD + Developer only, role-gated (see lib/callyzer/access.ts).
     // Sits beside Insurance and shares its gate — the queue carries customer names and registration
     // numbers for ~3,700 vehicles, so it cannot be wider than the section it is derived from.
-    if (canAccessRestrictedAnalytics) commonNodes.push({
-      key: '/insurance/renewals',
-      label: 'Renewal Pipeline',
-      href: '/insurance/renewals',
-      icon: CalendarClock,
-      external: true,
-      active: Boolean(pathname?.startsWith('/insurance/renewals')),
-    })
+    // [Temporarily hidden from sidebar]
+    // if (canAccessRestrictedAnalytics) commonNodes.push({
+    //   key: '/insurance/renewals',
+    //   label: 'Renewal Pipeline',
+    //   href: '/insurance/renewals',
+    //   icon: CalendarClock,
+    //   external: true,
+    //   active: Boolean(pathname?.startsWith('/insurance/renewals')),
+    // })
     if (canAccessRestrictedAnalytics) commonNodes.push({
       key: '/call-analysis',
       label: 'Call Analysis',
@@ -509,14 +510,15 @@ export function Sidebar() {
     // screen. Role-gated on isSuperAdminRole DELIBERATELY rather than on a permission key, so it can
     // never be widened from the Access Map — it is money movement across three modules, and the page
     // plus both API routes enforce the identical check.
-    if (isSuperAdminRole(userRole)) commonNodes.push({
-      key: '/md-approvals',
-      label: 'MD Approvals',
-      href: '/md-approvals',
-      icon: ClipboardCheck,
-      external: true,
-      active: Boolean(pathname?.startsWith('/md-approvals')),
-    })
+    // [Temporarily hidden from sidebar]
+    // if (isSuperAdminRole(userRole)) commonNodes.push({
+    //   key: '/md-approvals',
+    //   label: 'MD Approvals',
+    //   href: '/md-approvals',
+    //   icon: ClipboardCheck,
+    //   external: true,
+    //   active: Boolean(pathname?.startsWith('/md-approvals')),
+    // })
     // Data Health is an OPERATIONS tool, not a business section: it exposes table names, row counts
     // and load timestamps across every brand. Gated on the super-admin role directly rather than a
     // permission key, so it can never be granted sideways from the Access Map. The page and the API
@@ -542,13 +544,14 @@ export function Sidebar() {
       })
       // Sibling link rather than an Admin tab: this answers "why can't X see Y" and is reached
       // mid-investigation, not while working through the Users/Access flow.
-      commonNodes.push({
-        key: '/admin/effective-access',
-        label: 'Effective Access',
-        href: '/admin/effective-access',
-        icon: KeyRound,
-        active: Boolean(pathname?.startsWith('/admin/effective-access')),
-      })
+      // [Temporarily hidden from sidebar]
+      // commonNodes.push({
+      //   key: '/admin/effective-access',
+      //   label: 'Effective Access',
+      //   href: '/admin/effective-access',
+      //   icon: KeyRound,
+      //   active: Boolean(pathname?.startsWith('/admin/effective-access')),
+      // })
     }
     if (canAccessScrapErp(userRole, permissionMap)) {
       commonNodes.push({

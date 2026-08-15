@@ -553,7 +553,7 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
       <div className="bg-slate-50 p-8">
         <div className="rounded-[1.5rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-xl shadow-slate-200/50">
           <MessageSquare className="mx-auto mb-4 h-10 w-10 text-slate-300" />
-          <p className="text-sm font-black uppercase tracking-widest text-slate-400">KIA complaints data is unavailable.</p>
+          <p className="text-sm font-black uppercase tracking-widest text-slate-600">KIA complaints data is unavailable.</p>
         </div>
       </div>
     )
@@ -575,7 +575,12 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
   return (
     <div className="space-y-5 bg-slate-50 p-4 lg:p-6">
       {expandedChart && (
-        <div className="fixed inset-0 z-[9999] bg-white p-4">
+        <div
+          className="fixed inset-0 z-[9999] bg-white p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Expanded chart: ${expandedChart.title}`}
+        >
           <div
             className="expanded-chart-shell flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl"
             style={{ backgroundColor: '#ffffff' }}
@@ -600,7 +605,12 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
               </Button>
             </div>
             <div className="expanded-chart-body min-h-0 flex-1 bg-white p-5" style={{ backgroundColor: '#ffffff' }}>
-              <div className="expanded-chart-surface h-full rounded-2xl bg-white" style={{ backgroundColor: '#ffffff' }}>
+              <div
+                className="expanded-chart-surface h-full rounded-2xl bg-white"
+                style={{ backgroundColor: '#ffffff' }}
+                role="img"
+                aria-label={expandedChart.title}
+              >
                 {renderChart(expandedChart.id)}
               </div>
             </div>
@@ -699,6 +709,7 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
             variant={showCalendarView ? 'default' : 'outline'}
             size="sm"
             onClick={() => setShowCalendarView((current) => !current)}
+            aria-expanded={showCalendarView}
             className={cn(
               'h-9 rounded-xl px-3 text-xs font-black',
               showCalendarView
@@ -787,15 +798,16 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
                       key={day.key}
                       type="button"
                       onClick={() => setSelectedCalendarDate(day.key)}
+                      aria-pressed={isSelected}
                       className={cn(
                         'min-h-[108px] border-r border-b border-slate-200 p-2 text-left transition last:border-r-0 hover:bg-[#edf4fb]',
-                        !day.inMonth && 'bg-slate-50 text-slate-300',
+                        !day.inMonth && 'bg-slate-50 text-slate-500',
                         isSelected && 'bg-[#edf4fb] ring-2 ring-inset ring-[#023468]',
                         hasPressure && day.inMonth && !isSelected && 'bg-rose-50'
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-300')}>
+                        <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-500')}>
                           {day.date.getDate().toString().padStart(2, '0')}
                         </span>
                         {day.total > 0 && (
@@ -871,7 +883,11 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
             </div>
             {renderExpandButton('monthly-trend', 'Monthly Complaint Trend')}
           </div>
-          <div className="h-[300px]">
+          <div
+            className="h-[300px]"
+            role="img"
+            aria-label="Area chart of monthly complaint inflow for the current year compared with last year"
+          >
             {renderChart('monthly-trend')}
           </div>
         </div>
@@ -943,15 +959,16 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
         </div>
         <div className="overflow-auto">
           <table className="w-full min-w-[1080px] border-collapse text-left">
+            <caption className="sr-only">Month-by-month complaint comparison between the selected year and the previous year</caption>
             <thead>
               <tr className="bg-slate-900 text-white">
-                <th className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Month</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{data.comparison.previousYear} Count</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{data.comparison.selectedYear} Count</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Growth / Degrowth</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">CY Open</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">CY Closed</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">CY Avg Days</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Month</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{data.comparison.previousYear} Count</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{data.comparison.selectedYear} Count</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Growth / Degrowth</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">CY Open</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">CY Closed</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">CY Avg Days</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -998,7 +1015,11 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
             </div>
             {renderExpandButton('area-breakdown', 'Complaint Area Breakdown')}
           </div>
-          <div className="h-[300px]">
+          <div
+            className="h-[300px]"
+            role="img"
+            aria-label="Horizontal bar chart of complaint volume by primary complaint area"
+          >
             {renderChart('area-breakdown')}
           </div>
         </div>
@@ -1011,7 +1032,11 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
             </div>
             {renderExpandButton('model-mix', 'Model Complaint Mix')}
           </div>
-          <div className="h-[300px]">
+          <div
+            className="h-[300px]"
+            role="img"
+            aria-label="Donut chart of complaint share by vehicle model"
+          >
             {renderChart('model-mix')}
           </div>
         </div>
@@ -1024,7 +1049,11 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
             </div>
             {renderExpandButton('dealer-performance', 'Dealer Complaint Load')}
           </div>
-          <div className="h-[300px]">
+          <div
+            className="h-[300px]"
+            role="img"
+            aria-label="Bar chart of total complaints and complaints older than 15 days by dealer"
+          >
             {renderChart('dealer-performance')}
           </div>
         </div>
@@ -1037,13 +1066,14 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
         </div>
         <div className="overflow-auto">
           <table className="w-full min-w-[1040px] border-collapse text-left">
+            <caption className="sr-only">Complaint sub-area resolution summary with totals, open counts and average resolution days</caption>
             <thead>
               <tr className="bg-slate-900 text-white">
-                <th className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Complaint Sub-Area</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Total</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Open</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Avg Days</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Status</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Complaint Sub-Area</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Total</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Open</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Avg Days</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1094,7 +1124,7 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
               <h3 className="text-xl font-black tracking-tight text-slate-950">Customer complaint details</h3>
             </div>
             {isDetailLoading && (
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <span role="status" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
                 Loading rows
               </span>
             )}
@@ -1102,14 +1132,15 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
         </div>
         <div className="overflow-auto">
           <table className="w-full min-w-[1180px] border-collapse text-left">
+            <caption className="sr-only">Customer complaint register with complaint number, customer and vehicle, dealer, area, days open and status</caption>
             <thead>
               <tr className="bg-slate-900 text-white">
-                <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Complaint</th>
-                <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Customer / Vehicle</th>
-                <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Dealer</th>
-                <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Area</th>
-                <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Days</th>
-                <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Status</th>
+                <th scope="col" className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Complaint</th>
+                <th scope="col" className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Customer / Vehicle</th>
+                <th scope="col" className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Dealer</th>
+                <th scope="col" className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Area</th>
+                <th scope="col" className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Days</th>
+                <th scope="col" className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1123,9 +1154,11 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
                         <button
                           type="button"
                           onClick={() => toggleRow(row.complaintNo)}
-                          className="be-borderless-action inline-flex items-start gap-2 text-left transition hover:text-[#023468]"
+                          aria-expanded={isExpanded}
+                          aria-controls={`complaint-detail-${row.complaintNo}-${row.id}`}
+                          className="be-borderless-action inline-flex items-start gap-2 text-left transition motion-reduce:transition-none hover:text-[#023468]"
                         >
-                          <ChevronDown className={cn('mt-0.5 h-4 w-4 transition', !isExpanded && '-rotate-90')} />
+                          <ChevronDown aria-hidden="true" className={cn('mt-0.5 h-4 w-4 transition motion-reduce:transition-none', !isExpanded && '-rotate-90')} />
                           <span>
                             <span className="block text-sm font-black text-slate-950">{row.complaintNo}</span>
                             <span className="mt-1 block text-[11px] font-bold text-slate-500">SR {row.srNo} / {formatDateLabel(row.complaintDate)}</span>
@@ -1156,11 +1189,11 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
                       </td>
                     </tr>
                     {isExpanded && (
-                      <tr className="bg-slate-50/80">
+                      <tr className="bg-slate-50/80" id={`complaint-detail-${row.complaintNo}-${row.id}`}>
                         <td colSpan={6} className="border border-slate-200 px-4 py-4">
                           <div className="grid gap-4 xl:grid-cols-[0.8fr_1.4fr_0.8fr]">
                             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Vehicle & Contact</p>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Vehicle & Contact</p>
                               <div className="mt-3 space-y-3 text-xs font-bold text-slate-600">
                                 <p className="flex items-center gap-2"><CarFront className="h-3.5 w-3.5 text-teal-700" /> VIN {row.vinNo}</p>
                                 <p className="flex items-center gap-2"><PhoneCall className="h-3.5 w-3.5 text-teal-700" /> {row.mobileNo}</p>
@@ -1168,7 +1201,7 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
                               </div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Customer Remark</p>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Customer Remark</p>
                               <p className="mt-3 whitespace-pre-line text-sm font-semibold leading-6 text-slate-700">
                                 {customerRemark || 'No customer remark captured.'}
                               </p>
@@ -1179,19 +1212,19 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
                               )}
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resolution Timeline</p>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Resolution Timeline</p>
                               <div className="mt-3 grid grid-cols-2 gap-2">
                                 <div className="rounded-xl bg-slate-50 p-3 text-center">
-                                  <p className="text-[9px] font-black uppercase text-slate-400">Opened</p>
+                                  <p className="text-[9px] font-black uppercase text-slate-500">Opened</p>
                                   <p className="mt-1 text-xs font-black text-slate-900">{formatDateLabel(row.complaintDate)}</p>
                                 </div>
                                 <div className="rounded-xl bg-slate-50 p-3 text-center">
-                                  <p className="text-[9px] font-black uppercase text-slate-400">Closed</p>
+                                  <p className="text-[9px] font-black uppercase text-slate-500">Closed</p>
                                   <p className="mt-1 text-xs font-black text-slate-900">{formatDateLabel(row.closeDate)}</p>
                                 </div>
                               </div>
                               <div className="mt-3 rounded-xl border border-slate-200 p-3">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Categorization</p>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Categorization</p>
                                 <p className="mt-2 text-xs font-black text-slate-900">{row.srArea} / {row.srSubArea}</p>
                                 <p className="mt-1 text-[11px] font-bold text-slate-500">{row.dealerArea} / {row.dealerSubArea}</p>
                               </div>

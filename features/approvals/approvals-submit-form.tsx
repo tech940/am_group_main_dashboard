@@ -673,7 +673,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
             }}
             className="w-full min-h-11 py-3 px-6 h-auto bg-slate-950 text-white rounded-2xl text-xs font-black shadow-lg shadow-slate-950/10 hover:bg-slate-800 transition-all whitespace-nowrap"
           >
-            Submit Another Request / दूसरा अनुरोध भेजें
+            Submit Another Request
           </button>
         </div>
       </div>
@@ -708,9 +708,6 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
           <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
             {brandDisplayName} Approvals Form
           </h1>
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
-            {brandDisplayName} अनुमोदन फॉर्म
-          </p>
         </div>
 
         {resubmitError && (
@@ -723,7 +720,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
         {resubmitId && !resubmitError && (
           <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4 space-y-1">
             <p className="text-xs font-black uppercase tracking-wider text-amber-700">
-              Re-submitting a sent-back request / वापस भेजा गया अनुरोध
+              Re-submitting a sent-back request
             </p>
             <p className="text-xs font-semibold text-amber-800 whitespace-pre-wrap">
               {resubmitReason
@@ -748,13 +745,13 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-950 text-white">
                 <User className="w-3.5 h-3.5" />
               </div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Requester Profile / आवेदक प्रोफ़ाइल</h2>
+              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Requester Profile</h2>
             </div>
             
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  Name / नाम <span className="text-rose-500">*</span>
+                  Name <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <User className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
@@ -773,7 +770,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  Email Address / ईमेल पता <span className="text-rose-500">*</span>
+                  Email Address <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
@@ -809,13 +806,13 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-950 text-white">
                 <MapPin className="w-3.5 h-3.5" />
               </div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Dealer & Department / डीलर और विभाग</h2>
+              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Dealer & Department</h2>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  Dealer Name / डीलर का नाम <span className="text-rose-500">*</span>
+                  Dealer Name <span className="text-rose-500">*</span>
                 </label>
                 <select
                   required
@@ -823,7 +820,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                   onChange={e => handleTextChange('dealerName', e.target.value)}
                   className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer appearance-none"
                 >
-                  <option value="">Choose Name / नाम चुनें</option>
+                  <option value="">Choose Name</option>
                   {uniqueNames.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </select>
               </div>
@@ -832,7 +829,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 {/* 1. Approval Category Dropdown (Sales or Service) */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                    <span>Approval Category / श्रेणी <span className="text-rose-500">*</span></span>
+                    <span>Approval Category <span className="text-rose-500">*</span></span>
                   </label>
                   <select
                     required
@@ -847,7 +844,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                     }}
                     className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer"
                   >
-                    <option value="">Choose Category / श्रेणी चुनें</option>
+                    <option value="">Choose Category</option>
                     <option value="SALES">{brand === 'kia' ? 'Kia Sales' : `${brand.toUpperCase()} Sales`}</option>
                     <option value="SERVICE">{brand === 'kia' ? 'Kia Service' : `${brand.toUpperCase()} Service`}</option>
                   </select>
@@ -856,7 +853,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 {/* 2. Department Dropdown (Filtered based on Sales or Service) */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                    <span>Department / विभाग <span className="text-rose-500">*</span></span>
+                    <span>Department <span className="text-rose-500">*</span></span>
                   </label>
                   <select
                     required
@@ -872,7 +869,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                     className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="">
-                      {!form.department ? 'First select Sales or Service' : 'Select Department / विभाग चुनें'}
+                      {!form.department ? 'First select Sales or Service' : 'Select Department'}
                     </option>
                     {form.department === 'SALES' && [
                       'SALES',
@@ -918,13 +915,13 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-950 text-white">
                 <Building2 className="w-3.5 h-3.5" />
               </div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Approval & Payment details / अनुमोदन और भुगतान विवरण</h2>
+              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Approval & Payment details</h2>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  Approval Type / अनुमोदन प्रकार <span className="text-rose-500">*</span>
+                  Approval Type <span className="text-rose-500">*</span>
                 </label>
                 <select
                   required
@@ -932,14 +929,14 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                   onChange={e => handleTextChange('approvalType', e.target.value)}
                   className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer appearance-none"
                 >
-                  <option value="">Choose Approval Type / अनुमोदन प्रकार चुनें</option>
+                  <option value="">Choose Approval Type</option>
                   {approvalTypes.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </select>
               </div>
 
               <div className="space-y-1.5 relative" ref={dropdownRef}>
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  Vendor Name / विक्रेता का नाम
+                  Vendor Name
                   {vendorsLoading && <span className="text-[9px] text-indigo-400 font-bold">(loading...)</span>}
                 </label>
                 <div className="relative">
@@ -1009,7 +1006,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               {form.approvalType === 'Others' && (
                 <div className="sm:col-span-2 space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                    Specify Approval Type / अन्य अनुमोदन प्रकार निर्दिष्ट करें <span className="text-rose-500">*</span>
+                    Specify Approval Type <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1025,7 +1022,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               {form.approvalType.toUpperCase().includes('ADVANCE') && (
                 <div className="sm:col-span-2 space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                    Previous Advance / पिछला अग्रिम
+                    Previous Advance
                   </label>
                   <input
                     type="text"
@@ -1040,7 +1037,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               {(form.approvalType.toLowerCase().includes('stock transfer') || form.approvalType === 'Stock Transfer') && (
                 <div className="sm:col-span-2 space-y-1.5 animate-in fade-in duration-200">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                    Chassis Number / चेसिस नंबर <span className="text-rose-500">*</span>
+                    Chassis Number <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1055,7 +1052,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  Amount / राशि <span className="text-rose-500">*</span>
+                  Amount <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <IndianRupee className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
@@ -1073,7 +1070,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  Type of Payment / भुगतान का प्रकार <span className="text-rose-500">*</span>
+                  Type of Payment <span className="text-rose-500">*</span>
                 </label>
                 <select
                   required
@@ -1081,21 +1078,21 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                   onChange={e => handleTextChange('typeOfPayment', e.target.value)}
                   className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer appearance-none"
                 >
-                  <option value="">Choose Payment Type / भुगतान प्रकार चुनें</option>
+                  <option value="">Choose Payment Type</option>
                   {PAYMENT_TYPE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </select>
               </div>
 
               <div className="space-y-1.5 sm:col-span-2">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  GL Account / जीएल खाता <span className="text-slate-400 font-normal">(Auto-Assigned / Optional)</span>
+                  GL Account <span className="text-slate-400 font-normal">(Auto-Assigned / Optional)</span>
                 </label>
                 <select
                   value={form.glAccountId}
                   onChange={e => handleTextChange('glAccountId', e.target.value)}
                   className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer appearance-none"
                 >
-                  <option value="">Auto-Assigned / Unassigned GL Account (स्वचालित रूप से असाइन)</option>
+                  <option value="">Auto-Assigned / Unassigned GL Account</option>
                   {glAccounts.map(g => (
                     <option key={g.id} value={g.id}>
                       {g.glCode} - {g.glName} ({g.tallyGroup})
@@ -1114,13 +1111,13 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-950 text-white">
                 <FileText className="w-3.5 h-3.5" />
               </div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Remarks & Documents / टिप्पणियाँ और दस्तावेज़</h2>
+              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Remarks & Documents</h2>
             </div>
 
             <div className="space-y-5">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  Remarks / Notes / टिप्पणियाँ
+                  Remarks / Notes
                 </label>
                 <textarea
                   placeholder="Explain what this payment is for..."
@@ -1136,7 +1133,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 {/* Bill 1 */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                    Upload Bill 1 / बिल 1 अपलोड करें
+                    Upload Bill 1
                   </label>
                   <label className={`flex flex-col items-center justify-center h-28 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${
                     uploads.bill1.loading ? 'opacity-65 pointer-events-none' : ''
@@ -1159,7 +1156,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                       <Upload className="w-6 h-6 text-slate-400 mb-1" />
                     )}
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 text-center px-2 truncate max-w-full">
-                      {uploads.bill1.loading ? 'Verifying...' : form.uploadBillUrl1 ? 'Bill Uploaded' : 'Select Bill / बिल चुनें'}
+                      {uploads.bill1.loading ? 'Verifying...' : form.uploadBillUrl1 ? 'Bill Uploaded' : 'Select Bill'}
                     </span>
                     {uploads.bill1.name && (
                       <span className="text-[9px] font-bold text-slate-400 max-w-[90%] truncate mt-0.5">{uploads.bill1.name}</span>
@@ -1170,7 +1167,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 {/* Bill 2 */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                    Upload Bill 2 / बिल 2 अपलोड करें
+                    Upload Bill 2
                   </label>
                   <label className={`flex flex-col items-center justify-center h-28 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${
                     uploads.bill2.loading ? 'opacity-65 pointer-events-none' : ''
@@ -1193,7 +1190,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                       <Upload className="w-6 h-6 text-slate-400 mb-1" />
                     )}
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 text-center px-2 truncate max-w-full">
-                      {uploads.bill2.loading ? 'Verifying...' : form.uploadBillUrl2 ? 'Bill Uploaded' : 'Select Bill / बिल चुनें'}
+                      {uploads.bill2.loading ? 'Verifying...' : form.uploadBillUrl2 ? 'Bill Uploaded' : 'Select Bill'}
                     </span>
                     {uploads.bill2.name && (
                       <span className="text-[9px] font-bold text-slate-400 max-w-[90%] truncate mt-0.5">{uploads.bill2.name}</span>
@@ -1204,7 +1201,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 {/* Documents */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                    Upload Documents / दस्तावेज़ अपलोड करें
+                    Upload Documents
                   </label>
                   <label className={`flex flex-col items-center justify-center h-28 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${
                     uploads.doc.loading ? 'opacity-65 pointer-events-none' : ''
@@ -1227,7 +1224,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                       <Upload className="w-6 h-6 text-slate-400 mb-1" />
                     )}
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 text-center px-2 truncate max-w-full">
-                      {uploads.doc.loading ? 'Verifying...' : form.uploadDocUrl ? 'Docs Uploaded' : 'Select Docs / दस्तावेज़ चुनें'}
+                      {uploads.doc.loading ? 'Verifying...' : form.uploadDocUrl ? 'Docs Uploaded' : 'Select Docs'}
                     </span>
                     {uploads.doc.name && (
                       <span className="text-[9px] font-bold text-slate-400 max-w-[90%] truncate mt-0.5">{uploads.doc.name}</span>
@@ -1241,7 +1238,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
           <div className="border-t border-slate-100 pt-6 flex flex-col sm:flex-row items-center gap-4">
             <div className="flex gap-2 text-[10px] font-semibold text-slate-400">
               <Info className="w-4 h-4 flex-shrink-0" />
-              <span>By submitting this form, you confirm that these details are correct and verify that all invoices are attached. / इस फॉर्म को जमा करके, आप पुष्टि करते हैं कि ये विवरण सही हैं और सत्यापित करते हैं कि सभी चालान संलग्न हैं।</span>
+              <span>By submitting this form, you confirm that these details are correct and verify that all invoices are attached.</span>
             </div>
             <button
               type="submit"
@@ -1251,10 +1248,10 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               {submitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Submitting / जमा किया जा रहा है...
+                  Submitting...
                 </>
               ) : (
-                'Submit Approval Request / अनुरोध भेजें'
+                'Submit Approval Request'
               )}
             </button>
           </div>
@@ -1268,16 +1265,13 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               <AlertTriangle className="w-6 h-6 text-amber-600" />
             </div>
             <DialogTitle className="text-lg font-black tracking-tight text-slate-900">
-              Submit Without Invoice? / बिना इनवॉइस जमा करें?
+              Submit Without Invoice?
             </DialogTitle>
           </DialogHeader>
           
           <div className="text-center py-2 space-y-4">
             <p className="text-sm font-semibold text-slate-700 leading-relaxed">
               Are you sure you want to submit the form without uploading any bill or invoice?
-            </p>
-            <p className="text-sm font-black text-slate-900 leading-relaxed bg-amber-50/50 p-3.5 border border-amber-100 rounded-2xl">
-              क्या आप वाकई बिना बिल या इनवॉइस अपलोड किए फॉर्म सबमिट करना चाहते हैं?
             </p>
           </div>
 
@@ -1287,7 +1281,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               onClick={() => setShowConfirmSubmit(false)}
               className="h-11 rounded-2xl text-xs font-bold border border-slate-200 hover:bg-slate-50 transition-colors text-slate-700 px-6 order-last sm:order-none"
             >
-              Cancel / रद्द करें
+              Cancel
             </button>
             <button
               type="button"
@@ -1298,7 +1292,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               className="h-11 rounded-2xl text-xs font-black text-white hover:opacity-90 transition-all shadow-md shadow-emerald-500/10 px-6"
               style={{ backgroundColor: '#059669' }}
             >
-              Yes, Submit / हाँ, भेजें
+              Yes, Submit
             </button>
           </div>
         </DialogContent>

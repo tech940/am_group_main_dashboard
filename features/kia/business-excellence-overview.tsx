@@ -722,11 +722,11 @@ function SnapshotTile({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <p className="truncate text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
-            <span className="text-slate-300 font-bold">...</span>
+            <p className="truncate text-[10px] font-black uppercase tracking-wider text-slate-600">{label}</p>
+            <span aria-hidden="true" className="text-slate-300 font-bold">...</span>
           </div>
           <p className="mt-1 text-2xl font-black leading-none text-slate-900 drop-shadow-xs">{value}</p>
-          <p className="mt-1.5 truncate text-[10px] font-semibold text-slate-400">{meta}</p>
+          <p className="mt-1.5 truncate text-[10px] font-semibold text-slate-600">{meta}</p>
         </div>
       </div>
       {comparison && (
@@ -765,6 +765,7 @@ function BusinessHealthCard({
     <button
       type="button"
       onClick={onClick}
+      aria-haspopup="dialog"
       className={cn(
         'group bg-gradient-to-b from-white via-white to-slate-50/60 rounded-3xl border border-slate-200/80 p-5 text-left shadow-[0_12px_28px_-6px_rgba(15,23,42,0.08),0_4px_12px_-2px_rgba(15,23,42,0.03)] flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_38px_-8px_rgba(15,23,42,0.12)] cursor-pointer',
         toneClass(statusTone)
@@ -835,11 +836,11 @@ function MiniBusinessCard({
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div>
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CY</p>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">CY</p>
           <p className="mt-1 text-xl font-black text-slate-950">{cy}</p>
         </div>
         <div>
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">LY</p>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">LY</p>
           <p className="mt-1 text-xl font-black text-slate-600">{ly}</p>
         </div>
       </div>
@@ -875,10 +876,11 @@ function RoBillingPerformanceTable({
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-left border-collapse">
+          <caption className="sr-only">RO Billing performance by metric: current year, last year and growth</caption>
           <thead>
             <tr className="border-b border-slate-200/80 bg-slate-50/80 text-slate-700">
               {['Metric', 'CY', 'LY', 'Growth'].map((heading) => (
-                <th key={heading} className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <th key={heading} scope="col" className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
                   {heading}
                 </th>
               ))}
@@ -926,7 +928,7 @@ function DetailedRoBillingMatrix({
   }>
 }) {
   const renderGrowth = (value: number | 'N/A') => {
-    if (value === 'N/A') return <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-black text-slate-400">N/A</span>
+    if (value === 'N/A') return <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-black text-slate-600">N/A</span>
     return (
       <span className={cn(
         'inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black shadow-2xs',
@@ -947,19 +949,20 @@ function DetailedRoBillingMatrix({
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[980px] border-collapse text-left">
+          <caption className="sr-only">RO Billing matrix: load, labour, parts and per-vehicle metrics for TD, MTD, QTD and YTD with last-year comparison and growth</caption>
           <thead>
             <tr className="border-b border-slate-200/80 bg-slate-50/90 text-slate-700">
-              <th rowSpan={2} className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">Metric</th>
-              <th rowSpan={2} className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">TD</th>
+              <th rowSpan={2} scope="col" className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">Metric</th>
+              <th rowSpan={2} scope="col" className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">TD</th>
               {['MTD', 'QTD', 'YTD'].map((period, pIdx) => (
-                <th key={period} colSpan={3} className={cn("px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700", pIdx < 2 && "border-r border-slate-200/60")}>
+                <th key={period} colSpan={3} scope="colgroup" className={cn("px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700", pIdx < 2 && "border-r border-slate-200/60")}>
                   {period}
                 </th>
               ))}
             </tr>
             <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
               {['MTD', 'QTD', 'YTD'].flatMap((period, pIdx) => ['CY', 'LY', 'Growth'].map((label, lIdx) => (
-                <th key={`${period}-${label}`} className={cn("px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500", pIdx < 2 && lIdx === 2 && "border-r border-slate-200/60")}>
+                <th key={`${period}-${label}`} scope="col" className={cn("px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500", pIdx < 2 && lIdx === 2 && "border-r border-slate-200/60")}>
                   {label}
                 </th>
               )))}
@@ -973,7 +976,7 @@ function DetailedRoBillingMatrix({
                 {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => (
                   <React.Fragment key={`${row.metric}-${period}`}>
                     <td className="px-3 py-3.5 text-center font-mono font-black text-slate-900">{row.formatter(row.values[period].cy)}</td>
-                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-400">{row.values[period].ly === 'N/A' ? 'N/A' : row.formatter(row.values[period].ly)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-600">{row.values[period].ly === 'N/A' ? 'N/A' : row.formatter(row.values[period].ly)}</td>
                     <td className={cn("px-3 py-3.5 text-center", pIdx < 2 && "border-r border-slate-100")}>{renderGrowth(row.values[period].growth)}</td>
                   </React.Fragment>
                 ))}
@@ -997,7 +1000,7 @@ function ServiceTypeRoBillingTable({
 }) {
   const formatter = metric === 'load' ? formatNumber : formatCurrency
   const renderGrowth = (value: number | 'N/A') => {
-    if (value === 'N/A') return <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-black text-slate-400">N/A</span>
+    if (value === 'N/A') return <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-black text-slate-600">N/A</span>
     return (
       <span className={cn(
         'inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black shadow-2xs',
@@ -1016,11 +1019,12 @@ function ServiceTypeRoBillingTable({
             <p className="text-[10px] font-black uppercase tracking-widest text-teal-200/80">Service Type Breakdown</p>
             <h3 className="mt-0.5 text-lg font-black tracking-tight text-white">RO Billing Service Type Table</h3>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Service type table metric">
             {RO_ANALYSIS_TYPES.map((item) => (
               <button
                 key={item}
                 type="button"
+                aria-pressed={metric === item}
                 onClick={() => onMetricChange(item)}
                 className={cn(
                   'flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
@@ -1038,19 +1042,20 @@ function ServiceTypeRoBillingTable({
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1080px] border-collapse text-left">
+          <caption className="sr-only">RO Billing by service type for TD, MTD, QTD and YTD with last-year comparison and growth</caption>
           <thead>
             <tr className="border-b border-slate-200/80 bg-slate-50/90 text-slate-700">
-              <th rowSpan={2} className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">Work Type</th>
-              <th rowSpan={2} className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">TD</th>
+              <th rowSpan={2} scope="col" className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">Work Type</th>
+              <th rowSpan={2} scope="col" className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">TD</th>
               {['MTD', 'QTD', 'YTD'].map((period, pIdx) => (
-                <th key={period} colSpan={3} className={cn("px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700", pIdx < 2 && "border-r border-slate-200/60")}>
+                <th key={period} colSpan={3} scope="colgroup" className={cn("px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700", pIdx < 2 && "border-r border-slate-200/60")}>
                   {period}
                 </th>
               ))}
             </tr>
             <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
               {['MTD', 'QTD', 'YTD'].flatMap((period, pIdx) => ['CY', 'LY', 'Growth'].map((label, lIdx) => (
-                <th key={`${period}-${label}`} className={cn("px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500", pIdx < 2 && lIdx === 2 && "border-r border-slate-200/60")}>
+                <th key={`${period}-${label}`} scope="col" className={cn("px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500", pIdx < 2 && lIdx === 2 && "border-r border-slate-200/60")}>
                   {label}
                 </th>
               )))}
@@ -1074,7 +1079,7 @@ function ServiceTypeRoBillingTable({
                 {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => (
                   <React.Fragment key={`${row.name}-${period}`}>
                     <td className="px-3 py-3.5 text-center font-mono font-black text-slate-900">{formatter(row.values[period].cy)}</td>
-                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-400">{row.values[period].ly === 'N/A' ? 'N/A' : formatter(row.values[period].ly)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-600">{row.values[period].ly === 'N/A' ? 'N/A' : formatter(row.values[period].ly)}</td>
                     <td className={cn("px-3 py-3.5 text-center", pIdx < 2 && "border-r border-slate-100")}>{renderGrowth(row.values[period].growth)}</td>
                   </React.Fragment>
                 ))}
@@ -1106,11 +1111,12 @@ function RoBillingOverviewTrend({
             <p className="text-[10px] font-black uppercase tracking-widest text-teal-200/80">Trend Analysis</p>
             <h3 className="mt-0.5 text-lg font-black tracking-tight text-white">RO Billing Daily Trend</h3>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Daily trend metric">
             {RO_ANALYSIS_TYPES.map((item) => (
               <button
                 key={item}
                 type="button"
+                aria-pressed={metric === item}
                 onClick={() => onMetricChange(item)}
                 className={cn(
                   'flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
@@ -1128,7 +1134,7 @@ function RoBillingOverviewTrend({
       </div>
       <div className="p-4">
         {trend.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-xs font-black uppercase tracking-widest text-slate-400">
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-xs font-black uppercase tracking-widest text-slate-600">
             No trend data available for the selected period.
           </div>
         ) : (
@@ -1138,7 +1144,11 @@ function RoBillingOverviewTrend({
               <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-amber-600 bg-white" />Last Year (LY)</span>
               <span className="inline-flex items-center gap-2"><span className="h-0.5 w-6 border-t border-dashed border-rose-600" />Target</span>
             </div>
-            <div className="h-[360px] rounded-2xl bg-slate-50 p-3">
+            <div
+              className="h-[360px] rounded-2xl bg-slate-50 p-3"
+              role="img"
+              aria-label={`Daily RO billing ${RO_ANALYSIS_LABELS[metric]} trend line chart, current year versus last year`}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trend} margin={{ top: 28, right: 28, bottom: 10, left: 18 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -1199,11 +1209,18 @@ function ChartShell({
           onClick={onExpand}
           className="h-9 w-9 rounded-xl border border-teal-200 bg-white text-teal-700 shadow-sm hover:bg-teal-50"
           title={`Maximise ${title}`}
+          aria-label={`Maximise ${title} chart`}
         >
           <Maximize2 className="h-4 w-4" />
         </Button>
       </div>
-      <div className="h-72 min-h-0 rounded-2xl bg-slate-50 p-3">{children}</div>
+      <div
+        className="h-72 min-h-0 rounded-2xl bg-slate-50 p-3"
+        role="figure"
+        aria-label={caption ? `${title} chart. ${caption}` : `${title} chart`}
+      >
+        {children}
+      </div>
     </div>
   )
 }
@@ -1213,7 +1230,7 @@ function ChartNoData({ message = 'No Data Available' }: { message?: string }) {
     <div className="flex h-full min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/70 px-4 text-center">
       <div>
         <p className="text-sm font-black text-slate-700">{message}</p>
-        <p className="mt-1 text-xs font-semibold text-slate-400">Try a wider date range or clear comparison dates.</p>
+        <p className="mt-1 text-xs font-semibold text-slate-600">Try a wider date range or clear comparison dates.</p>
       </div>
     </div>
   )
@@ -1764,7 +1781,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
             <div className="grid gap-3 md:grid-cols-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Score</p>
-                <p className="mt-2 text-4xl font-black text-slate-950">{snapshotHealth.score}<span className="text-sm text-slate-400"> / 100</span></p>
+                <p className="mt-2 text-4xl font-black text-slate-950">{snapshotHealth.score}<span className="text-sm text-slate-600"> / 100</span></p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Status</p>
@@ -1807,10 +1824,11 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
 
             <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white">
               <table className="w-full min-w-[680px] border-collapse text-left">
+                <caption className="sr-only">Business health score factors with weight, score and current signal</caption>
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-slate-700">
                     {['Factor', 'Weight', 'Score', 'Current Signal'].map((heading) => (
-                      <th key={heading} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-600">{heading}</th>
+                      <th key={heading} scope="col" className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-600">{heading}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1884,12 +1902,17 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
                 <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Expanded Business Excellence Chart</p>
                 <h3 className="text-xl font-black tracking-tight text-slate-950">{expandedChart.title}</h3>
               </div>
-              <Button type="button" variant="outline" size="icon" onClick={() => setExpandedChart(null)} className="h-10 w-10 rounded-xl bg-white">
+              <Button type="button" variant="outline" size="icon" onClick={() => setExpandedChart(null)} aria-label={`Close expanded ${expandedChart.title} chart`} className="h-10 w-10 rounded-xl bg-white">
                 <X className="h-4 w-4" />
               </Button>
             </div>
             <div className="expanded-chart-body min-h-0 flex-1 bg-white p-5" style={{ backgroundColor: '#ffffff' }}>
-              <div className="expanded-chart-surface h-full rounded-2xl bg-white" style={{ backgroundColor: '#ffffff' }}>
+              <div
+                className="expanded-chart-surface h-full rounded-2xl bg-white"
+                style={{ backgroundColor: '#ffffff' }}
+                role="figure"
+                aria-label={`${expandedChart.title} chart, expanded view`}
+              >
                 {renderChart(expandedChart.id)}
               </div>
             </div>

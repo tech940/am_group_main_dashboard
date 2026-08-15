@@ -94,22 +94,27 @@ export function RoDayWiseTrendChart({
         <div />
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded-full border-2 border-[#0B5D7A] bg-white" />
+            <div aria-hidden="true" className="h-3 w-3 rounded-full border-2 border-[#0B5D7A] bg-white" />
             <span className="text-[10px] font-bold text-slate-600">This Year</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded-full border-2 border-amber-600 bg-white" />
+            <div aria-hidden="true" className="h-3 w-3 rounded-full border-2 border-amber-600 bg-white" />
             <span className="text-[10px] font-bold text-slate-600">Last Year</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="h-0.5 w-6 bg-rose-400 border-t border-dashed border-rose-600" />
+            <div aria-hidden="true" className="h-0.5 w-6 bg-rose-400 border-t border-dashed border-rose-600" />
             <span className="text-[10px] font-bold text-slate-600">Target</span>
           </div>
           {expandButton}
         </div>
       </div>
 
-      <div id="analysis-day-wise-trend-chart" className="h-[350px] w-full">
+      <div
+        id="analysis-day-wise-trend-chart"
+        className="h-[350px] w-full"
+        role="img"
+        aria-label="Day-wise RO billing trend line chart comparing this year against last year, with a daily target reference line"
+      >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={trendData} margin={{ top: 28, right: 28, bottom: 10, left: 18 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -130,7 +135,7 @@ export function RoDayWiseTrendChart({
       <div className="grid grid-cols-7 gap-3 mt-10">
         {kpiStats.map((kpi, kIdx) => (
           <div key={kIdx} className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 text-center shadow-sm">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">{kpi.label}</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mb-2">{kpi.label}</p>
             <p className={cn('text-lg font-black tracking-tight', kpi.color || 'text-slate-800')}>{kpi.value}</p>
           </div>
         ))}

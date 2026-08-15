@@ -217,7 +217,7 @@ function severityClass(severity: OpenRoAlert['severity']) {
 function DetailField({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
   return (
     <div className={cn('rounded-2xl border border-slate-200 bg-slate-50/80 p-3', className)}>
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">{label}</p>
       <div className="mt-1 text-sm font-black text-slate-900">{value || '-'}</div>
     </div>
   )
@@ -489,7 +489,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
       <div className="bg-slate-50 p-8">
         <div className="rounded-[1.5rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-xl shadow-slate-200/50">
           <Wrench className="mx-auto mb-4 h-10 w-10 text-slate-300" />
-          <p className="text-sm font-black uppercase tracking-widest text-slate-400">Open RO data is unavailable.</p>
+          <p className="text-sm font-black uppercase tracking-widest text-slate-600">Open RO data is unavailable.</p>
         </div>
       </div>
     )
@@ -675,7 +675,12 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
               </Button>
             </div>
             <div className="expanded-chart-body min-h-0 flex-1 bg-white p-5" style={{ backgroundColor: '#ffffff' }}>
-              <div className="expanded-chart-surface h-full rounded-2xl bg-white" style={{ backgroundColor: '#ffffff' }}>
+              <div
+                className="expanded-chart-surface h-full rounded-2xl bg-white"
+                style={{ backgroundColor: '#ffffff' }}
+                role="img"
+                aria-label={`${expandedChart.title} chart, expanded view`}
+              >
                 {renderChart(expandedChart.id)}
               </div>
             </div>
@@ -759,6 +764,8 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
             variant={showCalendarView ? 'default' : 'outline'}
             size="sm"
             onClick={() => setShowCalendarView((current) => !current)}
+            aria-expanded={showCalendarView}
+            aria-controls="open-ro-calendar-overlay"
             className={cn(
               'h-9 rounded-xl px-3 text-xs font-black',
               showCalendarView
@@ -791,6 +798,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
 
       {showCalendarView && (
         <div
+          id="open-ro-calendar-overlay"
           className="fixed inset-0 z-[9999] bg-slate-950/60 p-3 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
@@ -847,15 +855,16 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
                     key={day.key}
                     type="button"
                     onClick={() => setSelectedCalendarDate(day.key)}
+                    aria-current={isSelected ? 'date' : undefined}
                     className={cn(
                       'min-h-[118px] border-r border-b border-slate-200 p-2 text-left transition last:border-r-0 hover:bg-[#edf4fb]',
-                      !day.inMonth && 'bg-slate-50 text-slate-300',
+                      !day.inMonth && 'bg-slate-50 text-slate-500',
                       isSelected && 'bg-[#edf4fb] ring-2 ring-inset ring-[#023468]',
                       hasPressure && day.inMonth && !isSelected && 'bg-rose-50'
                     )}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-300')}>
+                      <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-500')}>
                         {day.date.getDate().toString().padStart(2, '0')}
                       </span>
                       {day.total > 0 && (
@@ -940,7 +949,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
             </div>
             {renderExpandButton('aging-distribution', 'Aging Distribution')}
           </div>
-          <div className="h-[280px]">
+          <div className="h-[280px]" role="img" aria-label="Bar chart of open repair orders by aging bucket">
             {renderChart('aging-distribution')}
           </div>
         </div>
@@ -990,7 +999,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
             </div>
             {renderExpandButton('advisor-load', 'Advisor Load')}
           </div>
-          <div className="mt-4 h-[300px]">
+          <div className="mt-4 h-[300px]" role="img" aria-label="Horizontal bar chart of pending open repair orders by service advisor">
             {renderChart('advisor-load')}
           </div>
         </div>
@@ -1003,7 +1012,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
             </div>
             {renderExpandButton('work-type-mix', 'Work Type Mix')}
           </div>
-          <div className="mt-4 h-[300px]">
+          <div className="mt-4 h-[300px]" role="img" aria-label="Donut chart of work in progress distribution by work type">
             {renderChart('work-type-mix')}
           </div>
         </div>
@@ -1016,7 +1025,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
             </div>
             {renderExpandButton('aging-trend', 'Aging Trend')}
           </div>
-          <div className="mt-4 h-[300px]">
+          <div className="mt-4 h-[300px]" role="img" aria-label="Area chart of average aging days by repair order date">
             {renderChart('aging-trend')}
           </div>
         </div>
@@ -1029,15 +1038,16 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
         </div>
         <div className="overflow-auto">
           <table className="w-full min-w-[1040px] border-collapse text-left">
+            <caption className="sr-only">Open RO matrix: total work in progress and aging buckets by service type</caption>
             <thead>
               <tr className="bg-slate-900 text-white">
-                <th className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Service Type</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Total WIP</th>
-                <th className="border border-emerald-700 bg-emerald-600 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">0-4D</th>
-                <th className="border border-amber-600 bg-amber-500 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">5-7D</th>
-                <th className="border border-orange-600 bg-orange-500 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">8-15D</th>
-                <th className="border border-rose-700 bg-rose-600 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">&gt;15D</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Avg Days</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Service Type</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Total WIP</th>
+                <th scope="col" className="border border-emerald-700 bg-emerald-600 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">0-4D</th>
+                <th scope="col" className="border border-amber-600 bg-amber-500 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">5-7D</th>
+                <th scope="col" className="border border-orange-600 bg-orange-500 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">8-15D</th>
+                <th scope="col" className="border border-rose-700 bg-rose-600 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">&gt;15D</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Avg Days</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1051,6 +1061,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
                         <button
                           type="button"
                           onClick={() => toggleRow(row.serviceType)}
+                          aria-expanded={isExpanded}
                           className="be-borderless-action inline-flex items-center gap-2 rounded-lg text-left transition hover:text-teal-700"
                         >
                           <ChevronDown className={cn('h-4 w-4 transition', !isExpanded && '-rotate-90')} />
@@ -1073,11 +1084,11 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
                             className="grid w-full grid-cols-[minmax(180px,1fr)_140px_180px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-[#b9ccde] hover:bg-[#edf4fb]"
                           >
                             <span>
-                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Vehicle No</span>
+                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-600">Vehicle No</span>
                               <span className="mt-1 block font-mono text-sm font-black text-blue-700">{detail.regNo}</span>
                             </span>
                             <span>
-                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Workshop Days</span>
+                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-600">Workshop Days</span>
                               <span className={cn(
                                 'mt-1 inline-flex rounded-full px-2.5 py-1 text-[10px] font-black',
                                 detail.agingDays > 15 ? 'bg-rose-100 text-rose-700' : detail.agingDays > 7 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
@@ -1086,7 +1097,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
                               </span>
                             </span>
                             <span>
-                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Aging Category</span>
+                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-600">Aging Category</span>
                               <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black text-slate-700">
                                 {detail.agingBucket}
                               </span>
@@ -1124,18 +1135,19 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
         </div>
         <div className="overflow-auto">
           <table className="w-full min-w-[1180px] border-collapse text-left">
+            <caption className="sr-only">Job card delay reason summary: vehicle counts and aging buckets by repair order status</caption>
             <thead>
               <tr className="bg-slate-900 text-white">
-                <th className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Status</th>
-                <th className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Vehicles</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Mech Count</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Acc Count</th>
-                <th className="border border-emerald-700 bg-emerald-600 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">0-4D</th>
-                <th className="border border-amber-600 bg-amber-500 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">5-7D</th>
-                <th className="border border-orange-600 bg-orange-500 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">8-15D</th>
-                <th className="border border-rose-700 bg-rose-600 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">&gt;15D</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Total</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Avg Days</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Status</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Vehicles</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Mech Count</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Acc Count</th>
+                <th scope="col" className="border border-emerald-700 bg-emerald-600 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">0-4D</th>
+                <th scope="col" className="border border-amber-600 bg-amber-500 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">5-7D</th>
+                <th scope="col" className="border border-orange-600 bg-orange-500 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">8-15D</th>
+                <th scope="col" className="border border-rose-700 bg-rose-600 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">&gt;15D</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Total</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Avg Days</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1148,6 +1160,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
                         <button
                           type="button"
                           className="be-borderless-action inline-flex items-center gap-2 rounded-lg text-left transition hover:text-blue-700"
+                          aria-expanded={isExpanded}
                           onClick={(event) => {
                             event.stopPropagation()
                             toggleDelayStatus(statusRow.newStatus)
@@ -1180,17 +1193,17 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
                             className="grid w-full grid-cols-[minmax(150px,0.8fr)_minmax(220px,1.2fr)_140px_180px_180px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-[#b9ccde] hover:bg-[#edf4fb]"
                           >
                             <span>
-                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Vehicle No</span>
+                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-600">Vehicle No</span>
                               <span className="mt-1 block font-mono text-sm font-black text-blue-700">{vehicle.regNo}</span>
                             </span>
                             <span className="min-w-0">
-                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Delay Reason</span>
+                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-600">Delay Reason</span>
                               <span className="mt-1 block truncate text-sm font-black text-slate-800">
                                 {vehicle.delayReason || 'No Reason Specified'}
                               </span>
                             </span>
                             <span>
-                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Workshop Days</span>
+                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-600">Workshop Days</span>
                               <span className={cn(
                                 'mt-1 inline-flex rounded-full px-2.5 py-1 text-[10px] font-black',
                                 vehicle.agingDays > 15 ? 'bg-rose-100 text-rose-700' : vehicle.agingDays > 7 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
@@ -1199,13 +1212,13 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
                               </span>
                             </span>
                             <span>
-                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Aging Category</span>
+                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-600">Aging Category</span>
                               <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black text-slate-700">
                                 {vehicle.agingBucket}
                               </span>
                             </span>
                             <span>
-                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">RO Number</span>
+                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-600">RO Number</span>
                               <span className="mt-1 block font-mono text-sm font-black text-slate-800">{vehicle.roNo}</span>
                             </span>
                           </button>
@@ -1306,7 +1319,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Alerts</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">Alerts</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {selectedVehicle.alerts.length > 0 ? selectedVehicle.alerts.map((alert) => (
                       <span key={alert.label} className={cn('rounded-full border px-3 py-1 text-[10px] font-black', severityClass(alert.severity))}>
@@ -1319,7 +1332,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Remarks</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">Remarks</p>
                   <p className="mt-2 whitespace-pre-wrap text-sm font-bold leading-6 text-slate-700">
                     {selectedVehicle.remarks || '-'}
                   </p>

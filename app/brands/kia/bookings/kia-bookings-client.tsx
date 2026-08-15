@@ -6166,7 +6166,6 @@ function BookingDrawer({
                 ['Pmt Source', String(meta.pmtSource || '-')],
                 ['Payment Amount', String(meta.paymentAmount || '-')],
                 ['Payment Received', String(meta.paymentReceived || '-')],
-                ['Cost Sheet', String(meta.costSheet || '-')],
                 ['Bank Finance', booking.bankName || String(meta.bankFinance || '-')],
                 ['Payment Ref', String(paymentConfirmation.reference || '-')],
                 ['Invoice Number', String(accountsVerification.invoiceNumber || '-')],
@@ -6306,13 +6305,14 @@ function BookingDrawer({
           )}
         </section>
 
-        {/* Uploaded ID documents — links gated to PII-authorized viewers (MD / Super Admin / Finance Head). */}
+        {/* Uploaded ID & booking documents — links gated to PII-authorized viewers (MD / Super Admin / Finance Head). */}
         {(() => {
           const meta = (booking.metadata || {}) as Record<string, unknown>
           const docs = [
             { label: 'PAN Card', url: String(meta.panCardUrl || '') },
             { label: 'Aadhaar Card', url: String(meta.aadhaarCardUrl || '') },
             { label: 'Employee ID', url: String(meta.employeeIdUrl || '') },
+            { label: 'Cost Sheet', url: String(meta.costSheet || meta.costSheetUrl || '') },
           ].filter((d) => d.url)
           if (!docs.length || !canViewPii) return null
           return (

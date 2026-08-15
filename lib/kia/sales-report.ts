@@ -431,8 +431,50 @@ function buildDealerClause(config: TableConfig, dealerCode: string | null) {
   return sql.raw(`AND ${expression} = '${dealerCode}'`)
 }
 
+/**
+ * Pre-dedupe the enquiry feed IN POSTGRES so it never crosses the wire at full size.
+ *
+ * ⚠️ WHY ONLY THIS TABLE. `kia_enquiry_report` is a cumulative snapshot — measured 2026-08-13:
+ * 92,832 rows in 2026 collapse to 5,198 real enquiries, a 17.9x inflation. One July-vs-June window
+ * shipped 46,069 rows / 91.86 MB (78 columns each) purely so JavaScript could count them down to
+ * ~1,318. The other three feeds total ~4.9 MB and are deliberately left alone.
+ *
+ * ⚠️ WHY THIS IS EQUIVALENT TO THE JS DEDUPE, NOT AN APPROXIMATION.
+ * `dedupeRows` keys on `enquiry:<dealer>:<enquiry_no>` and breaks ties by uploaded_at, then id, then
+ * a completeness score. The ORDER BY below reproduces the first two. The completeness tiebreaker can
+ * only change the winner when two rows share key AND uploaded_at AND id — measured across all of
+ * 2026: ZERO such ties (scratch/measure-dedupe-ties.ts). The JS dedupe still runs afterwards, so if
+ * the feed ever produces a tie the original rule decides it; this only drops rows the JS pass would
+ * have discarded anyway. Verified byte-identical output on 5 windows via scratch/sr-verify.ts.
+ *
+ * Rows with a BLANK enquiry_no use a different composite key in `buildDeduplicationKey`, so they are
+ * passed through untouched rather than collapsed onto an empty string.
+ */
+function enquiryPreDedupeSql(config: TableConfig, context: ResolvedDateContext, dealerCode: string | null) {
+  const dealerExpr = `UPPER(BTRIM(COALESCE(${config.dealerColumns.map((c) => `NULLIF(BTRIM(${c}), '')`).join(', ')}, '')))`
+  return sql`
+    SELECT * FROM (
+      SELECT DISTINCT ON (${sql.raw(dealerExpr)}, UPPER(BTRIM(enquiry_no))) *
+      FROM ${sql.raw(config.table)}
+      WHERE ${sql.raw(config.dateColumn)} >= ${context.comparisonStartDate}
+        AND ${sql.raw(config.dateColumn)} < ${context.endDateExclusive}
+        AND COALESCE(BTRIM(enquiry_no), '') <> ''
+        ${buildDealerClause(config, dealerCode)}
+      ORDER BY ${sql.raw(dealerExpr)}, UPPER(BTRIM(enquiry_no)), uploaded_at DESC NULLS LAST, id DESC
+    ) deduped
+    UNION ALL
+    SELECT * FROM ${sql.raw(config.table)}
+    WHERE ${sql.raw(config.dateColumn)} >= ${context.comparisonStartDate}
+      AND ${sql.raw(config.dateColumn)} < ${context.endDateExclusive}
+      AND COALESCE(BTRIM(enquiry_no), '') = ''
+      ${buildDealerClause(config, dealerCode)}
+  `
+}
+
 async function queryCurrentAndPreviousRangeRows(config: TableConfig, context: ResolvedDateContext, dealerCode: string | null) {
-  const rows = await analyticsDb.execute(sql`
+  const rows = config.key === 'enquiry'
+    ? await analyticsDb.execute(enquiryPreDedupeSql(config, context, dealerCode))
+    : await analyticsDb.execute(sql`
     SELECT *
     FROM ${sql.raw(config.table)}
     WHERE ${sql.raw(config.dateColumn)} >= ${context.comparisonStartDate}
@@ -692,7 +734,13 @@ function buildKpi(
 function buildCounts(points: Map<string, number>) {
   return Array.from(points.entries())
     .map(([name, value]) => ({ name, value }))
-    .sort((left, right) => right.value - left.value)
+    // ⚠️ The `name` tiebreaker is load-bearing, not cosmetic. Sorting on value alone left
+    // equal-valued entries in Map INSERTION order — i.e. whatever order rows happened to arrive
+    // from Postgres — so any change to the query (pushing a dedupe into SQL, a new index, even a
+    // VACUUM moving rows) visibly reshuffled these lists while every count stayed identical. That
+    // is what blocked the enquiry pre-dedupe optimisation. Every caller benefits: lost reasons /
+    // consultants / models / sources, the source breakdown, and testDrivesByModelVariant.
+    .sort((left, right) => right.value - left.value || left.name.localeCompare(right.name))
 }
 
 function increment(map: Map<string, number>, key: string, amount = 1) {
@@ -1443,7 +1491,20 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
             lostReason: safeText(row.lost_reason),
             lostDueTo: safeText(row.lost_due_to),
             lostRemark: safeText(row.lost_remark),
-          })),
+          }))
+            // ⚠️ This list had NO sort at all — it rendered in raw row-arrival order, so which
+            // customers appeared at the top was decided by Postgres's physical row layout rather
+            // than by anything meaningful. Newest enquiry first is the useful order for a
+            // follow-up list, with customer as a stable tiebreaker so the sequence depends only on
+            // the data (and no longer shifts when the query changes).
+            // phone/model are needed as further keys: two DIFFERENT customers can share a name and
+            // an enquiry date (measured — Jun-2026 rows 32/33), and without them those two rows
+            // still swap whenever row arrival order changes.
+            .sort((left, right) =>
+              (right.enquiryDate || '').localeCompare(left.enquiryDate || '')
+              || (left.customer || '').localeCompare(right.customer || '')
+              || (left.phone || '').localeCompare(right.phone || '')
+              || (left.model || '').localeCompare(right.model || '')),
         },
         retail: {
           kpis: retailKpis,

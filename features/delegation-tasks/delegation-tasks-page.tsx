@@ -341,61 +341,135 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
 
   const rollup = listQuery.data?.rollup ?? null
 
-  const kpis = useMemo(() => {
+  const kpiStats = useMemo(() => {
+    const openCount = rows.filter((r) => r.status === 'assigned').length
+    const overdueCount = rows.filter((r) => r.isOverdue).length
+    const doneCount = rows.filter((r) => r.status === 'done').length
+
+    const now = new Date()
+    const currentDay = now.getDay()
+    const diffToMonday = now.getDate() - currentDay + (currentDay === 0 ? -6 : 1)
+    const currentMonday = new Date(now.getFullYear(), now.getMonth(), diffToMonday, 0, 0, 0, 0)
+
+    const openSparkline: number[] = new Array(8).fill(0)
+    const overdueSparkline: number[] = new Array(8).fill(0)
+    const doneSparkline: number[] = new Array(8).fill(0)
+
+    const weekMondays: number[] = []
+    for (let i = 7; i >= 0; i--) {
+      const m = new Date(currentMonday.getTime() - i * 7 * 24 * 60 * 60 * 1000)
+      weekMondays.push(m.getTime())
+    }
+
+    rows.forEach((r) => {
+      const targetDateStr = r.dueAt || r.createdAt
+      if (!targetDateStr) return
+      const d = new Date(targetDateStr)
+      if (Number.isNaN(d.getTime())) return
+
+      const day = d.getDay()
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+      const taskMonday = new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0).getTime()
+
+      const weekIdx = weekMondays.findIndex((m) => Math.abs(m - taskMonday) < 86400000)
+      if (weekIdx >= 0) {
+        if (r.status === 'assigned') openSparkline[weekIdx]++
+        if (r.isOverdue || (r.status !== 'done' && r.dueAt && new Date(r.dueAt) < now)) overdueSparkline[weekIdx]++
+        if (r.status === 'done') doneSparkline[weekIdx]++
+      }
+    })
+
+    const calcTrend = (current: number, prev: number, lowerIsBetter = false) => {
+      if (prev === 0) {
+        const val = current > 0 ? '+100%' : '0%'
+        const isPos = lowerIsBetter ? current === 0 : current > 0
+        return { value: val, isPositive: isPos, label: 'vs last week' }
+      }
+      const pct = Math.round(((current - prev) / prev) * 100)
+      const val = `${pct >= 0 ? '+' : ''}${pct}%`
+      const isPos = lowerIsBetter ? pct <= 0 : pct >= 0
+      return { value: val, isPositive: isPos, label: 'vs last week' }
+    }
+
+    const openTrend = calcTrend(openSparkline[7], openSparkline[6])
+    const overdueTrend = calcTrend(overdueSparkline[7], overdueSparkline[6], true)
+    const doneTrend = calcTrend(doneSparkline[7], doneSparkline[6])
+
     return {
-      open: rows.filter((r) => r.status === 'assigned').length,
-      overdue: rows.filter((r) => r.isOverdue).length,
-      done: rows.filter((r) => r.status === 'done').length,
+      open: openCount,
+      overdue: overdueCount,
+      done: doneCount,
+      openSparkline,
+      overdueSparkline,
+      doneSparkline,
+      openTrend,
+      overdueTrend,
+      doneTrend,
     }
   }, [rows])
 
   const weeklyPerformance = useMemo(() => {
-    if (!rows.length) return []
-    const groups: Record<string, { weekStart: string; onTime: number; delayed: number; pending: number; total: number; timestamp: number }> = {}
-    
-    rows.forEach(r => {
-      if (!r.dueAt) return
-      const d = new Date(r.dueAt)
+    const now = new Date()
+    const currentDay = now.getDay()
+    const diffToMonday = now.getDate() - currentDay + (currentDay === 0 ? -6 : 1)
+    const currentMonday = new Date(now.getFullYear(), now.getMonth(), diffToMonday, 0, 0, 0, 0)
+
+    const weeksMap: Record<number, { weekStart: string; onTime: number; delayed: number; pending: number; total: number; timestamp: number }> = {}
+
+    for (let i = 0; i < 4; i++) {
+      const m = new Date(currentMonday.getTime() - i * 7 * 24 * 60 * 60 * 1000)
+      const label = `Week of ${m.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`
+      weeksMap[m.getTime()] = {
+        weekStart: label,
+        onTime: 0,
+        delayed: 0,
+        pending: 0,
+        total: 0,
+        timestamp: m.getTime(),
+      }
+    }
+
+    const weekTimestamps = Object.keys(weeksMap).map(Number).sort((a, b) => b - a)
+
+    rows.forEach((r) => {
+      const dateStr = r.dueAt || r.createdAt
+      if (!dateStr) return
+      const d = new Date(dateStr)
       if (Number.isNaN(d.getTime())) return
-      
+
       const day = d.getDay()
       const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-      const monday = new Date(d.getFullYear(), d.getMonth(), diff)
-      const weekLabel = `Week of ${monday.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`
-      const key = monday.getTime().toString()
-      
-      if (!groups[key]) {
-        groups[key] = { weekStart: weekLabel, onTime: 0, delayed: 0, pending: 0, total: 0, timestamp: monday.getTime() }
-      }
-      
-      const isDone = r.status === 'done'
-      const due = r.dueAt ? new Date(r.dueAt) : null
-      const completed = r.completedAt ? new Date(r.completedAt) : null
-      
-      let status: 'ontime' | 'delayed' | 'pending' = 'pending'
-      if (isDone) {
-        if (!due || !completed || completed <= due) {
-          status = 'ontime'
+      const taskMonday = new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0).getTime()
+
+      const matchedKey = weekTimestamps.find((t) => Math.abs(t - taskMonday) < 86400000)
+      if (matchedKey && weeksMap[matchedKey]) {
+        const isDone = r.status === 'done'
+        const due = r.dueAt ? new Date(r.dueAt) : null
+        const completed = r.completedAt ? new Date(r.completedAt) : null
+
+        let status: 'ontime' | 'delayed' | 'pending' = 'pending'
+        if (isDone) {
+          if (!due || !completed || completed <= due) {
+            status = 'ontime'
+          } else {
+            status = 'delayed'
+          }
         } else {
-          status = 'delayed'
+          if (due && due < now) {
+            status = 'delayed'
+          } else {
+            status = 'pending'
+          }
         }
-      } else {
-        if (due && due < new Date()) {
-          status = 'delayed'
-        } else {
-          status = 'pending'
-        }
+
+        weeksMap[matchedKey].total++
+        if (status === 'ontime') weeksMap[matchedKey].onTime++
+        else if (status === 'delayed') weeksMap[matchedKey].delayed++
+        else weeksMap[matchedKey].pending++
       }
-      
-      groups[key].total++
-      if (status === 'ontime') groups[key].onTime++
-      else if (status === 'delayed') groups[key].delayed++
-      else groups[key].pending++
     })
-    
-    return Object.values(groups)
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 4)
+
+    return weekTimestamps.map((t) => weeksMap[t])
   }, [rows])
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['delegation-tasks'] })
@@ -406,33 +480,33 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard
           title="OPEN TASKS"
-          value={kpis.open}
+          value={kpiStats.open}
           subtitle="Active action items"
           icon={ListChecks}
           colorScheme="purple"
           chartType="area"
-          chartData={[12, 18, 14, 22, 19, 28, 24, 30]}
-          trend={{ value: '+8%', isPositive: true, label: 'vs last week' }}
+          chartData={kpiStats.openSparkline}
+          trend={kpiStats.openTrend}
         />
         <KpiCard
           title="OVERDUE TASKS"
-          value={kpis.overdue}
+          value={kpiStats.overdue}
           subtitle="Action required"
           icon={TriangleAlert}
           colorScheme="rose"
           chartType="bar"
-          chartData={[5, 8, 4, 12, 6, 9, 3, 2]}
-          trend={{ value: '-15%', isPositive: true, label: 'vs last week' }}
+          chartData={kpiStats.overdueSparkline}
+          trend={kpiStats.overdueTrend}
         />
         <KpiCard
           title="COMPLETED"
-          value={kpis.done}
+          value={kpiStats.done}
           subtitle="Total resolved"
           icon={CheckCircle2}
           colorScheme="emerald"
           chartType="area"
-          chartData={[10, 15, 25, 30, 45, 40, 60, 75]}
-          trend={{ value: '+22%', isPositive: true, label: 'vs last week' }}
+          chartData={kpiStats.doneSparkline}
+          trend={kpiStats.doneTrend}
         />
       </div>
 

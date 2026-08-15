@@ -2620,6 +2620,16 @@ function BookingDetailsDialog({
                 ) : (
                   <span className="text-slate-400 font-semibold p-2 border border-dashed rounded-xl">No PAN Uploaded</span>
                 )}
+                {(bookingDetail.booking.metadata?.costSheet || bookingDetail.booking.metadata?.costSheetUrl) && (
+                  <a
+                    href={String(bookingDetail.booking.metadata?.costSheet || bookingDetail.booking.metadata?.costSheetUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors text-indigo-600"
+                  >
+                    Download Cost Sheet
+                  </a>
+                )}
               </div>
             </div>
           </div>

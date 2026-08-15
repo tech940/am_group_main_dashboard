@@ -938,7 +938,7 @@ export function KiaVendorsClient() {
               <DialogHeader>
                 <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs font-black uppercase tracking-widest">
                   <Building2 className="w-4 h-4" />
-                  <span>Vendor Ledger & Payment History / विक्रेता बहीखाता</span>
+                  <span>Vendor Ledger & Payment History</span>
                 </div>
                 <DialogTitle className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-2.5">
                   {selectedVendorForLedger.name}
@@ -989,7 +989,7 @@ export function KiaVendorsClient() {
                     return (
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 p-4 rounded-2xl flex flex-col justify-between">
-                          <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Total Paid (सकल भुगतान)</span>
+                          <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Total Paid</span>
                           <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight mt-1 font-sans">₹{totalPaid.toLocaleString('en-IN')}</span>
                         </div>
                         <div className="bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl flex flex-col justify-between">
@@ -1008,7 +1008,7 @@ export function KiaVendorsClient() {
                   <div>
                     <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-1.5">
                       <Info className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                      Cross-Company Payments List / भुगतान सूची
+                      Cross-Company Payments List
                     </h4>
 
                     {(!ledgerData?.payments || ledgerData.payments.length === 0) ? (
@@ -1114,7 +1114,7 @@ export function KiaVendorsClient() {
         <DialogContent className="max-w-4xl w-[95vw] h-[85vh] p-4 flex flex-col rounded-3xl overflow-hidden">
           <DialogHeader className="pb-2 border-b border-slate-100 flex flex-row items-center justify-between">
             <div>
-              <DialogTitle className="text-sm font-black text-slate-800">Document Attachment Preview / दस्तावेज़ पूर्वावलोकन</DialogTitle>
+              <DialogTitle className="text-sm font-black text-slate-800">Document Attachment Preview</DialogTitle>
               <DialogDescription className="text-[10px] text-slate-400 font-semibold">Supporting invoice bill or payment proof receipt.</DialogDescription>
             </div>
             <button
@@ -1179,7 +1179,7 @@ export function KiaVendorsClient() {
                       <p className="text-xs font-black text-slate-900">{row.vendorName || '—'}</p>
                     </div>
                     <div className="space-y-1">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Amount / राशि</span>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Amount</span>
                       <p className="text-sm font-black text-slate-950">₹{Number(row.amount || 0).toLocaleString('en-IN')}</p>
                     </div>
                     <div className="space-y-1">
@@ -1200,7 +1200,7 @@ export function KiaVendorsClient() {
                     </div>
                     <div className="space-y-1">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Workflow Status</span>
-                      <p className="text-xs font-black uppercase text-emerald-600">{row.paymentStatus === 'PAID' ? 'PAID / भुगतान किया' : 'UNPAID / लंबित'}</p>
+                      <p className="text-xs font-black uppercase text-emerald-600">{row.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID'}</p>
                     </div>
                   </div>
 
@@ -1346,16 +1346,16 @@ function AddGlDialog({ open, onOpenChange, onSuccess }: AddGlDialogProps) {
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
           <div className="space-y-1.5 bg-slate-50 border border-slate-100 rounded-2xl p-3">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-              GL Code / जीएल कोड
+              GL Code
             </span>
             <span className="text-xs font-black text-emerald-600 font-mono">
-              [ System Generated / सिस्टम द्वारा जनरेटेड ]
+              [ System Generated ]
             </span>
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              GL Category Name / जीएल श्रेणी का नाम
+              GL Category Name
             </label>
             <Input
               value={glName}
@@ -1368,17 +1368,17 @@ function AddGlDialog({ open, onOpenChange, onSuccess }: AddGlDialogProps) {
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              Tally Group / टैली ग्रुप
+              Tally Group
             </label>
             <select
               value={tallyGroup}
               onChange={e => setTallyGroup(e.target.value)}
               className="w-full h-10 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-xs font-semibold text-slate-800 cursor-pointer"
             >
-              <option value="Indirect Expenses">Indirect Expenses (अप्रत्यक्ष खर्च)</option>
-              <option value="Direct Expenses">Direct Expenses (प्रत्यक्ष खर्च)</option>
-              <option value="Administrative Expenses">Administrative Expenses (प्रशासनिक खर्च)</option>
-              <option value="Selling & Distribution">Selling & Distribution (बिक्री और वितरण)</option>
+              <option value="Indirect Expenses">Indirect Expenses</option>
+              <option value="Direct Expenses">Direct Expenses</option>
+              <option value="Administrative Expenses">Administrative Expenses</option>
+              <option value="Selling & Distribution">Selling & Distribution</option>
             </select>
           </div>
 

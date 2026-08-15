@@ -3495,7 +3495,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       <div className="flex items-center justify-between">
                         <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
                           <MessageSquare className="w-3 h-3 text-amber-600" />
-                          <span>Remarks / विवरण:</span>
+                          <span>Remarks:</span>
                         </span>
                         <span className="text-[10px] font-bold text-amber-700">Tap card for detail</span>
                       </div>
@@ -4316,7 +4316,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
                         <div className="flex items-center gap-2 text-amber-800 text-xs font-black uppercase tracking-wider">
                           <AlertTriangle className="w-4 h-4 text-amber-600" />
-                          <span>Clarification Required / स्पष्टीकरण आवश्यक</span>
+                          <span>Clarification Required</span>
                         </div>
                         <p className="text-xs font-semibold text-slate-700 leading-relaxed">
                           This request was sent back to you with the following remarks:
@@ -4351,7 +4351,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {detailRow.uploadBillUrl2 && renderOverviewItem('Secondary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl2!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Bill 2</span></button>, FileText)}
                         {detailRow.uploadDocUrl && renderOverviewItem('Support Document', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadDocUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Support Doc</span></button>, FileText)}
                         {detailRow.invoiceDocUrl && renderOverviewItem('Uploaded Invoice', <button type="button" onClick={() => setPreviewDocUrl(detailRow.invoiceDocUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-sm hover:shadow-emerald-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Invoice</span></button>, FileText)}
-                        {detailRow.paymentStatus === 'PAID' && renderOverviewItem('Payment Status', <span className="text-emerald-700 font-black">PAID / भुगतान किया</span>, CheckCircle2)}
+                        {detailRow.paymentStatus === 'PAID' && renderOverviewItem('Payment Status', <span className="text-emerald-700 font-black">PAID</span>, CheckCircle2)}
                         {detailRow.paymentStatus === 'PAID' && renderOverviewItem('UTR / Txn ID', detailRow.utrNumber || '—', Key)}
                         {detailRow.paymentStatus === 'PAID' && detailRow.paymentProofUrl && renderOverviewItem('Payment Proof', <button type="button" onClick={() => setPreviewDocUrl(detailRow.paymentProofUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Proof</span></button>, FileText)}
                         {detailRow.paymentStatus === 'PAID' && detailRow.paymentCompletedAt && renderOverviewItem('Paid On / By', `${new Date(detailRow.paymentCompletedAt).toLocaleDateString('en-IN')} by ${detailRow.paymentCompletedBy || '—'}`, User)}
@@ -5442,16 +5442,16 @@ function AddGlDialog({ open, onOpenChange, onSuccess }: AddGlDialogProps) {
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
           <div className="space-y-1.5 bg-slate-50 border border-slate-100 rounded-2xl p-3">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-              GL Code / जीएल कोड
+              GL Code
             </span>
             <span className="text-xs font-black text-indigo-600 font-mono">
-              [ System Generated / सिस्टम द्वारा जनरेटेड ]
+              [ System Generated ]
             </span>
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              GL Category Name / जीएल श्रेणी का नाम
+              GL Category Name
             </label>
             <Input
               value={glName}
@@ -5464,17 +5464,17 @@ function AddGlDialog({ open, onOpenChange, onSuccess }: AddGlDialogProps) {
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              Tally Group / टैली ग्रुप
+              Tally Group
             </label>
             <select
               value={tallyGroup}
               onChange={e => setTallyGroup(e.target.value)}
               className="w-full h-10 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-xs font-semibold text-slate-800 cursor-pointer"
             >
-              <option value="Indirect Expenses">Indirect Expenses (अप्रत्यक्ष खर्च)</option>
-              <option value="Direct Expenses">Direct Expenses (प्रत्यक्ष खर्च)</option>
-              <option value="Administrative Expenses">Administrative Expenses (प्रशासनिक खर्च)</option>
-              <option value="Selling & Distribution">Selling & Distribution (बिक्री और वितरण)</option>
+              <option value="Indirect Expenses">Indirect Expenses</option>
+              <option value="Direct Expenses">Direct Expenses</option>
+              <option value="Administrative Expenses">Administrative Expenses</option>
+              <option value="Selling & Distribution">Selling & Distribution</option>
             </select>
           </div>
 

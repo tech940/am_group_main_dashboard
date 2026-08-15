@@ -267,14 +267,14 @@ function AnalyticsDateRangePicker({
         <button
           type="button"
           onClick={() => setViewDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d8e2ec] bg-white text-slate-600 transition hover:border-[#071a2b]/35 hover:text-[#071a2b]"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d8e2ec] bg-white text-slate-600 transition motion-reduce:transition-none hover:border-[#071a2b]/35 hover:text-[#071a2b]"
           aria-label="Previous month"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
 
         <div className="text-center">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
             {startDate && !endDate ? 'Pick end date' : (title || 'Select date range')}
           </p>
           <p className="mt-0.5 text-[15px] font-black text-slate-950">{monthLabel}</p>
@@ -283,14 +283,14 @@ function AnalyticsDateRangePicker({
         <button
           type="button"
           onClick={() => setViewDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d8e2ec] bg-white text-slate-600 transition hover:border-[#071a2b]/35 hover:text-[#071a2b]"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d8e2ec] bg-white text-slate-600 transition motion-reduce:transition-none hover:border-[#071a2b]/35 hover:text-[#071a2b]"
           aria-label="Next month"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
           <div key={`${day}-${index}`} className="py-1">{day}</div>
         ))}
@@ -311,9 +311,11 @@ function AnalyticsDateRangePicker({
               key={dateValue}
               type="button"
               onClick={() => selectDate(date)}
+              aria-label={dateValue}
+              aria-pressed={isSelected}
               className={cn(
-                'flex h-10 items-center justify-center rounded-xl text-[12px] font-black transition',
-                inCurrentMonth ? 'text-slate-700' : 'text-slate-300',
+                'flex h-10 items-center justify-center rounded-xl text-[12px] font-black transition motion-reduce:transition-none',
+                inCurrentMonth ? 'text-slate-700' : 'text-slate-500',
                 'hover:bg-[#edf4fb] hover:text-[#071a2b]',
                 inRange && 'bg-[#e6f2fb] text-[#071a2b]',
                 isToday && 'ring-2 ring-[#18a7d0]/50 ring-offset-2',
@@ -328,7 +330,7 @@ function AnalyticsDateRangePicker({
 
       <div className="mt-3 space-y-2">
         <div className="rounded-[1.1rem] border border-[#e4ebf2] bg-[#f8fbfd] px-3.5 py-2.5">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
             {startDate && !endDate ? 'Pick end date' : (title || 'Date range')}
           </p>
           <p className="mt-1 text-[13px] font-semibold text-slate-700">
@@ -542,9 +544,9 @@ function formatChartNumber(value: unknown) {
 }
 
 function getGrowthBadgeClass(value: number | string | 'N/A') {
-  if (value === 'N/A') return 'text-slate-400 bg-white border-slate-200'
+  if (value === 'N/A') return 'text-slate-600 bg-white border-slate-200'
   const num = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(num)) return 'text-slate-400 bg-white border-slate-200'
+  if (!Number.isFinite(num)) return 'text-slate-600 bg-white border-slate-200'
   return num >= 0
     ? 'text-emerald-700 bg-white border-emerald-200'
     : 'text-[lab(53_89.72_88.48)] bg-white border-[lab(53_89.72_88.48)]'
@@ -1090,15 +1092,15 @@ function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter:
                 </p>
               </div>
             ))}
-            <button type="button" onClick={() => setShowRules(true)} className="rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 text-xs font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5">
+            <button type="button" onClick={() => setShowRules(true)} aria-expanded={showRules} className="rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 text-xs font-black text-white shadow-lg shadow-slate-200 transition motion-reduce:transition-none hover:-translate-y-0.5">
               <ShieldAlert className="mx-auto mb-1.5 h-4 w-4" />
               Rules
             </button>
-            <button type="button" onClick={downloadCsv} className="rounded-2xl border border-teal-100 bg-teal-700 px-4 py-3 text-xs font-black text-white shadow-lg shadow-teal-100 transition hover:-translate-y-0.5">
+            <button type="button" onClick={downloadCsv} className="rounded-2xl border border-teal-100 bg-teal-700 px-4 py-3 text-xs font-black text-white shadow-lg shadow-teal-100 transition motion-reduce:transition-none hover:-translate-y-0.5">
               <FileSpreadsheet className="mx-auto mb-1.5 h-4 w-4" />
               Excel
             </button>
-            <button type="button" onClick={downloadPdf} className="rounded-2xl border border-rose-100 bg-rose-600 px-4 py-3 text-xs font-black text-white shadow-lg shadow-rose-100 transition hover:-translate-y-0.5">
+            <button type="button" onClick={downloadPdf} className="rounded-2xl border border-rose-100 bg-rose-600 px-4 py-3 text-xs font-black text-white shadow-lg shadow-rose-100 transition motion-reduce:transition-none hover:-translate-y-0.5">
               <FileText className="mx-auto mb-1.5 h-4 w-4" />
               PDF
             </button>
@@ -1126,8 +1128,9 @@ function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter:
                   key={rule.key}
                   type="button"
                   onClick={() => updateFilter('alert', filters.alert === rule.alertName ? 'all' : rule.alertName)}
+                  aria-pressed={filters.alert === rule.alertName}
                   className={cn(
-                    "rounded-2xl border p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:shadow-lg",
+                    "rounded-2xl border p-4 text-left transition duration-200 motion-reduce:transition-none hover:-translate-y-0.5 hover:shadow-lg",
                     filters.alert === rule.alertName
                       ? "border-rose-200 bg-rose-50 shadow-lg shadow-rose-100/60"
                       : "border-slate-100 bg-slate-50/80 hover:border-slate-200"
@@ -1246,10 +1249,11 @@ function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter:
       <div className="order-3 overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
         <div className="max-h-[560px] overflow-auto">
           <table className="w-full min-w-[1120px] table-fixed text-[10px] leading-tight">
+            <caption className="sr-only">Forensic audit transactions with alerts and score</caption>
             <thead className="sticky top-0 z-10 bg-slate-950 text-white">
               <tr>
                 {['Sr', 'Branch', 'Type', 'Date', 'Bill No', 'Model', 'Reg Number', 'Advisor', 'Labour Amt', 'Part Amt', 'Discount', 'Alerts', 'Score'].map((header) => (
-                  <th key={header} className={cn(
+                  <th key={header} scope="col" className={cn(
                     'px-2 py-3 text-center font-black uppercase tracking-widest',
                     header === 'Alerts' && 'w-[210px] text-left',
                     header === 'Model' && 'w-[140px]',
@@ -1291,7 +1295,7 @@ function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter:
                           {row.alerts.join('\n')}
                         </div>
                       ) : (
-                        <span className="text-slate-400">No alerts</span>
+                        <span className="text-slate-600">No alerts</span>
                       )}
                     </td>
                     <td className={cn('px-2 py-2 text-sm font-black', row.score >= 90 ? 'text-emerald-600' : row.score >= 70 ? 'text-amber-600' : 'text-rose-600')}>{row.score}</td>
@@ -1321,17 +1325,18 @@ function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter:
           <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 p-6">
               <h3 className="text-3xl font-black text-blue-950">Forensic Audit Scoring Rules</h3>
-              <button type="button" onClick={() => setShowRules(false)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
+              <button type="button" onClick={() => setShowRules(false)} aria-label="Close scoring rules" className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
                 <X className="h-6 w-6" />
               </button>
             </div>
             <div className="max-h-[72vh] overflow-auto p-6">
               <table className="w-full border-collapse text-sm">
+                <caption className="sr-only">Forensic audit scoring rules and point impact</caption>
                 <thead className="bg-slate-100 text-slate-600">
                   <tr>
-                    <th className="border border-slate-200 px-5 py-4 text-left font-black">Alert Name</th>
-                    <th className="border border-slate-200 px-5 py-4 text-left font-black">Logic / Formula</th>
-                    <th className="border border-slate-200 px-5 py-4 text-center font-black">Impact</th>
+                    <th scope="col" className="border border-slate-200 px-5 py-4 text-left font-black">Alert Name</th>
+                    <th scope="col" className="border border-slate-200 px-5 py-4 text-left font-black">Logic / Formula</th>
+                    <th scope="col" className="border border-slate-200 px-5 py-4 text-center font-black">Impact</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1441,10 +1446,11 @@ function SheetRowsTable({
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full min-w-max text-xs">
+          <caption className="sr-only">{`Rows from sheet ${sheet.sheetName}`}</caption>
           <thead className="bg-slate-900 text-white">
             <tr>
               {visibleColumns.map((column) => (
-                <th key={column} className="px-4 py-3 text-left text-[11px] font-black uppercase tracking-wider">
+                <th key={column} scope="col" className="px-4 py-3 text-left text-[11px] font-black uppercase tracking-wider">
                   {column}
                 </th>
               ))}
@@ -1453,7 +1459,7 @@ function SheetRowsTable({
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={Math.max(1, visibleColumns.length)} className="px-4 py-12 text-center font-semibold text-slate-400">
+                <td colSpan={Math.max(1, visibleColumns.length)} className="px-4 py-12 text-center font-semibold text-slate-600">
                   No rows found for this sheet.
                 </td>
               </tr>
@@ -1951,7 +1957,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
               if (!selectedSheet) {
                 return (
                   <Card className="rounded-[1.5rem] border-none bg-white shadow-xl shadow-slate-200/50 overflow-hidden p-8">
-                    <div className="text-center text-slate-400">
+                    <div className="text-center text-slate-600">
                       <p className="font-bold">Sheet not found</p>
                     </div>
                   </Card>
@@ -1996,7 +2002,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                               <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
                                 Updated: {freshnessQuery.isLoading && !freshnessQuery.data ? 'Checking...' : freshnessQuery.isError ? 'Not available' : formatBusinessFreshness(freshnessQuery.data?.sourceUpdatedAt)}
                               </span>
-                              <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" aria-label="Business Excellence branch filter">
+                              <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Business Excellence branch filter">
                                 {branchOptions.map((branch) => {
                                   const isActive = branch.dealerCode
                                     ? selectedDealerCode === branch.dealerCode
@@ -2006,8 +2012,9 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                       key={branch.dealerCode || 'all-locations'}
                                       type="button"
                                       onClick={() => handleDealerChange(branch.dealerCode)}
+                                      aria-pressed={isActive}
                                       className={cn(
-                                        'rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest transition',
+                                        'rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest transition motion-reduce:transition-none',
                                         isActive
                                           ? 'bg-[var(--dashboard-action-bg)] text-white shadow-sm'
                                           : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
@@ -2098,7 +2105,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                   <div className="rounded-2xl border border-slate-200 bg-white p-3">
                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                       <div>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Selected Range</p>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Selected Range</p>
                                         <p className="mt-1 text-sm font-black text-slate-950">{draftDateLabel}</p>
                                       </div>
                                       <div className="flex flex-wrap gap-2">
@@ -2134,15 +2141,16 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
                                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5">
                                     <div className="flex items-center justify-between gap-2">
-                                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">KIA Year</span>
+                                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">KIA Year</span>
                                       <div className="flex flex-wrap gap-1.5">
                                         {kiaYearOptions.map((year) => (
                                           <button
                                             key={year}
                                             type="button"
                                             onClick={() => selectKiaYear(year)}
+                                            aria-pressed={activeYearOption === year}
                                             className={cn(
-                                              'h-7 rounded-lg border px-2.5 text-[11px] font-black transition-all',
+                                              'h-7 rounded-lg border px-2.5 text-[11px] font-black transition-all motion-reduce:transition-none',
                                               activeYearOption === year
                                                 ? 'border-[var(--dashboard-action-bg)] bg-[var(--dashboard-action-bg)] text-white shadow-sm'
                                                 : 'border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:text-slate-950'
@@ -2204,11 +2212,11 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                       <div className="grid gap-2 sm:grid-cols-2">
                                         <div>
-                                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">CY Range</p>
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">CY Range</p>
                                           <p className="mt-0.5 text-xs font-black text-slate-950">{draftDateLabel}</p>
                                         </div>
                                         <div>
-                                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">LY Range</p>
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">LY Range</p>
                                           <p className="mt-0.5 text-xs font-black text-slate-950">{draftComparisonLabel}</p>
                                         </div>
                                       </div>
@@ -2291,9 +2299,9 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
                       {freshnessQuery.data?.sources && freshnessQuery.data.sources.length > 0 && (
                         <div className="mt-3.5 flex flex-wrap gap-2 border-t border-slate-100 pt-3 items-center">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">Data Freshness:</span>
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mr-1">Data Freshness:</span>
                           {freshnessQuery.data.sources.map((src) => (
-                            <span key={src.table} className="rounded-full border border-slate-200/80 bg-slate-50/65 px-2.5 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-800 transition" title={`Table: ${src.table} (${(src.rowCount ?? 0).toLocaleString()} rows)`}>
+                            <span key={src.table} className="rounded-full border border-slate-200/80 bg-slate-50/65 px-2.5 py-1 text-[10px] font-bold text-slate-600 hover:text-slate-800 transition motion-reduce:transition-none" title={`Table: ${src.table} (${(src.rowCount ?? 0).toLocaleString()} rows)`}>
                               {src.label}: <span className="font-extrabold text-slate-700">{formatBusinessFreshnessShort(src.sourceUpdatedAt)}</span>
                             </span>
                           ))}
@@ -2341,7 +2349,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                           ) : aiSummary?.structuredSummary ? (
                             <div className="space-y-4">
                               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Executive Read</p>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Executive Read</p>
                                 <p className="mt-3 text-base font-semibold leading-7 text-slate-800">
                                   {cleanAiText(aiSummary.structuredSummary.executiveRead)}
                                 </p>
@@ -2409,7 +2417,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                 </div>
                               </div>
 
-                              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-[10px] font-black uppercase tracking-widest text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-[10px] font-black uppercase tracking-widest text-slate-600 sm:flex-row sm:items-center sm:justify-between">
                                 <span>Generated with {aiSummary.model}</span>
                                 <span>{new Date(aiSummary.generatedAt).toLocaleString('en-IN')}</span>
                                 <Button
@@ -3586,7 +3594,7 @@ function BusinessExecutiveDecisionLayer({
             </div>
             <div className="mt-3 flex items-end gap-2">
               <p className="text-5xl font-black tracking-tight text-slate-950">{executiveRead.score}</p>
-              <p className="pb-1 text-sm font-black uppercase tracking-widest text-slate-400">/ 100</p>
+              <p className="pb-1 text-sm font-black uppercase tracking-widest text-slate-600">/ 100</p>
             </div>
             <p className="mt-2 text-xs font-black text-slate-600">{scoreTrendLabel(executiveRead.previousScore, executiveRead.score)}</p>
             <p className="mt-2 inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{executiveRead.confidence}</p>
@@ -3594,7 +3602,7 @@ function BusinessExecutiveDecisionLayer({
 
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_260px]">
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">What Changed</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">What Changed</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Positive</p>
@@ -3641,8 +3649,8 @@ function BusinessExecutiveDecisionLayer({
                 {executiveRead.target.percent === null ? 'N/A' : `${executiveRead.target.percent.toFixed(1)}%`}
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-black">
-                <div><p className="text-[10px] uppercase tracking-widest text-slate-400">Target</p><p>{executiveRead.target.target}</p></div>
-                <div><p className="text-[10px] uppercase tracking-widest text-slate-400">Achieved</p><p>{executiveRead.target.achieved}</p></div>
+                <div><p className="text-[10px] uppercase tracking-widest text-slate-500">Target</p><p>{executiveRead.target.target}</p></div>
+                <div><p className="text-[10px] uppercase tracking-widest text-slate-500">Achieved</p><p>{executiveRead.target.achieved}</p></div>
               </div>
             </div>
           </div>
@@ -3902,7 +3910,7 @@ function ExecutiveMetricCard({
   icon?: typeof Wrench
 }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all hover:border-slate-300 hover:shadow-md">
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all motion-reduce:transition-none hover:border-slate-300 hover:shadow-md">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {Icon && (
@@ -3916,10 +3924,10 @@ function ExecutiveMetricCard({
       </div>
       <p className="mt-3.5 text-3xl font-black tracking-tight text-slate-900">{value}</p>
       <div className="mt-3.5 flex items-center justify-between rounded-xl border border-slate-200/70 bg-slate-50/70 px-3.5 py-2">
-        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Previous</span>
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Previous</span>
         <span className="text-xs font-black text-slate-700">{previous}</span>
       </div>
-      <p className="mt-2.5 text-[11px] font-bold text-slate-400">{helper}</p>
+      <p className="mt-2.5 text-[11px] font-bold text-slate-600">{helper}</p>
     </div>
   )
 }
@@ -4021,7 +4029,7 @@ function ExecutiveRevenuePerformance({
     return (
       <React.Fragment key={`${row.name}-${period}`}>
         <td className="min-w-[78px] whitespace-nowrap border-b border-slate-100 px-2.5 py-2.5 text-right font-mono font-black text-slate-900">{formatExecutiveRevenueMoney(metric.cy)}</td>
-        <td className="min-w-[78px] whitespace-nowrap border-b border-slate-100 px-2.5 py-2.5 text-right font-mono font-semibold text-slate-400">{formatExecutiveRevenueMoney(metric.ly)}</td>
+        <td className="min-w-[78px] whitespace-nowrap border-b border-slate-100 px-2.5 py-2.5 text-right font-mono font-semibold text-slate-600">{formatExecutiveRevenueMoney(metric.ly)}</td>
         <td className="min-w-[82px] whitespace-nowrap border-b border-slate-100 px-2.5 py-2.5 text-center">
           <ExecutiveGrowthBadge value={metric.growth} />
         </td>
@@ -4045,30 +4053,31 @@ function ExecutiveRevenuePerformance({
     >
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight text-left">
+          <caption className="sr-only">{`${title} by category across MTD, QTD and YTD`}</caption>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
-              <th className="min-w-[130px] px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Category</th>
+              <th scope="col" className="min-w-[130px] px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Category</th>
               {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
-                <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
+                <th key={label} scope="colgroup" colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
               ))}
             </tr>
             <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
               <th className="px-4 py-1.5 border-r border-slate-200/60"></th>
               {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', '%'].map((label, i) => (
-                <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
+                <th key={`${groupIndex}-${label}`} scope="col" className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
               )))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map(({ key, label, row }) => (
-              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-teal-50/30 transition-colors')}>
+              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-teal-50/30 transition-colors motion-reduce:transition-none')}>
                 <td className="whitespace-nowrap px-4 py-2.5 font-bold text-slate-900 border-r border-slate-100">{label}</td>
                 {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => renderPeriodCells(row, period))}
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="bg-white px-3 py-6 text-center text-xs font-bold text-slate-400">
+                <td colSpan={10} className="bg-white px-3 py-6 text-center text-xs font-bold text-slate-600">
                   Data not available.
                 </td>
               </tr>
@@ -4087,7 +4096,7 @@ function ExecutiveRevenuePerformance({
             <TrendingUp className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-[9px] font-black uppercase tracking-[0.24em] text-slate-400">Revenue Performance</p>
+            <p className="text-[9px] font-black uppercase tracking-[0.24em] text-slate-500">Revenue Performance</p>
             <h3 className="text-lg font-black text-slate-900 tracking-tight">{selectedLocationLabel}</h3>
           </div>
         </div>
@@ -4112,18 +4121,18 @@ function ExecutiveRevenuePerformance({
               <p className={cn('mt-1.5 text-2xl font-black tracking-tight', revenueGrowth !== 'N/A' && revenueGrowth < 0 ? 'text-rose-600' : 'text-emerald-700')}>
                 {formatSignedGrowth(revenueGrowth)}
               </p>
-              <p className="mt-1 text-[9px] font-bold uppercase leading-4 text-slate-400">
+              <p className="mt-1 text-[9px] font-bold uppercase leading-4 text-slate-600">
                 CY {currentRangeLabel} vs LY {comparisonRangeLabel}
               </p>
               <div className="mt-2.5 grid grid-cols-2 gap-2 rounded-xl border border-slate-200/70 bg-white p-2.5 text-[10px] font-black">
-                <div><p className="text-[9px] uppercase tracking-widest text-slate-400">CY Revenue</p><p className="text-slate-900">{formatCurrency(currentRevenue)}</p></div>
-                <div><p className="text-[9px] uppercase tracking-widest text-slate-400">LY Revenue</p><p className="text-slate-700">{formatCurrency(previousRevenue)}</p></div>
+                <div><p className="text-[9px] uppercase tracking-widest text-slate-500">CY Revenue</p><p className="text-slate-900">{formatCurrency(currentRevenue)}</p></div>
+                <div><p className="text-[9px] uppercase tracking-widest text-slate-500">LY Revenue</p><p className="text-slate-700">{formatCurrency(previousRevenue)}</p></div>
               </div>
             </div>
             <div className="rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Paid Service Contribution</p>
               <p className="mt-1.5 text-2xl font-black text-slate-900 tracking-tight">{paidContribution.toFixed(1)}%</p>
-              <p className="mt-1 text-[9px] font-bold uppercase leading-4 text-slate-400">Paid Service load share in CY selected period.</p>
+              <p className="mt-1 text-[9px] font-bold uppercase leading-4 text-slate-600">Paid Service load share in CY selected period.</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
@@ -4465,23 +4474,24 @@ function BusinessExecutiveDashboard({
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight text-left">
+                  <caption className="sr-only">Overall workshop load by location across TD, MTD, QTD and YTD</caption>
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
-                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Location</th>
-                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
+                      <th scope="col" rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Location</th>
+                      <th scope="col" rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
                       {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
-                        <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
+                        <th key={label} scope="colgroup" colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
                       ))}
                     </tr>
                     <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
                       {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label, i) => (
-                        <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
+                        <th key={`${groupIndex}-${label}`} scope="col" className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
                       )))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {locationRows.map((row) => (
-                      <tr key={row.label} className={row.label === 'Total' ? 'bg-teal-50/60 font-black text-[#055B65]' : 'bg-white hover:bg-teal-50/30 transition-colors'}>
+                      <tr key={row.label} className={row.label === 'Total' ? 'bg-teal-50/60 font-black text-[#055B65]' : 'bg-white hover:bg-teal-50/30 transition-colors motion-reduce:transition-none'}>
                         <td className="px-4 py-3 font-bold text-slate-900 border-r border-slate-100">{row.label}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
                         {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => {
@@ -4489,7 +4499,7 @@ function BusinessExecutiveDashboard({
                           return (
                             <React.Fragment key={`${row.label}-${period}`}>
                               <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
-                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-600">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
                               <td className={cn("px-3 py-3 text-center", pIdx < 2 && "border-r border-slate-100")}><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
@@ -4512,8 +4522,9 @@ function BusinessExecutiveDashboard({
                       key={metric.id}
                       type="button"
                       onClick={() => setActiveExecutiveTableMetric(metric.id)}
+                      aria-pressed={activeExecutiveTableMetric === metric.id}
                       className={cn(
-                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
+                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all motion-reduce:transition-none cursor-pointer',
                         activeExecutiveTableMetric === metric.id
                           ? 'border-white bg-white text-[#055B65] shadow-xs scale-105'
                           : 'border-white/20 bg-white/10 text-teal-100 hover:bg-white/20 hover:text-white'
@@ -4530,23 +4541,24 @@ function BusinessExecutiveDashboard({
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight text-left">
+                  <caption className="sr-only">Service type performance across TD, MTD, QTD and YTD</caption>
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
-                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Service Type</th>
-                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
+                      <th scope="col" rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Service Type</th>
+                      <th scope="col" rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
                       {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
-                        <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
+                        <th key={label} scope="colgroup" colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
                       ))}
                     </tr>
                     <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
                       {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label, i) => (
-                        <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
+                        <th key={`${groupIndex}-${label}`} scope="col" className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
                       )))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {serviceTypeRows.map((row) => (
-                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-teal-50/30 transition-colors')}>
+                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-teal-50/30 transition-colors motion-reduce:transition-none')}>
                         <td className="px-4 py-3 font-bold text-slate-900 border-r border-slate-100">{row.name}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
                         {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => {
@@ -4554,7 +4566,7 @@ function BusinessExecutiveDashboard({
                           return (
                             <React.Fragment key={`${row.name}-${period}`}>
                               <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
-                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-600">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
                               <td className={cn("px-3 py-3 text-center", pIdx < 2 && "border-r border-slate-100")}><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
@@ -4579,7 +4591,7 @@ function BusinessExecutiveDashboard({
             <div className="rounded-[1.25rem] border border-slate-200/80 bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Trend Graph</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Trend Graph</p>
                   <h3 className="mt-1 text-lg font-black text-slate-900 tracking-tight">{activeTrendMeta.title}</h3>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
@@ -4592,8 +4604,9 @@ function BusinessExecutiveDashboard({
                       key={metric.id}
                       type="button"
                       onClick={() => setActiveExecutiveMetric(metric.id)}
+                      aria-pressed={activeExecutiveMetric === metric.id}
                       className={cn(
-                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all',
+                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all motion-reduce:transition-none',
                         activeExecutiveMetric === metric.id
                           ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
                           : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
@@ -4604,7 +4617,7 @@ function BusinessExecutiveDashboard({
                   ))}
                 </div>
               </div>
-              <div className="mt-4 h-[360px]">
+              <div className="mt-4 h-[360px]" role="img" aria-label={`${activeTrendMeta.title} trend line chart, current year versus last year`}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={trendData} margin={{ top: 20, right: 20, bottom: 10, left: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -4645,7 +4658,7 @@ function BusinessExecutiveDashboard({
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
                 {executiveTrendStats.cards.map((card) => (
                   <div key={card.label} className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-center shadow-2xs">
-                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>
+                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">{card.label}</p>
                     <p className={cn('mt-1.5 text-xl font-black text-slate-900', card.color?.includes('text-[lab') ? 'text-rose-600' : card.color)}>{card.value}</p>
                   </div>
                 ))}
@@ -4660,18 +4673,19 @@ function BusinessExecutiveDashboard({
             >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] border-collapse text-[11px] leading-tight">
+                  <caption className="sr-only">Financial year trends for load, labour, parts and revenue</caption>
                   <thead className="bg-slate-900 text-slate-100">
                     <tr>
-                      <th className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Financial Year</th>
-                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Load</th>
-                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Labour</th>
-                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Parts</th>
-                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Revenue</th>
+                      <th scope="col" className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Financial Year</th>
+                      <th scope="col" className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Load</th>
+                      <th scope="col" className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Labour</th>
+                      <th scope="col" className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Parts</th>
+                      <th scope="col" className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Revenue</th>
                     </tr>
                   </thead>
                   <tbody>
                     {fyRows.map((row) => (
-                      <tr key={row.fy} className="bg-white hover:bg-slate-50/80 transition-colors">
+                      <tr key={row.fy} className="bg-white hover:bg-slate-50/80 transition-colors motion-reduce:transition-none">
                         <td className="border border-slate-200/70 px-3 py-3 font-black text-slate-900">{row.fy}</td>
                         <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{row.load.toLocaleString('en-IN')}</td>
                         <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.labour)}</td>
@@ -5005,7 +5019,7 @@ function WorkshopPerformanceSection({
     <button
       type="button"
       onClick={() => setExpandedWorkshopChart({ id, title })}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-teal-100 bg-white text-teal-700 shadow-sm transition hover:border-teal-200 hover:bg-teal-50"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-teal-100 bg-white text-teal-700 shadow-sm transition motion-reduce:transition-none hover:border-teal-200 hover:bg-teal-50"
       aria-label={`Expand ${title}`}
     >
       <Maximize2 className="h-4 w-4" />
@@ -5073,7 +5087,7 @@ function WorkshopPerformanceSection({
       <div className="bg-slate-50 p-8">
         <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-xl shadow-slate-200/50">
           <Wrench className="mx-auto mb-4 h-10 w-10 text-slate-300" />
-          <p className="text-sm font-black uppercase tracking-widest text-slate-400">Workshop Performance data is unavailable.</p>
+          <p className="text-sm font-black uppercase tracking-widest text-slate-600">Workshop Performance data is unavailable.</p>
         </div>
       </div>
     )
@@ -5134,10 +5148,11 @@ function WorkshopPerformanceSection({
       </div>
       <div className="overflow-auto">
         <table className={cn('w-full border-collapse text-left', isCore ? 'min-w-[980px]' : 'min-w-[1480px]')}>
+          <caption className="sr-only">{isCore ? 'Service type core performance table' : 'Service type performance table'}</caption>
           <thead className="bg-teal-800 text-white">
             <tr>
               {headings.map((heading) => (
-                <th key={heading} className="border border-teal-700/80 px-3 py-3 text-[8px] font-black uppercase tracking-widest">
+                <th key={heading} scope="col" className="border border-teal-700/80 px-3 py-3 text-[8px] font-black uppercase tracking-widest">
                   {heading}
                 </th>
               ))}
@@ -5168,10 +5183,11 @@ function WorkshopPerformanceSection({
                         <button
                           type="button"
                           onClick={() => toggleWorkshopRow(row.serviceType)}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-teal-200 hover:text-teal-700"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition motion-reduce:transition-none hover:border-teal-200 hover:text-teal-700"
+                          aria-expanded={isExpanded}
                           aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.serviceType}`}
                         >
-                          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !isExpanded && '-rotate-90')} />
+                          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform motion-reduce:transition-none', !isExpanded && '-rotate-90')} />
                         </button>
                       ) : options?.child ? (
                         <span className="h-px w-4 bg-slate-300" />
@@ -5182,11 +5198,11 @@ function WorkshopPerformanceSection({
                     </div>
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{item.totalJc.toLocaleString('en-IN')}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.totalJcPercent))}>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-600' : getPercentToneClass(item.totalJcPercent))}>
                     {isContributionSubtotal ? '-' : formatPercent(item.totalJcPercent)}
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{formatWorkshopTableMoney(item.labourAmount)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.labourPercent))}>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-600' : getPercentToneClass(item.labourPercent))}>
                     {isContributionSubtotal ? '-' : formatPercent(item.labourPercent)}
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.labourPerRo)}</td>
@@ -5261,7 +5277,7 @@ function WorkshopPerformanceSection({
               </Button>
             </div>
             <div className="expanded-chart-body min-h-0 flex-1 bg-white p-5" style={{ backgroundColor: '#ffffff' }}>
-              <div className="expanded-chart-surface h-full rounded-2xl bg-white" style={{ backgroundColor: '#ffffff' }}>
+              <div className="expanded-chart-surface h-full rounded-2xl bg-white" role="img" aria-label={`${expandedWorkshopChart.title} chart, expanded view`} style={{ backgroundColor: '#ffffff' }}>
                 {renderWorkshopChart(expandedWorkshopChart.id)}
               </div>
             </div>
@@ -5322,10 +5338,10 @@ function WorkshopPerformanceSection({
                   {hasGrowth ? formatSignedGrowth(growthValue) : 'N/A'}
                 </span>
               </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{card.label}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{card.label}</p>
               <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{card.formatter(card.metric.value)}</p>
               {card.metric.ly !== undefined && (
-                <p className="mt-3 text-xs font-bold text-slate-400">LY {card.formatter(card.metric.ly)}</p>
+                <p className="mt-3 text-xs font-bold text-slate-600">LY {card.formatter(card.metric.ly)}</p>
               )}
             </div>
           )
@@ -5341,7 +5357,7 @@ function WorkshopPerformanceSection({
             </div>
             {renderWorkshopExpandButton('service-mix', 'Service Mix')}
           </div>
-          <div className="h-[460px]">
+          <div className="h-[460px]" role="img" aria-label="Stacked bar chart of labour, spare sale and VAS revenue by service type">
             {renderWorkshopChart('service-mix')}
           </div>
         </div>
@@ -5354,7 +5370,7 @@ function WorkshopPerformanceSection({
             </div>
             {renderWorkshopExpandButton('daily-trend', 'Daily Trend')}
           </div>
-          <div className="h-[460px]">
+          <div className="h-[460px]" role="img" aria-label="Line chart of daily job card load and revenue movement">
             {renderWorkshopChart('daily-trend')}
           </div>
         </div>
@@ -5481,7 +5497,7 @@ function ROBillingRevenueSummarySection({
     return formatCurrency(Number(value))
   }
   const moneyTextClass = (value: number | string | 'N/A' | undefined | null, fallback = 'text-slate-900') => {
-    if (value === 'N/A' || value === undefined || value === null || Number.isNaN(Number(value))) return 'text-slate-400'
+    if (value === 'N/A' || value === undefined || value === null || Number.isNaN(Number(value))) return 'text-slate-600'
     return Number(value) < 0 ? 'text-rose-600' : fallback
   }
   const formatGrowth = (value: string | number | 'N/A') => {
@@ -5492,7 +5508,7 @@ function ROBillingRevenueSummarySection({
   }
   const growthBadgeClass = (value: string | number | 'N/A') => {
     if (value === 'N/A' || Number.isNaN(Number(value))) {
-      return 'border-slate-200 bg-white text-slate-400'
+      return 'border-slate-200 bg-white text-slate-600'
     }
     return Number(value) >= 0
       ? 'border-[lab(80_-85.05_36.36)] bg-white text-[lab(80_-85.05_36.36)]'
@@ -5537,7 +5553,7 @@ function ROBillingRevenueSummarySection({
         </div>
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-slate-800">Revenue Performance</h2>
-          <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+          <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">
             Real-time analysis from: RO Billing Report
           </p>
         </div>
@@ -5553,8 +5569,9 @@ function ROBillingRevenueSummarySection({
             key={tab.id}
             type="button"
             onClick={() => setActiveRevenueTab(tab.id)}
+            aria-pressed={activeRevenueTab === tab.id}
             className={cn(
-              'rounded-xl px-6 py-3 text-sm font-black transition',
+              'rounded-xl px-6 py-3 text-sm font-black transition motion-reduce:transition-none',
               activeRevenueTab === tab.id
                 ? 'bg-slate-950 text-white shadow-lg shadow-slate-300'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -5576,20 +5593,21 @@ function ROBillingRevenueSummarySection({
           <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
+              <caption className="sr-only">{`${activeRevenueTab === 'labour' ? 'Labour' : 'Part'} revenue performance by category across MTD, QTD and YTD`}</caption>
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="px-6 py-4 text-left text-[10px] font-black uppercase text-slate-400">Category</th>
-                  <th colSpan={3} className="border-x border-slate-100 px-4 py-4 text-center text-[10px] font-black uppercase text-slate-400">MTD</th>
-                  <th colSpan={3} className="border-r border-slate-100 px-4 py-4 text-center text-[10px] font-black uppercase text-slate-400">QTD</th>
-                  <th colSpan={3} className="px-4 py-4 text-center text-[10px] font-black uppercase text-slate-400">YTD</th>
+                  <th scope="col" className="px-6 py-4 text-left text-[10px] font-black uppercase text-slate-500">Category</th>
+                  <th scope="colgroup" colSpan={3} className="border-x border-slate-100 px-4 py-4 text-center text-[10px] font-black uppercase text-slate-500">MTD</th>
+                  <th scope="colgroup" colSpan={3} className="border-r border-slate-100 px-4 py-4 text-center text-[10px] font-black uppercase text-slate-500">QTD</th>
+                  <th scope="colgroup" colSpan={3} className="px-4 py-4 text-center text-[10px] font-black uppercase text-slate-500">YTD</th>
                 </tr>
                 <tr className="border-b border-slate-100 bg-white">
                   <th className="px-6 py-2"></th>
                   {(['MTD', 'QTD', 'YTD'] as const).map((period) => (
                     <React.Fragment key={period}>
-                      <th className="px-2 py-2 text-[9px] font-bold text-slate-400">CY</th>
-                      <th className="px-2 py-2 text-[9px] font-bold text-slate-400">LY</th>
-                      <th className="border-r border-slate-50 px-2 py-2 text-[9px] font-bold text-slate-400 last:border-r-0">%</th>
+                      <th scope="col" className="px-2 py-2 text-[9px] font-bold text-slate-500">CY</th>
+                      <th scope="col" className="px-2 py-2 text-[9px] font-bold text-slate-500">LY</th>
+                      <th scope="col" className="border-r border-slate-50 px-2 py-2 text-[9px] font-bold text-slate-500 last:border-r-0">%</th>
                     </React.Fragment>
                   ))}
                 </tr>
@@ -5606,7 +5624,7 @@ function ROBillingRevenueSummarySection({
                     ] as const).map((period) => (
                       <React.Fragment key={period.key}>
                         <td className={cn('px-4 py-5 text-center text-sm font-bold', moneyTextClass(period.cy))}>{renderMoney(period.cy)}</td>
-                        <td className={cn('px-4 py-5 text-center text-sm font-medium', moneyTextClass(period.ly, 'text-slate-400'))}>{renderMoney(period.ly)}</td>
+                        <td className={cn('px-4 py-5 text-center text-sm font-medium', moneyTextClass(period.ly, 'text-slate-600'))}>{renderMoney(period.ly)}</td>
                         <td className="border-r border-slate-50 px-4 py-5 text-center last:border-r-0">
                           <span className={cn(
                             'inline-flex min-w-[76px] justify-center rounded-full border px-3 py-1 text-xs font-black',
@@ -5661,16 +5679,16 @@ function ROBillingRevenueSummarySection({
               )}>
                 {formatGrowth(revenueGrowth)}
               </div>
-              <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">
+              <p className="mt-1 text-[10px] font-bold uppercase text-slate-600">
                 CY {currentRevenueRangeLabel} vs LY {comparisonRevenueRangeLabel}
               </p>
               <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-slate-200 bg-white p-3">
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CY Revenue</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">CY Revenue</p>
                   <p className="mt-1 text-sm font-black text-slate-950">{formatCurrency(currentRevenue)}</p>
                 </div>
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">LY Revenue</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">LY Revenue</p>
                   <p className="mt-1 text-sm font-black text-slate-950">{formatCurrency(comparisonRevenue)}</p>
                 </div>
               </div>
@@ -5687,7 +5705,7 @@ function ROBillingRevenueSummarySection({
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-black text-slate-800">{paidServiceContribution.toFixed(1)}%</div>
-              <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">
+              <p className="mt-1 text-[10px] font-bold uppercase text-slate-600">
                 Paid Service load share in CY selected period
               </p>
             </CardContent>
@@ -6182,7 +6200,7 @@ function ServiceTypePerformance({
     <button
       type="button"
       onClick={() => openExpandedChart(title, elementId)}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-950"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition motion-reduce:transition-none hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-950"
       aria-label={`Expand ${title}`}
       title={`Expand ${title}`}
     >
@@ -6301,7 +6319,7 @@ function ServiceTypePerformance({
           </ResponsiveContainer>
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="rounded-3xl bg-white/90 px-8 py-5 text-center shadow-xl shadow-slate-200/60">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total</p>
               <p className="text-3xl font-black text-slate-950">{formatCurrency(executiveAnalytics.cySummary.labour + executiveAnalytics.cySummary.parts)}</p>
             </div>
           </div>
@@ -7550,8 +7568,9 @@ function ServiceTypePerformance({
                     key={trend.id}
                     type="button"
                     onClick={() => setActiveTrend(trend.id)}
+                    aria-pressed={trend.id === activeTrend}
                     className={cn(
-                      "flex min-w-[98px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-widest transition-all",
+                      "flex min-w-[98px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                       trend.id === activeTrend
                         ? "app-primary-action"
                         : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900"
@@ -7577,7 +7596,7 @@ function ServiceTypePerformance({
                 renderChartSkeleton('h-[420px]')
               ) : trendData.length === 0 ? (
                 <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-lg shadow-slate-200/40">
-                  <p className="text-sm font-black uppercase tracking-widest text-slate-400">No calendar data available</p>
+                  <p className="text-sm font-black uppercase tracking-widest text-slate-600">No calendar data available</p>
                 </div>
               ) : (
                 <div className="min-h-full">
@@ -7614,20 +7633,22 @@ function ServiceTypePerformance({
                             key={day.key}
                             type="button"
                             onClick={() => setSelectedRoCalendarDate(day.key)}
+                            aria-label={day.key}
+                            aria-pressed={isSelected}
                             className={cn(
-                              'min-h-[118px] border-r border-b border-slate-200 p-2 text-left transition last:border-r-0 hover:bg-[#edf4fb]',
-                              !day.inMonth && 'bg-slate-50 text-slate-300',
+                              'min-h-[118px] border-r border-b border-slate-200 p-2 text-left transition motion-reduce:transition-none last:border-r-0 hover:bg-[#edf4fb]',
+                              !day.inMonth && 'bg-slate-50 text-slate-500',
                               isSelected && 'bg-[#edf4fb] ring-2 ring-inset ring-[#023468]'
                             )}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-300')}>
+                              <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-500')}>
                                 {day.date.getDate().toString().padStart(2, '0')}
                               </span>
                               {day.point && (
                                 <span className={cn(
                                   'rounded-full border bg-white px-2 py-0.5 text-[9px] font-black',
-                                  day.growth === 'N/A' ? 'border-slate-200 text-slate-400' : isAhead ? 'border-emerald-200 text-emerald-700' : 'border-rose-200 text-rose-700'
+                                  day.growth === 'N/A' ? 'border-slate-200 text-slate-600' : isAhead ? 'border-emerald-200 text-emerald-700' : 'border-rose-200 text-rose-700'
                                 )}>
                                   {formatSignedGrowth(day.growth)}
                                 </span>
@@ -7663,8 +7684,9 @@ function ServiceTypePerformance({
           <div className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4 xl:grid-cols-8">
               <button
                 onClick={() => setViewMode('table')}
+                aria-pressed={viewMode === 'table'}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                   viewMode === 'table'
                     ? "app-primary-action"
                     : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
@@ -7674,8 +7696,9 @@ function ServiceTypePerformance({
               </button>
               <button
                 onClick={() => setViewMode('trend')}
+                aria-pressed={viewMode === 'trend'}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                   viewMode === 'trend'
                     ? "app-primary-action"
                     : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
@@ -7685,8 +7708,9 @@ function ServiceTypePerformance({
               </button>
               <button
                 onClick={() => setShowRoCalendarDialog(true)}
+                aria-expanded={showRoCalendarDialog}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                   showRoCalendarDialog
                     ? "app-primary-action"
                     : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
@@ -7696,8 +7720,9 @@ function ServiceTypePerformance({
               </button>
               <button
                 onClick={() => setViewMode('fy')}
+                aria-pressed={viewMode === 'fy'}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                   viewMode === 'fy'
                     ? "app-primary-action"
                     : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
@@ -7707,8 +7732,9 @@ function ServiceTypePerformance({
               </button>
               <button
                 onClick={() => setViewMode('analytics')}
+                aria-pressed={viewMode === 'analytics'}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                   viewMode === 'analytics'
                     ? "app-primary-action"
                     : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
@@ -7718,8 +7744,9 @@ function ServiceTypePerformance({
               </button>
               <button
                 onClick={() => setViewMode('revenue')}
+                aria-pressed={viewMode === 'revenue'}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                   viewMode === 'revenue'
                     ? "app-primary-action"
                     : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
@@ -7729,8 +7756,9 @@ function ServiceTypePerformance({
               </button>
               <button
                 onClick={() => setViewMode('leaderboard')}
+                aria-pressed={viewMode === 'leaderboard'}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                   viewMode === 'leaderboard'
                     ? "app-primary-action"
                     : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
@@ -7740,8 +7768,9 @@ function ServiceTypePerformance({
               </button>
               <button
                 onClick={() => setViewMode('technician')}
+                aria-pressed={viewMode === 'technician'}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                   viewMode === 'technician'
                     ? "app-primary-action"
                     : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
@@ -7751,8 +7780,9 @@ function ServiceTypePerformance({
               </button>
               <button
                 onClick={() => setViewMode('intelligence')}
+                aria-pressed={viewMode === 'intelligence'}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all motion-reduce:transition-none",
                   viewMode === 'intelligence'
                     ? "app-primary-action"
                     : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
@@ -7765,7 +7795,7 @@ function ServiceTypePerformance({
           {(viewMode === 'table' || viewMode === 'trend') && (
             <div className="mt-2 flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center justify-between gap-3 lg:w-auto">
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Metric</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Metric</p>
                 <p className="text-[10px] font-bold text-slate-500">{activeTrend.replace(' Trend', '')}</p>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -7779,14 +7809,15 @@ function ServiceTypePerformance({
                 <button
                   key={trend.id}
                   onClick={() => setActiveTrend(trend.id)}
+                  aria-pressed={trend.id === activeTrend}
                   className={cn(
-                    "flex min-w-[98px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-widest transition-all duration-300",
+                    "flex min-w-[98px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-widest transition-all duration-300 motion-reduce:transition-none",
                     trend.id === activeTrend
                       ? "border-teal-700 bg-teal-700 text-white shadow-md shadow-teal-100"
-                      : "border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white hover:text-slate-700"
+                      : "border-slate-100 bg-slate-50 text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-700"
                   )}
                 >
-                  <trend.icon className={cn("h-3.5 w-3.5", trend.id === activeTrend ? "text-white" : "text-slate-300")} />
+                  <trend.icon className={cn("h-3.5 w-3.5", trend.id === activeTrend ? "text-white" : "text-slate-500")} />
                   {trend.label}
                 </button>
               ))}
@@ -7800,26 +7831,27 @@ function ServiceTypePerformance({
               <div className="p-6 pb-0">
                 <div className="overflow-x-auto">
                   <table className="ro-analysis-table w-full text-left border-collapse">
+                    <caption className="sr-only">RO billing analysis by work type across TD, MTD, QTD and YTD</caption>
                     <thead>
                       <tr className="bg-teal-700 text-white">
-                        <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 min-w-[220px]">Work Type</th>
-                        <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center">TD</th>
-                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-600">MTD</th>
-                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-700">QTD</th>
-                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-600">YTD</th>
+                        <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 min-w-[220px]">Work Type</th>
+                        <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center">TD</th>
+                        <th scope="colgroup" colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-600">MTD</th>
+                        <th scope="colgroup" colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-700">QTD</th>
+                        <th scope="colgroup" colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-600">YTD</th>
                       </tr>
                       <tr className="bg-teal-700 text-white/90">
                         <th className="px-6 py-3 border-b border-white/5"></th>
                         <th className="px-6 py-3 border-b border-white/5"></th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">CY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">LY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">Growth</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">CY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">LY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">Growth</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">CY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">LY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">Growth</th>
+                        <th scope="col" className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">CY</th>
+                        <th scope="col" className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">LY</th>
+                        <th scope="col" className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">Growth</th>
+                        <th scope="col" className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">CY</th>
+                        <th scope="col" className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">LY</th>
+                        <th scope="col" className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">Growth</th>
+                        <th scope="col" className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">CY</th>
+                        <th scope="col" className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">LY</th>
+                        <th scope="col" className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">Growth</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -7854,10 +7886,13 @@ function ServiceTypePerformance({
                                   <div className="flex items-center gap-3">
                                     {row.isParent ? (
                                       <button
+                                        type="button"
                                         onClick={() => toggleRow(row.name)}
-                                        className="h-6 w-6 flex items-center justify-center hover:bg-slate-200 rounded-lg transition-colors border border-slate-200 bg-white shadow-sm"
+                                        aria-expanded={isExpanded}
+                                        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.name}`}
+                                        className="h-6 w-6 flex items-center justify-center hover:bg-slate-200 rounded-lg transition-colors motion-reduce:transition-none border border-slate-200 bg-white shadow-sm"
                                       >
-                                        <ChevronDown className={cn("h-3.5 w-3.5 text-slate-600 transition-transform duration-300", isExpanded && "rotate-180")} />
+                                        <ChevronDown className={cn("h-3.5 w-3.5 text-slate-600 transition-transform duration-300 motion-reduce:transition-none", isExpanded && "rotate-180")} />
                                       </button>
                                     ) : (
                                       <div className="w-6 h-6 flex items-center justify-center">
@@ -7871,7 +7906,7 @@ function ServiceTypePerformance({
                                   <td className={cn("px-6 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.td)}</td>
                                 )}
                                 <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-black", isTotal ? "text-slate-900" : "text-slate-900")}>{formatValue(row.cy)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly)}</td>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-600")}>{formatValue(row.ly)}</td>
                                 <td className="px-4 py-4 text-center">
                                   <span className={cn(
                                     "px-2.5 py-1 rounded-full text-[10px] font-black border shadow-sm",
@@ -7883,7 +7918,7 @@ function ServiceTypePerformance({
                                 {!hasCustomComparison && (
                                   <>
                                     <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.qtdCY)}</td>
-                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.qtdLY)}</td>
+                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-600")}>{formatValue(row.qtdLY)}</td>
                                     <td className="px-4 py-4 text-center">
                                       <span className={cn(
                                         "text-[10px] font-black px-2 py-0.5 rounded-full border",
@@ -7893,7 +7928,7 @@ function ServiceTypePerformance({
                                       </span>
                                     </td>
                                     <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.ytdCY)}</td>
-                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ytdLY)}</td>
+                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-600")}>{formatValue(row.ytdLY)}</td>
                                     <td className="px-4 py-4 text-center">
                                       <span className={cn(
                                         "text-[10px] font-black px-2 py-0.5 rounded-full border",
@@ -7915,36 +7950,36 @@ function ServiceTypePerformance({
                                     </div>
                                   </td>
                                   {!hasCustomComparison && (
-                                    <td className="border border-slate-200 px-6 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.td)}</td>
+                                    <td className="border border-slate-200 px-6 py-3.5 text-center font-mono text-[12px] font-bold text-slate-600">{formatValue(sub.td)}</td>
                                   )}
                                   <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-black text-slate-700">{formatValue(sub.cy)}</td>
-                                  <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.ly)}</td>
+                                  <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-600">{formatValue(sub.ly)}</td>
                                   <td className="border border-slate-200 px-4 py-3.5 text-center">
                                     <span className={cn(
                                       "px-2 py-0.5 rounded-full text-[9px] font-bold border",
-                                      sub.growth === 'N/A' ? "text-slate-400 bg-white border-slate-200" : getGrowthBadgeClass(sub.growth)
+                                      sub.growth === 'N/A' ? "text-slate-600 bg-white border-slate-200" : getGrowthBadgeClass(sub.growth)
                                     )}>
                                       {formatSignedGrowth(sub.growth)}
                                     </span>
                                   </td>
                                   {!hasCustomComparison && (
                                     <>
-                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.qtdCY)}</td>
-                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.qtdLY)}</td>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-600">{formatValue(sub.qtdCY)}</td>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-600">{formatValue(sub.qtdLY)}</td>
                                       <td className="border border-slate-200 px-4 py-3.5 text-center">
                                         <span className={cn(
                                           "px-2 py-0.5 rounded-full text-[9px] font-bold border",
-                                          sub.qtdGrowth === 'N/A' ? "text-slate-400 bg-white border-slate-200" : getGrowthBadgeClass(sub.qtdGrowth)
+                                          sub.qtdGrowth === 'N/A' ? "text-slate-600 bg-white border-slate-200" : getGrowthBadgeClass(sub.qtdGrowth)
                                         )}>
                                           {formatSignedGrowth(sub.qtdGrowth)}
                                         </span>
                                       </td>
-                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.ytdCY)}</td>
-                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.ytdLY)}</td>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-600">{formatValue(sub.ytdCY)}</td>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-600">{formatValue(sub.ytdLY)}</td>
                                       <td className="border border-slate-200 px-4 py-3.5 text-center">
                                         <span className={cn(
                                           "px-2 py-0.5 rounded-full text-[9px] font-bold border",
-                                          sub.ytdGrowth === 'N/A' ? "text-slate-400 bg-white border-slate-200" : getGrowthBadgeClass(sub.ytdGrowth)
+                                          sub.ytdGrowth === 'N/A' ? "text-slate-600 bg-white border-slate-200" : getGrowthBadgeClass(sub.ytdGrowth)
                                         )}>
                                           {formatSignedGrowth(sub.ytdGrowth)}
                                         </span>
@@ -7987,15 +8022,16 @@ function ServiceTypePerformance({
                   {cancelledSummary?.rows?.length ? (
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[980px] border-collapse text-left">
+                        <caption className="sr-only">Cancelled bills excluded from the main RO billing metrics</caption>
                         <thead>
                           <tr className="bg-rose-700 text-white">
-                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Bill / RO</th>
-                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Bill Date</th>
-                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Work Type</th>
-                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Service Type</th>
-                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Advisor</th>
-                            <th className="border border-rose-600 px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Total</th>
-                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Status</th>
+                            <th scope="col" className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Bill / RO</th>
+                            <th scope="col" className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Bill Date</th>
+                            <th scope="col" className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Work Type</th>
+                            <th scope="col" className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Service Type</th>
+                            <th scope="col" className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Advisor</th>
+                            <th scope="col" className="border border-rose-600 px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Total</th>
+                            <th scope="col" className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Status</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -8031,7 +8067,7 @@ function ServiceTypePerformance({
               ) : trendData.length === 0 ? (
                 <div className="p-8">
                   <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-lg shadow-slate-200/40">
-                    <p className="text-sm font-black uppercase tracking-widest text-slate-400">No trend data available</p>
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-600">No trend data available</p>
                   </div>
                 </div>
               ) : (
@@ -8048,7 +8084,7 @@ function ServiceTypePerformance({
               ) : trendData.length === 0 ? (
                 <div className="p-8">
                   <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-lg shadow-slate-200/40">
-                    <p className="text-sm font-black uppercase tracking-widest text-slate-400">No calendar data available</p>
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-600">No calendar data available</p>
                   </div>
                 </div>
               ) : (
@@ -8079,20 +8115,22 @@ function ServiceTypePerformance({
                             key={day.key}
                             type="button"
                             onClick={() => setSelectedRoCalendarDate(day.key)}
+                            aria-label={day.key}
+                            aria-pressed={isSelected}
                             className={cn(
-                              'min-h-[112px] border-r border-b border-slate-200 p-2 text-left transition last:border-r-0 hover:bg-[#edf4fb]',
-                              !day.inMonth && 'bg-slate-50 text-slate-300',
+                              'min-h-[112px] border-r border-b border-slate-200 p-2 text-left transition motion-reduce:transition-none last:border-r-0 hover:bg-[#edf4fb]',
+                              !day.inMonth && 'bg-slate-50 text-slate-500',
                               isSelected && 'bg-[#edf4fb] ring-2 ring-inset ring-[#023468]'
                             )}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-300')}>
+                              <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-500')}>
                                 {day.date.getDate().toString().padStart(2, '0')}
                               </span>
                               {day.point && (
                                 <span className={cn(
                                   'rounded-full border bg-white px-2 py-0.5 text-[9px] font-black',
-                                  day.growth === 'N/A' ? 'border-slate-200 text-slate-400' : isAhead ? 'border-emerald-200 text-emerald-700' : 'border-rose-200 text-rose-700'
+                                  day.growth === 'N/A' ? 'border-slate-200 text-slate-600' : isAhead ? 'border-emerald-200 text-emerald-700' : 'border-rose-200 text-rose-700'
                                 )}>
                                   {formatSignedGrowth(day.growth)}
                                 </span>
@@ -8125,7 +8163,7 @@ function ServiceTypePerformance({
               ) : fyTrendsData.length === 0 ? (
                 <div className="p-8">
                   <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-lg shadow-slate-200/40">
-                    <p className="text-sm font-black uppercase tracking-widest text-slate-400">No FY trend data available</p>
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-600">No FY trend data available</p>
                   </div>
                 </div>
               ) : (
@@ -8136,12 +8174,15 @@ function ServiceTypePerformance({
                     <input
                       type="text"
                       placeholder="Search metrics (Load, Labour, Parts, etc.)..."
+                      aria-label="Search metrics"
                       value={fySearchQuery}
                       onChange={(e) => setFySearchQuery(e.target.value)}
-                      className="w-full px-4 py-3 pl-11 text-sm font-medium text-slate-700 placeholder-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all"
+                      className="w-full px-4 py-3 pl-11 text-sm font-medium text-slate-700 placeholder-slate-500 bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all motion-reduce:transition-none"
                     />
                     <svg
-                      className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"
+                      aria-hidden="true"
+                      focusable="false"
+                      className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -8157,18 +8198,19 @@ function ServiceTypePerformance({
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse">
+                    <caption className="sr-only">Financial year trends by metric</caption>
                     <thead>
                       <tr className="bg-slate-700 text-white">
-                        <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest border-b border-white/10">Trends</th>
+                        <th scope="col" className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest border-b border-white/10">Trends</th>
                         {fyTrendsData.map((fy) => (
-                          <th key={fy.fy} className="px-6 py-4 text-center text-xs font-black uppercase tracking-widest border-b border-white/10">
+                          <th key={fy.fy} scope="col" className="px-6 py-4 text-center text-xs font-black uppercase tracking-widest border-b border-white/10">
                             {fy.fy}
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100">
+                      <tr className="hover:bg-slate-50 transition-colors motion-reduce:transition-none border-b border-slate-100">
                         <td className="px-6 py-4 text-sm font-bold text-slate-700">Load</td>
                         {fyTrendsData.map((fy) => (
                           <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
@@ -8176,7 +8218,7 @@ function ServiceTypePerformance({
                           </td>
                         ))}
                       </tr>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100 bg-blue-50/30">
+                      <tr className="hover:bg-slate-50 transition-colors motion-reduce:transition-none border-b border-slate-100 bg-blue-50/30">
                         <td className="px-6 py-4 text-sm font-bold text-slate-700">Labour</td>
                         {fyTrendsData.map((fy) => (
                           <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
@@ -8184,7 +8226,7 @@ function ServiceTypePerformance({
                           </td>
                         ))}
                       </tr>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100 bg-purple-50/30">
+                      <tr className="hover:bg-slate-50 transition-colors motion-reduce:transition-none border-b border-slate-100 bg-purple-50/30">
                         <td className="px-6 py-4 text-sm font-bold text-slate-700">Part</td>
                         {fyTrendsData.map((fy) => (
                           <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
@@ -8192,7 +8234,7 @@ function ServiceTypePerformance({
                           </td>
                         ))}
                       </tr>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100 bg-teal-50/30">
+                      <tr className="hover:bg-slate-50 transition-colors motion-reduce:transition-none border-b border-slate-100 bg-teal-50/30">
                         <td className="px-6 py-4 text-sm font-bold text-slate-700">Lab / Veh</td>
                         {fyTrendsData.map((fy) => (
                           <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
@@ -8200,7 +8242,7 @@ function ServiceTypePerformance({
                           </td>
                         ))}
                       </tr>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100 bg-amber-50/30">
+                      <tr className="hover:bg-slate-50 transition-colors motion-reduce:transition-none border-b border-slate-100 bg-amber-50/30">
                         <td className="px-6 py-4 text-sm font-bold text-slate-700">Part / Veh</td>
                         {fyTrendsData.map((fy) => (
                           <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
@@ -8246,16 +8288,17 @@ function ServiceTypePerformance({
                 ) : serverLeaderboard.length === 0 ? (
                   <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-xl shadow-slate-200/50">
                     <Users className="mx-auto mb-4 h-10 w-10 text-slate-300" />
-                    <p className="text-sm font-black uppercase tracking-widest text-slate-400">No salesperson data available for this date window.</p>
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-600">No salesperson data available for this date window.</p>
                   </div>
                 ) : (
                   <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
                     <div className="max-h-[680px] overflow-auto">
                       <table className="w-full min-w-[1040px] border-collapse text-left">
+                        <caption className="sr-only">Service advisor leaderboard by revenue and RO load</caption>
                         <thead className="sticky top-0 z-10 bg-slate-950 text-white">
                           <tr>
                             {['Rank', 'Service Advisor', 'RO Load', 'Total Revenue', 'Labour', 'Parts', 'Avg Billing', 'Contribution'].map((heading) => (
-                              <th key={heading} className="px-5 py-4 text-[10px] font-black uppercase tracking-widest">
+                              <th key={heading} scope="col" className="px-5 py-4 text-[10px] font-black uppercase tracking-widest">
                                 {heading}
                               </th>
                             ))}
@@ -8285,7 +8328,7 @@ function ServiceTypePerformance({
                               },
                             ][index]
                             return (
-                            <tr key={advisor.name} className={cn('transition hover:bg-slate-50', rankStyles?.row)}>
+                            <tr key={advisor.name} className={cn('transition motion-reduce:transition-none hover:bg-slate-50', rankStyles?.row)}>
                               <td className="px-5 py-4">
                                 <div className="flex items-center gap-2">
                                   <span className={cn(
@@ -8311,7 +8354,7 @@ function ServiceTypePerformance({
                                   </div>
                                   <div>
                                     <p className="text-sm font-black text-slate-950">{advisor.name}</p>
-                                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Service advisor</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Service advisor</p>
                                   </div>
                                 </div>
                               </td>
@@ -8364,12 +8407,13 @@ function ServiceTypePerformance({
                 ) : serverTechnicianReport.length === 0 ? (
                   <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-xl shadow-slate-200/50">
                     <Users className="mx-auto mb-4 h-10 w-10 text-slate-300" />
-                    <p className="text-sm font-black uppercase tracking-widest text-slate-400">No technician data available for this date window.</p>
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-600">No technician data available for this date window.</p>
                   </div>
                 ) : (
                   <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
                     <div className="max-h-[720px] overflow-auto">
                       <table className="w-full min-w-[1100px] border-collapse text-left">
+                        <caption className="sr-only">Technician wise load and labour report</caption>
                         <thead className="sticky top-0 z-10 bg-slate-900 text-white">
                           <tr>
                             {[
@@ -8383,7 +8427,7 @@ function ServiceTypePerformance({
                               'Labour Discount Per RO',
                               '%age Labour Discount'
                             ].map((heading) => (
-                              <th key={heading} className="px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white border-b border-slate-700">
+                              <th key={heading} scope="col" className="px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white border-b border-slate-700">
                                 {heading}
                               </th>
                             ))}
@@ -8424,7 +8468,7 @@ function ServiceTypePerformance({
                                 grandTotalDiscount += tech.labour_disc
 
                                 rowsJSX.push(
-                                  <tr key={`tech-${tech.name}-${tech.dealer_code}`} className="transition hover:bg-slate-50/80">
+                                  <tr key={`tech-${tech.name}-${tech.dealer_code}`} className="transition motion-reduce:transition-none hover:bg-slate-50/80">
                                     <td className="px-4 py-3 text-xs font-semibold text-slate-500">{serialNum++}</td>
                                     <td className="px-4 py-3 text-xs font-black text-slate-950">{outlet}</td>
                                     <td className="px-4 py-3 text-xs font-bold text-slate-900">{tech.name}</td>
@@ -8464,7 +8508,7 @@ function ServiceTypePerformance({
                             const grandDiscPct = grandTotalLabour > 0 ? (grandTotalDiscount / grandTotalLabour) * 100 : 0
 
                             rowsJSX.push(
-                              <tr key="grand-total" className="bg-indigo-50/90 border-t-2 border-indigo-200 font-black text-slate-950 hover:bg-indigo-100/90 transition-colors">
+                              <tr key="grand-total" className="bg-indigo-50/90 border-t-2 border-indigo-200 font-black text-slate-950 hover:bg-indigo-100/90 transition-colors motion-reduce:transition-none">
                                 <td className="px-4 py-3 text-xs text-indigo-900 font-black">TOTAL</td>
                                 <td className="px-4 py-3 text-xs"></td>
                                 <td className="px-4 py-3 text-xs"></td>
@@ -8506,7 +8550,7 @@ function ServiceTypePerformance({
                       }
 
                       return (
-                        <div key={kpi.label} className="group rounded-[1.5rem] border border-white bg-white p-5 shadow-xl shadow-slate-200/60 transition duration-300 hover:-translate-y-1 hover:shadow-2xl">
+                        <div key={kpi.label} className="group rounded-[1.5rem] border border-white bg-white p-5 shadow-xl shadow-slate-200/60 transition duration-300 motion-reduce:transition-none hover:-translate-y-1 hover:shadow-2xl">
                           <div className="mb-5 flex items-start justify-between">
                             <div className={cn('rounded-2xl bg-gradient-to-br to-white p-3 ring-1', accentClasses[kpi.accent])}>
                               <Icon className="h-5 w-5" />
@@ -8515,17 +8559,19 @@ function ServiceTypePerformance({
                               {kpi.growth === null ? 'N/A' : formatSignedGrowth(kpi.growth)}
                             </div>
                           </div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{kpi.label}</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{kpi.label}</p>
                           <AnimatedMetric value={kpi.value} formatter={kpi.formatter} className="mt-2 block text-2xl font-black tracking-tight text-slate-950" />
                           <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-bold">
-                            <span className="text-slate-400">LY</span>
+                            <span className="text-slate-600">LY</span>
                             <span className="text-slate-700">{kpi.formatter(kpi.ly)}</span>
                           </div>
+                          <div role="img" aria-label={`${kpi.label} sparkline over the last 12 days`}>
                           <ResponsiveContainer width="100%" height={34}>
                             <AreaChart data={trendData.slice(0, 12)}>
                               <Area type="monotone" dataKey="cy" stroke="#023468" fill="#edf4fb" strokeWidth={2} dot={false} />
                             </AreaChart>
                           </ResponsiveContainer>
+                          </div>
                         </div>
                       )
                     })}
@@ -8556,8 +8602,9 @@ function ServiceTypePerformance({
                               key={metric.id}
                               type="button"
                               onClick={() => setActiveDailyMetric(metric.id)}
+                              aria-pressed={activeDailyMetric === metric.id}
                               className={cn(
-                                "rounded-xl px-3 py-1.5 text-[9px] font-black uppercase tracking-widest transition",
+                                "rounded-xl px-3 py-1.5 text-[9px] font-black uppercase tracking-widest transition motion-reduce:transition-none",
                                 activeDailyMetric === metric.id
                                   ? "bg-white text-slate-950 shadow-sm"
                                   : "text-slate-500 hover:text-slate-900"
@@ -8572,7 +8619,7 @@ function ServiceTypePerformance({
                         {renderExpandButton('Daily Billing Trend', 'analysis-daily-billing-trend-chart')}
                       </div>
                     </div>
-                    <div id="analysis-daily-billing-trend-chart" className="h-[460px]">
+                    <div id="analysis-daily-billing-trend-chart" className="h-[460px]" role="img" aria-label="Line chart of daily revenue, labour, parts and load progression">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={executiveAnalytics.dailyRevenue} margin={{ top: 30, right: 20, bottom: 8, left: 0 }}>
                         <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
@@ -8615,7 +8662,7 @@ function ServiceTypePerformance({
                         </div>
                         {renderExpandButton('Service Type Analytics', 'analysis-service-type-chart')}
                       </div>
-                      <div id="analysis-service-type-chart" className="h-[430px]">
+                      <div id="analysis-service-type-chart" className="h-[430px]" role="img" aria-label="Stacked bar chart of labour and parts revenue by work type bucket">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={executiveAnalytics.services}>
                           <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
@@ -8665,7 +8712,7 @@ function ServiceTypePerformance({
                         {renderExpandButton('Revenue Mix', 'analysis-revenue-mix-chart')}
                       </div>
                       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_0.8fr]">
-                        <div id="analysis-revenue-mix-chart" className="relative h-[340px]">
+                        <div id="analysis-revenue-mix-chart" className="relative h-[340px]" role="img" aria-label="Donut chart of labour versus parts revenue contribution">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
@@ -8698,7 +8745,7 @@ function ServiceTypePerformance({
                           </ResponsiveContainer>
                           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                             <div className="text-center">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</p>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total</p>
                               <p className="text-xl font-black text-slate-950">{formatCurrency(executiveAnalytics.cySummary.labour + executiveAnalytics.cySummary.parts)}</p>
                             </div>
                           </div>
@@ -8735,7 +8782,7 @@ function ServiceTypePerformance({
                         </div>
                         {renderExpandButton('Efficiency Bars', 'analysis-efficiency-bars-chart')}
                       </div>
-                      <div id="analysis-efficiency-bars-chart" className="h-[340px]">
+                      <div id="analysis-efficiency-bars-chart" className="h-[340px]" role="img" aria-label="Horizontal bar chart of average billing, labour per vehicle and parts per vehicle">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={executiveAnalytics.operatingMix} layout="vertical" margin={{ top: 8, right: 42, bottom: 8, left: 28 }}>
                           <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" horizontal={false} />
@@ -8765,7 +8812,7 @@ function ServiceTypePerformance({
                         {renderExpandButton('Work Type Deep Dive', 'analysis-work-type-deep-dive-chart')}
                       </div>
                     </div>
-                    <div id="analysis-work-type-deep-dive-chart" className="h-[430px]">
+                    <div id="analysis-work-type-deep-dive-chart" className="h-[430px]" role="img" aria-label="Bar chart of revenue and load concentration by work type bucket">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={executiveAnalytics.services} margin={{ top: 18, right: 26, bottom: 8, left: 0 }}>
                         <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
@@ -8839,7 +8886,7 @@ function ServiceTypePerformance({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="expanded-chart-body min-h-0 flex-1 p-4" style={{ backgroundColor: '#ffffff' }}>
+            <div className="expanded-chart-body min-h-0 flex-1 p-4" role="img" aria-label={`${expandedChart.title} chart, expanded view`} style={{ backgroundColor: '#ffffff' }}>
               {renderExpandedChartContent()}
             </div>
           </div>

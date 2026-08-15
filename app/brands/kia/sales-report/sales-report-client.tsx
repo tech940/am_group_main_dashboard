@@ -6,7 +6,9 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
+  ArrowDown,
   ArrowDownUp,
+  ArrowUp,
   BarChart3,
   CalendarDays,
   CarFront,
@@ -849,6 +851,13 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
   const [tdSearch, setTdSearch] = useState('')
   const [tdPage, setTdPage] = useState(1)
   const [tdPageSize, setTdPageSize] = useState(25)
+  // Consultant-wise Accessories Sales sorting
+  const [consultantAccSort, setConsultantAccSort] = useState<'consultant' | 'totalSold' | 'totalRevenue' | 'customerCount' | 'avgRevenuePerCustomer'>('totalRevenue')
+  const [consultantAccDirection, setConsultantAccDirection] = useState<'asc' | 'desc'>('desc')
+  // All Vehicles accessories filter & sorting
+  const [retailAccFilter, setRetailAccFilter] = useState<'all' | 'zero' | 'above5k' | 'under5k' | 'withAcc'>('all')
+  const [retailSortField, setRetailSortField] = useState<string>('deliveryDate')
+  const [retailSortDirection, setRetailSortDirection] = useState<'asc' | 'desc'>('desc')
 
 
   const deferredReportSearch = useDeferredValue(reportSearch)
@@ -1053,21 +1062,50 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
       row.lostRemark,
     ].some((value) => value.toLowerCase().includes(needle))
   }) || []
-  const filteredRetailRows = summary?.retail.transactions.filter((row) => {
+  const filteredRetailRows = useMemo(() => {
+    let rows = summary?.retail.transactions || []
+    
+    if (retailAccFilter === 'zero') {
+      rows = rows.filter((r) => !r.accessoriesValue || r.accessoriesValue === 0)
+    } else if (retailAccFilter === 'above5k') {
+      rows = rows.filter((r) => Number(r.accessoriesValue || 0) > 5000)
+    } else if (retailAccFilter === 'under5k') {
+      rows = rows.filter((r) => Number(r.accessoriesValue || 0) > 0 && Number(r.accessoriesValue || 0) <= 5000)
+    } else if (retailAccFilter === 'withAcc') {
+      rows = rows.filter((r) => Number(r.accessoriesValue || 0) > 0)
+    }
+
     const needle = deferredRetailSearch.trim().toLowerCase()
-    if (!needle) return true
-    return [
-      row.customerName,
-      row.phone,
-      row.model,
-      row.variant,
-      row.consultant,
-      row.source,
-      row.financier,
-      row.vin,
-      row.customerId,
-    ].some((value) => String(value || '').toLowerCase().includes(needle))
-  }) || []
+    if (needle) {
+      rows = rows.filter((row) => [
+        row.customerName,
+        row.phone,
+        row.model,
+        row.variant,
+        row.consultant,
+        row.source,
+        row.financier,
+        row.vin,
+        row.customerId,
+      ].some((value) => String(value || '').toLowerCase().includes(needle)))
+    }
+
+    const sorted = [...rows].sort((a, b) => {
+      let comp = 0
+      if (retailSortField === 'accessoriesValue' || retailSortField === 'exShowroomPrice' || retailSortField === 'accessoriesCount' || retailSortField === 'deliveryDays') {
+        const valA = Number(a[retailSortField as keyof typeof a] ?? 0)
+        const valB = Number(b[retailSortField as keyof typeof b] ?? 0)
+        comp = valA - valB
+      } else {
+        const strA = String(a[retailSortField as keyof typeof a] ?? '')
+        const strB = String(b[retailSortField as keyof typeof b] ?? '')
+        comp = strA.localeCompare(strB)
+      }
+      return retailSortDirection === 'asc' ? comp : -comp
+    })
+
+    return sorted
+  }, [summary?.retail.transactions, retailAccFilter, deferredRetailSearch, retailSortField, retailSortDirection])
   const overviewKpis = summary?.overview.kpis || []
   const enquiryKpi = getKpiByLabel(overviewKpis, 'enquiries')
   const bookingKpi = getKpiByLabel(overviewKpis, 'bookings')
@@ -1240,6 +1278,40 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
     setReportPage(1)
     setReportSort('')
     setReportDirection('desc')
+  }
+
+  function handleConsultantAccSort(field: 'consultant' | 'totalSold' | 'totalRevenue' | 'customerCount' | 'avgRevenuePerCustomer') {
+    if (consultantAccSort === field) {
+      setConsultantAccDirection((current) => (current === 'desc' ? 'asc' : 'desc'))
+    } else {
+      setConsultantAccSort(field)
+      setConsultantAccDirection(field === 'consultant' ? 'asc' : 'desc')
+    }
+  }
+
+  const sortedConsultantAccessories = useMemo(() => {
+    const list = [...(summary?.retail.consultantAccessories || [])]
+    return list.sort((a, b) => {
+      let comparison = 0
+      if (consultantAccSort === 'consultant') {
+        comparison = (a.consultant || '').localeCompare(b.consultant || '')
+      } else {
+        const valA = Number(a[consultantAccSort] ?? 0)
+        const valB = Number(b[consultantAccSort] ?? 0)
+        comparison = valA - valB
+      }
+      return consultantAccDirection === 'asc' ? comparison : -comparison
+    })
+  }, [summary?.retail.consultantAccessories, consultantAccSort, consultantAccDirection])
+
+  function handleRetailSort(field: string) {
+    if (retailSortField === field) {
+      setRetailSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setRetailSortField(field)
+      setRetailSortDirection(field === 'accessoriesValue' ? 'asc' : field === 'customerName' || field === 'model' || field === 'variant' || field === 'consultant' ? 'asc' : 'desc')
+    }
+    setRetailPage(1)
   }
 
   const summaryMonthReady = periodReady
@@ -2551,18 +2623,88 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
               ))}
             </div>
 
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <ChartCard title="All Vehicles" subtitle={`${formatNumber(filteredRetailRows.length)} retail rows`}>
+            <ChartCard title="All Vehicles" subtitle={`${formatNumber(filteredRetailRows.length)} retail rows`}>
                 <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="relative max-w-md">
+                  <div className="relative w-full sm:w-72 lg:w-80">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <Input value={retailSearch} onChange={(event) => {
-                      setRetailSearch(event.target.value)
-                      setRetailPage(1)
-                    }} placeholder="Search customer, VIN, consultant, financier..." className="rounded-full border-[#d5dfea] pl-10 text-[13px]" />
+                    <Input
+                      value={retailSearch}
+                      onChange={(event) => {
+                        setRetailSearch(event.target.value)
+                        setRetailPage(1)
+                      }}
+                      placeholder="Search customer, VIN, consultant..."
+                      className="h-9 w-full rounded-full border-[#d5dfea] pl-10 text-[13px]"
+                    />
                   </div>
-                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-black text-slate-600">
-                    {formatNumber(filteredRetailRows.length)} transactions
+
+                  <div className="flex flex-wrap items-center justify-start lg:justify-end gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-slate-500 hidden sm:inline">Accessories:</span>
+                      <Select
+                        value={retailAccFilter}
+                        onValueChange={(val) => {
+                          setRetailAccFilter(val as 'all' | 'zero' | 'above5k' | 'under5k' | 'withAcc')
+                          setRetailPage(1)
+                        }}
+                      >
+                        <SelectTrigger className="h-9 rounded-full border-[#d5dfea] bg-white px-3 text-xs font-black text-slate-700 shadow-sm hover:border-slate-300 min-w-[155px]">
+                          <Filter className="h-3.5 w-3.5 text-slate-400 mr-1.5" />
+                          <SelectValue placeholder="Filter Accessories" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-2xl border-slate-200">
+                          <SelectItem value="all" className="text-xs font-bold">All Vehicles (All Acc)</SelectItem>
+                          <SelectItem value="zero" className="text-xs font-bold text-amber-700">🚫 No Accessories (₹0)</SelectItem>
+                          <SelectItem value="above5k" className="text-xs font-bold text-emerald-700">⚡ Accessories &gt; ₹5,000</SelectItem>
+                          <SelectItem value="under5k" className="text-xs font-bold">📦 Accessories ≤ ₹5,000</SelectItem>
+                          <SelectItem value="withAcc" className="text-xs font-bold">✨ With Accessories (&gt; ₹0)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-slate-500 hidden sm:inline">Sort:</span>
+                      <Select
+                        value={`${retailSortField}-${retailSortDirection}`}
+                        onValueChange={(val) => {
+                          const [field, dir] = val.split('-') as [string, 'asc' | 'desc']
+                          setRetailSortField(field)
+                          setRetailSortDirection(dir)
+                          setRetailPage(1)
+                        }}
+                      >
+                        <SelectTrigger className="h-9 rounded-full border-[#d5dfea] bg-white px-3 text-xs font-black text-slate-700 shadow-sm hover:border-slate-300 min-w-[170px]">
+                          <ArrowDownUp className="h-3.5 w-3.5 text-slate-400 mr-1.5" />
+                          <SelectValue placeholder="Sort by" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-2xl border-slate-200">
+                          <SelectItem value="accessoriesValue-asc" className="text-xs font-bold">Accessories: ₹0 First (Low → High)</SelectItem>
+                          <SelectItem value="accessoriesValue-desc" className="text-xs font-bold">Accessories: High → Low</SelectItem>
+                          <SelectItem value="deliveryDate-desc" className="text-xs font-bold">Delivery Date: Newest First</SelectItem>
+                          <SelectItem value="deliveryDate-asc" className="text-xs font-bold">Delivery Date: Oldest First</SelectItem>
+                          <SelectItem value="invoiceDate-desc" className="text-xs font-bold">Invoice Date: Newest First</SelectItem>
+                          <SelectItem value="exShowroomPrice-desc" className="text-xs font-bold">Ex-Showroom: High → Low</SelectItem>
+                          <SelectItem value="customerName-asc" className="text-xs font-bold">Customer: A → Z</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {retailAccFilter !== 'all' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRetailAccFilter('all')
+                          setRetailPage(1)
+                        }}
+                        className="text-xs font-bold text-slate-500 hover:text-slate-900 underline cursor-pointer"
+                      >
+                        Reset Filter
+                      </button>
+                    )}
+
+                    <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-black text-slate-600 whitespace-nowrap">
+                      {formatNumber(filteredRetailRows.length)} {retailAccFilter === 'zero' ? 'cars (0 acc)' : retailAccFilter === 'above5k' ? 'cars (> 5k acc)' : 'transactions'}
+                    </div>
                   </div>
                 </div>
                 {pagedRetailRows.length ? (
@@ -2570,27 +2712,80 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                   <div className="overflow-hidden rounded-[1.5rem] border border-slate-200">
                     <Table className="[&_td]:text-[11px] [&_td]:font-medium [&_th]:text-[10px]">
                       <TableHeader>
-                        <TableRow className="border-b-2 border-[#071a2b] bg-white hover:bg-white">
-                          {['Invoice', 'Delivery', 'Customer', 'Phone', 'Model', 'Variant', 'Color', 'Consultant', 'Source', 'Finance', 'Ex-Showroom', 'Accessories'].map((label) => (
-                            <TableHead key={label} className="text-[10px] font-black text-[#25303b]">{label}</TableHead>
-                          ))}
+                        <TableRow className="border-b-2 border-[#071a2b] bg-[#071a2b] hover:bg-[#071a2b] select-none text-white">
+                          {[
+                            { key: 'invoiceDate', label: 'Invoice' },
+                            { key: 'deliveryDate', label: 'Delivery' },
+                            { key: 'customerName', label: 'Customer' },
+                            { key: 'phone', label: 'Phone' },
+                            { key: 'model', label: 'Model' },
+                            { key: 'variant', label: 'Variant' },
+                            { key: 'color', label: 'Color' },
+                            { key: 'consultant', label: 'Consultant' },
+                            { key: 'source', label: 'Source' },
+                            { key: 'financeType', label: 'Finance' },
+                            { key: 'exShowroomPrice', label: 'Ex-Showroom' },
+                            { key: 'accessoriesValue', label: 'Accessories' },
+                          ].map((col) => {
+                            const isActive = retailSortField === col.key
+                            return (
+                              <TableHead key={col.key} className="text-[10px] font-black text-white p-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRetailSort(col.key)}
+                                  className={cn(
+                                    "w-full h-full px-3 py-3 flex items-center gap-1 transition-colors text-left font-black cursor-pointer",
+                                    isActive 
+                                      ? "text-white bg-white/20 shadow-inner" 
+                                      : "text-white/90 hover:text-white hover:bg-white/10"
+                                  )}
+                                  title={`Sort by ${col.label}`}
+                                >
+                                  <span>{col.label}</span>
+                                  {isActive ? (
+                                    retailSortDirection === 'desc' ? (
+                                      <ArrowDown className="h-3.5 w-3.5 text-white stroke-[2.5]" />
+                                    ) : (
+                                      <ArrowUp className="h-3.5 w-3.5 text-white stroke-[2.5]" />
+                                    )
+                                  ) : (
+                                    <ArrowDownUp className="h-3 w-3 text-white/40 opacity-60" />
+                                  )}
+                                </button>
+                              </TableHead>
+                            )
+                          })}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {pagedRetailRows.map((row) => (
-                          <TableRow key={row.rowKey} className="odd:bg-[#f6f9fd] even:bg-white">
-                            <TableCell>{formatDate(row.invoiceDate)}</TableCell>
-                            <TableCell>{formatDate(row.deliveryDate)}</TableCell>
-                            <TableCell className="font-black text-slate-950">{row.customerName}</TableCell>
-                            <TableCell>{row.phone || 'NA'}</TableCell>
-                            <TableCell><span className={cn('rounded-full px-3 py-1 text-[12px] font-black', getModelAccent(row.model).pill)}>{row.model}</span></TableCell>
-                            <TableCell>{row.variant || 'NA'}</TableCell>
-                            <TableCell>{row.color || 'NA'}</TableCell>
-                            <TableCell>{row.consultant}</TableCell>
-                            <TableCell>{row.source}</TableCell>
-                            <TableCell>{row.financeType}</TableCell>
-                            <TableCell>{formatCurrency(row.exShowroomPrice)}</TableCell>
-                            <TableCell>{formatCurrency(row.accessoriesValue)}</TableCell>
+                          <TableRow key={row.rowKey} className="odd:bg-[#f6f9fd] even:bg-white hover:bg-blue-50/20 transition-colors">
+                            <TableCell className="px-3 py-2.5">{formatDate(row.invoiceDate)}</TableCell>
+                            <TableCell className="px-3 py-2.5">{formatDate(row.deliveryDate)}</TableCell>
+                            <TableCell className="font-black text-slate-950 px-3 py-2.5">{row.customerName}</TableCell>
+                            <TableCell className="px-3 py-2.5">{row.phone || 'NA'}</TableCell>
+                            <TableCell className="px-3 py-2.5"><span className={cn('rounded-full px-2.5 py-0.5 text-[11px] font-black', getModelAccent(row.model).pill)}>{row.model}</span></TableCell>
+                            <TableCell className="px-3 py-2.5">{row.variant || 'NA'}</TableCell>
+                            <TableCell className="px-3 py-2.5">{row.color || 'NA'}</TableCell>
+                            <TableCell className="px-3 py-2.5">{row.consultant}</TableCell>
+                            <TableCell className="px-3 py-2.5">{row.source}</TableCell>
+                            <TableCell className="px-3 py-2.5">{row.financeType}</TableCell>
+                            <TableCell className="px-3 py-2.5 font-bold text-slate-700">{formatCurrency(row.exShowroomPrice)}</TableCell>
+                            <TableCell className="px-3 py-2.5">
+                              {row.accessoriesValue === 0 || !row.accessoriesValue ? (
+                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                                  ₹0
+                                </span>
+                              ) : row.accessoriesValue > 5000 ? (
+                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700 border border-emerald-200/60">
+                                  {formatCurrency(row.accessoriesValue)}
+                                </span>
+                              ) : (
+                                <span className="font-bold text-slate-800">
+                                  {formatCurrency(row.accessoriesValue)}
+                                </span>
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -2604,46 +2799,134 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                   />
                   </>
                 ) : (
-                  <EmptyState title="No matching retail rows" body="Try a different month or clear the retail search to see transactions." />
+                  <EmptyState title="No matching retail rows" body="Try a different filter or search term to see transactions." />
                 )}
               </ChartCard>
-              <ChartCard title="Financiers" subtitle="Top finance partners by retail count">
-                {(summary?.retail.financiers || []).length ? (
-                  <div className="space-y-3">
-                    {(summary?.retail.financiers || []).map((item) => (
-                      <div key={item.financier} className="flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-white px-4 py-3">
-                        <span className="text-sm font-black text-slate-950">{item.financier}</span>
-                        <Badge className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-black text-slate-700">
-                          {formatNumber(item.count)}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState title="No financier mix" body="Financier rows will appear when retail finance data is available." />
-                )}
-              </ChartCard>
-            </div>
 
-            <ChartCard title="Consultant-wise Accessories Sales" subtitle="Accessories performance matched and attributed to sales consultants">
-              {(summary?.retail.consultantAccessories || []).length ? (
+              <div className="grid gap-5 xl:grid-cols-2">
+                <ChartCard title="Financiers" subtitle="Top finance partners by retail count">
+                  {(summary?.retail.financiers || []).length ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {(summary?.retail.financiers || []).map((item) => (
+                        <div key={item.financier} className="flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-white px-4 py-3 shadow-xs hover:border-slate-300 transition-colors">
+                          <span className="text-xs font-black text-slate-950 truncate pr-2" title={item.financier}>{item.financier}</span>
+                          <Badge className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-black text-slate-700">
+                            {formatNumber(item.count)}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="No financier mix" body="Financier rows will appear when retail finance data is available." />
+                  )}
+                </ChartCard>
+
+                <ChartCard title="Finance Mode Mix" subtitle="Cash vs In-house vs Self-Finance distribution">
+                  {(summary?.retail.financeSummary || []).length ? (
+                    <div className="space-y-4 pt-2">
+                      {(summary?.retail.financeSummary || []).map((item, index) => (
+                        <ProgressMetricRow
+                          key={item.name}
+                          label={item.name}
+                          value={formatNumber(item.units)}
+                          trailing={`${formatPercent(item.sharePct)} (${formatNumber(item.units)} units)`}
+                          percent={item.sharePct}
+                          color={index === 0 ? '#18a7d0' : index === 1 ? '#8835a7' : '#269442'}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="No finance mode data" body="Finance mode distribution will appear when retail rows are available." />
+                  )}
+                </ChartCard>
+              </div>
+
+            <ChartCard
+              title="Consultant-wise Accessories Sales"
+              subtitle="Accessories performance matched and attributed to sales consultants"
+              action={
+                sortedConsultantAccessories.length > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-500 hidden sm:inline">Sort:</span>
+                    <Select
+                      value={`${consultantAccSort}-${consultantAccDirection}`}
+                      onValueChange={(val) => {
+                        const [field, dir] = val.split('-') as ['consultant' | 'totalSold' | 'totalRevenue' | 'customerCount' | 'avgRevenuePerCustomer', 'asc' | 'desc']
+                        setConsultantAccSort(field)
+                        setConsultantAccDirection(dir)
+                      }}
+                    >
+                      <SelectTrigger className="h-8 rounded-full border-[#d5dfea] bg-white px-3 text-xs font-black text-slate-700 shadow-sm hover:border-slate-300">
+                        <ArrowDownUp className="h-3.5 w-3.5 text-slate-400 mr-1.5" />
+                        <SelectValue placeholder="Sort by" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-2xl border-slate-200">
+                        <SelectItem value="totalRevenue-desc" className="text-xs font-bold">Revenue: High → Low</SelectItem>
+                        <SelectItem value="totalRevenue-asc" className="text-xs font-bold">Revenue: Low → High</SelectItem>
+                        <SelectItem value="totalSold-desc" className="text-xs font-bold">Accessories Sold: High → Low</SelectItem>
+                        <SelectItem value="totalSold-asc" className="text-xs font-bold">Accessories Sold: Low → High</SelectItem>
+                        <SelectItem value="customerCount-desc" className="text-xs font-bold">Customers: High → Low</SelectItem>
+                        <SelectItem value="customerCount-asc" className="text-xs font-bold">Customers: Low → High</SelectItem>
+                        <SelectItem value="avgRevenuePerCustomer-desc" className="text-xs font-bold">Avg Revenue / Customer: High → Low</SelectItem>
+                        <SelectItem value="avgRevenuePerCustomer-asc" className="text-xs font-bold">Avg Revenue / Customer: Low → High</SelectItem>
+                        <SelectItem value="consultant-asc" className="text-xs font-bold">Consultant: A → Z</SelectItem>
+                        <SelectItem value="consultant-desc" className="text-xs font-bold">Consultant: Z → A</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : undefined
+              }
+            >
+              {sortedConsultantAccessories.length ? (
                 <div className="overflow-hidden rounded-[1.5rem] border border-slate-200">
                   <Table className="[&_td]:text-[13px] [&_td]:font-medium [&_th]:text-[10px]">
                     <TableHeader>
-                      <TableRow className="border-b-2 border-[#071a2b] bg-white hover:bg-white">
-                        {['Sales Consultant', 'Total Accessories Sold', 'Total Accessories Revenue', 'Number of Customers', 'Avg Revenue per Customer'].map((label) => (
-                          <TableHead key={label} className="text-[10px] font-black text-[#25303b]">{label}</TableHead>
-                        ))}
+                      <TableRow className="border-b-2 border-[#071a2b] bg-[#071a2b] hover:bg-[#071a2b] select-none text-white">
+                        {[
+                          { key: 'consultant' as const, label: 'Sales Consultant' },
+                          { key: 'totalSold' as const, label: 'Total Accessories Sold' },
+                          { key: 'totalRevenue' as const, label: 'Total Accessories Revenue' },
+                          { key: 'customerCount' as const, label: 'Number of Customers' },
+                          { key: 'avgRevenuePerCustomer' as const, label: 'Avg Revenue per Customer' },
+                        ].map((col) => {
+                          const isActive = consultantAccSort === col.key
+                          return (
+                            <TableHead key={col.key} className="text-[10px] font-black text-white p-0">
+                              <button
+                                type="button"
+                                onClick={() => handleConsultantAccSort(col.key)}
+                                className={cn(
+                                  "w-full h-full px-4 py-3 flex items-center gap-1.5 transition-colors text-left font-black cursor-pointer",
+                                  isActive 
+                                    ? "text-white bg-white/20 shadow-inner" 
+                                    : "text-white/90 hover:text-white hover:bg-white/10"
+                                )}
+                                title={`Sort by ${col.label} (${isActive && consultantAccDirection === 'desc' ? 'Low to High' : 'High to Low'})`}
+                              >
+                                <span>{col.label}</span>
+                                {isActive ? (
+                                  consultantAccDirection === 'desc' ? (
+                                    <ArrowDown className="h-3.5 w-3.5 text-white stroke-[2.5]" />
+                                  ) : (
+                                    <ArrowUp className="h-3.5 w-3.5 text-white stroke-[2.5]" />
+                                  )
+                                ) : (
+                                  <ArrowDownUp className="h-3 w-3 text-white/40 opacity-60" />
+                                )}
+                              </button>
+                            </TableHead>
+                          )
+                        })}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(summary?.retail.consultantAccessories || []).map((row) => (
-                        <TableRow key={row.consultant} className="odd:bg-[#f6f9fd] even:bg-white">
-                          <TableCell className="font-black text-slate-950">{row.consultant}</TableCell>
-                          <TableCell>{formatNumber(row.totalSold)}</TableCell>
-                          <TableCell className="font-bold text-slate-800">{formatCurrency(row.totalRevenue)}</TableCell>
-                          <TableCell>{formatNumber(row.customerCount)}</TableCell>
-                          <TableCell className="text-slate-600">{formatCurrency(row.avgRevenuePerCustomer)}</TableCell>
+                      {sortedConsultantAccessories.map((row) => (
+                        <TableRow key={row.consultant} className="odd:bg-[#f6f9fd] even:bg-white hover:bg-blue-50/30 transition-colors">
+                          <TableCell className="font-black text-slate-950 px-4 py-3">{row.consultant}</TableCell>
+                          <TableCell className="px-4 py-3">{formatNumber(row.totalSold)}</TableCell>
+                          <TableCell className="font-bold text-slate-800 px-4 py-3">{formatCurrency(row.totalRevenue)}</TableCell>
+                          <TableCell className="px-4 py-3">{formatNumber(row.customerCount)}</TableCell>
+                          <TableCell className="text-slate-600 px-4 py-3">{formatCurrency(row.avgRevenuePerCustomer)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

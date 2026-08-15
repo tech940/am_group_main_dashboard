@@ -453,12 +453,14 @@ function BookingDetailsDrawer({
             </div>
           </div>
 
-          {/* Customer Identity Documents Links */}
+          {/* Customer Identity & Booking Documents Links */}
           {(() => {
+            const costSheetUrl = getDocVal('costSheet') || getDocVal('costSheetUrl')
             const docs = [
               { label: 'PAN Card', url: panCardUrl, name: panCardName },
               { label: 'Aadhaar Card', url: aadhaarCardUrl, name: aadhaarCardName },
               { label: 'Employee ID', url: employeeIdUrl, name: employeeIdName },
+              { label: 'Cost Sheet', url: costSheetUrl, name: 'Cost Sheet' },
             ].filter((d) => d.url)
             if (!docs.length || !canViewPii) return null
             return (

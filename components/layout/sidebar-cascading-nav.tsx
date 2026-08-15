@@ -176,7 +176,7 @@ function AccordionNav({
   onNavigate: () => void
 }) {
   const [open, setOpen] = useState<Set<string>>(
-    () => new Set(['common-group', 'kia']),
+    () => new Set<string>(),
   )
   const toggle = useCallback((key: string) => {
     setOpen((prev) => {
