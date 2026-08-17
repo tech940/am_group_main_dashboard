@@ -14,7 +14,7 @@ import {
   Car, Plus, Search, RefreshCw, Loader2, ShieldCheck, FileText, 
   CheckCircle2, XCircle, Truck, WalletCards, BadgeIndianRupee, 
   Calendar, ChevronRight, AlertTriangle, AlertCircle, Share2, ClipboardList,
-  ChevronDown, X, Users
+  ChevronDown, X, Users, Clock, Lock
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -78,6 +78,14 @@ type StockRow = {
   to_dealer_code: string | null
   transfer_requested_at: string | null
   transfer_requester_name: string | null
+  /**
+   * FIFO guard, computed server-side over the WHOLE stock table (not the filtered page): how many
+   * other allottable vehicles of the same model+variant at the same outlet have been in stock
+   * longer, and which is the oldest. Drives the ageing-stock warning on the allot dialog.
+   */
+  older_count: number | null
+  oldest_alternative_vin: string | null
+  oldest_alternative_age: number | null
 }
 
 type SoldMissingRow = {
@@ -138,6 +146,8 @@ type StockPayload = {
     total_vins: number
     available: number
     payment_pending: number
+    /** DMS-committed cars with no allocation of ours — see the KPI row for why it is its own bucket. */
+    dms_allocated?: number
     payment_overdue: number
     paid_to_deliver: number
     delivered: number
@@ -162,6 +172,8 @@ type StockPayload = {
   filters: {
     dealers: string[]
     models: string[]
+    /** Raw kia_stock_management.stock_status values with their row counts, newest feed wins. */
+    dmsStatuses?: { status: string; count: number }[]
   }
   pagination: {
     page: number
@@ -209,13 +221,90 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   }, [])
 
   // State filters
+  /**
+   * Filters are staged, not live.
+   *
+   * `search` / `dealerCode` / … are the APPLIED filters — the only ones the query reads. The
+   * `draft*` values are what the controls in the filter bar edit. Nothing reaches the API until
+   * Apply is pressed, so changing three dropdowns costs one request instead of three, and a
+   * half-typed date like "0002-01-01" never gets sent while the user is still typing it.
+   *
+   * The KPI cards are deliberately NOT staged — clicking a card is a direct action, so it sets both
+   * the draft and the applied status and takes effect immediately.
+   */
   const [search, setSearch] = useState('')
   const [dealerCode, setDealerCode] = useState('All')
   const [model, setModel] = useState('All')
   const [status, setStatus] = useState('AVAILABLE')
+  /** Raw DMS status from kia_stock_management.stock_status — a different axis from `status`. */
+  const [dmsStatus, setDmsStatus] = useState('All')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [page, setPage] = useState(1)
+
+  const [draftSearch, setDraftSearch] = useState('')
+  const [draftDealerCode, setDraftDealerCode] = useState('All')
+  const [draftModel, setDraftModel] = useState('All')
+  const [draftStatus, setDraftStatus] = useState('AVAILABLE')
+  const [draftDmsStatus, setDraftDmsStatus] = useState('All')
+  const [draftStartDate, setDraftStartDate] = useState('')
+  const [draftEndDate, setDraftEndDate] = useState('')
+
+  const filtersDirty =
+    draftSearch !== search ||
+    draftDealerCode !== dealerCode ||
+    draftModel !== model ||
+    draftStatus !== status ||
+    draftDmsStatus !== dmsStatus ||
+    draftStartDate !== startDate ||
+    draftEndDate !== endDate
+
+  const applyFilters = () => {
+    setSearch(draftSearch)
+    setDealerCode(draftDealerCode)
+    setModel(draftModel)
+    setStatus(draftStatus)
+    setDmsStatus(draftDmsStatus)
+    setStartDate(draftStartDate)
+    setEndDate(draftEndDate)
+    setPage(1)
+  }
+
+  /*
+   * Picking a DMS status widens the workflow bucket back to "All Status".
+   *
+   * The two filters are different axes, but the workflow one DEFAULTS to AVAILABLE — a narrowing
+   * default — and AVAILABLE excludes stock_status 'ALLOCATED' and every DMS-sold row. Left stacked,
+   * 2 of the 5 real statuses ('Allocated' 7 rows, 'Invoice' 2 rows) would return nothing at all, and
+   * the new filter would look broken the moment anyone tried it. The workflow dropdown visibly moves
+   * to "All Status" so nothing is hidden, and it can be narrowed again afterwards on purpose.
+   */
+  const selectDmsStatus = (value: string) => {
+    setDraftDmsStatus(value)
+    if (value !== 'All') setDraftStatus('All')
+  }
+
+  const resetFilters = () => {
+    setDraftSearch(''); setSearch('')
+    setDraftDealerCode('All'); setDealerCode('All')
+    setDraftModel('All'); setModel('All')
+    setDraftStatus('AVAILABLE'); setStatus('AVAILABLE')
+    setDraftDmsStatus('All'); setDmsStatus('All')
+    setDraftStartDate(''); setStartDate('')
+    setDraftEndDate(''); setEndDate('')
+    setPage(1)
+  }
+
+  // Card clicks bypass staging on purpose — see the note above.
+  const selectStatusImmediately = (key: string) => {
+    setDraftStatus(key)
+    setStatus(key)
+    setPage(1)
+  }
+
+  const filtersAtDefault =
+    search === '' && dealerCode === 'All' && model === 'All' &&
+    status === 'AVAILABLE' && dmsStatus === 'All' && startDate === '' && endDate === '' && !filtersDirty
 
   // Custom states
   const [auditLogOpen, setAuditLogOpen] = useState(false)
@@ -226,6 +315,13 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const [allotDialogOpen, setAllotDialogOpen] = useState(false)
   const [allotVin, setAllotVin] = useState('')
   const [selectedBookingId, setSelectedBookingId] = useState('')
+  // Optional "ask the MD for a longer payment window" request, raised while allotting. Days is a
+  // string because it comes from a <select>; '' means nothing chosen.
+  const [extraTimeOpen, setExtraTimeOpen] = useState(false)
+  const [extraTimeDays, setExtraTimeDays] = useState('')
+  const [extraTimeReason, setExtraTimeReason] = useState('')
+  const extraTimeReady = !extraTimeOpen || (extraTimeDays !== '' && extraTimeReason.trim().length > 0)
+  const resetExtraTime = () => { setExtraTimeOpen(false); setExtraTimeDays(''); setExtraTimeReason('') }
 
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [transferVin, setTransferVin] = useState('')
@@ -285,10 +381,11 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     if (dealerCode !== 'All') params.set('dealer_code', dealerCode)
     if (model !== 'All') params.set('model', model)
     if (status !== 'All') params.set('status', status)
+    if (dmsStatus !== 'All') params.set('dms_status', dmsStatus)
     if (startDate) params.set('start_date', startDate)
     if (endDate) params.set('end_date', endDate)
     return params.toString()
-  }, [search, dealerCode, model, status, startDate, endDate, page])
+  }, [search, dealerCode, model, status, dmsStatus, startDate, endDate, page])
 
   // Query stock data
   const { data, isLoading, isError, error, refetch } = useQuery<StockPayload>({
@@ -359,11 +456,21 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
 
   // Mutations
   const allotMutation = useMutation({
-    mutationFn: async ({ bookingId, vin }: { bookingId: string; vin: string }) => {
+    mutationFn: async ({ bookingId, vin, extraTimeDays, extraTimeReason }: {
+      bookingId: string
+      vin: string
+      // Optional request for a longer customer payment window. The allotment still applies the
+      // STANDARD window; this only records the ask for the MD to approve or reject.
+      extraTimeDays?: number
+      extraTimeReason?: string
+    }) => {
       const res = await fetch(`/api/brands/kia/bookings/${bookingId}/allot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vinNumber: vin }),
+        body: JSON.stringify({
+          vinNumber: vin,
+          ...(extraTimeDays ? { extraTimeDays, extraTimeReason } : {}),
+        }),
       })
       if (!res.ok) {
         const payload = await res.json().catch(() => null)
@@ -371,13 +478,21 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       }
       return res.json()
     },
-    onSuccess: () => {
-      toast({ title: 'Success', description: 'Vehicle allotted successfully!', variant: 'success' })
+    onSuccess: (_data, variables) => {
+      toast({
+        title: 'Success',
+        description: variables.extraTimeDays
+          ? `Vehicle allotted. Your ${variables.extraTimeDays}-day extra time request has been sent to the MD — the standard window applies until they approve it.`
+          : 'Vehicle allotted successfully!',
+        variant: 'success',
+      })
       setAllotDialogOpen(false)
       setSelectedBookingId('')
+      resetExtraTime()
       setStockSuccess('allot')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['kia-payment-window-requests'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -784,6 +899,14 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       return <Chip tone="amber">Allotted</Chip>
     }
     if (row.transfer_id) return <Chip tone="sky">Transferred{row.to_dealer_code ? ` → ${row.to_dealer_code}` : ''}</Chip>
+    // Committed in the DMS by someone other than us. This fell through to a green "Available" chip,
+    // which contradicted the Available KPI — that card excludes stock_status 'ALLOCATED', so the
+    // table claimed 7 cars were available while the card counted 0 of them.
+    // Neutral, not rose: the car is still allottable from here (readMatchingVehicle ignores
+    // stock_status), so this is provenance, not a block.
+    if (String(row.stock_status || '').trim().toUpperCase() === 'ALLOCATED') {
+      return <Chip tone="neutral">DMS Allocated</Chip>
+    }
     return <Chip tone="emerald">Available</Chip>
   }
 
@@ -799,6 +922,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
 
   const dealerFilters = data?.filters?.dealers || ['JK402', 'JK501']
   const modelFilters = data?.filters?.models || ['CARENS', 'SELTOS', 'SONET', 'CARENS CLAVIS EV']
+  // No hardcoded fallback: an invented status the feed does not use would offer a guaranteed-empty
+  // option, and the real list is short and always present in the payload.
+  const dmsStatusFilters = data?.filters?.dmsStatuses || []
 
   const filteredStockRows = useMemo(() => {
     const rows = data?.rows || []
@@ -923,12 +1049,23 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
           items={([
             { key: 'All', label: 'Total VINs', value: data.metrics.total_vins, icon: Car, tone: 'blue' as Tone, hint: 'Whole inventory' },
             { key: 'AVAILABLE', label: 'Available', value: data.metrics.available, icon: CheckCircle2, tone: 'emerald' as Tone, hint: 'Free to allot' },
-            { key: 'PAYMENT_PENDING', label: 'Payment Pending', value: data.metrics.payment_pending, icon: WalletCards, tone: 'amber' as Tone, hint: 'Within window' },
+            { key: 'PAYMENT_PENDING', label: 'Payment Pending', value: data.metrics.payment_pending, icon: WalletCards, tone: 'amber' as Tone, hint: 'Allotted by us · awaiting payment' },
+            /*
+             * DMS Allocated is a separate card because it is not a stage of OUR pipeline.
+             *
+             * These cars were committed inside the DMS; nobody here allotted them, so there is no
+             * customer, no booking and no payment window. They used to be counted under Payment
+             * Pending, which read 8 when only 1 vehicle was genuinely awaiting payment.
+             *
+             * `neutral` on purpose: every other card is a bucket someone here has to act on, and this
+             * one is not — it is inventory we simply cannot offer.
+             */
+            { key: 'ALLOCATED_DMS', label: 'DMS Allocated', value: data.metrics.dms_allocated || 0, icon: Lock, tone: 'neutral' as Tone, hint: 'Committed in DMS · not ours' },
             { key: 'PAID_TO_DELIVER', label: 'Paid · To Deliver', value: data.metrics.paid_to_deliver, icon: BadgeIndianRupee, tone: 'violet' as Tone, hint: 'Ready to hand over' },
             { key: 'DELIVERED', label: 'Delivered', value: data.metrics.delivered, icon: Truck, tone: 'teal' as Tone, hint: 'Completed' },
             { key: 'TRANSFERRED', label: 'Transfers', value: (data.metrics.transfers || 0) + (data.metrics.transfer_missing || 0), icon: RefreshCw, tone: 'sky' as Tone, hint: 'Inter-outlet' },
           ] as (KpiDatum & { active?: boolean })[]).map((item) => ({ ...item, active: status === item.key }))}
-          onSelect={(key) => { setStatus(key); setPage(1) }}
+          onSelect={selectStatusImmediately}
         />
       )}
 
@@ -944,15 +1081,16 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             <div className="relative flex-1 min-w-[200px]">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kia-text-faint)]" />
               <Input
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') applyFilters() }}
                 placeholder="search VIN, customer, consultant..."
                 className="h-9 w-full rounded-xl pl-10 text-xs font-semibold"
               />
             </div>
 
             {/* Dealer dropdown */}
-            <Select value={dealerCode} onValueChange={(v) => { setDealerCode(v); setPage(1) }}>
+            <Select value={draftDealerCode} onValueChange={setDraftDealerCode}>
               <SelectTrigger className="h-9 w-[150px] rounded-xl text-xs font-bold border-slate-200 bg-white shadow-sm">
                 <SelectValue placeholder="All Dealers" />
               </SelectTrigger>
@@ -967,7 +1105,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             </Select>
 
             {/* Model dropdown */}
-            <Select value={model} onValueChange={(v) => { setModel(v); setPage(1) }}>
+            <Select value={draftModel} onValueChange={setDraftModel}>
               <SelectTrigger className="h-9 w-[150px] rounded-xl text-xs font-bold border-slate-200 bg-white shadow-sm">
                 <SelectValue placeholder="All Models" />
               </SelectTrigger>
@@ -980,7 +1118,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             </Select>
 
             {/* Status dropdown */}
-            <Select value={status} onValueChange={(val) => { setStatus(val); setPage(1) }}>
+            <Select value={draftStatus} onValueChange={setDraftStatus}>
               <SelectTrigger className="h-9 w-[160px] rounded-xl text-xs font-bold border-slate-200 bg-white shadow-sm">
                 <SelectValue placeholder="All Status" />
               </SelectTrigger>
@@ -988,9 +1126,31 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                 <SelectItem value="All" className="text-xs font-bold cursor-pointer">All Status</SelectItem>
                 <SelectItem value="AVAILABLE" className="text-xs font-bold cursor-pointer">Available</SelectItem>
                 <SelectItem value="PAYMENT_PENDING" className="text-xs font-bold cursor-pointer">Payment Pending</SelectItem>
+                {/* DMS-committed cars with no allocation of ours. Kept out of Available because
+                    someone else has already claimed the car in the DMS — a reporting boundary, NOT a
+                    capability one: readMatchingVehicle ignores stock_status, so these are still
+                    allottable and keep their Allot button. */}
+                <SelectItem value="ALLOCATED_DMS" className="text-xs font-bold cursor-pointer">Allocated (DMS)</SelectItem>
                 <SelectItem value="PAID_TO_DELIVER" className="text-xs font-bold cursor-pointer">Paid - To Deliver</SelectItem>
                 <SelectItem value="DELIVERED" className="text-xs font-bold cursor-pointer">Delivered</SelectItem>
                 <SelectItem value="TRANSFERRED" className="text-xs font-bold cursor-pointer">Transferred</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* DMS status dropdown — the raw kia_stock_management.stock_status, as the feed reports it.
+                Options and counts come from the data, so a status the DMS adds later appears on its
+                own and no option can ever be a dead end. */}
+            <Select value={draftDmsStatus} onValueChange={selectDmsStatus}>
+              <SelectTrigger className="h-9 w-[175px] rounded-xl text-xs font-bold border-slate-200 bg-white shadow-sm">
+                <SelectValue placeholder="All DMS Status" />
+              </SelectTrigger>
+              <SelectContent className="bg-white border border-slate-200 z-[50] rounded-xl shadow-md">
+                <SelectItem value="All" className="text-xs font-bold cursor-pointer">All DMS Status</SelectItem>
+                {dmsStatusFilters.map(s => (
+                  <SelectItem key={s.status} value={s.status} className="text-xs font-bold cursor-pointer">
+                    {s.status} ({s.count})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -1003,9 +1163,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                   const d = new Date()
                   const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
                   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0]
-                  setStartDate(firstDay)
-                  setEndDate(lastDay)
-                  setPage(1)
+                  setDraftStartDate(firstDay)
+                  setDraftEndDate(lastDay)
                 }}
                 className="text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-lg transition-colors"
                 title="Current Month"
@@ -1015,9 +1174,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
               <button
                 type="button"
                 onClick={() => {
-                  setStartDate('')
-                  setEndDate('')
-                  setPage(1)
+                  setDraftStartDate('')
+                  setDraftEndDate('')
                 }}
                 className="text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-lg transition-colors"
                 title="All Time Data"
@@ -1027,26 +1185,58 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
               <span className="text-[10px] font-bold text-slate-400 uppercase ml-1">From</span>
               <input
                 type="date"
-                value={startDate}
-                onChange={(e) => { setStartDate(e.target.value); setPage(1) }}
+                value={draftStartDate}
+                onChange={(e) => setDraftStartDate(e.target.value)}
                 className="h-7 text-xs font-semibold text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-0 p-0 cursor-pointer"
               />
               <span className="text-[10px] font-bold text-slate-400 uppercase ml-1">To</span>
               <input
                 type="date"
-                value={endDate}
-                onChange={(e) => { setEndDate(e.target.value); setPage(1) }}
+                value={draftEndDate}
+                onChange={(e) => setDraftEndDate(e.target.value)}
                 className="h-7 text-xs font-semibold text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-0 p-0 cursor-pointer"
               />
-              {(startDate || endDate) && (
+              {(draftStartDate || draftEndDate) && (
                 <button
                   type="button"
-                  onClick={() => { setStartDate(''); setEndDate(''); setPage(1) }}
+                  onClick={() => { setDraftStartDate(''); setDraftEndDate('') }}
                   className="ml-1 text-slate-400 hover:text-slate-600 transition-colors p-0.5 rounded-md hover:bg-slate-100"
                   title="Clear Date Filter"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
+              )}
+            </div>
+
+            {/* Apply / Reset — nothing above reaches the API until Apply is pressed. */}
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={applyFilters}
+                disabled={!filtersDirty}
+                className={cn(
+                  'h-9 rounded-xl px-4 text-xs font-black shadow-sm transition-all',
+                  filtersDirty
+                    ? 'bg-slate-950 text-white hover:bg-slate-800'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed hover:bg-slate-100'
+                )}
+                title={filtersDirty ? 'Apply the selected filters' : 'No filter changes to apply'}
+              >
+                {filtersDirty && (
+                  <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden />
+                )}
+                Apply
+              </Button>
+              {!filtersAtDefault && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={resetFilters}
+                  className="h-9 rounded-xl px-3 text-xs font-black border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                  title="Clear all filters"
+                >
+                  Reset
+                </Button>
               )}
             </div>
 
@@ -1394,6 +1584,62 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             })()}
           </div>
 
+          {/*
+            Ageing-stock warning. Purely advisory — it never blocks the allotment, it just makes
+            sure nobody allots a fresh arrival while an older identical car is quietly ageing in the
+            same yard. `older_count` comes from the API over the whole stock table, so it stays
+            accurate no matter how the list above is filtered.
+          */}
+          {(() => {
+            const row = data?.rows?.find(r => r.vin_number === allotVin)
+            const olderCount = row?.older_count ?? 0
+            if (!row || olderCount < 1) return null
+            const thisAge = Number(String(row.stock_age || '').replace(/[^0-9]/g, '')) || 0
+            const oldestAge = row.oldest_alternative_age ?? 0
+            const gap = oldestAge - thisAge
+            return (
+              <div className="mb-1 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
+                  <div className="min-w-0 space-y-1.5">
+                    <p className="text-xs font-black uppercase tracking-wider text-amber-900">
+                      Older stock available
+                    </p>
+                    <p className="text-[11px] font-semibold leading-relaxed text-amber-900">
+                      {olderCount === 1
+                        ? 'Another identical vehicle has been in stock longer than this one.'
+                        : `${olderCount} other identical vehicles have been in stock longer than this one.`}{' '}
+                      Allotting this one leaves the older stock ageing.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 text-[11px] font-bold text-amber-900">
+                      <span>
+                        This VIN:{' '}
+                        <span className="font-mono tabular-nums">{thisAge}d</span>
+                      </span>
+                      <span>
+                        Oldest:{' '}
+                        <span className="font-mono tabular-nums">{oldestAge}d</span>
+                        {row.oldest_alternative_vin && (
+                          <span className="ml-1 font-mono opacity-70">
+                            …{String(row.oldest_alternative_vin).slice(-8)}
+                          </span>
+                        )}
+                      </span>
+                      {gap > 0 && (
+                        <span className="rounded-lg bg-amber-200/70 px-2 py-0.5">
+                          {gap}d older
+                        </span>
+                      )}
+                    </div>
+                    <p className="pt-0.5 text-[10px] font-semibold text-amber-700">
+                      Same model, variant and outlet. You can still continue if this VIN is the right one.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
           <div className="space-y-4 my-3">
             <div className="space-y-3">
               <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">
@@ -1497,16 +1743,92 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                 </div>
               )
             })()}
+
+            {/*
+              Optional extra-payment-time request. Only offered once a booking is selected, because
+              the request is about that booking's allocation. The copy has to be unambiguous that the
+              standard window applies immediately and this is only an ask — otherwise a consultant
+              will promise the customer the longer window on the strength of having requested it.
+            */}
+            {selectedBookingId && (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white">
+                <button
+                  type="button"
+                  onClick={() => (extraTimeOpen ? resetExtraTime() : setExtraTimeOpen(true))}
+                  className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left"
+                >
+                  <span className="flex items-center gap-2">
+                    <Clock className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-xs font-black text-slate-800">Request extra payment time</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">optional</span>
+                  </span>
+                  <span className={cn(
+                    'text-[10px] font-black uppercase tracking-wider',
+                    extraTimeOpen ? 'text-rose-600' : 'text-indigo-600',
+                  )}>
+                    {extraTimeOpen ? 'Remove' : 'Add'}
+                  </span>
+                </button>
+
+                {extraTimeOpen && (
+                  <div className="space-y-3 border-t border-slate-100 px-3.5 py-3">
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-5 text-amber-900">
+                      The standard payment window starts as soon as you allot. It is only extended if
+                      the MD approves this request — don&apos;t promise the customer the longer window yet.
+                    </p>
+
+                    <div className="grid gap-3 sm:grid-cols-[9rem_1fr]">
+                      <div>
+                        <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-400 block mb-1">Days requested</span>
+                        <select
+                          value={extraTimeDays}
+                          onChange={(e) => setExtraTimeDays(e.target.value)}
+                          className="h-9 w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-900"
+                        >
+                          <option value="">Choose…</option>
+                          {Array.from({ length: 15 }, (_, i) => i + 1).map((d) => (
+                            <option key={d} value={String(d)}>{d} day{d === 1 ? '' : 's'}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                          Reason <span className="text-rose-600">*</span>
+                        </span>
+                        <Input
+                          value={extraTimeReason}
+                          onChange={(e) => setExtraTimeReason(e.target.value)}
+                          placeholder="Why does this customer need longer?"
+                          className="h-9 rounded-xl border-slate-200 bg-white text-xs font-semibold"
+                        />
+                      </div>
+                    </div>
+
+                    {!extraTimeReady && (
+                      <p className="text-[11px] font-semibold text-rose-700">
+                        Choose the number of days and give a reason, or remove the request.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0 mt-4 pt-2 border-t border-slate-100">
-            <Button variant="outline" className="h-10 rounded-xl text-xs font-black px-4" onClick={() => setAllotDialogOpen(false)}>
+            <Button variant="outline" className="h-10 rounded-xl text-xs font-black px-4" onClick={() => { setAllotDialogOpen(false); resetExtraTime() }}>
               Cancel
             </Button>
             <Button
               className="h-10 rounded-xl px-5 text-xs font-bold"
-              disabled={allotMutation.isPending || !selectedBookingId}
-              onClick={() => allotMutation.mutate({ bookingId: selectedBookingId, vin: allotVin })}
+              disabled={allotMutation.isPending || !selectedBookingId || !extraTimeReady}
+              onClick={() => allotMutation.mutate({
+                bookingId: selectedBookingId,
+                vin: allotVin,
+                ...(extraTimeOpen && extraTimeDays !== ''
+                  ? { extraTimeDays: Number(extraTimeDays), extraTimeReason: extraTimeReason.trim() }
+                  : {}),
+              })}
             >
               {allotMutation.isPending ? 'Allotting…' : 'Confirm Allotment'}
             </Button>
@@ -2642,7 +2964,11 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                     ? { label: 'Ready', bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' }
                     : isAllotted
                       ? { label: 'Allotted', bg: '#fffbeb', text: '#b45309', border: '#fde68a' }
-                      : { label: 'Available', bg: '#f0fdfa', text: '#0f766e', border: '#99f6e4' }
+                      // Same DMS-committed case as renderStatus — the shared printed/exported copy of
+                      // this table must not call these Available either.
+                      : String(row.stock_status || '').trim().toUpperCase() === 'ALLOCATED'
+                        ? { label: 'DMS Allocated', bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' }
+                        : { label: 'Available', bg: '#f0fdfa', text: '#0f766e', border: '#99f6e4' }
                 const aged = Number(row.stock_age) > 180
                 return (
                   <tr key={row.id} className="page-break-avoid border-b border-slate-100 odd:bg-white even:bg-slate-50/60 last:border-b-0">

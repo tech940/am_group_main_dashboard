@@ -30,9 +30,28 @@ export async function POST(request: NextRequest) {
       uploadBillUrl1,
       uploadBillUrl2,
       uploadDocUrl,
+      billUrls,
       glAccountId,
       gst,
     } = body
+
+    /**
+     * Bills arrive as an ordered array from the single multi-file upload. Older clients (and the
+     * re-submit flow) may still send only the two flat fields, so accept either shape.
+     *
+     * The first two entries are mirrored back into upload_bill_url_1/2 because the approver UI,
+     * the notification emails and the printed voucher read those columns — writing only the array
+     * would hide bills from the people approving the payment.
+     */
+    const normalizedBillUrls: string[] = (
+      Array.isArray(billUrls) && billUrls.length
+        ? billUrls
+        : [uploadBillUrl1, uploadBillUrl2]
+    )
+      .filter((u: unknown): u is string => typeof u === 'string' && u.trim().length > 0)
+      .map((u: string) => u.trim())
+
+    const [mirrorBill1 = null, mirrorBill2 = null] = normalizedBillUrls
 
     if (!email || !email.trim()) {
       return NextResponse.json({ error: 'Email Address is required' }, { status: 400 })
@@ -140,8 +159,11 @@ export async function POST(request: NextRequest) {
           remarks: remarks?.trim() || null,
           // The re-submit form does not always carry the original attachments back, so a missing
           // URL means "keep what was uploaded before", never "delete it".
-          uploadBillUrl1: uploadBillUrl1 || original.uploadBillUrl1 || null,
-          uploadBillUrl2: uploadBillUrl2 || original.uploadBillUrl2 || null,
+          billUrls: normalizedBillUrls.length
+            ? normalizedBillUrls
+            : (original.billUrls?.length ? original.billUrls : []),
+          uploadBillUrl1: mirrorBill1 || original.uploadBillUrl1 || null,
+          uploadBillUrl2: mirrorBill2 || original.uploadBillUrl2 || null,
           uploadDocUrl: uploadDocUrl || original.uploadDocUrl || null,
           glAccountId: finalGlAccountId,
           gst: gst?.trim() || null,
@@ -199,8 +221,9 @@ export async function POST(request: NextRequest) {
         amount: String(amount),
         typeOfPayment: typeOfPayment || null,
         remarks: remarks?.trim() || null,
-        uploadBillUrl1: uploadBillUrl1 || null,
-        uploadBillUrl2: uploadBillUrl2 || null,
+        billUrls: normalizedBillUrls,
+        uploadBillUrl1: mirrorBill1,
+        uploadBillUrl2: mirrorBill2,
         uploadDocUrl: uploadDocUrl || null,
         vpApproval: '',
         accountApproval: '',

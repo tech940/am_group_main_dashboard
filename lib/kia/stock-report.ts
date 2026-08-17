@@ -51,13 +51,44 @@ const STOCK_SOURCE_NOT_DELIVERED = sql`NOT (va.id IS NOT NULL AND kb.status = 'd
 // catches cars sold THROUGH this app; the KIA DMS also retails cars directly, recording them in
 // kia_sales_report. Those sold VINs linger in the stock feed, so without this exclusion the report
 // counts already-retailed cars as available stock (measured ~11% over-count). Excluding any VIN with
-// a delivery_date in the sales feed is the retail source of truth. NOTE: this is intentionally
-// Stock-Report-only; the proforma/booking stock stays as-is (delivered there is marked via bookings).
+// a delivery_date in the sales feed is the retail source of truth.
+//
+// 2026-08-17: this exclusion is NO LONGER Stock-Report-only — app/api/brands/kia/proforma/stock now
+// applies the same rule (as `dmsSoldExpr`), so the two surfaces agree again. They had drifted to
+// 109 vs 131 while only this file excluded retailed cars.
 const STOCK_SOURCE_NOT_RETAILED = sql`NOT EXISTS (
   SELECT 1 FROM kia_sales_report sr
   WHERE UPPER(TRIM(sr.vin_number)) = UPPER(TRIM(sm.vin_number))
     AND sr.delivery_date IS NOT NULL
 )`
+// The DMS flips stock_status to 'Invoice' when it invoices a car to a named customer. Those cars are
+// sold, but two of them had not yet reached kia_sales_report, so the retail check above misses them
+// for a few days. Both signals are needed; neither is a superset of the other.
+const STOCK_SOURCE_NOT_INVOICED = sql`UPPER(COALESCE(sm.stock_status, '')) <> 'INVOICE'`
+// Staff can mark a VIN retailed by hand (kia_stock_local_statuses, "Payment confirmed by Accounts").
+// The bookings surface has always honoured that mark; this report did not, which left one car
+// visible here as available after Accounts had already sold it. EXISTS rather than a join, so a VIN
+// with several rows in that table cannot fan out the row count. The ready_delivery carve-out mirrors
+// app/api/brands/kia/proforma/stock exactly — a car being handed over today is still stock.
+const STOCK_SOURCE_NOT_LOCAL_RETAIL = sql`NOT (
+  EXISTS (
+    SELECT 1 FROM kia_stock_local_statuses ls
+    WHERE UPPER(TRIM(ls.vin_number)) = UPPER(TRIM(sm.vin_number))
+      AND ls.local_status = 'retail'
+  )
+  AND COALESCE(kb.status, '') <> 'ready_delivery'
+)`
+/**
+ * The report shows SELLABLE stock only: 'Free Stock' and 'From Other Dealer'.
+ *
+ * Everything else the DMS reports is a car you cannot sell today — 'In transit' is still on a
+ * truck, 'Allocated' is already committed to a customer, 'Pending For Approval' is not released.
+ * Counting them made the report answer "how many cars exist" when the question being asked of it
+ * is "how many can I sell". Deliberately a status ALLOWLIST, not a denylist: a new DMS status
+ * appearing in the feed should be invisible here until someone decides it is sellable, rather than
+ * silently inflating the number.
+ */
+const STOCK_SOURCE_SELLABLE_STATUS = sql`UPPER(TRIM(COALESCE(sm.stock_status, ''))) IN ('FREE STOCK', 'FROM OTHER DEALER')`
 
 function parsedInvoiceDateSql(alias = 'sm.') {
   const col = `${alias}kin_invoice_date`
@@ -296,6 +327,28 @@ function dateClause(mode: KiaStockDateMode, startDate: string, endDateExclusive:
   return sql`AND ${sql.raw(mode)} >= ${startDate}::date AND ${sql.raw(mode)} < ${endDateExclusive}::date`
 }
 
+/**
+ * Vehicles still on the way, counted OUTSIDE the sellable-status filter.
+ *
+ * Applies the same not-sold exclusions as the main reader (so a car that was invoiced or retailed
+ * while in transit is not counted as incoming), but deliberately keeps the 'In transit' status
+ * instead of restricting to sellable ones — this is the one figure that is about non-sellable stock.
+ */
+async function readInTransitCount(dealerCode: string | null) {
+  const result = rows(await analyticsDb.execute(sql`
+    SELECT COUNT(DISTINCT COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text))::int AS count
+    FROM kia_stock_management sm
+    ${STOCK_SOURCE_JOINS}
+    WHERE ${STOCK_SOURCE_NOT_DELIVERED}
+      AND ${STOCK_SOURCE_NOT_RETAILED}
+      AND ${STOCK_SOURCE_NOT_INVOICED}
+      AND ${STOCK_SOURCE_NOT_LOCAL_RETAIL}
+      AND UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'IN TRANSIT'
+      ${dealerClause(dealerCode)}
+  `))
+  return integerValue(result[0]?.count)
+}
+
 async function readCurrentRows(dealerCode: string | null) {
   return rows(await analyticsDb.execute(sql`
     WITH latest AS (
@@ -336,6 +389,9 @@ async function readCurrentRows(dealerCode: string | null) {
       WHERE COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text) IS NOT NULL
         AND ${STOCK_SOURCE_NOT_DELIVERED}
         AND ${STOCK_SOURCE_NOT_RETAILED}
+        AND ${STOCK_SOURCE_NOT_INVOICED}
+        AND ${STOCK_SOURCE_NOT_LOCAL_RETAIL}
+        AND ${STOCK_SOURCE_SELLABLE_STATUS}
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
     )
@@ -421,7 +477,11 @@ export async function getKiaStockReportSummary(input: {
     const currentVehicles = currentRows.map(normalizeVehicle)
     const totalStock = currentVehicles.length
     const freeStock = currentVehicles.filter((row) => row.stockStatus === 'Free Stock').length
-    const inTransit = currentVehicles.filter((row) => row.stockStatus === 'In transit').length
+    // Counted separately, on purpose. The report body is restricted to sellable stock
+    // (STOCK_SOURCE_SELLABLE_STATUS), so in-transit rows never reach `currentVehicles` and deriving
+    // this from them would pin the card to 0 forever. It stays visible because "what is arriving"
+    // is still worth knowing next to "what I can sell today" — it is simply not counted as stock.
+    const inTransit = await readInTransitCount(dealerCode)
     const stockValue = currentVehicles.reduce((sum, row) => sum + row.stockValue, 0)
     const avgAge = totalStock ? Math.round(currentVehicles.reduce((sum, row) => sum + row.stockAge, 0) / totalStock) : 0
     const blocked = currentVehicles.filter((row) => row.blocked !== '-').length
@@ -637,7 +697,7 @@ export async function getKiaStockReportSummary(input: {
       },
       overview: {
         kpis: [
-          { label: 'Available Stock', value: totalStock, formattedValue: totalStock.toLocaleString('en-IN'), helper: 'Current inventory (excludes delivered & retailed)' },
+          { label: 'Available Stock', value: totalStock, formattedValue: totalStock.toLocaleString('en-IN'), helper: 'Current inventory (excludes delivered, invoiced & retailed)' },
           { label: 'Free Stock', value: freeStock, formattedValue: freeStock.toLocaleString('en-IN'), helper: 'Ready unsold units' },
           { label: 'In Transit', value: inTransit, formattedValue: inTransit.toLocaleString('en-IN'), helper: 'Unsold units on the way' },
           { label: 'Stock Value', value: stockValue, formattedValue: formatCurrency(stockValue), helper: 'Approx. invoice value' },
@@ -776,6 +836,9 @@ async function readReportRows(input: {
       WHERE COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text) IS NOT NULL
         AND ${STOCK_SOURCE_NOT_DELIVERED}
         AND ${STOCK_SOURCE_NOT_RETAILED}
+        AND ${STOCK_SOURCE_NOT_INVOICED}
+        AND ${STOCK_SOURCE_NOT_LOCAL_RETAIL}
+        AND ${STOCK_SOURCE_SELLABLE_STATUS}
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
     )

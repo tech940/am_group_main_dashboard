@@ -188,88 +188,381 @@ export function ScrapEntryFormView({
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Populate initialData when editing an existing record
+  // Populate initialData when editing an existing record with robust matching
   useEffect(() => {
     if (initialData) {
-      const grpVal = initialData.groupId || initialData.groupName || ''
-      setSelectedGroupId(grpVal)
-      if (grpVal && !groups.some((g) => g.id === grpVal || g.name === grpVal)) {
-        setCustomGroup(grpVal)
+      const cleanStr = (s?: string | null) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+      // 1. Dealership Location (Match location first so we can also infer brand group if needed)
+      const rawLocName = String(initialData.locationName || '').trim()
+      const rawLocId = String(initialData.locationId || '').trim()
+      const cLocName = cleanStr(rawLocName)
+
+      let matchedLoc: ScrapLocation | undefined = undefined
+
+      // A. Direct normalized name or code match
+      if (cLocName) {
+        matchedLoc = locations.find((l) => cleanStr(l.name) === cLocName || (l.code && cleanStr(l.code) === cLocName))
       }
 
-      const locVal = initialData.locationId || initialData.locationName || ''
-      setSelectedLocationId(locVal)
-      if (locVal && !locations.some((l) => l.id === locVal || l.name === locVal)) {
-        setCustomLocation(locVal)
+      // B. Substring matching in either direction
+      if (!matchedLoc && cLocName) {
+        matchedLoc = locations.find((l) => {
+          const cl = cleanStr(l.name)
+          return cl.includes(cLocName) || cLocName.includes(cl)
+        })
       }
 
-      const deptVal = initialData.departmentId || initialData.departmentName || ''
-      setSelectedDeptId(deptVal)
-      if (deptVal && !departments.some((d) => d.id === deptVal || d.name === deptVal)) {
-        setCustomDept(deptVal)
+      // C. Key brand + locality token matching (e.g. "gangyal", "rehari", "channi", "narwal", "kathua", "paloura", etc.)
+      if (!matchedLoc && cLocName) {
+        const localities = [
+          'channirama', 'channi', 'rehari', 'talabtillo', 'gangyal', 'paloura', 'rajouri',
+          'poonch', 'sunderbani', 'mendor', 'kathua', 'narwal', 'supwal', 'billawar',
+          'digiana', 'bisnah', 'mirasahab', 'akhnoor', 'rspura', 'nanaknagar', 'ramban',
+          'reasi', 'lamberi', 'udhampur', 'phallanmandal', 'autosquare'
+        ]
+        const foundLocality = localities.find((loc) => cLocName.includes(loc))
+        if (foundLocality) {
+          const brands = ['kia', 'tata', 'hyundai', 'honda', 'bajaj', 'ktm', 'mg', 'jammu', 'smam', 'platinum']
+          const foundBrand = brands.find((b) => cLocName.includes(b))
+          matchedLoc = locations.find((l) => {
+            const cl = cleanStr(l.name)
+            if (foundBrand) {
+              return cl.includes(foundLocality) && cl.includes(foundBrand)
+            }
+            return cl.includes(foundLocality)
+          })
+        }
       }
 
-      const typeVal = initialData.scrapTypeId || initialData.scrapTypeName || ''
-      setSelectedTypeId(typeVal)
-      if (typeVal && !scrapTypes.some((st) => st.id === typeVal || st.name === typeVal)) {
-        setCustomScrapType(typeVal)
+      // D. Fallback to unique location ID if provided
+      if (!matchedLoc && rawLocId && rawLocId !== 'loc-1') {
+        matchedLoc = locations.find((l) => l.id.toLowerCase() === rawLocId.toLowerCase())
       }
 
-      const descVal = initialData.description || ''
-      setDescriptionInput(descVal)
-      if (descVal && !UNIT_TYPE_OPTIONS.includes(descVal as any)) {
+      if (matchedLoc) {
+        setSelectedLocationId(matchedLoc.id)
+        setCustomLocation('')
+      } else if (rawLocName) {
+        setSelectedLocationId('OTHER')
+        setCustomLocation(rawLocName)
+      } else {
+        setSelectedLocationId(locations[0]?.id || '')
+        setCustomLocation('')
+      }
+
+      // 2. Group / Company
+      const rawGrpName = String(initialData.groupName || '').trim()
+      const rawGrpId = String(initialData.groupId || '').trim()
+      const cGrpName = cleanStr(rawGrpName)
+
+      let matchedGroup: ScrapGroup | undefined = undefined
+
+      // A. Direct normalized name or code match
+      if (cGrpName && cGrpName !== 'jam') {
+        matchedGroup = groups.find((g) => cleanStr(g.name) === cGrpName || (g.code && cleanStr(g.code) === cGrpName))
+      }
+
+      // B. Substring matching
+      if (!matchedGroup && cGrpName && cGrpName !== 'jam') {
+        matchedGroup = groups.find((g) => {
+          const cg = cleanStr(g.name)
+          return cg.includes(cGrpName) || cGrpName.includes(cg)
+        })
+      }
+
+      // C. Brand inference from Location if group is generic ("JAM") or not found
+      const effectiveLocStr = cleanStr(matchedLoc?.name || rawLocName)
+      if (!matchedGroup && effectiveLocStr) {
+        if (effectiveLocStr.includes('kia')) {
+          matchedGroup = groups.find((g) => cleanStr(g.name).includes('kia'))
+        } else if (effectiveLocStr.includes('tata')) {
+          matchedGroup = groups.find((g) => cleanStr(g.name).includes('tata'))
+        } else if (effectiveLocStr.includes('honda')) {
+          matchedGroup = groups.find((g) => cleanStr(g.name).includes('honda'))
+        } else if (effectiveLocStr.includes('bajaj')) {
+          matchedGroup = groups.find((g) => cleanStr(g.name).includes('bajaj'))
+        } else if (effectiveLocStr.includes('ktm')) {
+          matchedGroup = groups.find((g) => cleanStr(g.name).includes('ktm'))
+        } else if (effectiveLocStr.includes('mg')) {
+          matchedGroup = groups.find((g) => cleanStr(g.name).includes('mg'))
+        } else if (effectiveLocStr.includes('platinum')) {
+          matchedGroup = groups.find((g) => cleanStr(g.name).includes('platinum'))
+        } else if (effectiveLocStr.includes('hyundai') || effectiveLocStr.includes('jammu') || effectiveLocStr.includes('jam')) {
+          matchedGroup = groups.find((g) => cleanStr(g.name) === 'jam' || cleanStr(g.name).includes('jammu'))
+        }
+      }
+
+      // D. If cGrpName was 'jam' and no brand was found from location, match JAM
+      if (!matchedGroup && cGrpName) {
+        matchedGroup = groups.find((g) => cleanStr(g.name) === cGrpName || (g.code && cleanStr(g.code) === cGrpName))
+      }
+
+      // E. Match by unique ID
+      if (!matchedGroup && rawGrpId && rawGrpId !== 'grp-1') {
+        matchedGroup = groups.find((g) => g.id.toLowerCase() === rawGrpId.toLowerCase())
+      }
+
+      if (matchedGroup) {
+        setSelectedGroupId(matchedGroup.id)
+        setCustomGroup('')
+      } else if (rawGrpName) {
+        setSelectedGroupId('OTHER')
+        setCustomGroup(rawGrpName)
+      } else {
+        setSelectedGroupId(groups[0]?.id || '')
+        setCustomGroup('')
+      }
+
+      // 3. Department
+      const rawDeptName = String(initialData.departmentName || '').trim()
+      const rawDeptId = String(initialData.departmentId || '').trim()
+      const cDeptName = cleanStr(rawDeptName)
+
+      let matchedDept: ScrapDepartment | undefined = undefined
+
+      if (cDeptName) {
+        matchedDept = departments.find((d) => cleanStr(d.name) === cDeptName || (d.code && cleanStr(d.code) === cDeptName))
+        if (!matchedDept) {
+          matchedDept = departments.find((d) => {
+            const cd = cleanStr(d.name)
+            return cd.includes(cDeptName) || cDeptName.includes(cd)
+          })
+        }
+      }
+
+      if (!matchedDept && rawDeptId && rawDeptId !== 'dept-1') {
+        matchedDept = departments.find((d) => d.id.toLowerCase() === rawDeptId.toLowerCase())
+      }
+
+      if (matchedDept) {
+        setSelectedDeptId(matchedDept.id)
+        setCustomDept('')
+      } else if (rawDeptName) {
+        setSelectedDeptId('OTHER')
+        setCustomDept(rawDeptName)
+      } else {
+        setSelectedDeptId(departments[0]?.id || '')
+        setCustomDept('')
+      }
+
+      // 4. Scrap Category / Type
+      const rawTypeName = String(initialData.scrapTypeName || '').trim()
+      const rawTypeId = String(initialData.scrapTypeId || '').trim()
+      const cTypeName = cleanStr(rawTypeName)
+
+      let matchedType: ScrapType | undefined = undefined
+
+      if (cTypeName) {
+        matchedType = scrapTypes.find((st) => cleanStr(st.name) === cTypeName)
+        if (!matchedType) {
+          matchedType = scrapTypes.find((st) => {
+            const cst = cleanStr(st.name)
+            return cst.includes(cTypeName) || cTypeName.includes(cst)
+          })
+        }
+      }
+
+      if (!matchedType && rawTypeId && rawTypeId !== 'type-1' && rawTypeId !== 'st-1') {
+        matchedType = scrapTypes.find((st) => st.id.toLowerCase() === rawTypeId.toLowerCase())
+      }
+
+      if (matchedType) {
+        setSelectedTypeId(matchedType.id)
+        setCustomScrapType('')
+      } else if (rawTypeName) {
+        setSelectedTypeId('OTHER')
+        setCustomScrapType(rawTypeName)
+      } else {
+        setSelectedTypeId(scrapTypes[0]?.id || '')
+        setCustomScrapType('')
+      }
+
+      // 5. Description / Unit
+      const descVal = String(initialData.description || initialData.unit || '').trim()
+      const allDescOptions = Array.from(new Set([...UNIT_TYPE_OPTIONS, ...descriptions.map((d) => d.name).filter(Boolean)]))
+      const matchedDesc = allDescOptions.find((opt) => cleanStr(opt) === cleanStr(descVal))
+      if (matchedDesc) {
+        setDescriptionInput(matchedDesc)
+        setCustomDescription('')
+      } else if (descVal) {
+        setDescriptionInput('OTHER')
         setCustomDescription(descVal)
+      } else {
+        setDescriptionInput('')
+        setCustomDescription('')
       }
 
-      setWeightQty(String(initialData.weightQty !== undefined ? initialData.weightQty : ''))
-      setRatePerUnit(String(initialData.ratePerUnit !== undefined ? initialData.ratePerUnit : ''))
-      setAmountReceivedInput(String(initialData.amountReceived !== undefined ? initialData.amountReceived : ''))
-      setSoldTo(initialData.soldTo || '')
-      if (initialData.soldTo && !PRESET_VENDORS.includes(initialData.soldTo)) {
-        setCustomVendorName(initialData.soldTo)
-      }
-      setSoldDate(initialData.soldDate || initialData.timestamp?.slice(0, 10) || new Date().toISOString().split('T')[0])
+      // 6. Weight & Rate
+      const rawWeight = initialData.weightQty !== undefined && initialData.weightQty !== null ? initialData.weightQty : ''
+      setWeightQty(String(rawWeight !== '' ? rawWeight : ''))
 
-      const pmVal = initialData.paymentModeId || initialData.paymentModeName || ''
-      setSelectedPaymentModeId(pmVal)
-      if (pmVal && !paymentModes.some((pm) => pm.id === pmVal || pm.name === pmVal)) {
-        setCustomPaymentMode(pmVal)
-      }
+      const rawRate = initialData.ratePerUnit !== undefined && initialData.ratePerUnit !== null ? initialData.ratePerUnit : ''
+      setRatePerUnit(String(rawRate !== '' ? rawRate : ''))
 
-      const hoVal = initialData.paymentHandoverToId || initialData.paymentHandoverToName || ''
-      setSelectedHandoverUserId(hoVal)
-      if (hoVal && !handoverUsers.some((ho) => ho.id === hoVal || ho.name === hoVal)) {
-        setCustomHandoverUser(hoVal)
+      // 7. Random Waste Amount & Total Valuation
+      const numWeight = Number(initialData.weightQty || 0)
+      const numRate = Number(initialData.ratePerUnit || 0)
+      const numCalculated = Number(initialData.calculatedTotal || 0)
+      const product = Math.round(numWeight * numRate * 100) / 100
+
+      if (numCalculated > 0 && (numWeight === 0 || numRate === 0 || Math.abs(product - numCalculated) > 0.01)) {
+        setRandomWasteAmount(String(numCalculated))
+      } else {
+        setRandomWasteAmount('')
       }
 
+      // 8. Amount Received
+      const rawReceived = initialData.amountReceived !== undefined && initialData.amountReceived !== null
+        ? initialData.amountReceived
+        : (initialData.calculatedTotal !== undefined ? initialData.calculatedTotal : '')
+      setAmountReceivedInput(String(rawReceived))
+
+      // 9. Sold To / Buyer
+      const buyerName = String(initialData.soldTo || '').trim()
+      const matchedVendor = PRESET_VENDORS.find((v) => cleanStr(v) === cleanStr(buyerName))
+      if (matchedVendor) {
+        setSoldTo(matchedVendor)
+        setCustomVendorName('')
+      } else if (buyerName) {
+        setSoldTo('OTHER')
+        setCustomVendorName(buyerName)
+      } else {
+        setSoldTo('')
+        setCustomVendorName('')
+      }
+
+      // 10. Sold Date
+      let formattedDate = ''
+      if (initialData.soldDate) {
+        formattedDate = String(initialData.soldDate).slice(0, 10)
+      } else if (initialData.timestamp) {
+        formattedDate = String(initialData.timestamp).slice(0, 10)
+      } else if (initialData.createdAt) {
+        formattedDate = String(initialData.createdAt).slice(0, 10)
+      }
+      if (!formattedDate || !/^\d{4}-\d{2}-\d{2}$/.test(formattedDate)) {
+        const d = new Date(initialData.soldDate || initialData.timestamp || initialData.createdAt || Date.now())
+        if (!isNaN(d.getTime())) {
+          const pad = (n: number) => String(n).padStart(2, '0')
+          formattedDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+        } else {
+          formattedDate = new Date().toISOString().split('T')[0]
+        }
+      }
+      setSoldDate(formattedDate)
+
+      // 11. Payment Mode
+      const rawPmName = String(initialData.paymentModeName || '').trim()
+      const rawPmId = String(initialData.paymentModeId || '').trim()
+      const cPmName = cleanStr(rawPmName)
+
+      let matchedPm: ScrapPaymentMode | undefined = undefined
+
+      if (cPmName) {
+        matchedPm = paymentModes.find((pm) => cleanStr(pm.name) === cPmName)
+        if (!matchedPm) {
+          matchedPm = paymentModes.find((pm) => {
+            const c = cleanStr(pm.name)
+            return c.includes(cPmName) || cPmName.includes(c)
+          })
+        }
+      }
+
+      if (!matchedPm && rawPmId && rawPmId !== 'pm-1') {
+        matchedPm = paymentModes.find((pm) => pm.id.toLowerCase() === rawPmId.toLowerCase())
+      }
+
+      if (matchedPm) {
+        setSelectedPaymentModeId(matchedPm.id)
+        setCustomPaymentMode('')
+      } else if (rawPmName) {
+        setSelectedPaymentModeId('OTHER')
+        setCustomPaymentMode(rawPmName)
+      } else {
+        setSelectedPaymentModeId(paymentModes[0]?.id || '')
+        setCustomPaymentMode('')
+      }
+
+      // 12. Payment Handover To
+      const rawHoName = String(initialData.paymentHandoverToName || '').trim()
+      const rawHoId = String(initialData.paymentHandoverToId || '').trim()
+      const cHoName = cleanStr(rawHoName)
+
+      let matchedHo: ScrapHandoverUser | undefined = undefined
+
+      if (cHoName) {
+        matchedHo = handoverUsers.find((ho) => cleanStr(ho.name) === cHoName)
+        if (!matchedHo) {
+          matchedHo = handoverUsers.find((ho) => {
+            const cho = cleanStr(ho.name)
+            return cho.includes(cHoName) || cHoName.includes(cho)
+          })
+        }
+      }
+
+      if (!matchedHo && rawHoId && rawHoId !== 'ho-1') {
+        matchedHo = handoverUsers.find((ho) => ho.id.toLowerCase() === rawHoId.toLowerCase())
+      }
+
+      if (matchedHo) {
+        setSelectedHandoverUserId(matchedHo.id)
+        setCustomHandoverUser('')
+      } else if (rawHoName) {
+        setSelectedHandoverUserId('OTHER')
+        setCustomHandoverUser(rawHoName)
+      } else {
+        setSelectedHandoverUserId(handoverUsers[0]?.id || '')
+        setCustomHandoverUser('')
+      }
+
+      // 13. Remarks
       setRemarks(initialData.remarks || '')
 
+      // 14. Attachments
       if (initialData.attachments && initialData.attachments.length > 0) {
+        const isPdf = (u: string) => String(u || '').toLowerCase().includes('.pdf') || String(u || '').startsWith('data:application/pdf')
+
         const wAtts = initialData.attachments
-          .filter((a) => a.type === 'weight_picture')
+          .filter((a) => a.type === 'weight_picture' || String(a.type).toLowerCase().includes('weight'))
           .map((a, idx) => ({
             id: a.id || `att-w-init-${idx}`,
             url: a.url,
-            fileName: a.fileName || `Weight_Slip_Photo_${idx + 1}.webp`,
-            fileType: (a.url.includes('.pdf') || a.url.startsWith('data:application/pdf') ? 'pdf' : 'image') as 'pdf' | 'image',
+            fileName: a.fileName || `Weight_Slip_Photo_${idx + 1}.${isPdf(a.url) ? 'pdf' : 'webp'}`,
+            fileType: (isPdf(a.url) ? 'pdf' : 'image') as 'pdf' | 'image',
             type: 'weight_picture' as const,
           }))
+
         const tAtts = initialData.attachments
-          .filter((a) => a.type === 'tally_receipt')
+          .filter((a) =>
+            a.type === 'tally_receipt' ||
+            String(a.type).toLowerCase().includes('tally') ||
+            String(a.type).toLowerCase().includes('receipt') ||
+            String(a.type).toLowerCase().includes('voucher')
+          )
           .map((a, idx) => ({
             id: a.id || `att-t-init-${idx}`,
             url: a.url,
-            fileName: a.fileName || `Tally_Receipt_Voucher_${idx + 1}.pdf`,
-            fileType: (a.url.includes('.pdf') || a.url.startsWith('data:application/pdf') ? 'pdf' : 'image') as 'pdf' | 'image',
+            fileName: a.fileName || `Tally_Receipt_Voucher_${idx + 1}.${isPdf(a.url) ? 'pdf' : 'webp'}`,
+            fileType: (isPdf(a.url) ? 'pdf' : 'image') as 'pdf' | 'image',
             type: 'tally_receipt' as const,
           }))
+
         const sAtts = initialData.attachments
-          .filter((a) => a.type === 'scrap_picture')
+          .filter((a) =>
+            a.type === 'scrap_picture' ||
+            String(a.type).toLowerCase().includes('scrap') ||
+            String(a.type).toLowerCase().includes('material') ||
+            (!String(a.type).toLowerCase().includes('weight') &&
+              !String(a.type).toLowerCase().includes('tally') &&
+              !String(a.type).toLowerCase().includes('receipt') &&
+              !String(a.type).toLowerCase().includes('voucher'))
+          )
           .map((a, idx) => ({
             id: a.id || `att-s-init-${idx}`,
             url: a.url,
-            fileName: a.fileName || `Scrap_Material_Photo_${idx + 1}.webp`,
-            fileType: (a.url.includes('.pdf') || a.url.startsWith('data:application/pdf') ? 'pdf' : 'image') as 'pdf' | 'image',
+            fileName: a.fileName || `Scrap_Material_Photo_${idx + 1}.${isPdf(a.url) ? 'pdf' : 'webp'}`,
+            fileType: (isPdf(a.url) ? 'pdf' : 'image') as 'pdf' | 'image',
             type: 'scrap_picture' as const,
           }))
 
@@ -282,7 +575,7 @@ export function ScrapEntryFormView({
         setScrapDocs([])
       }
     }
-  }, [initialData])
+  }, [initialData, groups, locations, departments, scrapTypes, descriptions, paymentModes, handoverUsers])
 
   // Load saved drafts on mount (checking all current & legacy localStorage keys)
   useEffect(() => {
@@ -341,8 +634,14 @@ export function ScrapEntryFormView({
     }
   }, [groups, locations, departments, scrapTypes, paymentModes, handoverUsers])
 
-  // Available Description Options (Strictly Pieces, Kg, Litres, GST)
-  const availableDescriptionOptions = UNIT_TYPE_OPTIONS
+  // Available Description Options (combines unit types and master descriptions)
+  const availableDescriptionOptions = useMemo(() => {
+    const set = new Set<string>(UNIT_TYPE_OPTIONS)
+    descriptions.forEach((d) => {
+      if (d.name && d.name.trim()) set.add(d.name.trim())
+    })
+    return Array.from(set)
+  }, [descriptions])
 
   const wt = parseFloat(weightQty) || 0
   const rate = parseFloat(ratePerUnit) || 0
@@ -613,12 +912,21 @@ export function ScrapEntryFormView({
     e.preventDefault()
     setIsSubmitting(true)
 
-    const selectedGroupObj = groups.find((g) => g.id === selectedGroupId || g.name === selectedGroupId)
-    const selectedLocObj = locations.find((l) => l.id === selectedLocationId || l.name === selectedLocationId)
-    const selectedDeptObj = departments.find((d) => d.id === selectedDeptId || d.name === selectedDeptId)
-    const selectedTypeObj = scrapTypes.find((t) => t.id === selectedTypeId || t.name === selectedTypeId)
-    const selectedPmObj = paymentModes.find((p) => p.id === selectedPaymentModeId || p.name === selectedPaymentModeId)
-    const selectedHoObj = handoverUsers.find((h) => h.id === selectedHandoverUserId || h.name === selectedHandoverUserId)
+    const effectiveGroupObj = groups.find((g) => g.id === selectedGroupId || g.name === selectedGroupId)
+    const effectiveLocObj = locations.find((l) => l.id === selectedLocationId || l.name === selectedLocationId)
+    const effectiveDeptObj = departments.find((d) => d.id === selectedDeptId || d.name === selectedDeptId)
+    const effectiveTypeObj = scrapTypes.find((t) => t.id === selectedTypeId || t.name === selectedTypeId)
+    const effectivePmObj = paymentModes.find((p) => p.id === selectedPaymentModeId || p.name === selectedPaymentModeId)
+    const effectiveHoObj = handoverUsers.find((h) => h.id === selectedHandoverUserId || h.name === selectedHandoverUserId)
+
+    const effectiveGroupName = effectiveGroupObj?.name || (selectedGroupId !== 'OTHER' && selectedGroupId ? selectedGroupId : customGroup) || 'JAM'
+    const effectiveLocationName = effectiveLocObj?.name || (selectedLocationId !== 'OTHER' && selectedLocationId ? selectedLocationId : customLocation) || 'Dealership Location'
+    const effectiveDepartmentName = effectiveDeptObj?.name || (selectedDeptId !== 'OTHER' && selectedDeptId ? selectedDeptId : customDept) || 'SERVICE'
+    const effectiveTypeName = effectiveTypeObj?.name || (selectedTypeId !== 'OTHER' && selectedTypeId ? selectedTypeId : customScrapType) || 'PLASTIC'
+    const effectivePmName = effectivePmObj?.name || (selectedPaymentModeId !== 'OTHER' && selectedPaymentModeId ? selectedPaymentModeId : customPaymentMode) || 'CASH'
+    const effectiveHoName = effectiveHoObj?.name || (selectedHandoverUserId !== 'OTHER' && selectedHandoverUserId ? selectedHandoverUserId : customHandoverUser) || 'CASH HANDOVER TO MD'
+    const effectiveSoldTo = (soldTo === 'OTHER' || !soldTo) ? (customVendorName || 'Pending Vendor') : soldTo
+    const effectiveDescription = (descriptionInput === 'OTHER' || !descriptionInput) ? (customDescription || effectiveTypeName) : descriptionInput
 
     const attachmentsList: ScrapAttachment[] = [
       ...weightDocs.map((d) => ({
@@ -649,32 +957,36 @@ export function ScrapEntryFormView({
         id: initialData?.id,
         transactionNumber: initialData?.transactionNumber,
         timestamp: initialData?.timestamp || new Date().toISOString(),
-        groupId: selectedGroupId,
-        groupName: selectedGroupObj?.name || selectedGroupId || 'JAM',
-        locationId: selectedLocationId,
-        locationName: selectedLocObj?.name || selectedLocationId || 'Dealership Location',
-        departmentId: selectedDeptId,
-        departmentName: selectedDeptObj?.name || selectedDeptId || 'SERVICE',
-        scrapTypeId: selectedTypeId,
-        scrapTypeName: selectedTypeObj?.name || selectedTypeId || 'PLASTIC',
+        groupId: selectedGroupId === 'OTHER' ? customGroup : selectedGroupId,
+        groupName: effectiveGroupName,
+        locationId: selectedLocationId === 'OTHER' ? customLocation : selectedLocationId,
+        locationName: effectiveLocationName,
+        departmentId: selectedDeptId === 'OTHER' ? customDept : selectedDeptId,
+        departmentName: effectiveDepartmentName,
+        scrapTypeId: selectedTypeId === 'OTHER' ? customScrapType : selectedTypeId,
+        scrapTypeName: effectiveTypeName,
         unit: activeUnitLabel,
-        description: descriptionInput || selectedTypeObj?.name || 'Scrap Material',
+        description: effectiveDescription,
         weightQty: wt,
         ratePerUnit: rate,
         calculatedTotal,
         amountReceived: amountReceived || 0,
         outstandingAmount: outstandingAmount || 0,
-        soldById: userData?.id || 'emp-login',
+        soldById: initialData?.soldById || userData?.id || 'emp-login',
         soldByName: initialData?.soldByName || loggedInUserName,
-        soldTo: soldTo || 'Pending Vendor',
+        soldTo: effectiveSoldTo,
         soldDate,
-        paymentModeId: selectedPaymentModeId,
-        paymentModeName: selectedPmObj?.name || selectedPaymentModeId || 'CASH',
-        paymentHandoverToId: selectedHandoverUserId,
-        paymentHandoverToName: selectedHoObj?.name || selectedHandoverUserId || 'CASH HANDOVER TO MD',
-        remarks: remarks || 'Saved via Scrap Entry',
+        paymentModeId: selectedPaymentModeId === 'OTHER' ? customPaymentMode : selectedPaymentModeId,
+        paymentModeName: effectivePmName,
+        paymentHandoverToId: selectedHandoverUserId === 'OTHER' ? customHandoverUser : selectedHandoverUserId,
+        paymentHandoverToName: effectiveHoName,
+        remarks: remarks || '',
         status: outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED',
         attachments: attachmentsList,
+        isDistributed: initialData?.isDistributed,
+        sentToAccounts: initialData?.sentToAccounts,
+        accountsReceivedAt: initialData?.accountsReceivedAt,
+        accountsNote: initialData?.accountsNote,
       })
 
       // If submitted, remove active draft from storage
@@ -699,7 +1011,7 @@ export function ScrapEntryFormView({
       {/* Executive Header Controls Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 shadow-xs">
+          <div className={`flex h-11 w-11 items-center justify-center rounded-xl border shadow-xs ${initialData ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800' : 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'}`}>
             {initialData ? <Pencil className="h-5 w-5" /> : <Scale className="h-5 w-5" />}
           </div>
           <div>
@@ -708,14 +1020,16 @@ export function ScrapEntryFormView({
                 {initialData ? `Update Scrap Record #${initialData.transactionNumber}` : 'New Scrap Disposal Entry'}
               </h2>
               {initialData && (
-                <Badge className="bg-emerald-600 text-white font-extrabold text-[10px] flex items-center gap-1">
-                  <Pencil className="h-3 w-3" /> Editing Existing Record
-                </Badge>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80 shadow-2xs">
+                  <Pencil className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                  Editing Existing Record
+                </span>
               )}
               {activeDraftId && !initialData && (
-                <Badge className="bg-amber-500 text-white font-extrabold text-[10px] flex items-center gap-1">
-                  <FileEdit className="h-3 w-3" /> Editing Draft
-                </Badge>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80 shadow-2xs">
+                  <FileEdit className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                  Editing Draft
+                </span>
               )}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
@@ -797,11 +1111,11 @@ export function ScrapEntryFormView({
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Dealership Group</Label>
                 <select
-                  value={groups.some((g) => g.id === selectedGroupId) ? selectedGroupId : selectedGroupId ? 'OTHER' : ''}
+                  value={groups.some((g) => g.id === selectedGroupId) ? selectedGroupId : (selectedGroupId ? 'OTHER' : '')}
                   onChange={(e) => {
                     const val = e.target.value
                     if (val === 'OTHER') {
-                      setSelectedGroupId(customGroup || '')
+                      setSelectedGroupId('OTHER')
                     } else {
                       setSelectedGroupId(val)
                       setCustomGroup('')
@@ -821,10 +1135,10 @@ export function ScrapEntryFormView({
                   <Input
                     type="text"
                     placeholder="Type custom group name..."
-                    value={groups.some((g) => g.id === selectedGroupId) ? customGroup : selectedGroupId}
+                    value={customGroup || (selectedGroupId !== 'OTHER' ? selectedGroupId : '')}
                     onChange={(e) => {
                       setCustomGroup(e.target.value)
-                      setSelectedGroupId(e.target.value)
+                      setSelectedGroupId('OTHER')
                     }}
                     className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
                   />
@@ -834,11 +1148,11 @@ export function ScrapEntryFormView({
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Dealership Location</Label>
                 <select
-                  value={locations.some((l) => l.id === selectedLocationId) ? selectedLocationId : selectedLocationId ? 'OTHER' : ''}
+                  value={locations.some((l) => l.id === selectedLocationId) ? selectedLocationId : (selectedLocationId ? 'OTHER' : '')}
                   onChange={(e) => {
                     const val = e.target.value
                     if (val === 'OTHER') {
-                      setSelectedLocationId(customLocation || '')
+                      setSelectedLocationId('OTHER')
                     } else {
                       setSelectedLocationId(val)
                       setCustomLocation('')
@@ -858,10 +1172,10 @@ export function ScrapEntryFormView({
                   <Input
                     type="text"
                     placeholder="Type custom location name..."
-                    value={locations.some((l) => l.id === selectedLocationId) ? customLocation : selectedLocationId}
+                    value={customLocation || (selectedLocationId !== 'OTHER' ? selectedLocationId : '')}
                     onChange={(e) => {
                       setCustomLocation(e.target.value)
-                      setSelectedLocationId(e.target.value)
+                      setSelectedLocationId('OTHER')
                     }}
                     className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
                   />
@@ -871,11 +1185,11 @@ export function ScrapEntryFormView({
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Department</Label>
                 <select
-                  value={departments.some((d) => d.id === selectedDeptId) ? selectedDeptId : selectedDeptId ? 'OTHER' : ''}
+                  value={departments.some((d) => d.id === selectedDeptId) ? selectedDeptId : (selectedDeptId ? 'OTHER' : '')}
                   onChange={(e) => {
                     const val = e.target.value
                     if (val === 'OTHER') {
-                      setSelectedDeptId(customDept || '')
+                      setSelectedDeptId('OTHER')
                     } else {
                       setSelectedDeptId(val)
                       setCustomDept('')
@@ -895,10 +1209,10 @@ export function ScrapEntryFormView({
                   <Input
                     type="text"
                     placeholder="Type custom department name..."
-                    value={departments.some((d) => d.id === selectedDeptId) ? customDept : selectedDeptId}
+                    value={customDept || (selectedDeptId !== 'OTHER' ? selectedDeptId : '')}
                     onChange={(e) => {
                       setCustomDept(e.target.value)
-                      setSelectedDeptId(e.target.value)
+                      setSelectedDeptId('OTHER')
                     }}
                     className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
                   />
@@ -921,11 +1235,11 @@ export function ScrapEntryFormView({
                 <div className="space-y-1.5">
                   <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Scrap Category / Type</Label>
                   <select
-                    value={scrapTypes.some((st) => st.id === selectedTypeId) ? selectedTypeId : selectedTypeId ? 'OTHER' : ''}
+                    value={scrapTypes.some((st) => st.id === selectedTypeId) ? selectedTypeId : (selectedTypeId ? 'OTHER' : '')}
                     onChange={(e) => {
                       const val = e.target.value
                       if (val === 'OTHER') {
-                        setSelectedTypeId(customScrapType || '')
+                        setSelectedTypeId('OTHER')
                       } else {
                         setSelectedTypeId(val)
                         setCustomScrapType('')
@@ -945,10 +1259,10 @@ export function ScrapEntryFormView({
                     <Input
                       type="text"
                       placeholder="Type custom scrap type..."
-                      value={scrapTypes.some((st) => st.id === selectedTypeId) ? customScrapType : selectedTypeId}
+                      value={customScrapType || (selectedTypeId !== 'OTHER' ? selectedTypeId : '')}
                       onChange={(e) => {
                         setCustomScrapType(e.target.value)
-                        setSelectedTypeId(e.target.value)
+                        setSelectedTypeId('OTHER')
                       }}
                       className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
                     />
@@ -958,11 +1272,11 @@ export function ScrapEntryFormView({
                 <div className="space-y-1.5">
                   <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Description / Unit Type</Label>
                   <select
-                    value={availableDescriptionOptions.includes(descriptionInput) ? descriptionInput : descriptionInput ? 'OTHER' : ''}
+                    value={availableDescriptionOptions.some((opt) => opt.toLowerCase() === descriptionInput.toLowerCase()) ? availableDescriptionOptions.find((opt) => opt.toLowerCase() === descriptionInput.toLowerCase()) : (descriptionInput ? 'OTHER' : '')}
                     onChange={(e) => {
                       const val = e.target.value
                       if (val === 'OTHER') {
-                        setDescriptionInput(customDescription || '')
+                        setDescriptionInput('OTHER')
                       } else {
                         setDescriptionInput(val)
                         setCustomDescription('')
@@ -978,14 +1292,14 @@ export function ScrapEntryFormView({
                     ))}
                     <option value="OTHER">+ Enter Description / Unit Manually...</option>
                   </select>
-                  {(!availableDescriptionOptions.includes(descriptionInput) || descriptionInput === 'OTHER') && (
+                  {(!availableDescriptionOptions.some((opt) => opt.toLowerCase() === descriptionInput.toLowerCase()) || descriptionInput === 'OTHER') && (
                     <Input
                       type="text"
                       placeholder="Type custom description / unit..."
-                      value={availableDescriptionOptions.includes(descriptionInput) ? customDescription : descriptionInput}
+                      value={customDescription || (descriptionInput !== 'OTHER' ? descriptionInput : '')}
                       onChange={(e) => {
                         setCustomDescription(e.target.value)
-                        setDescriptionInput(e.target.value)
+                        setDescriptionInput('OTHER')
                       }}
                       className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
                     />
@@ -1091,11 +1405,11 @@ export function ScrapEntryFormView({
                 </Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <select
-                    value={PRESET_VENDORS.includes(soldTo) ? soldTo : soldTo ? 'OTHER' : ''}
+                    value={PRESET_VENDORS.some((v) => v.toLowerCase() === soldTo.toLowerCase()) ? PRESET_VENDORS.find((v) => v.toLowerCase() === soldTo.toLowerCase()) : (soldTo ? 'OTHER' : '')}
                     onChange={(e) => {
                       const val = e.target.value
                       if (val === 'OTHER') {
-                        setSoldTo(customVendorName || '')
+                        setSoldTo('OTHER')
                       } else {
                         setSoldTo(val)
                         setCustomVendorName('')
@@ -1112,14 +1426,14 @@ export function ScrapEntryFormView({
                     <option value="OTHER">+ Enter Vendor Manually...</option>
                   </select>
 
-                  {(!PRESET_VENDORS.includes(soldTo) || soldTo === 'OTHER') && (
+                  {(!PRESET_VENDORS.some((v) => v.toLowerCase() === soldTo.toLowerCase()) || soldTo === 'OTHER') && (
                     <Input
                       type="text"
                       placeholder="Type custom vendor name..."
-                      value={PRESET_VENDORS.includes(soldTo) ? customVendorName : soldTo}
+                      value={customVendorName || (soldTo !== 'OTHER' ? soldTo : '')}
                       onChange={(e) => {
                         setCustomVendorName(e.target.value)
-                        setSoldTo(e.target.value)
+                        setSoldTo('OTHER')
                       }}
                       className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
                     />
@@ -1130,11 +1444,11 @@ export function ScrapEntryFormView({
               <div className="space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Payment Mode</Label>
                 <select
-                  value={paymentModes.some((pm) => pm.id === selectedPaymentModeId) ? selectedPaymentModeId : selectedPaymentModeId ? 'OTHER' : ''}
+                  value={paymentModes.some((pm) => pm.id === selectedPaymentModeId) ? selectedPaymentModeId : (selectedPaymentModeId ? 'OTHER' : '')}
                   onChange={(e) => {
                     const val = e.target.value
                     if (val === 'OTHER') {
-                      setSelectedPaymentModeId(customPaymentMode || '')
+                      setSelectedPaymentModeId('OTHER')
                     } else {
                       setSelectedPaymentModeId(val)
                       setCustomPaymentMode('')
@@ -1154,10 +1468,10 @@ export function ScrapEntryFormView({
                   <Input
                     type="text"
                     placeholder="Type custom payment mode..."
-                    value={paymentModes.some((pm) => pm.id === selectedPaymentModeId) ? customPaymentMode : selectedPaymentModeId}
+                    value={customPaymentMode || (selectedPaymentModeId !== 'OTHER' ? selectedPaymentModeId : '')}
                     onChange={(e) => {
                       setCustomPaymentMode(e.target.value)
-                      setSelectedPaymentModeId(e.target.value)
+                      setSelectedPaymentModeId('OTHER')
                     }}
                     className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
                   />
@@ -1167,11 +1481,11 @@ export function ScrapEntryFormView({
               <div className="sm:col-span-2 space-y-1.5">
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Payment Handover To</Label>
                 <select
-                  value={handoverUsers.some((ho) => ho.id === selectedHandoverUserId) ? selectedHandoverUserId : selectedHandoverUserId ? 'OTHER' : ''}
+                  value={handoverUsers.some((ho) => ho.id === selectedHandoverUserId) ? selectedHandoverUserId : (selectedHandoverUserId ? 'OTHER' : '')}
                   onChange={(e) => {
                     const val = e.target.value
                     if (val === 'OTHER') {
-                      setSelectedHandoverUserId(customHandoverUser || '')
+                      setSelectedHandoverUserId('OTHER')
                     } else {
                       setSelectedHandoverUserId(val)
                       setCustomHandoverUser('')
@@ -1191,10 +1505,10 @@ export function ScrapEntryFormView({
                   <Input
                     type="text"
                     placeholder="Type custom handover person name..."
-                    value={handoverUsers.some((ho) => ho.id === selectedHandoverUserId) ? customHandoverUser : selectedHandoverUserId}
+                    value={customHandoverUser || (selectedHandoverUserId !== 'OTHER' ? selectedHandoverUserId : '')}
                     onChange={(e) => {
                       setCustomHandoverUser(e.target.value)
-                      setSelectedHandoverUserId(e.target.value)
+                      setSelectedHandoverUserId('OTHER')
                     }}
                     className="h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-extrabold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 mt-1.5"
                   />

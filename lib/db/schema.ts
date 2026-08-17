@@ -1638,6 +1638,19 @@ export const kiaVehicleAllocations = pgTable('kia_vehicle_allocations', {
   vehicleSnapshot: jsonb('vehicle_snapshot').$type<Record<string, unknown>>().default({}).notNull(),
   allocationStatus: text('allocation_status').default('temporary').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
+  /**
+   * The effective payment window for THIS allocation, in hours (migration 0035).
+   *
+   * NULL = "no explicit window recorded, policy default applies" (72h, or 120h for CSD). Written at
+   * allotment and overwritten only when the MD approves an extension.
+   *
+   * ⚠️ TWO readers must stay in agreement, and one of them is raw SQL:
+   *   - lib/kia/bookings.ts allotKiaBookingVehicle  (sets expires_at immediately)
+   *   - lib/kia/bookings.ts startKiaArrivedAllocationCountdowns (opens the clock on arrival for
+   *     in-transit cars — re-derives the window IN SQL, so it reads this column via COALESCE)
+   * Without this column an extension approved while a car was in transit was silently discarded.
+   */
+  paymentWindowHours: integer('payment_window_hours'),
   paymentConfirmedAt: timestamp('payment_confirmed_at', { withTimezone: true }),
   paymentConfirmedBy: uuid('payment_confirmed_by').references(() => users.id),
   paymentReference: text('payment_reference'),
@@ -1924,6 +1937,10 @@ export const kiaApprovalRequests = pgTable('kia_approval_requests', {
   eaApproval: text('ea_approval'),
   managementApproval: text('management_approval'),
   managementRemarks: text('management_remarks'),
+  // Full ordered list of bills for this request (migration 0034). The two columns below are the
+  // legacy first-two mirror, still written and still read by the approver UI, the emails and the
+  // printed voucher — see the migration for why they stay.
+  billUrls: jsonb('bill_urls').$type<string[]>().default([]).notNull(),
   uploadBillUrl1: text('upload_bill_url_1'),
   uploadBillUrl2: text('upload_bill_url_2'),
   uploadDocUrl: text('upload_doc_url'),
@@ -2081,6 +2098,48 @@ export const kiaBookingDiscounts = pgTable('kia_booking_discounts', {
 }, (table) => ({
   bookingIdIdx: index('kia_booking_discounts_booking_idx').on(table.bookingId),
   statusIdx: index('kia_booking_discounts_status_idx').on(table.status),
+}))
+
+/**
+ * KIA payment-window extension requests (migration 0035).
+ *
+ * A consultant allotting a car may optionally ask for longer than the standard payment window
+ * (72h, or 120h for CSD). The allotment still proceeds on the DEFAULT window — this request changes
+ * nothing until the MD approves it, at which point the allocation's window is extended.
+ *
+ * Column names deliberately mirror kiaBookingDiscounts (requested_* / action_* / status) so the two
+ * approval queues read the same way. `action_*` covers BOTH approve and reject.
+ */
+export const kiaPaymentWindowRequests = pgTable('kia_payment_window_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id, { onDelete: 'cascade' }).notNull(),
+  // The subject of the approval. booking_id/vin_number are denormalised so the MD queue and the
+  // booking drawer can filter without a join.
+  allocationId: uuid('allocation_id').references(() => kiaVehicleAllocations.id, { onDelete: 'cascade' }).notNull(),
+  vinNumber: text('vin_number').notNull(),
+  requestedDays: integer('requested_days').notNull(),
+  // The policy default in force when the request was raised, so the MD sees "was 3 days, wants 7".
+  baseHours: integer('base_hours').notNull(),
+  reason: text('reason').notNull(),
+  status: text('status').default('PENDING').notNull(), // 'PENDING' | 'APPROVED' | 'REJECTED'
+  approvedDays: integer('approved_days'), // what the MD actually granted; may differ from requested
+  requestedBy: uuid('requested_by').references(() => users.id).notNull(),
+  requestedByName: text('requested_by_name').notNull(),
+  actionBy: uuid('action_by').references(() => users.id),
+  actionByName: text('action_by_name'),
+  actionRemarks: text('action_remarks'),
+  actionAt: timestamp('action_at', { withTimezone: true }),
+  // What was actually written to kia_vehicle_allocations.expires_at. NULL on an approved in-transit
+  // allocation, where the extended window only begins when the vehicle arrives.
+  appliedExpiresAt: timestamp('applied_expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  bookingIdIdx: index('kia_payment_window_requests_booking_idx').on(table.bookingId),
+  statusIdx: index('kia_payment_window_requests_status_idx').on(table.status),
+  allocationIdx: index('kia_payment_window_requests_allocation_idx').on(table.allocationId),
+  // A partial unique index (allocation_id) WHERE status = 'PENDING' also exists — declared in the
+  // migration rather than here, because Drizzle cannot express a partial unique index.
 }))
 
 // ----------------------------------------------------

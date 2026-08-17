@@ -41,6 +41,9 @@ export async function GET(request: NextRequest) {
         eaApproval: kiaApprovalRequests.eaApproval,
         managementApproval: kiaApprovalRequests.managementApproval,
         managementRemarks: kiaApprovalRequests.managementRemarks,
+        // Full bill list (migration 0034). The two legacy columns stay selected because older
+        // rows predate the array and the print/email paths still read them.
+        billUrls: kiaApprovalRequests.billUrls,
         uploadBillUrl1: kiaApprovalRequests.uploadBillUrl1,
         uploadBillUrl2: kiaApprovalRequests.uploadBillUrl2,
         uploadDocUrl: kiaApprovalRequests.uploadDocUrl,

@@ -1818,6 +1818,16 @@
     --kia-accent-tint: color-mix(in srgb, var(--dashboard-action-bg) 14%, transparent);
     --kia-ring: color-mix(in srgb, var(--dashboard-action-bg) 16%, transparent);
 
+    /* The accent as TEXT, legible on a kia surface in either mode. Use this — never raw
+       --kia-accent / --dashboard-action-bg — to tint type.
+       --kia-accent is `var(--dashboard-action-bg)` with no dark override, which is correct for a
+       button ground and wrong for a glyph: measured across all 8 accent themes, the raw accent as
+       text lands at 3.19:1 worst-case in light (sunset-ember) and 1.74–2.41:1 in dark, where the
+       surface flips to #111827 and the accent does not move. Nudging it 20% toward the paper it
+       sits on holds >=4.71:1 in light and >=6.82:1 in dark for every theme while keeping the hue
+       (#055B65 -> #044951 light, -> #6d9da4 dark). */
+    --kia-accent-text: color-mix(in srgb, var(--dashboard-action-bg) 80%, #000000);
+
     /* Elevation ladder — the core of the depth system. Layers combine a tight
        contact shadow with a soft ambient shadow for a physically-plausible lift. */
     --kia-elev-0: none;
@@ -1845,6 +1855,7 @@
     --kia-text-soft: #a9b4cc;
     --kia-text-faint: #6b7794;
     --kia-accent-soft: color-mix(in srgb, var(--dashboard-primary-light) 16%, #0f1728);
+    --kia-accent-text: color-mix(in srgb, var(--dashboard-action-bg) 40%, #ffffff);
     --kia-elev-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --kia-elev-2: 0 2px 6px rgba(0, 0, 0, 0.4), 0 8px 20px -6px rgba(0, 0, 0, 0.5);
     --kia-elev-3: 0 4px 10px rgba(0, 0, 0, 0.45), 0 20px 44px -14px rgba(0, 0, 0, 0.6);

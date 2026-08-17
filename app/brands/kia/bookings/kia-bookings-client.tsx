@@ -277,6 +277,20 @@ type BookingDetailPayload = {
     createdAt: string
   }>
   activities: BookingActivity[]
+  /** Extra-payment-time requests raised on this booking, newest first. */
+  paymentWindowRequests?: Array<{
+    id: string
+    requestedDays: number
+    approvedDays: number | null
+    baseHours: number
+    reason: string
+    status: string
+    requestedByName: string
+    actionByName: string | null
+    actionRemarks: string | null
+    appliedExpiresAt: string | null
+    createdAt: string
+  }>
 }
 
 type MatchingVehicle = {
@@ -288,10 +302,14 @@ type MatchingVehicle = {
   stockStatus?: string | null
   stockAge?: number | null
   source?: 'dms' | 'bbnd'
+  /** True for the longest-standing vehicle in the list — the FIFO-correct pick. */
+  isOldest?: boolean
 }
 
 type MatchingVehiclesPayload = {
   rows: MatchingVehicle[]
+  /** Age of the longest-standing matching vehicle, for the ageing-stock warning. */
+  oldestAgeDays?: number
 }
 
 type ProformaOptionsPayload = {
@@ -1541,6 +1559,11 @@ export function KiaBookingsClient({
   const [quoteOpen, setQuoteOpen] = useState(false)
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [allotDialogVehicle, setAllotDialogVehicle] = useState<MatchingVehicle | null>(null)
+  // Optional "request extra payment time" ask on the allot dialog. Days is a string because it comes
+  // from a <select>; '' means nothing chosen.
+  const [extraTimeOpen, setExtraTimeOpen] = useState(false)
+  const [extraTimeDays, setExtraTimeDays] = useState<string>('')
+  const [extraTimeReason, setExtraTimeReason] = useState('')
   const [transferTarget, setTransferTarget] = useState<{
     vinNumber: string
     model: string
@@ -2144,13 +2167,17 @@ export function KiaBookingsClient({
   })
 
   const actionMutation = useMutation({
-    mutationFn: ({ endpoint, body }: { endpoint: string; body?: Record<string, string> }) => fetchJson<{ ok: boolean }>(endpoint, 'kia-booking-action', {
+    // Widened from Record<string, string>: the extra-time request sends a day COUNT, and coercing
+    // numbers to strings at every call site is how a "0" or "" ends up meaning something different
+    // on the server than the caller intended.
+    mutationFn: ({ endpoint, body }: { endpoint: string; body?: Record<string, string | number | boolean | null> }) => fetchJson<{ ok: boolean }>(endpoint, 'kia-booking-action', {
       method: 'POST',
       body: JSON.stringify(body || {}),
     }),
     onSuccess: () => {
       setActionMessage('Action completed and timeline refreshed.')
       setAllotDialogVehicle(null)
+      resetExtraTime()
       setTransferTarget(null)
       setTransferToDealerCode('')
       setTransferReferenceName('')
@@ -2165,6 +2192,9 @@ export function KiaBookingsClient({
       queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
       queryClient.invalidateQueries({ queryKey: ['kia-booking-detail', selectedBookingId] })
       queryClient.invalidateQueries({ queryKey: ['kia-booking-matching-vehicles', selectedBookingId] })
+      // Prefix match, so this refreshes both the MD queue and the tab's pending-count badge when an
+      // allotment carried an extra-time request.
+      queryClient.invalidateQueries({ queryKey: ['kia-payment-window-requests'] })
       void listQuery.refetch()
       router.refresh()
     },
@@ -2759,12 +2789,29 @@ export function KiaBookingsClient({
     })
   }
 
+  // The extra-time ask is optional and does NOT change the window applied at allotment — it only
+  // records a request for the MD. Guarded here as well as server-side so the confirm button can be
+  // blocked before a pointless round trip.
+  const extraTimeReady = !extraTimeOpen || (extraTimeDays !== '' && extraTimeReason.trim().length > 0)
+
+  function resetExtraTime() {
+    setExtraTimeOpen(false)
+    setExtraTimeDays('')
+    setExtraTimeReason('')
+  }
+
   function confirmAllot() {
     if (!selectedBookingId || !allotDialogVehicle) return
+    if (!extraTimeReady) return
     setLoaderVariant('vin-match')
     actionMutation.mutate({
       endpoint: `/api/brands/kia/bookings/${selectedBookingId}/allot`,
-      body: { vinNumber: allotDialogVehicle.vinNumber },
+      body: {
+        vinNumber: allotDialogVehicle.vinNumber,
+        ...(extraTimeOpen && extraTimeDays !== ''
+          ? { extraTimeDays: Number(extraTimeDays), extraTimeReason: extraTimeReason.trim() }
+          : {}),
+      },
     })
   }
 
@@ -4005,6 +4052,55 @@ export function KiaBookingsClient({
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-xs font-semibold leading-5 text-slate-800">
               <span className="font-bold text-slate-950">{allotDialogVehicle?.model}</span> {allotDialogVehicle?.variant} <span className="text-slate-400">·</span> {allotDialogVehicle?.color || 'Color NA'} <span className="text-slate-400">·</span> {allotDialogVehicle?.stockAge || 0} days on lot <span className="text-slate-400">·</span> <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 text-[10px]">{allotDialogVehicle?.vinNumber}</code>
             </div>
+
+            {/*
+              Ageing-stock warning. Advisory only — it never blocks the allotment. It exists for the
+              case where an identical car has been sitting far longer and simply got forgotten.
+            */}
+            {(() => {
+              const picked = allotDialogVehicle
+              if (!picked || picked.isOldest) return null
+              const all = matchingQuery.data?.rows ?? []
+              const pickedAge = picked.stockAge ?? 0
+              const older = all.filter(v => (v.stockAge ?? 0) > pickedAge)
+              if (older.length === 0) return null
+              const oldest = older.reduce((a, b) => ((b.stockAge ?? 0) > (a.stockAge ?? 0) ? b : a))
+              const oldestAge = oldest.stockAge ?? 0
+              return (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
+                    <div className="min-w-0 space-y-1.5">
+                      <p className="text-[11px] font-black uppercase tracking-wider text-amber-900">
+                        Older stock available
+                      </p>
+                      <p className="text-[11px] font-semibold leading-5 text-amber-900">
+                        {older.length === 1
+                          ? 'Another matching car has been on the lot longer.'
+                          : `${older.length} other matching cars have been on the lot longer.`}{' '}
+                        The oldest has been waiting{' '}
+                        <span className="font-mono tabular-nums">{oldestAge}</span> days
+                        {oldestAge > pickedAge && (
+                          <> — <span className="font-mono tabular-nums">{oldestAge - pickedAge}</span> days longer than this one</>
+                        )}
+                        .
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        <code className="rounded border border-amber-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-900">
+                          {oldest.vinNumber}
+                        </code>
+                        <span className="text-[10px] font-bold text-amber-800">
+                          {oldest.color || 'Colour NA'}
+                        </span>
+                      </div>
+                      <p className="pt-0.5 text-[10px] font-semibold text-amber-700">
+                        Clearing older stock first keeps ageing down. Continue if this VIN is the right one.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Booking ID</Label>
@@ -4039,10 +4135,78 @@ export function KiaBookingsClient({
                 <Input readOnly value={String(((detailQuery.data?.booking.metadata || {}) as Record<string, unknown>).commitment || '') || 'Booking details will remain linked in the timeline.'} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
               </div>
             </div>
+
+            {/*
+              Optional extra-payment-time request. Collapsed by default so the common path is
+              unchanged. The copy has to be unambiguous that the standard window applies NOW and the
+              extension is only a request — otherwise a consultant will promise the customer 10 days
+              on the strength of having asked for it.
+            */}
+            <div className="rounded-xl border border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => (extraTimeOpen ? resetExtraTime() : setExtraTimeOpen(true))}
+                className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left"
+              >
+                <span className="flex items-center gap-2">
+                  <Clock3 className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="text-xs font-black text-slate-800">Request extra payment time</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">optional</span>
+                </span>
+                <span className={cn(
+                  'text-[10px] font-black uppercase tracking-wider',
+                  extraTimeOpen ? 'text-rose-600' : 'text-indigo-600',
+                )}>
+                  {extraTimeOpen ? 'Remove' : 'Add'}
+                </span>
+              </button>
+
+              {extraTimeOpen && (
+                <div className="space-y-3 border-t border-slate-100 px-3.5 py-3">
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-5 text-amber-900">
+                    The standard payment window starts as soon as you allot. It is only extended if the
+                    MD approves this request — do not promise the customer the longer window yet.
+                  </p>
+
+                  <div className="grid gap-3 sm:grid-cols-[9rem_1fr]">
+                    <div>
+                      <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Days requested</Label>
+                      <select
+                        value={extraTimeDays}
+                        onChange={(e) => setExtraTimeDays(e.target.value)}
+                        className={cn(COMPACT_INPUT_STYLE, 'mt-1 w-full cursor-pointer bg-white')}
+                      >
+                        <option value="">Choose…</option>
+                        {Array.from({ length: 15 }, (_, i) => i + 1).map((d) => (
+                          <option key={d} value={String(d)}>{d} day{d === 1 ? '' : 's'}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+                        Reason <span className="text-rose-600">*</span>
+                      </Label>
+                      <Input
+                        value={extraTimeReason}
+                        onChange={(e) => setExtraTimeReason(e.target.value)}
+                        placeholder="Why does this customer need longer?"
+                        className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-white')}
+                      />
+                    </div>
+                  </div>
+
+                  {!extraTimeReady && (
+                    <p className="text-[11px] font-semibold text-rose-700">
+                      Choose the number of days and give a reason, or remove the request.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-4 py-3 sm:px-5">
-            <Button type="button" variant="outline" className="h-9 rounded-xl border-slate-200 bg-white px-4 text-xs font-black" onClick={() => setAllotDialogVehicle(null)} disabled={actionMutation.isPending}>Cancel</Button>
-            <Button type="button" className="h-9 rounded-xl bg-slate-950 px-4 text-xs font-black text-white shadow-md shadow-slate-950/15 hover:bg-slate-800" onClick={confirmAllot} disabled={actionMutation.isPending}>
+            <Button type="button" variant="outline" className="h-9 rounded-xl border-slate-200 bg-white px-4 text-xs font-black" onClick={() => { setAllotDialogVehicle(null); resetExtraTime() }} disabled={actionMutation.isPending}>Cancel</Button>
+            <Button type="button" className="h-9 rounded-xl bg-slate-950 px-4 text-xs font-black text-white shadow-md shadow-slate-950/15 hover:bg-slate-800" onClick={confirmAllot} disabled={actionMutation.isPending || !extraTimeReady}>
               {actionMutation.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               Allot car
             </Button>
@@ -5684,6 +5848,8 @@ function BookingDrawer({
   onStatusChange: (status: string) => void
   onEdit?: () => void
   discounts?: any[]
+  /** Extra-payment-time requests raised on this booking, newest first. */
+  paymentWindowRequests?: any[]
   onRefreshDiscounts?: () => void
   onOpenInvoiceViewer?: (booking: any) => void
   onOpenEmiCalculator?: (target: { model?: string; variant?: string; exShowroom?: number }) => void
@@ -6214,6 +6380,65 @@ function BookingDrawer({
             </div>
           )
         })()}
+
+        {/*
+          Extra payment time requests. Only rendered when one exists — this is a rare ask, and an
+          always-present empty card would just push the rest of the drawer down. The consultant needs
+          this because otherwise the only way to learn the MD's decision is the email.
+        */}
+        {Array.isArray(detail.paymentWindowRequests) && detail.paymentWindowRequests.length > 0 && (
+          <section className="kia-surface p-4 sm:p-5">
+            <div className="flex items-center gap-3 border-b pb-3 mb-4" style={{ borderColor: 'var(--kia-hairline)' }}>
+              <IconTile icon={Clock3} tone="accent" size="sm" />
+              <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)]">Extra Payment Time</h3>
+            </div>
+            <div className="space-y-2.5">
+              {detail.paymentWindowRequests.map((req: any) => {
+                const status = String(req.status || 'PENDING')
+                const granted = req.approvedDays ?? req.requestedDays
+                return (
+                  <div key={req.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={cn(
+                        'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider',
+                        status === 'APPROVED' ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : status === 'REJECTED' ? 'border-rose-200 bg-rose-50 text-rose-700'
+                            : 'border-amber-200 bg-amber-50 text-amber-800',
+                      )}>
+                        {status}
+                      </span>
+                      <span className="text-xs font-bold text-slate-800">
+                        {req.requestedDays} day{req.requestedDays === 1 ? '' : 's'} requested
+                        {status === 'APPROVED' && granted !== req.requestedDays && ` · ${granted} granted`}
+                      </span>
+                      <span className="ml-auto text-[10px] font-semibold text-slate-400">
+                        {req.requestedByName}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] font-semibold text-slate-600">{req.reason}</p>
+                    {status === 'PENDING' && (
+                      <p className="mt-1 text-[10px] font-bold text-amber-700">
+                        Awaiting MD approval — the standard payment window applies until then.
+                      </p>
+                    )}
+                    {status === 'APPROVED' && (
+                      <p className="mt-1 text-[10px] font-bold text-emerald-700">
+                        {req.appliedExpiresAt
+                          ? `Payment now due by ${new Date(req.appliedExpiresAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}.`
+                          : 'The extended window starts when the vehicle reaches Free Stock.'}
+                      </p>
+                    )}
+                    {req.actionRemarks && (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        <span className="font-black uppercase tracking-wider text-slate-400">MD </span>{req.actionRemarks}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Discount Requests Section */}
         <section className="kia-surface p-4 sm:p-5">

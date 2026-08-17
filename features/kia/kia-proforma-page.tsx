@@ -49,6 +49,7 @@ import {
 import { KiaBookingsClient } from '@/app/brands/kia/bookings/kia-bookings-client'
 import { KiaStockManagementDashboard } from './kia-stock-management-dashboard'
 import { AllocationHistoryPage } from './allocation-history-page'
+import { PaymentWindowRequestsPage } from './payment-window-requests-page'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -83,6 +84,7 @@ import {
 export type KiaProformaSection =
   | 'bookings'
   | 'allocation-history'
+  | 'payment-window-requests'
   | 'stock'
   | 'generate'
   | 'all'
@@ -544,6 +546,9 @@ const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: st
   // kia.allocation_history.view PERMISSION, resolved on the server and passed in as
   // canViewAllocationHistory — so the tab and the route guard can never disagree.
   { section: 'allocation-history', label: 'Allocation History', href: '/brands/kia/proforma/allocation-history' },
+  // Same server-resolved-permission treatment as Allocation History, via canViewPaymentWindowRequests
+  // (kia.payment_window_requests.view). MD-only in practice — the permission is restricted-by-default.
+  { section: 'payment-window-requests', label: 'Extra Time Requests', href: '/brands/kia/proforma/payment-window-requests' },
   { section: 'pending-approval', label: 'Pending Proforma', href: '/brands/kia/proforma/pending-approval', approverOnly: true },
   { section: 'stock', label: 'Stock', href: '/brands/kia/proforma/stock' },
   { section: 'generate', label: 'Generate Proforma', href: '/brands/kia/proforma/generate', hideFromNav: true },
@@ -670,6 +675,7 @@ function ModuleHeader({
   isApprover,
   currentUserRole,
   canViewAllocationHistory,
+  canViewPaymentWindowRequests,
   onPricesImported,
 }: {
   section: KiaProformaSection
@@ -677,11 +683,13 @@ function ModuleHeader({
   isApprover: boolean
   currentUserRole: string
   canViewAllocationHistory: boolean
+  canViewPaymentWindowRequests: boolean
   onPricesImported: () => void
 }) {
   const titles: Record<KiaProformaSection, { title: string; subtitle: string; icon: typeof ClipboardList }> = {
     bookings: { title: 'Booking CRM', subtitle: 'Manage customer bookings, stock allocations, and finance workflows.', icon: ClipboardList },
     'allocation-history': { title: 'Vehicle Allocation History', subtitle: 'Permanent audit trail of every vehicle allocation and release back to free stock.', icon: History },
+    'payment-window-requests': { title: 'Extra Time Requests', subtitle: 'Requests for extra customer payment time, with any competing bookings for the same car.', icon: History },
     stock: { title: 'Stock', subtitle: 'Approved bookings, stock matching, VIN reservation, and accounts payment follow-up.', icon: ClipboardList },
     generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: FileText },
     all: { title: 'Proformas', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: Columns3 },
@@ -697,6 +705,30 @@ function ModuleHeader({
     // Permission-gated, not role-gated: the server resolved kia.allocation_history.view and passed
     // the answer down. Showing a tab whose route then 403s is the exact desync this avoids.
     .filter((item) => item.section !== 'allocation-history' || canViewAllocationHistory)
+    .filter((item) => item.section !== 'payment-window-requests' || canViewPaymentWindowRequests)
+
+  /*
+   * Pending count for the tab badge. `countOnly=1` so this does NOT run the competing-bookings
+   * query — this fires on every Proforma page load for the MD, and the badge only needs a number.
+   *
+   * Gated on canViewPaymentWindowRequests: a user who cannot see the tab must not issue a request
+   * that would 403 on every page view.
+   */
+  const pendingPaymentWindowQuery = useQuery<{ pendingCount: number }>({
+    queryKey: ['kia-payment-window-requests', 'pending-count'],
+    queryFn: async () => {
+      const res = await fetch('/api/brands/kia/bookings/payment-window-requests?countOnly=1')
+      if (!res.ok) throw new Error('Failed to load pending count')
+      return res.json()
+    },
+    enabled: canViewPaymentWindowRequests,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+    // A failed count must never blank the tab or surface an error — it just shows 0.
+    retry: 1,
+  })
+  const pendingPaymentWindowCount = pendingPaymentWindowQuery.data?.pendingCount ?? 0
+
   return (
     <Reveal>
       <section className="kia-surface relative overflow-hidden p-5">
@@ -740,7 +772,28 @@ function ModuleHeader({
                     transition={{ type: 'spring', stiffness: 380, damping: 32 }}
                   />
                 )}
-                <span className="relative">{item.label}</span>
+                <span className="relative">
+                  {item.label}
+                  {/*
+                    Pending-request counter. Always rendered (0 when the queue is empty) so the tab
+                    has a stable width and the MD can tell "nothing waiting" from "not loaded yet".
+                    Red only when something is actually waiting — a red 0 would train people to
+                    ignore it.
+                  */}
+                  {item.section === 'payment-window-requests' && (
+                    <span
+                      className={cn(
+                        'ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums leading-none',
+                        pendingPaymentWindowCount > 0
+                          ? 'bg-rose-600 text-white'
+                          : activeTab ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-500',
+                      )}
+                      aria-label={`${pendingPaymentWindowCount} extra time request${pendingPaymentWindowCount === 1 ? '' : 's'} awaiting approval`}
+                    >
+                      {pendingPaymentWindowCount}
+                    </span>
+                  )}
+                </span>
               </Link>
             )
           })}
@@ -2911,10 +2964,12 @@ function useBookingPrefill(bookingId: string | null) {
 export function KiaProformaPage({
   section,
   canViewAllocationHistory = false,
+  canViewPaymentWindowRequests = false,
 }: {
   section: KiaProformaSection
   /** Resolved server-side from kia.allocation_history.view; decides whether that tab is offered. */
   canViewAllocationHistory?: boolean
+  canViewPaymentWindowRequests?: boolean
 }) {
   const searchParams = useSearchParams()
   const bookingId = searchParams.get('bookingId')
@@ -2941,12 +2996,13 @@ export function KiaProformaPage({
   return (
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
       <div className="kia-proforma-shell kia-premium space-y-5">
-        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} canViewAllocationHistory={canViewAllocationHistory} onPricesImported={reload} />
+        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} canViewAllocationHistory={canViewAllocationHistory} canViewPaymentWindowRequests={canViewPaymentWindowRequests} onPricesImported={reload} />
         {/* Hand the already-loaded options down so the bookings client does NOT fire its own second
             /api/brands/kia/proforma/options request (its query is gated on `!priceOptions`). The
             standalone /brands/kia/bookings page passes no prop and keeps fetching for itself. */}
         {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} priceOptions={options} currentUserRole={options.currentUser.role} currentUserName={options.currentUser.fullName} />}
         {section === 'allocation-history' && <AllocationHistoryPage embedded />}
+        {section === 'payment-window-requests' && <PaymentWindowRequestsPage />}
         {section === 'stock' && <KiaStockManagementDashboard currentUserRole={options.currentUser.role} />}
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} bookingPrefill={bookingPrefill} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}

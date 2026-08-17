@@ -11,6 +11,7 @@ export const metadata = {
 const SECTION_MAP: Record<string, KiaProformaSection> = {
   bookings: 'bookings',
   'allocation-history': 'allocation-history',
+  'payment-window-requests': 'payment-window-requests',
   stock: 'stock',
   generate: 'generate',
   'all-proforma-details': 'all',
@@ -32,11 +33,17 @@ export default async function Page({ params }: { params: Promise<{ section: stri
   // Allocation History is the exception: it is an AUDIT view naming who allocated each vehicle and
   // why it was pulled back, so it keeps its own narrower kia.allocation_history.view key rather than
   // riding on kia.proforma.view (which is broadly granted, and would hand it to every sales exec).
+  //
+  // Extra Time Requests is the same kind of exception: it is the MD's approval queue and exposes
+  // OTHER customers' booking details as decision context, so it carries its own restricted-by-default
+  // kia.payment_window_requests.view key.
   const permissionKey = resolved === 'pending-approval'
     ? 'kia.proforma.approve'
     : resolved === 'allocation-history'
       ? 'kia.allocation_history.view'
-      : 'kia.proforma.view'
+      : resolved === 'payment-window-requests'
+        ? 'kia.payment_window_requests.view'
+        : 'kia.proforma.view'
   const permission = await requirePermission(access.appUser, permissionKey)
   if (!permission.allowed) forbidden()
 
@@ -49,6 +56,15 @@ export default async function Page({ params }: { params: Promise<{ section: stri
   const allocationHistory = resolved === 'allocation-history'
     ? permission
     : await requirePermission(access.appUser, 'kia.allocation_history.view')
+  const paymentWindow = resolved === 'payment-window-requests'
+    ? permission
+    : await requirePermission(access.appUser, 'kia.payment_window_requests.view')
 
-  return <KiaProformaPage section={resolved} canViewAllocationHistory={allocationHistory.allowed} />
+  return (
+    <KiaProformaPage
+      section={resolved}
+      canViewAllocationHistory={allocationHistory.allowed}
+      canViewPaymentWindowRequests={paymentWindow.allowed}
+    />
+  )
 }

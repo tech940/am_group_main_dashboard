@@ -76,6 +76,8 @@ export const RESUBMIT_VISIBLE_FIELDS = [
   'id', 'email', 'name', 'employeeId', 'location', 'dealerCode', 'dealerName',
   'department', 'specifyOtherDepartment', 'approvalType', 'specifyOtherApprovalType',
   'vendorName', 'previousAdvance', 'amount', 'typeOfPayment', 'remarks',
+  // The submitter's own bills, so a send-back doesn't make them re-upload everything they attached.
+  'billUrls',
   'uploadDocUrl', 'invoiceNumber', 'invoiceDocUrl', 'brand', 'glAccountId', 'gst', 'vehicleNumber',
 ] as const
 

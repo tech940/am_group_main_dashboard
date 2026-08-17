@@ -99,6 +99,8 @@ interface ApprovalRequest {
   eaApproval: string | null
   managementApproval: string | null
   managementRemarks: string | null
+  /** Full bill list (migration 0034). Older rows have it empty and carry the two columns below. */
+  billUrls: string[] | null
   uploadBillUrl1: string | null
   uploadBillUrl2: string | null
   uploadDocUrl: string | null
@@ -134,6 +136,20 @@ interface CurrentUser {
   role: string
   fullName: string
   email: string
+}
+
+/**
+ * Every bill on a request, oldest storage shape first.
+ *
+ * Requests submitted before migration 0034 have only `uploadBillUrl1/2`; newer ones carry the full
+ * `billUrls` array (whose first two entries are mirrored back into those columns). Reading the
+ * array when present and falling back otherwise means one render path covers both.
+ */
+const getBillUrls = (req: { billUrls?: string[] | null; uploadBillUrl1?: string | null; uploadBillUrl2?: string | null }): string[] => {
+  if (Array.isArray(req.billUrls) && req.billUrls.length) {
+    return req.billUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+  }
+  return [req.uploadBillUrl1, req.uploadBillUrl2].filter((u): u is string => Boolean(u && u.trim()))
 }
 
 const isRealRemarkText = (text: string | null | undefined): boolean => {
@@ -1356,10 +1372,26 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (!data?.rows) return []
     return data.rows.filter(row => {
       // 1. Pending for me vs All vs Sent Back vs MD Remarks filter
-      if (filterScope === 'pending' && !getIsPendingForUser(row)) {
+      //
+      // An explicit Workflow States selection OWNS the workflow-state axis, and overrides the two
+      // IMPLICIT narrowings of that same axis below. Leaving them stacked on top of an explicit
+      // choice silently zeroed the result:
+      //   - the 'all' tab drops Paid + Sent Back before the stage check ever runs — 85 of 106 rows —
+      //     so "Paid Cases" (74 real rows), "Completed" and "Sent Back / Clarification" (11 real
+      //     rows) each returned nothing;
+      //   - the default 'pending' tab keeps only rows awaiting THIS user, so every stage other than
+      //     the user's own returned nothing.
+      // Between them, the dropdown looked completely dead. The 'sent_back' and 'md_remarks' tabs are
+      // explicit destinations rather than implicit narrowings, so they still win.
+      //
+      // Safe to widen: row-level action buttons are gated independently by isUserAuthorizedForStage /
+      // getIsPendingForUser, and these rows are already readable on the 'all' tab — this grants
+      // visibility, never authority.
+      const stageSelected = selectedStage !== 'All'
+      if (filterScope === 'pending' && !stageSelected && !getIsPendingForUser(row)) {
         return false
       }
-      if (filterScope === 'all') {
+      if (filterScope === 'all' && !stageSelected) {
         if (isPaidOrder(row) || isSentBackOrder(row)) {
           return false
         }
@@ -1422,18 +1454,36 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       }
 
       // 6. Workflow stage filter
+      //
+      // Matched on getActiveStageKey, NOT on the display label. Label equality is what broke this:
+      // getPendingStageLabel returns 'Pending ED / GSM (Sales)' (or 'Pending VP' for service work),
+      // never the bare 'Pending ED' this compared against, so the first stage in the dropdown could
+      // not match a single row. getActiveStageKey already folds those variants — plus 'Pending
+      // General Service Manager' — into one key, so this cannot drift again.
       const pendingLabel = getPendingStageLabel(row)
-      const matchesStage = selectedStage === 'All' ||
-        (selectedStage === 'pending_sales_manager' && pendingLabel === 'Pending ED') ||
-        (selectedStage === 'pending_hr' && pendingLabel === 'Pending HR') ||
-        (selectedStage === 'pending_accounts' && pendingLabel === 'Pending Accounts') ||
-        (selectedStage === 'pending_ea' && pendingLabel === 'Pending EA') ||
-        (selectedStage === 'pending_md' && pendingLabel === 'Pending MD') ||
-        (selectedStage === 'pending_payment' && pendingLabel === 'Pending Payment') ||
-        (selectedStage === 'paid' && pendingLabel === 'Paid') ||
-        (selectedStage === 'completed' && (pendingLabel === 'Fully Approved' || pendingLabel === 'Paid' || pendingLabel === 'Pending Payment')) ||
-        (selectedStage === 'sent_back' && pendingLabel === 'Sent Back / Clarification') ||
-        (selectedStage === 'rejected' && pendingLabel.startsWith('Rejected'))
+      const stageKey = getActiveStageKey(row)
+      // Accounts has approved but the money has not left yet. Read from the FIELDS, not the label:
+      // getPendingStageLabel collapses this state into 'Paid' (line ~1124), and 'Pending Payment' is
+      // a label it never returns — which is why that option could never match either.
+      const isAwaitingPayment = row.accountApproval === 'APPROVED' && row.paymentStatus !== 'PAID'
+      const matchesStage =
+        selectedStage === 'All' ? true
+        : selectedStage === 'pending_sales_manager' ? stageKey === 'sales_manager'
+        : selectedStage === 'pending_hr' ? stageKey === 'hr'
+        : selectedStage === 'pending_ea' ? stageKey === 'ea'
+        : selectedStage === 'pending_md' ? stageKey === 'md'
+        : selectedStage === 'pending_accounts' ? stageKey === 'accounts'
+        : selectedStage === 'pending_payment' ? isAwaitingPayment
+        : selectedStage === 'paid' ? isPaidOrder(row)
+        // "All Approved" = past the approval chain. Deliberately excludes 'Pending Accounts', which
+        // is still awaiting a decision — matching the original intent of this option.
+        : selectedStage === 'completed' ? (pendingLabel === 'Paid' || isAwaitingPayment)
+        : selectedStage === 'sent_back' ? isSentBackOrder(row)
+        : selectedStage === 'rejected' ? pendingLabel.startsWith('Rejected')
+        // Held rows were unreachable from this dropdown entirely — no option matched them, so they
+        // could only be found by scrolling the unfiltered list.
+        : selectedStage === 'on_hold' ? pendingLabel.startsWith('Held')
+        : true
       if (!matchesStage) return false
 
       return true
@@ -2735,14 +2785,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               className="h-10 px-4 w-full sm:w-[180px] rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#055B65] bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer appearance-none"
             >
               <option value="All">All Workflow States</option>
-              <option value="pending_sales_manager">Pending ED</option>
+              {/* Ordered to follow the real chain: Stage 1 → HR → EA → MD → Accounts → Payment.
+                  Accounts used to sit above EA/MD, which read as though it came first.
+                  Stage 1 is relabelled because this option matches ED, VP and GSM alike — that is
+                  what getActiveStageKey('sales_manager') covers. */}
+              <option value="pending_sales_manager">Pending ED / VP</option>
               <option value="pending_hr">Pending HR</option>
-              <option value="pending_accounts">Pending Accounts</option>
               <option value="pending_ea">Pending EA</option>
               <option value="pending_md">Pending MD</option>
+              <option value="pending_accounts">Pending Accounts</option>
               <option value="pending_payment">Pending Payment</option>
               <option value="paid">Paid Cases</option>
               <option value="completed">Completed (All Approved)</option>
+              <option value="on_hold">On Hold</option>
               <option value="sent_back">Sent Back / Clarification</option>
               <option value="rejected">Rejected Cases</option>
             </select>
@@ -2838,10 +2893,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     ) : (
                       (() => {
                         const maxSpend = Math.max(...analyticsData.topVendors.map(v => v.total), 1)
-                        return analyticsData.topVendors.map((vendor) => {
+                        return analyticsData.topVendors.map((vendor, idx) => {
                           const pct = Math.round((vendor.total / maxSpend) * 100)
                           return (
-                            <div key={vendor.name} className="space-y-1">
+                            <div key={`${vendor.name}-${idx}`} className="space-y-1">
                               <div className="flex justify-between text-xs font-bold text-slate-700">
                                 <span className="truncate max-w-[140px]" title={vendor.name}>{vendor.name}</span>
                                 <span className="font-mono text-slate-900">₹{vendor.total.toLocaleString('en-IN')}</span>
@@ -2869,10 +2924,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       (() => {
                         const gls = analyticsData.topGlAccounts.slice(0, 5)
                         const maxSpend = Math.max(...gls.map(g => g.total), 1)
-                        return gls.map((gl) => {
+                        return gls.map((gl, idx) => {
                           const pct = Math.round((gl.total / maxSpend) * 100)
                           return (
-                            <div key={gl.name} className="space-y-1">
+                            <div key={`${gl.name}-${idx}`} className="space-y-1">
                               <div className="flex justify-between text-xs font-bold text-slate-700">
                                 <span className="truncate max-w-[120px]">{gl.name}</span>
                                 <span className="font-mono text-slate-900">₹{gl.total.toLocaleString('en-IN')}</span>
@@ -2944,7 +2999,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   ) : (
                     vendorSummary.map((v, idx) => (
                       <tr
-                        key={v.name}
+                        key={`${v.name}-${idx}`}
                         onClick={() => {
                           setVendorStartDate('')
                           setVendorEndDate('')
@@ -3718,42 +3773,25 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               }
 
               // 3. Attachments
-              if (req.uploadBillUrl1) {
+              // Every bill, not just the first two — submitters can now attach any number.
+              getBillUrls(req).forEach((billUrl, billIndex) => {
                 events.push({
-                  id: 'bill1',
+                  id: `bill-${billIndex}`,
                   title: 'Attachment Added',
                   description: (
                     <button
                       type="button"
-                      onClick={() => setPreviewDocUrl(req.uploadBillUrl1!)}
+                      onClick={() => setPreviewDocUrl(billUrl)}
                       className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline text-left"
                     >
-                      Bill 1
+                      Bill {billIndex + 1}
                     </button>
                   ),
                   user: req.name,
                   timestamp: new Date(req.createdAt),
                   iconType: 'clip'
                 })
-              }
-              if (req.uploadBillUrl2) {
-                events.push({
-                  id: 'bill2',
-                  title: 'Attachment Added',
-                  description: (
-                    <button
-                      type="button"
-                      onClick={() => setPreviewDocUrl(req.uploadBillUrl2!)}
-                      className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline text-left"
-                    >
-                      Bill 2
-                    </button>
-                  ),
-                  user: req.name,
-                  timestamp: new Date(req.createdAt),
-                  iconType: 'clip'
-                })
-              }
+              })
               if (req.uploadDocUrl) {
                 events.push({
                   id: 'doc',
@@ -3914,10 +3952,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               }
             }
 
-            const renderOverviewItem = (label: string, value: string | React.ReactNode, icon: any, className?: string) => {
+            const renderOverviewItem = (label: string, value: string | React.ReactNode, icon: any, className?: string, key?: string | number) => {
               const Icon = icon
               return (
-                <div className={cn("border border-slate-100 bg-[#f8fafc]/40 rounded-2xl p-4 flex gap-3 items-start", className)}>
+                <div key={key ?? label} className={cn("border border-slate-100 bg-[#f8fafc]/40 rounded-2xl p-4 flex gap-3 items-start", className)}>
                   <div className="h-8 w-8 rounded-xl bg-slate-100 border border-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
                     <Icon className="w-4 h-4" />
                   </div>
@@ -4347,8 +4385,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {renderOverviewItem('GL Account', detailRow.glName ? `${detailRow.glName} (${detailRow.glCode})` : '—', Database)}
                         {renderOverviewItem('GST Details', detailRow.gst || '—', Percent)}
                         {renderOverviewItem('Reference / Invoice No.', detailRow.invoiceNumber || '—', FileText)}
-                        {detailRow.uploadBillUrl1 && renderOverviewItem('Primary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl1!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Bill 1</span></button>, FileText)}
-                        {detailRow.uploadBillUrl2 && renderOverviewItem('Secondary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl2!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Bill 2</span></button>, FileText)}
+                        {getBillUrls(detailRow).map((billUrl, billIndex, all) => renderOverviewItem(
+                          all.length > 1 ? `Bill ${billIndex + 1} of ${all.length}` : 'Bill',
+                          <button key={billUrl} type="button" onClick={() => setPreviewDocUrl(billUrl)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Bill {billIndex + 1}</span></button>,
+                          FileText,
+                          undefined,
+                          `bill-${billIndex}-${billUrl}`
+                        ))}
                         {detailRow.uploadDocUrl && renderOverviewItem('Support Document', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadDocUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Support Doc</span></button>, FileText)}
                         {detailRow.invoiceDocUrl && renderOverviewItem('Uploaded Invoice', <button type="button" onClick={() => setPreviewDocUrl(detailRow.invoiceDocUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-sm hover:shadow-emerald-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Invoice</span></button>, FileText)}
                         {detailRow.paymentStatus === 'PAID' && renderOverviewItem('Payment Status', <span className="text-emerald-700 font-black">PAID</span>, CheckCircle2)}
@@ -4361,9 +4404,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
                     {/* Prominent Attached Bill & Documents Card Section */}
                     {(() => {
+                      const billList = getBillUrls(detailRow)
                       const docs = [
-                        { label: 'Primary Bill / Invoice', url: detailRow.uploadBillUrl1 },
-                        { label: 'Secondary Bill / Attachment', url: detailRow.uploadBillUrl2 },
+                        // Every bill the submitter attached, however many that is.
+                        ...billList.map((url, i) => ({
+                          label: billList.length > 1 ? `Bill ${i + 1} of ${billList.length}` : 'Bill / Invoice',
+                          url,
+                        })),
                         { label: 'Support Document', url: detailRow.uploadDocUrl },
                         { label: 'Accounts Invoice', url: detailRow.invoiceDocUrl },
                         { label: 'Payment Proof', url: detailRow.paymentProofUrl },

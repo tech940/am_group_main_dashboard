@@ -333,6 +333,19 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    // MD queue for payment-window extension requests raised at allotment. Restricted-by-default —
+    // it is deliberately absent from DEFAULT_VISIBLE_SECTIONS, which is what puts it into
+    // RESTRICTED_DEFAULT_SECTIONS and so excludes it from applyBrandDefault's blanket grant of
+    // every kia.* key. Without that, every KIA user would silently get the MD's approval screen.
+    // 'approve' is separate from 'view' so an observer can be granted read-only later.
+    key: 'kia.payment_window_requests',
+    name: 'Payment Window Requests',
+    parentKey: 'kia.sales',
+    description: 'AM KIA requests for extra customer payment time on an allotted vehicle — MD approves or rejects.',
+    sortOrder: 46,
+    actions: ['view', 'approve'],
+  },
+  {
     key: 'kia.call_center',
     name: 'Call Center',
     parentKey: 'kia.sales',
@@ -838,6 +851,9 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   // Lives as a TAB inside Bookings (the Kia Proforma shell), not as its own sidebar item. The old
   // standalone route still resolves and redirects here, so existing links keep working.
   'kia.allocation_history': { href: '/brands/kia/proforma/allocation-history', aliases: ['/brands/kia/allocation-history'] },
+  // Also a TAB inside Bookings, for the same reason. Being listed here (and NOT in
+  // DEFAULT_VISIBLE_SECTIONS) is what makes it restricted-by-default.
+  'kia.payment_window_requests': { href: '/brands/kia/proforma/payment-window-requests' },
   'kia.call_analytics': { href: '/brands/kia/call-analytics' },
   'kia.bookings': { href: '/brands/kia/bookings' },
   'kia.approvals': { href: '/brands/kia/payment-approvals', aliases: ['/brands/kia/vendors'] },
@@ -1072,6 +1088,10 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'am_finance',
     'scrap_erp',
     'kia.booking_payment_history',
+    // MD is the approver for payment-window extensions. isSuperAdminRole already short-circuits
+    // every permission check for md/developer, so this is belt-and-braces — but listing it keeps the
+    // grant visible in the Access Map instead of looking like an accidental omission.
+    'kia.payment_window_requests',
     'reports',
   ], ['view', 'approve', 'audit']),
   eba: keysForGroups([

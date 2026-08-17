@@ -243,6 +243,17 @@ export const ALL_SECTIONS: SearchSection[] = [
     category: 'kia',
   },
   {
+    id: 'kia_payment_window_requests',
+    name: 'Payment Window Requests',
+    description: 'Requests for extra customer payment time on an allotted vehicle, with any competing bookings for the same car. MD approves or rejects.',
+    href: '/brands/kia/proforma/payment-window-requests',
+    department: 'sales',
+    brand: 'kia',
+    iconName: 'Clock',
+    initials: 'PWR',
+    category: 'kia',
+  },
+  {
     id: 'kia_call_analytics',
     name: 'Call & Follow-up Analytics',
     description: 'Comprehensive conversion funnels, call metrics, and performance charts.',
@@ -536,6 +547,7 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   // resolves (it redirects to the tab), so a bookmarked link is not blocked by the href allowlist.
   '/brands/kia/proforma/allocation-history',
   '/brands/kia/allocation-history',
+  '/brands/kia/proforma/payment-window-requests',
   '/brands/kia/demo-job-cards',
   '/brands/kia/demo-cars-list',
 

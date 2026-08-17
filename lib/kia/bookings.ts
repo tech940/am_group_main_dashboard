@@ -7,6 +7,7 @@ import {
   kiaBookingActivity,
   kiaBookings,
   kiaBookingDiscounts,
+  kiaPaymentWindowRequests,
   kiaFinancePayouts,
   kiaLeadFollowups,
   kiaProformas,
@@ -34,8 +35,11 @@ import {
 
 type JsonRecord = Record<string, unknown>
 export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
-const TEMPORARY_ALLOCATION_HOURS = 72
-const CSD_ALLOCATION_HOURS = 120 // CSD customers get a 5-day payment window
+// Exported so lib/kia/payment-window-requests.ts can compute the same policy default instead of
+// re-hardcoding 72/120 a fourth time (it already appears here, in the arrival-sweep SQL below, and
+// in lib/finance/finance-processing.ts for the separate finance SLA clock).
+export const TEMPORARY_ALLOCATION_HOURS = 72
+export const CSD_ALLOCATION_HOURS = 120 // CSD customers get a 5-day payment window
 
 /**
  * DMS stock_status literals from kia_stock_management, lower-cased.
@@ -85,7 +89,7 @@ async function resolveUserByPersonName(tx: DbTx, name: string) {
 
 // The temporary-allocation payment window depends on the customer type captured
 // on the booking form: CSD → 5 days, everyone else → 72 hours.
-function allocationHoursForBooking(booking: { metadata?: unknown } | null | undefined): number {
+export function allocationHoursForBooking(booking: { metadata?: unknown } | null | undefined): number {
   const meta = (booking?.metadata || {}) as Record<string, unknown>
   const type = String(meta.customerType || '').trim().toLowerCase()
   return type === 'csd' ? CSD_ALLOCATION_HOURS : TEMPORARY_ALLOCATION_HOURS
@@ -216,7 +220,10 @@ function actor(appUser: AppUser) {
   }
 }
 
-async function addActivity(tx: DbTx, params: {
+// Exported so sibling KIA modules can write booking activity through the same helper. Before this,
+// routes outside this file hand-rolled `db.insert(kiaBookingActivity)` (see the discount routes),
+// which is how the actor fields and the before/after shape drifted between call sites.
+export async function addActivity(tx: DbTx, params: {
   bookingId: string
   type: string
   title: string
@@ -342,11 +349,19 @@ export async function startKiaArrivedAllocationCountdowns() {
           -- ::int is REQUIRED. Bound params arrive untyped and Postgres infers text, so
           -- make_interval(hours => …) below fails with "function make_interval(hours => text)
           -- does not exist".
-          CASE
-            WHEN lower(trim(coalesce(kb.metadata->>'customerType', ''))) = 'csd'
-            THEN ${CSD_ALLOCATION_HOURS}::int
-            ELSE ${TEMPORARY_ALLOCATION_HOURS}::int
-          END AS window_hours
+          --
+          -- payment_window_hours comes FIRST so an MD-approved extension is honoured for a car that
+          -- was still in transit when it was granted. Without this COALESCE the approval was
+          -- silently discarded the moment the clock opened here. NULL (every row predating
+          -- migration 0035) falls through to the policy default, so old rows behave as before.
+          COALESCE(
+            va.payment_window_hours,
+            CASE
+              WHEN lower(trim(coalesce(kb.metadata->>'customerType', ''))) = 'csd'
+              THEN ${CSD_ALLOCATION_HOURS}::int
+              ELSE ${TEMPORARY_ALLOCATION_HOURS}::int
+            END
+          )::int AS window_hours
         FROM kia_vehicle_allocations va
         JOIN kia_bookings kb ON kb.id = va.booking_id
         WHERE va.allocation_status = 'transferring'
@@ -1312,7 +1327,7 @@ export async function getKiaBookingDetail(id: string) {
   // app/api/brands/kia/bookings/[id]/route.ts). A bare `db.select()` here was pulling activity
   // before_value/after_value (whole-booking JSONB snapshots, up to 100 rows) and transfer
   // metadata/vehicle_snapshot JSONB the route discards — deserialising that was the CPU bill.
-  const [activity, transfers, followupNotes, discounts] = await Promise.all([
+  const [activity, transfers, followupNotes, discounts, paymentWindowRequests] = await Promise.all([
     db.select({
       id: kiaBookingActivity.id,
       activityType: kiaBookingActivity.activityType,
@@ -1338,6 +1353,10 @@ export async function getKiaBookingDetail(id: string) {
       updatedAt: kiaLeadFollowups.updatedAt,
     }).from(kiaLeadFollowups).where(eq(kiaLeadFollowups.bookingId, id)),
     db.select().from(kiaBookingDiscounts).where(eq(kiaBookingDiscounts.bookingId, id)).orderBy(desc(kiaBookingDiscounts.createdAt)).limit(50),
+    // Extra-time requests, so the consultant sees the MD's decision without leaving the booking.
+    // A plain per-booking SELECT — the competing-bookings query deliberately stays OUT of this path,
+    // which is hover-prefetched per row against a small connection pool.
+    db.select().from(kiaPaymentWindowRequests).where(eq(kiaPaymentWindowRequests.bookingId, id)).orderBy(desc(kiaPaymentWindowRequests.createdAt)).limit(50),
   ])
 
   const followupRemarks = (followupNotes || [])
@@ -1365,6 +1384,7 @@ export async function getKiaBookingDetail(id: string) {
     transfers,
     activity: combinedActivity,
     discounts: discounts || [],
+    paymentWindowRequests: paymentWindowRequests || [],
   }
 }
 
@@ -1716,6 +1736,9 @@ export async function getKiaBookingMatchingVehicles(id: string) {
         sm.stock_status,
         sm.stock_location,
         sm.uploaded_at,
+        -- stock_age is TEXT in the DMS feed; strip non-digits before casting or one stray
+        -- character aborts the whole query.
+        COALESCE(NULLIF(regexp_replace(COALESCE(sm.stock_age, ''), '[^0-9]', '', 'g'), ''), '0')::int AS age_days,
         to_jsonb(sm) AS snapshot,
         'dms'::text AS source
       FROM kia_stock_management sm
@@ -1749,6 +1772,8 @@ export async function getKiaBookingMatchingVehicles(id: string) {
         coalesce(ls.stock_status_at_mark, 'BBND') AS stock_status,
         ls.stock_location,
         ls.source_uploaded_at AS uploaded_at,
+        -- BBND rows carry the original stock row in vehicle_snapshot, so age comes from there.
+        COALESCE(NULLIF(regexp_replace(COALESCE(ls.vehicle_snapshot->>'stock_age', ''), '[^0-9]', '', 'g'), ''), '0')::int AS age_days,
         ls.vehicle_snapshot AS snapshot,
         'bbnd'::text AS source
       FROM kia_stock_local_statuses ls
@@ -1784,9 +1809,14 @@ export async function getKiaBookingMatchingVehicles(id: string) {
         AND LOWER(coalesce(vt.transfer_status, '')) IN ('transferred', 'requested')
         AND coalesce(vt.to_dealer_code, '') <> ${text(booking.dealerCode)}
     )
+    -- FIFO. This used to order by uploaded_at DESC — NEWEST first — which put the freshest arrival
+    -- at the top of the picker and quietly encouraged allotting new stock while older identical
+    -- cars aged in the yard. Oldest-first makes the right choice the default one; the exact-variant
+    -- match still outranks age so the list stays relevant.
     ORDER BY
       CASE WHEN variant ILIKE ${variantPattern} THEN 0 ELSE 1 END,
-      uploaded_at DESC NULLS LAST
+      age_days DESC NULLS LAST,
+      uploaded_at ASC NULLS LAST
     LIMIT 50
   `))
 }
@@ -1837,12 +1867,18 @@ function assertKiaVehicleMatchesBooking(vehicle: JsonRecord, wanted: { model: st
  *
  * `options.skipRoleGate` is for allotKiaBbndVehicle only, which performs its own (different, wider)
  * role check — booking allotment is IDT-exclusive, BBND allot deliberately is not.
+ *
+ * `options.extraTime` records an OPTIONAL request for a longer payment window (1–15 days, reason
+ * required). It deliberately does NOT change the window applied here — the standard 72h/120h still
+ * takes effect immediately. The request only becomes real if the MD approves it, which is what
+ * lib/kia/payment-window-requests.ts does. Creating it inside this transaction means an allotment
+ * can never succeed while its extension request is lost.
  */
 export async function allotKiaBookingVehicle(
   id: string,
   vinNumber: string,
   appUser: AppUser,
-  options: { skipRoleGate?: boolean } = {},
+  options: { skipRoleGate?: boolean; extraTime?: { days: number; reason: string } } = {},
 ) {
   if (!options.skipRoleGate && !canAllotKiaVehicleToBooking(appUser.role)) {
     throw new Error('Only the IDT can allot vehicles to a booking.')
@@ -1877,6 +1913,10 @@ export async function allotKiaBookingVehicle(
     // so the VIN stays reserved for this booking rather than leaking back into the matchable list.
     const inTransit = dmsStockStatus(vehicle.stock_status) === DMS_IN_TRANSIT
 
+    // The policy window for this booking, recorded on the row rather than left implicit. The
+    // arrival sweep and any MD-approved extension both read it, so the 72/120 rule has one home.
+    const policyHours = allocationHoursForBooking(booking)
+
     const [allocation] = await tx.insert(kiaVehicleAllocations).values({
       bookingId: id,
       vinNumber: normalizedVin,
@@ -1888,7 +1928,8 @@ export async function allotKiaBookingVehicle(
       stockSource: text(vehicle.source) || 'dms',
       vehicleSnapshot: (vehicle.snapshot || {}) as JsonRecord,
       allocationStatus: inTransit ? 'transferring' : 'temporary',
-      expiresAt: inTransit ? null : new Date(Date.now() + allocationHoursForBooking(booking) * 60 * 60 * 1000),
+      expiresAt: inTransit ? null : new Date(Date.now() + policyHours * 60 * 60 * 1000),
+      paymentWindowHours: policyHours,
       allocatedBy: appUser.id,
     }).returning()
 
@@ -1909,6 +1950,31 @@ export async function allotKiaBookingVehicle(
       after: allocation as unknown as JsonRecord,
       appUser,
     })
+
+    // Optional extra-time request. Imported lazily to keep the module graph one-directional —
+    // payment-window-requests.ts imports from this file, so a top-level import here would be a
+    // cycle.
+    if (options.extraTime) {
+      const { createPaymentWindowRequest } = await import('@/lib/kia/payment-window-requests')
+      await createPaymentWindowRequest(tx, {
+        bookingId: id,
+        allocationId: allocation.id,
+        vinNumber: normalizedVin,
+        requestedDays: options.extraTime.days,
+        baseHours: policyHours,
+        reason: options.extraTime.reason,
+        appUser,
+      })
+      await addActivity(tx, {
+        bookingId: id,
+        type: 'extra_time_requested',
+        title: `Extra payment time requested — ${options.extraTime.days} day${options.extraTime.days === 1 ? '' : 's'}`,
+        description: `Standard window of ${policyHours}h applied for now; awaiting MD approval. Reason: ${options.extraTime.reason.trim()}`,
+        after: { requestedDays: options.extraTime.days, baseHours: policyHours },
+        appUser,
+      })
+    }
+
     return updated
   })
 }
