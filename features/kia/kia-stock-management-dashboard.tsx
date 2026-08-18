@@ -1047,7 +1047,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       {data?.metrics && (
         <KpiRow
           items={([
-            { key: 'All', label: 'Total VINs', value: data.metrics.total_vins, icon: Car, tone: 'blue' as Tone, hint: 'Whole inventory' },
+            { key: 'All', label: 'Total VINs', value: data.metrics.total_vins, icon: Car, tone: 'blue' as Tone, hint: 'Every status · click to see all' },
             { key: 'AVAILABLE', label: 'Available', value: data.metrics.available, icon: CheckCircle2, tone: 'emerald' as Tone, hint: 'Free to allot' },
             { key: 'PAYMENT_PENDING', label: 'Payment Pending', value: data.metrics.payment_pending, icon: WalletCards, tone: 'amber' as Tone, hint: 'Allotted by us · awaiting payment' },
             /*

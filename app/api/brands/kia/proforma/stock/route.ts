@@ -63,6 +63,17 @@ export async function GET(request: Request) {
     const dmsStatusClause = dmsStatusSelected
       ? `UPPER(TRIM(COALESCE(sm.stock_status, ''))) = '${dmsStatus.toUpperCase().replace(/'/g, "''")}'`
       : null
+
+    /*
+     * "Show me everything, whatever its status."
+     *
+     * True for an explicit dms_status pick, and for status='All' — which is what the TOTAL VINS card
+     * selects. Both are the user asking to stop bucketing, so the two implicit workflow guards
+     * (in-transit, delivered/sold) are dropped for them. Without this, Total VINs opened a list of 73
+     * of the 88 vehicles: 7 in-transit cars with no allocation and 8 delivered/sold ones were filtered
+     * out, so 'Invoice' and 'From Other Dealer' vehicles could not be seen from that card at all.
+     */
+    const showEveryStatus = dmsStatusSelected || status === 'All'
     const startDate = url.searchParams.get('start_date') || ''
     const endDate = url.searchParams.get('end_date') || ''
     const page = Number(url.searchParams.get('page') || 1)
@@ -144,7 +155,7 @@ export async function GET(request: Request) {
     // whole point of that filter is to see them. Same reasoning applies to the delivered/sold guard
     // below, which hides both 'Invoice' cars and would have made that option permanently empty.
     const notInTransit = `NOT (UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'IN TRANSIT' AND va.id IS NULL)`
-    if (!dmsStatusSelected) filters.push(notInTransit)
+    if (!showEveryStatus) filters.push(notInTransit)
     if (dmsStatusClause) filters.push(dmsStatusClause)
 
     if (status !== 'All') {
@@ -212,7 +223,7 @@ export async function GET(request: Request) {
     const deliveredExpr = `((va.id IS NOT NULL AND kb.status = 'delivered') OR (COALESCE(ls.local_status, '') = 'retail' AND COALESCE(kb.status, '') != 'ready_delivery') OR ${dmsSoldExpr})`
     // Skipped for an explicit dms_status: this guard contains dmsSoldExpr, which excludes every
     // stock_status='Invoice' row, so leaving it on made that option match 0 of its 2 rows.
-    if (status !== 'DELIVERED' && !dmsStatusSelected) {
+    if (status !== 'DELIVERED' && !showEveryStatus) {
       filters.push(`NOT ${deliveredExpr}`)
     }
 
@@ -225,9 +236,12 @@ export async function GET(request: Request) {
     const scopeFilters: string[] = ['TRUE']
     // Same in-transit exclusion as the row list — a KPI that counted cars the table refuses to show
     // would be the "sidebar says 205, page says 0" class of bug all over again.
-    // Both the guard override and the dms_status clause are mirrored here, so the cards describe
-    // exactly the set the table is showing.
-    if (!dmsStatusSelected) scopeFilters.push(notInTransit)
+    // The dms_status clause is mirrored here so the cards describe exactly the set the table shows.
+    //
+    // notInTransit is deliberately NOT applied at this level any more: it would cap total_vins below
+    // the real inventory. It moves into each bucket's own CASE below instead, which leaves all six
+    // bucket counts byte-identical (every bucket either requires va.id IS NOT NULL, for which the
+    // guard is vacuously true, or already excludes in-transit stock by other means).
     if (dmsStatusClause) scopeFilters.push(dmsStatusClause)
     if (dealerScopeClause) scopeFilters.push(dealerScopeClause)
     if (startDate) {
@@ -276,18 +290,23 @@ export async function GET(request: Request) {
     }
     const transfersCountSql = `(SELECT COUNT(*) FROM kia_vehicle_transfers t WHERE ${transferFilters.join(' AND ')})::int`
 
-    // 1. Fetch metrics (Total Inventory excludes delivered units)
+    // 1. Fetch metrics
     //
-    // Total VINs re-applies the delivered guard INSIDE the CASE, so overriding it in scopeFilters
-    // alone was not enough: filtering to 'Invoice' would have shown 2 rows under a "0 TOTAL VINS"
-    // card. With an explicit dms_status, Total VINs counts everything in scope instead.
-    const totalVinsGuard = dmsStatusSelected ? 'TRUE' : `NOT ${deliveredExpr}`
+    // TOTAL VINS is now literally every vehicle in scope — it is the card that means "whole
+    // inventory", and clicking it selects status='All', which shows every row. It used to re-apply
+    // the delivered guard inside this CASE while scopeFilters applied the in-transit one, so the card
+    // read 73 against a real 88 and the 15 it omitted were unreachable from it.
+    //
+    // Only `available` inherits the in-transit guard, because only `available` can be fooled by it:
+    // every other bucket requires va.id IS NOT NULL (or stock_status='ALLOCATED'), which makes
+    // `NOT (in-transit AND va.id IS NULL)` vacuously true. So all six bucket counts are unchanged.
     const metricsResult = await db.execute(sql.raw(`
       SELECT
-        COUNT(CASE WHEN ${totalVinsGuard} THEN 1 END)::int AS total_vins,
+        COUNT(*)::int AS total_vins,
         COUNT(
           CASE WHEN va.id IS NULL
                 AND vt.id IS NULL
+                AND ${notInTransit}
                 AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail')
                 AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED')
                 AND NOT ${dmsSoldExpr}
@@ -298,10 +317,9 @@ export async function GET(request: Request) {
         -- this from a true 1 to 8).
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') THEN 1 END)::int AS payment_pending,
         -- Committed inside the DMS with no allocation of ours. Its own bucket rather than folded into
-        -- Available (it cannot be allotted — readMatchingVehicle only admits Free Stock / In transit)
-        -- or Payment Pending (nothing is owed to us). Delivered-guarded and allocation/transfer-
-        -- disjoint so available + payment_pending + dms_allocated + paid + transfers still reconciles
-        -- against total_vins.
+        -- Available (someone else has claimed the car, so it is not free to offer) or Payment Pending
+        -- (nothing is owed to us). It IS still allottable — readMatchingVehicle ignores stock_status.
+        -- Allocation/transfer-disjoint so the buckets never double-count.
         COUNT(CASE WHEN UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'ALLOCATED'
                     AND va.id IS NULL AND vt.id IS NULL
                     AND NOT ${deliveredExpr} THEN 1 END)::int AS dms_allocated,
