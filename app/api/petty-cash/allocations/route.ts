@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canAccessPettyCash } from '@/lib/petty-cash/access'
 import { listPettyCashAllocations } from '@/lib/petty-cash/server'
+import { requirePettyCashApiAccess } from '@/lib/petty-cash/api-guard'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    const appUser = await getAuthenticatedAppUser()
-    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!canAccessPettyCash(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const gate = await requirePettyCashApiAccess()
+    if (gate.response) return gate.response
+    const appUser = gate.appUser
 
     // status=all returns the allocation HISTORY (closed rows included) instead of just the one open
     // float per person. Default stays 'active' so existing callers see no change.

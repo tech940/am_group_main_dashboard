@@ -1,10 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { MotionConfig } from 'motion/react'
 import { Clock3, ClipboardList, Hourglass, RefreshCw, ShieldCheck, UserCheck, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { getBranchLabel } from '@/lib/branches'
+import { toast } from '@/hooks/use-toast'
 import {
   PETTY_CASH_STAGE_BUCKETS,
   formatWaitingDuration,
@@ -12,20 +14,7 @@ import {
   getPettyCashStageInfo,
   type PettyCashStageBucket,
 } from '@/lib/petty-cash/status-tracking'
-import {
-  EmptyState,
-  RecordTable,
-  SectionCard,
-  StatusPill,
-  SummaryCard,
-  formatCurrency,
-  formatDateTime,
-  normalizeBranchId,
-  normalizeRequestNumber,
-  requestedAmount,
-  requestedByName,
-  type Tone,
-} from './pc-shared'
+import { EmptyState, RecordTable, SectionCard, StatusPill, SummaryCard, formatCurrency, formatDateTime, normalizeBranchId, normalizeRequestNumber, requestedAmount, requestedByName, type Tone, TONE_CLASS } from './pc-shared'
 import type { PettyCashRequest } from './types'
 
 type StatusBoardPayload = {
@@ -104,7 +93,9 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to delete request')
       await load({ preserveData: true })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not delete request')
+      // toast(), not alert(): the workspace reports this exact failure as a toast, and a native
+      // modal for the same event on a sibling tab reads as a different, more serious kind of error.
+      toast({ title: 'Could not delete', description: err instanceof Error ? err.message : 'Could not delete request', variant: 'error' })
     } finally {
       setDeletingId(null)
     }
@@ -188,9 +179,9 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
     return (
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => <div key={`status-kpi-skeleton-${index}`} className="h-36 animate-pulse rounded-3xl bg-slate-100" />)}
+          {Array.from({ length: 4 }).map((_, index) => <div key={`status-kpi-skeleton-${index}`} className="h-36 animate-pulse motion-reduce:animate-none rounded-3xl bg-slate-100" />)}
         </div>
-        <div className="h-96 animate-pulse rounded-3xl bg-slate-100" />
+        <div className="h-96 animate-pulse motion-reduce:animate-none rounded-3xl bg-slate-100" />
       </div>
     )
   }
@@ -214,7 +205,11 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
     </Button>
   )
 
+  // This board renders standalone at /petty-cash/status as well as embedded in the workspace, so it
+  // declares its own reduced-motion contract for the SummaryCard / DataTable primitives it borrows
+  // from pc-shared.
   return (
+    <MotionConfig reducedMotion="user">
     <div className="space-y-6">
       {/* Header — hidden when embedded as a workspace tab (the workspace supplies its own). */}
       {!embedded && (
@@ -319,7 +314,7 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
               header: 'Actions',
               align: 'right' as const,
               cell: (request) => {
-                if (!canDeleteRequest(request)) return <span className="text-xs font-semibold text-slate-400">—</span>
+                if (!canDeleteRequest(request)) return <span className="text-xs font-semibold text-slate-500">—</span>
                 return (
                   <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
                     <button
@@ -327,7 +322,7 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
                       onClick={(e) => void handleDeleteRequest(request.id, e)}
                       disabled={deletingId === request.id}
                       title="Delete pending request"
-                      className="flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-50"
+                      className="flex h-11 sm:h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1"
                     >
                       <Trash2 className="h-3.5 w-3.5" /> Delete
                     </button>
@@ -339,30 +334,25 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
         />
       </SectionCard>
 
-      <p className="flex items-center gap-1.5 px-1 text-xs font-semibold text-slate-400">
+      <p className="flex items-center gap-1.5 px-1 text-xs font-semibold text-slate-500">
         <Clock3 className="h-3.5 w-3.5" />
         Time waiting is measured from the last stage change. Updated {formatDateTime(payload.generatedAt)}.
       </p>
     </div>
+    </MotionConfig>
   )
 }
 
 function ApproverBadge({ status }: { status: string }) {
   const info = getPettyCashStageInfo(status)
   if (!info.approver) {
-    return <span className="text-xs font-bold text-slate-400">—</span>
+    return <span className="text-xs font-bold text-slate-500">—</span>
   }
   const tone: Tone = info.approver === 'EA' ? 'amber' : info.approver === 'MD' ? 'blue' : 'violet'
-  const toneClass: Record<Tone, string> = {
-    emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-    amber: 'bg-amber-50 text-amber-700 ring-amber-200',
-    blue: 'bg-blue-50 text-blue-700 ring-blue-200',
-    violet: 'bg-violet-50 text-violet-700 ring-violet-200',
-    rose: 'bg-rose-50 text-rose-700 ring-rose-200',
-    slate: 'bg-slate-100 text-slate-600 ring-slate-200',
-  }
+  // Third copy of the tone map, now deleted: it had no dark-mode treatment, so this badge stayed
+  // light-on-light in dark mode exactly like the two before it. TONE_CLASS is the only source.
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset', toneClass[tone])}>
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset', TONE_CLASS[tone])}>
       <UserCheck className="h-3.5 w-3.5" /> {info.approver}
     </span>
   )
@@ -371,7 +361,7 @@ function ApproverBadge({ status }: { status: string }) {
 function WaitingCell({ request, now }: { request: PettyCashRequest; now: number }) {
   const info = getPettyCashStageInfo(request.status)
   if (info.state !== 'pending') {
-    return <span className="text-xs font-bold text-slate-400">—</span>
+    return <span className="text-xs font-bold text-slate-500">—</span>
   }
   const waitingSince = request.updatedAt || request.updated_at || request.createdAt || request.created_at || null
   const from = waitingSince ? new Date(waitingSince).getTime() : NaN

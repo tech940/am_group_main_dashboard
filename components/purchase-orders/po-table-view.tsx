@@ -18,6 +18,7 @@ interface PurchaseOrder {
   quantity_required?: string
   estimateIfAny?: string
   estimate_if_any?: string
+  amount?: string
   specialInstructions?: string
   special_instructions?: string
   brand?: string
@@ -61,7 +62,7 @@ function getColumnValue(order: PurchaseOrder, key: string) {
     case 'quantityRequired':
       return order.quantityRequired || order.quantity_required
     case 'estimateIfAny':
-      return order.estimateIfAny || order.estimate_if_any
+      return order.estimateIfAny || order.estimate_if_any || order.amount
     case 'specialInstructions':
       return order.specialInstructions || order.special_instructions
     case 'specifyOther':
@@ -98,16 +99,21 @@ function formatCurrency(value: unknown) {
     return '-'
   }
 
-  const numValue = typeof value === 'string' ? parseFloat(value) : Number(value)
-  if (isNaN(numValue)) {
-    return `₹${String(value)}`
+  const parsed = Number(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    }).format(parsed)
   }
 
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(numValue)
+  const str = String(value).trim()
+  if (str === '0' || str === '0.00' || str === '') {
+    return '-'
+  }
+
+  return `₹${str}`
 }
 
 function getBranchLabel(brand: string) {

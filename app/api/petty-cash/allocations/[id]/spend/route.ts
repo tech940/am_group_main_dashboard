@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canAccessPettyCash } from '@/lib/petty-cash/access'
 import { getPettyCashAllocationSpend } from '@/lib/petty-cash/server'
+import { requirePettyCashApiAccess } from '@/lib/petty-cash/api-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,9 +13,9 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const appUser = await getAuthenticatedAppUser()
-    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!canAccessPettyCash(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const gate = await requirePettyCashApiAccess()
+    if (gate.response) return gate.response
+    const appUser = gate.appUser
 
     const { id } = await params
     return NextResponse.json(await getPettyCashAllocationSpend(appUser, id))

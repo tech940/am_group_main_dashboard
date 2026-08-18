@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canAccessPettyCash } from '@/lib/petty-cash/access'
 import { getPettyCashCategories } from '@/lib/petty-cash/server'
+import { requirePettyCashApiAccess } from '@/lib/petty-cash/api-guard'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const appUser = await getAuthenticatedAppUser()
-    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!canAccessPettyCash(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const gate = await requirePettyCashApiAccess()
+    if (gate.response) return gate.response
 
     return NextResponse.json({ categories: await getPettyCashCategories() })
   } catch (error) {

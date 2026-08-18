@@ -110,6 +110,17 @@ export type PettyCashSummary = {
   pendingExpenseCount: number
   requestCount: number
   expenseCount: number
+  /* Lifetime figures — computed in Postgres over every allocation the user may see, since petty
+     cash began. Deliberately independent of the Allocations tab filter, which the KPI row used to
+     inherit (so "total spent" quietly meant "spent on still-open allocations"). */
+  lifetimeAllocated?: number
+  lifetimeSpent?: number
+  lifetimeAllocationCount?: number
+  openAllocationCount?: number
+  /** Unspent cash right now — a present-tense quantity, so open floats only. */
+  remainingNow?: number
+  /** ISO timestamp of the first allocation ever, for the "since …" subtitle. */
+  since?: string | null
 }
 
 export type DashboardPayload = {

@@ -1,5 +1,7 @@
 'use client'
 
+import { getPettyCashStageInfo } from '@/lib/petty-cash/status-tracking'
+
 import { motion } from 'motion/react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
@@ -76,27 +78,47 @@ export function expenseVendor(expense: PettyCashExpense) {
 /* Status pill                                                         */
 /* ------------------------------------------------------------------ */
 
-export type Tone = 'emerald' | 'amber' | 'blue' | 'violet' | 'rose' | 'slate'
+export type Tone = 'emerald' | 'amber' | 'blue' | 'violet' | 'rose' | 'sky' | 'slate'
 
-const TONE_CLASS: Record<Tone, string> = {
-  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  amber: 'bg-amber-50 text-amber-700 ring-amber-200',
-  blue: 'bg-blue-50 text-blue-700 ring-blue-200',
-  violet: 'bg-violet-50 text-violet-700 ring-violet-200',
-  rose: 'bg-rose-50 text-rose-700 ring-rose-200',
+/*
+ * Status tones — the approval state of money, so both themes have to be legible.
+ *
+ * These carried no dark treatment and were unreadable at 1.28–1.62:1 in dark mode. The cause is not
+ * a missing `dark:` here but the app-wide rescue in globals.css (`.dark .glass-dashboard-content
+ * [class*="text-…-700"]`), which forces the TEXT light with !important while leaving a tinted
+ * background — bg-*-50 is not on its background list — so it produced light-on-light.
+ *
+ * Two consequences worth knowing before editing:
+ *   1. A `dark:text-*` here CANNOT win against that !important. For emerald/amber/blue the fix is to
+ *      darken the BACKGROUND so the already-forced-light text lands correctly (6.55–7.69:1).
+ *   2. rose and violet need the opposite treatment. `text-rose-700` is rescued to
+ *      var(--dashboard-risk-text), which resolves to pure #ff0000 and tops out at 4.43:1 on any
+ *      tint — unreachable. Naming the shade rose-900 steps outside the rescue's match list so we own
+ *      both modes again (8.71:1 light / 9.24:1 dark). violet was never rescued at all.
+ */
+export const TONE_CLASS: Record<Tone, string> = {
+  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/70 dark:ring-emerald-700/50',
+  amber: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-900/70 dark:ring-amber-700/50',
+  blue: 'bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-900/70 dark:ring-blue-700/50',
+  violet: 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/50 dark:text-violet-300 dark:ring-violet-700/50',
+  rose: 'bg-rose-50 text-rose-900 ring-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-800/50',
+  // sky is not in the rescue's match list either, so — like violet — we own both modes outright.
+  sky: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-700/50',
+  // bg-slate-100 IS on the rescue's background list, so this tone already flips correctly.
   slate: 'bg-slate-100 text-slate-600 ring-slate-200',
 }
 
+/**
+ * Tone comes from STAGE_INFO, not from substring matching.
+ *
+ * The old body tested `value.includes('approved')` BEFORE any stage check, so `ed_approved` and
+ * `ea_approved` — both `state: 'pending'` — rendered emerald. On a queue, green means done, so the
+ * rows still owing an approval were exactly the ones a reviewer's eye skipped.
+ */
 export function statusTone(status: string): Tone {
-  const value = status.toLowerCase()
-  if (value.includes('reject') || value.includes('cancel')) return 'rose'
-  if (value.includes('approved') || value === 'active' || value === 'allocated') return 'emerald'
-  if (value.includes('on_hold') || value.includes('hold')) return 'amber'
-  if (value.includes('md_')) return 'blue'
-  if (value.includes('accounts')) return 'violet'
-  if (value.includes('ea_') || value.includes('pending') || value.includes('submitted')) return 'amber'
-  return 'slate'
+  return getPettyCashStageInfo(status).tone
 }
+
 
 export function StatusPill({ status }: { status: string }) {
   return (
@@ -151,7 +173,7 @@ export function SectionCard({
 export function EmptyState({ icon: Icon, title, description }: { icon: React.ComponentType<{ className?: string }>; title: string; description: string }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
         <Icon className="h-7 w-7" />
       </div>
       <h4 className="mt-4 text-base font-black text-slate-900">{title}</h4>
@@ -199,7 +221,7 @@ export function SummaryCard({
         </span>
       </div>
       <div>
-        <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+        <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">{label}</p>
         <p className="mt-1 text-2xl font-black tracking-tight text-slate-950">{value}</p>
         {meta && <p className="mt-0.5 text-xs font-semibold text-slate-500">{meta}</p>}
       </div>
@@ -274,7 +296,7 @@ export function RecordTable<T>({
     return (
       <div className="space-y-2 p-5">
         {Array.from({ length: 5 }).map((_, index) => (
-          <div key={`row-skeleton-${index}`} className="h-12 animate-pulse rounded-xl bg-slate-50" />
+          <div key={`row-skeleton-${index}`} className="h-12 animate-pulse motion-reduce:animate-none rounded-xl bg-slate-50" />
         ))}
       </div>
     )
@@ -284,7 +306,7 @@ export function RecordTable<T>({
     <div className="overflow-x-auto">
       <table className="w-full min-w-[820px] border-collapse text-left text-sm">
         <thead>
-          <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-black uppercase tracking-wider text-slate-500">
+          <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-black uppercase tracking-wider text-slate-600">
             {columns.map((column) => (
               <th key={column.header} className={cn('px-4 py-3 font-black', column.align === 'right' && 'text-right')}>{column.header}</th>
             ))}
@@ -292,12 +314,27 @@ export function RecordTable<T>({
         </thead>
         <tbody>
           {rows.map((row) => (
+            /*
+             * Row click opens the detail dialog, and it used to be the ONLY way in — a bare
+             * onClick on a <tr> with no tabIndex and no key handler, so keyboard and screen-reader
+             * users could not open a single record.
+             *
+             * tabIndex + Enter/Space rather than role="button": that role would replace the row
+             * semantics a table user navigates by, trading one barrier for another.
+             */
             <tr
               key={rowKey(row)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
+              onKeyDown={onRowClick ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  onRowClick(row)
+                }
+              } : undefined}
               className={cn(
                 'border-b border-slate-50 transition-colors last:border-b-0 hover:bg-slate-50/60',
-                onRowClick && 'cursor-pointer',
+                onRowClick && 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dashboard-action-bg)]',
               )}
             >
               {columns.map((column) => (
@@ -311,4 +348,38 @@ export function RecordTable<T>({
       </table>
     </div>
   )
+}
+
+/**
+ * Mirror of deletePettyCashRequest's two rules (lib/petty-cash/server.ts): pending only, and
+ * submitter only (developer / super_admin excepted).
+ *
+ * Lives here because the workspace and the status board render the SAME record and disagreed about
+ * it — the board guarded the button correctly, the workspace rendered it on every row for every
+ * role, so a reviewer saw a red Delete on 30 requests and every one returned "Only the user who
+ * submitted this request can delete it." One function, both call sites.
+ */
+export function canDeletePettyCashRequestOnClient(
+  request: Record<string, unknown> & { status?: string | null },
+  currentUser: { id?: string | null; role?: string | null; email?: string | null; fullName?: string | null } | null | undefined,
+  submitterName?: string | null,
+): boolean {
+  if (!currentUser) return false
+  const status = String(request?.status || '')
+  const DELETABLE = ['draft', 'ed_pending', 'ea_pending', 'md_pending', 'accounts_pending']
+  if (!DELETABLE.includes(status)) return false
+
+  const role = String(currentUser.role || '').trim().toLowerCase()
+  if (role === 'developer' || role === 'super_admin') return true
+
+  const createdBy = (request.createdBy ?? request.created_by) as string | undefined
+  if (currentUser.id && createdBy && currentUser.id === createdBy) return true
+
+  const reqEmail = String(request.requestedByEmail ?? request.requested_by_email ?? '').toLowerCase()
+  if (currentUser.email && reqEmail && currentUser.email.toLowerCase() === reqEmail) return true
+
+  const reqName = String(submitterName ?? request.requestedByName ?? request.requested_by_name ?? '').toLowerCase()
+  if (currentUser.fullName && reqName && currentUser.fullName.toLowerCase() === reqName) return true
+
+  return false
 }

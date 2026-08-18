@@ -18,6 +18,7 @@ import {
 } from '@/lib/db/schema'
 import { getIndiaDatePart, serializeUtcTimestampFields } from '@/lib/date-time'
 import {
+  canAccessPettyCash,
   canApprovePettyCashStage,
   canCreatePettyCashExpense,
   canCreatePettyCashRequest,
@@ -555,6 +556,52 @@ export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?:
  * (the dealership, e.g. KIA Jammu / KIA Udhampur) is pulled from the originating
  * request's requestForm so the UI can offer a Location/Dealership filter.
  */
+/**
+ * Lifetime totals for the KPI row — every allocation this user may see, since petty cash began.
+ *
+ * The cards used to reduce over whatever the Allocations TAB had fetched, and that list defaults to
+ * "Open only". So "TOTAL SPENT" silently meant "spent on allocations that happen to still be open",
+ * and flipping a filter on another tab changed the headline numbers. This aggregates in Postgres over
+ * the full history instead, so the figure is stable and actually answers "since we started".
+ *
+ * `remaining` is deliberately NOT lifetime — unspent cash is a right-now quantity, so it sums only
+ * open floats. Reuses getPettyCashAllocationVisibilityFilter, so a branch-scoped user can never be
+ * shown totals from a branch they cannot see.
+ */
+export async function getPettyCashLifetimeTotals(appUser: AppUser, branchId?: string | null) {
+  const scope = (includeInactive: boolean) => {
+    const filters = [getPettyCashAllocationVisibilityFilter(appUser, { includeInactive })]
+    if (branchId && branchId !== 'all') {
+      if (!isBranchValue(branchId)) throw new Error('Invalid branch')
+      if (!canViewPettyCashBranch(appUser, branchId)) throw new Error('Forbidden branch')
+      filters.push(eq(pettyCashAllocations.branchId, branchId))
+    }
+    return and(...filters)
+  }
+
+  const [[lifetime], [open]] = await Promise.all([
+    db.select({
+      allocationCount: sql<number>`COUNT(*)::int`,
+      allocated: sql<string>`COALESCE(SUM(${pettyCashAllocations.allocatedAmount}), 0)::text`,
+      spent: sql<string>`COALESCE(SUM(${pettyCashAllocations.spentAmount}), 0)::text`,
+      since: sql<string | null>`MIN(${pettyCashAllocations.allocatedAt})::text`,
+    }).from(pettyCashAllocations).where(scope(true)),
+    db.select({
+      openCount: sql<number>`COUNT(*)::int`,
+      remaining: sql<string>`COALESCE(SUM(${pettyCashAllocations.allocatedAmount} - ${pettyCashAllocations.spentAmount}), 0)::text`,
+    }).from(pettyCashAllocations).where(scope(false)),
+  ])
+
+  return {
+    allocationCount: Number(lifetime?.allocationCount ?? 0),
+    allocatedTotal: parseMoney(lifetime?.allocated ?? '0'),
+    spentTotal: parseMoney(lifetime?.spent ?? '0'),
+    since: lifetime?.since ?? null,
+    openAllocationCount: Number(open?.openCount ?? 0),
+    remainingNow: parseMoney(open?.remaining ?? '0'),
+  }
+}
+
 export async function listPettyCashAllocations(
   appUser: AppUser,
   input?: { branchId?: string | null; status?: string | null },
@@ -713,7 +760,7 @@ export async function getPettyCashAllocationSpend(appUser: AppUser, allocationId
 }
 
 export async function getPettyCashDashboard(appUser: AppUser, branchId?: string | null) {
-  const [categories, currentAllocation, requestsResult, expensesResult] = await Promise.all([
+  const [categories, currentAllocation, requestsResult, expensesResult, lifetime] = await Promise.all([
     getPettyCashCategories(),
     getCurrentPettyCashAllocation(appUser, branchId),
     // Wide window so the reviewer's visible queue matches the authoritative pending
@@ -721,6 +768,7 @@ export async function getPettyCashDashboard(appUser: AppUser, branchId?: string 
     listPettyCashRequests(appUser, { page: 1, pageSize: 50, status: 'all', branchId }),
     // Fetch a wide window of expenses so the location filter has enough to work with.
     listPettyCashExpenses(appUser, { page: 1, pageSize: 50, status: 'all', branchId }),
+    getPettyCashLifetimeTotals(appUser, branchId),
   ])
 
   const requests = filterDashboardRequests(appUser, requestsResult.requests as Array<Record<string, unknown>>)
@@ -763,6 +811,13 @@ export async function getPettyCashDashboard(appUser: AppUser, branchId?: string 
       pendingExpenseCount,
       requestCount: requests.length,
       expenseCount: expenses.length,
+      // Lifetime figures for the KPI row — independent of any tab filter. See getPettyCashLifetimeTotals.
+      lifetimeAllocated: lifetime.allocatedTotal,
+      lifetimeSpent: lifetime.spentTotal,
+      lifetimeAllocationCount: lifetime.allocationCount,
+      openAllocationCount: lifetime.openAllocationCount,
+      remainingNow: lifetime.remainingNow,
+      since: lifetime.since,
     },
   }
 }
@@ -1436,9 +1491,38 @@ export async function deletePettyCashRequest(appUser: AppUser, requestId: string
   return { ok: true }
 }
 
+/**
+ * ⚠️ This had NO authorization of any kind. The route only verified that a session existed — not the
+ * role, not the branch, not ownership — so any authenticated user in the company could delete any
+ * expense in any branch by id, together with its ledger entries, by calling
+ * DELETE /api/petty-cash/expenses/<id> directly.
+ *
+ * The rules below mirror deletePettyCashRequest: still-pending only, and the person who posted it
+ * only (developer / super_admin excepted), with the branch visibility rule applied first so a user
+ * cannot even address a row they are not allowed to see.
+ */
 export async function deletePettyCashExpense(appUser: AppUser, expenseId: string) {
+  if (!canAccessPettyCash(appUser.role)) throw new Error('Forbidden')
+
   const [existing] = await db.select().from(pettyCashExpenses).where(eq(pettyCashExpenses.id, expenseId)).limit(1)
   if (!existing) throw new Error('Petty cash expense not found')
+
+  // Same visibility boundary the read path uses — no cross-branch reach.
+  if (!canReadPettyCashExpense(appUser, existing)) throw new Error('Forbidden')
+
+  // The line that matters is the LEDGER, not the workflow stage. A finally-approved expense has moved
+  // the float's balance and been posted, so removing it would silently rewrite a reconciled cash
+  // position. Anything still in flight (pending, mid-approval, rejected) has not, and a wrong entry
+  // should be correctable — blocking those too would have made this path dead for every real row.
+  if (existing.status === 'approved') {
+    throw new Error('An approved expense cannot be deleted — it has already been posted to the ledger.')
+  }
+
+  const role = String(appUser.role || '').trim().toLowerCase()
+  const isSuperUser = role === 'developer' || role === 'super_admin'
+  if (!isSuperUser && existing.createdBy !== appUser.id) {
+    throw new Error('Only the user who posted this expense can delete it.')
+  }
 
   await db.transaction(async (tx) => {
     await tx.delete(pettyCashLedgerEntries).where(eq(pettyCashLedgerEntries.expenseId, expenseId))

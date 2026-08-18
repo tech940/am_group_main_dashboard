@@ -3,7 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect -- fetch effects set loading state on invocation; standard data-loading pattern used across the app. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import {
   ArrowRight,
   Banknote,
@@ -34,6 +34,8 @@ import {
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { getBranchLabel } from '@/lib/branches'
+import { TONE_CLASS } from './pc-shared'
+import type { Tone } from './pc-shared'
 
 type ApprovalStage = 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'
 
@@ -93,17 +95,14 @@ const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   md_rejected: { label: 'Rejected · MD', tone: 'rose' },
 }
 
-type Tone = 'sky' | 'amber' | 'blue' | 'violet' | 'emerald' | 'rose' | 'slate'
 
-const TONE_CLASS: Record<Tone, string> = {
-  sky: 'bg-sky-50 text-sky-700 ring-sky-200',
-  amber: 'bg-amber-50 text-amber-700 ring-amber-200',
-  blue: 'bg-blue-50 text-blue-700 ring-blue-200',
-  violet: 'bg-violet-50 text-violet-700 ring-violet-200',
-  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  rose: 'bg-rose-50 text-rose-700 ring-rose-200',
-  slate: 'bg-slate-100 text-slate-600 ring-slate-200',
-}
+/*
+ * Tone classes come from pc-shared — this file used to declare a SECOND copy with no dark-mode
+ * treatment at all, so the same status pill was legible in the workspace and unreadable here
+ * (measured 1.28–1.62:1). Two maps meant a contrast fix could be applied to one and silently miss
+ * the other, which is exactly what happened. One map, one place to change.
+ */
+
 
 const STAGE_LABEL: Record<ApprovalStage, string> = {
   ed_approval: 'ED Approval',
@@ -356,13 +355,17 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
     }
   }, [selectedId, activeStage, remarks, approvedAmount, activeRequest, closeDetail, load])
 
+  // reducedMotion="user" honours the OS setting across this subtree — the spring drawer and the
+  // AnimatePresence transitions. Declared here as well as in the workspace because this panel also
+  // ships standalone into /purchase-orders.
   return (
+    <MotionConfig reducedMotion="user">
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-3 w-full sm:max-w-xl">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <Input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
@@ -426,7 +429,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, index) => (
-            <div key={`pc-skeleton-${index}`} className="h-[76px] animate-pulse rounded-2xl border border-slate-100 bg-slate-50" />
+            <div key={`pc-skeleton-${index}`} className="h-[76px] animate-pulse motion-reduce:animate-none rounded-2xl border border-slate-100 bg-slate-50" />
           ))}
         </div>
       ) : requests.length === 0 ? (
@@ -441,7 +444,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
         </div>
       ) : filteredRequests.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-16 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
             <CheckCircle2 className="h-7 w-7" />
           </div>
           <h3 className="mt-4 text-lg font-black text-slate-900">No requests here</h3>
@@ -451,7 +454,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
         </div>
       ) : (
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="hidden grid-cols-[1.3fr_1fr_0.9fr_0.8fr_1.1fr_auto] gap-3 border-b border-slate-100 bg-slate-50/80 px-5 py-3 text-[11px] font-black uppercase tracking-wider text-slate-500 lg:grid">
+          <div className="hidden grid-cols-[1.3fr_1fr_0.9fr_0.8fr_1.1fr_auto] gap-3 border-b border-slate-100 bg-slate-50/80 px-5 py-3 text-[11px] font-black uppercase tracking-wider text-slate-600 lg:grid">
             <span>Request / Requester</span>
             <span>Purpose</span>
             <span>Department</span>
@@ -483,7 +486,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                       )}
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-sm font-black text-slate-900">
-                      <User2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <User2 className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                       <span className="truncate">{request.requestedByName || 'Unknown'}</span>
                     </div>
                   </div>
@@ -495,7 +498,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                   <div>
                     <div className="flex items-center gap-2">
                       <StatusPill status={request.status} />
-                      <span className="text-xs font-semibold text-slate-400">
+                      <span className="text-xs font-semibold text-slate-500">
                         {formatWaitingDuration(request.updatedAt)}
                       </span>
                     </div>
@@ -509,19 +512,19 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                           <>
                             <button
                               onClick={(e) => void runActionDirect(e, request.id, 'approve', request.stage)}
-                              className="rounded-lg bg-[#004e5a] px-3 py-1.5 text-[11px] font-black text-white hover:bg-[#003c46] transition shadow-sm"
+                              className="rounded-lg bg-[var(--dashboard-action-bg)] px-3 py-1.5 text-[11px] font-black text-white hover:bg-[var(--dashboard-action-hover)] transition shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1"
                             >
                               Approve
                             </button>
                             <button
                               onClick={(e) => void runActionDirect(e, request.id, 'hold', request.stage)}
-                              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] font-black text-amber-700 hover:bg-amber-100 transition shadow-sm"
+                              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] font-black text-amber-700 hover:bg-amber-100 transition shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1"
                             >
                               Hold
                             </button>
                             <button
                               onClick={(e) => void runActionDirect(e, request.id, 'reject', request.stage)}
-                              className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-[11px] font-black text-rose-700 hover:bg-rose-100 transition shadow-sm"
+                              className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-[11px] font-black text-rose-700 hover:bg-rose-100 transition shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1"
                             >
                               Reject
                             </button>
@@ -562,12 +565,12 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                 animate={{ x: 0 }}
                 exit={{ x: '100%' }}
                 transition={{ type: 'spring', damping: 26, stiffness: 220 }}
-                className="relative z-10 flex h-full w-[480px] flex-col border-l border-slate-200 bg-slate-50 shadow-2xl"
+                className="relative z-10 flex h-full w-full max-w-[480px] flex-col border-l border-slate-200 bg-slate-50 shadow-2xl"
               >
                 {/* Header */}
                 <div className="border-b border-slate-100 bg-gradient-to-br from-slate-50 to-white p-6">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-mono text-xs font-bold text-slate-400">
+                    <span className="font-mono text-xs font-bold text-slate-500">
                       {activeRequest?.requestNumber || 'Petty Cash Request'}
                     </span>
                     <div className="flex items-center gap-2">
@@ -575,7 +578,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                       <button
                         type="button"
                         onClick={closeDetail}
-                        className="rounded-xl p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                        className="rounded-xl p-1.5 hover:bg-slate-100 text-slate-500 hover:text-slate-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1"
                       >
                         <X className="h-5 w-5" />
                       </button>
@@ -600,7 +603,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                     <DetailField icon={CalendarClock} label="Submitted" value={formatDate(activeRequest?.submittedAt || activeRequest?.createdAt)} className="col-span-2" />
                   </div>
                   <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Purpose</p>
+                    <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">Purpose</p>
                     <p className="mt-1 text-sm font-semibold leading-relaxed text-slate-700">
                       {activeRequest?.purpose || '—'}
                     </p>
@@ -609,7 +612,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                   {/* Timeline */}
                   <div>
                     <p className="mb-3 flex items-center gap-2 text-sm font-black text-slate-900">
-                      <Clock className="h-4 w-4 text-slate-400" /> Approval Timeline
+                      <Clock className="h-4 w-4 text-slate-500" /> Approval Timeline
                     </p>
                     {detail && detail.history.length > 0 ? (
                       <ol className="space-y-3 border-l-2 border-slate-100 pl-4">
@@ -631,7 +634,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                         ))}
                       </ol>
                     ) : (
-                      <p className="text-sm font-medium text-slate-400">No history yet.</p>
+                      <p className="text-sm font-medium text-slate-500">No history yet.</p>
                     )}
                   </div>
                 </div>
@@ -642,11 +645,11 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                     <div className="space-y-3">
                       {activeStage === 'accounts' && (
                         <div>
-                          <label className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                          <label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
                             Approved Amount
                           </label>
                           <div className="relative mt-1">
-                            <Banknote className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <Banknote className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                             <Input
                               value={approvedAmount}
                               inputMode="numeric"
@@ -659,7 +662,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                         </div>
                       )}
                       <div>
-                        <label className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                        <label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
                           Remarks {`(required to hold or reject)`}
                         </label>
                         <Textarea
@@ -673,7 +676,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                         <Button
                           onClick={() => void runAction('approve')}
                           disabled={submitting !== null}
-                          className="h-11 gap-2 rounded-xl bg-[#004e5a] font-bold text-white hover:bg-[#003c46]"
+                          className="h-11 gap-2 rounded-xl bg-[var(--dashboard-action-bg)] font-bold text-white hover:bg-[var(--dashboard-action-hover)]"
                         >
                           {submitting === 'approve' ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -742,7 +745,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
 
           <div className="mt-4 space-y-4">
             <div>
-              <label className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+              <label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
                 Remarks (Required)
               </label>
               <Textarea
@@ -779,13 +782,14 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
         </DialogContent>
       </Dialog>
     </div>
+    </MotionConfig>
   )
 }
 
 function DetailField({ icon: Icon, label, value, className }: { icon: typeof User2; label: string; value: string; className?: string }) {
   return (
     <div className={cn("rounded-2xl border border-slate-100 bg-white p-3", className)}>
-      <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-400">
+      <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-600">
         <Icon className="h-3.5 w-3.5" /> {label}
       </p>
       <p className="mt-1 truncate text-sm font-bold text-slate-800">{value}</p>

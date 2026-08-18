@@ -3,7 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect -- mount fetch sets loading state; standard data-loading pattern. */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { motion } from 'motion/react'
+import { MotionConfig, motion } from 'motion/react'
 import {
   Banknote,
   CheckCircle2,
@@ -24,35 +24,15 @@ import { Button } from '@/components/ui/button'
 import { KpiCard } from '@/components/ui/kpi-card'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
 import { getBranchLabel } from '@/lib/branches'
-import { getAllPettyCashLocationOptions, getPettyCashLocationOptions, PETTY_CASH_DEPARTMENT_OPTIONS } from '@/lib/petty-cash/constants'
+import { getAllPettyCashLocationOptions, getPettyCashLocationOptions, PETTY_CASH_DEPARTMENT_OPTIONS, isPettyCashConfiguredForBranch } from '@/lib/petty-cash/constants'
 import { toast } from '@/hooks/use-toast'
+import { formatWaitingDuration } from '@/lib/petty-cash/status-tracking'
 import { cn } from '@/lib/utils'
 import { RequestFormDialog } from './pc-request-form'
 import { ExpenseFormDialog } from './pc-expense-form'
 import { PettyCashDetailDialog, type DetailTarget } from './pc-detail-dialog'
 import { AllocationSpendDialog } from './pc-allocation-spend-dialog'
-import { PettyCashStatusBoard } from './petty-cash-status-board'
-import {
-  BalanceMeter,
-  EmptyState,
-  RecordTable,
-  SectionCard,
-  StatusPill,
-  SummaryCard,
-  expenseDate,
-  expenseVendor,
-  formatCurrency,
-  formatDateTime,
-  ledgerBalanceAfter,
-  ledgerEntryType,
-  normalizeAllocatedAmount,
-  normalizeBranchId,
-  normalizeExpenseNumber,
-  normalizeRequestNumber,
-  normalizeSpentAmount,
-  requestedAmount,
-  requestedByName,
-} from './pc-shared'
+import { BalanceMeter, EmptyState, RecordTable, SectionCard, StatusPill, expenseDate, expenseVendor, formatCurrency, formatDateTime, ledgerBalanceAfter, ledgerEntryType, normalizeAllocatedAmount, normalizeBranchId, normalizeExpenseNumber, normalizeRequestNumber, normalizeSpentAmount, requestedAmount, requestedByName, canDeletePettyCashRequestOnClient } from './pc-shared'
 import {
   EMPTY_EXPENSE_FORM,
   EMPTY_REQUEST_FORM,
@@ -64,8 +44,24 @@ import {
   type RequestFormState,
 } from './types'
 
-type TabKey = 'overview' | 'status' | 'requests' | 'expenses' | 'allocations' | 'ledger'
-type WorkflowDialogState = { request: PettyCashRequest; action: 'reject' | 'hold' } | null
+/*
+ * Tabs name TASKS, not database tables.
+ *
+ * There were six — Overview, Status, Requests, Expenses, Allocations, Ledger — and they overlapped
+ * badly: Overview re-rendered the Requests queue under an identical heading plus the whole expense
+ * feed, and Status showed the same requests as Requests with different columns and a different set
+ * of status words. Requests / Allocations / Expenses / Ledger are also four stages of ONE object
+ * (ask -> receive -> spend -> record) presented as four unrelated peers, so you had to already know
+ * the pipeline to navigate it.
+ *
+ *   overview     what needs me, and what is left
+ *   requests     the approval queue (reviewers) / my requests (creators) — absorbs the Status tab
+ *   allocations  the floats themselves — reviewers only, unchanged
+ *   history      where the money went: expenses and the ledger, one record with a switch
+ */
+type TabKey = 'overview' | 'requests' | 'allocations' | 'history'
+type HistoryView = 'expenses' | 'ledger'
+type WorkflowDialogState = { request: PettyCashRequest; action: 'approve' | 'reject' | 'hold' } | null
 
 type PettyCashAllocationRow = {
   id: string
@@ -110,23 +106,56 @@ const formatSpendDate = (value?: string | null) => {
 
 const isCreatorRole = (role: string) => role === 'branch_admin' || role === 'sales_manager'
 const isApproverRole = (role: string) => role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts' || role === 'ed'
-const isExpenseFeedRole = (role: string) => isApproverRole(role) || role === 'developer' || role === 'manager' || role === 'general_manager'
 
 const PENDING_STATUSES = ['submitted', 'ed_pending', 'ed_on_hold', 'ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold']
 const OPEN_REQUEST_STATUSES = ['draft', 'submitted', ...PENDING_STATUSES]
 
-function canActOnRequest(role: string, request: PettyCashRequest) {
-  const status = request.status
+/*
+ * EXACT mirror of canApprovePettyCashStage (lib/petty-cash/access.ts). Nothing else may decide
+ * whether an approval button renders.
+ *
+ * The old hand-rolled version drifted from the server in three ways, and each one rendered a
+ * confident primary button that the server answered with "Forbidden":
+ *   - `manager` / `general_manager` were treated as super-admins here; the server has no case for
+ *     them at all, so EVERY approval they clicked failed.
+ *   - `sales_manager` was accepted at the ED stage; the server accepts only `ed` there.
+ *   - `md` / `eba` were offered the ED-stage rows, but stageForRequest sends those as 'ed_approval',
+ *     which the server restricts to `ed`.
+ * A button that 403s is worse than an absent one: it teaches people the screen does not know what
+ * they are allowed to do, and then they stop trusting the parts that are right.
+ */
+function canApproveStageOnClient(role: string, stage: ApprovalStage): boolean {
   const r = String(role || '').trim().toLowerCase()
-  const isSuperAdmin = r === 'developer' || r === 'admin' || r === 'manager' || r === 'general_manager'
-  if (isSuperAdmin) return PENDING_STATUSES.includes(status)
-  if (r === 'ed' || r === 'sales_manager') return status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold'
-  if (r === 'ea') return status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved'
-  if (r === 'md' || r === 'eba') {
-    return status === 'md_pending' || status === 'md_on_hold' || status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved' || status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold'
+  if (r === 'developer' || r === 'admin') return true
+  const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
+  switch (stage) {
+    case 'ed_approval': return r === 'ed'
+    case 'ea_approval': return r === 'ea'
+    case 'md_approval': return r === 'md' || r === 'eba'
+    case 'accounts': return isAccounts
+    default: return false
   }
-  if (r === 'accounts') return status === 'accounts_pending' || status === 'accounts_on_hold'
-  return false
+}
+
+function canActOnRequest(role: string, request: PettyCashRequest) {
+  if (!PENDING_STATUSES.includes(request.status)) return false
+  return canApproveStageOnClient(role, stageForRequest(request, role))
+}
+
+
+/**
+ * Who the request lands on once this stage approves. Shown on the confirm step so an approver is
+ * told the consequence before committing, not after — getPettyCashStageInfo already knew the
+ * current owner and nothing had ever surfaced the next one.
+ */
+function nextOwnerAfterApproval(stage: ApprovalStage): string {
+  switch (stage) {
+    case 'ed_approval': return 'EA'
+    case 'ea_approval': return 'MD'
+    case 'md_approval': return 'Accounts'
+    case 'accounts': return 'funding — the allocation is created immediately'
+    default: return 'the next approver'
+  }
 }
 
 function stageForRequest(request: PettyCashRequest, role?: string): ApprovalStage {
@@ -144,15 +173,10 @@ function stageForRequest(request: PettyCashRequest, role?: string): ApprovalStag
 
 // Short, human "current stage" for the queue — makes it obvious at a glance where
 // a request is sitting and who needs to act next.
-function pettyCashStageLabel(status: string): { label: string; className: string } {
-  if (status === 'submitted' || status.startsWith('ed_')) return { label: 'ED', className: 'bg-sky-50 text-sky-700 ring-sky-200' }
-  if (status.startsWith('ea_')) return { label: 'EA', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
-  if (status.startsWith('md_')) return { label: 'MD', className: 'bg-blue-50 text-blue-700 ring-blue-200' }
-  if (status.startsWith('accounts')) return { label: 'Accounts', className: 'bg-violet-50 text-violet-700 ring-violet-200' }
-  if (status === 'approved') return { label: 'Completed', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
-  if (status.includes('reject') || status === 'cancelled') return { label: 'Closed', className: 'bg-rose-50 text-rose-700 ring-rose-200' }
-  return { label: 'Draft', className: 'bg-slate-100 text-slate-600 ring-slate-200' }
-}
+// (Removed: pettyCashStageLabel — a fifth status vocabulary, and the only one that disagreed with
+// the others about WHO was next: it returned 'ED' for ed_approved while every other map
+// correctly said EA. Its single caller, the Stage column, is gone.)
+
 
 async function fetchJson<T>(url: string, label: string): Promise<T> {
   const controller = new AbortController()
@@ -178,6 +202,7 @@ export function PettyCashWorkspace() {
   const [expenseFiles, setExpenseFiles] = useState<string[]>([])
   const [requestDialogOpen, setRequestDialogOpen] = useState(false)
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false)
+  const [historyView, setHistoryView] = useState<HistoryView>('expenses')
   const [workflowDialog, setWorkflowDialog] = useState<WorkflowDialogState>(null)
   const [detailTarget, setDetailTarget] = useState<DetailTarget>(null)
   const [loading, setLoading] = useState(true)
@@ -185,6 +210,11 @@ export function PettyCashWorkspace() {
   const [ledgerLoading, setLedgerLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Kept separate from `error`. `error` is the PAGE banner (load/refresh failures); `formError`
+  // belongs to whichever dialog is open and renders inside it. They were one state, and the only
+  // reachable render site was the page body — behind the modal overlay — so 10 validation messages
+  // were invisible to the person who triggered them.
+  const [formError, setFormError] = useState<string | null>(null)
   const [mdQueueScope, setMdQueueScope] = useState<'all' | 'mine'>('mine')
   const [allocations, setAllocations] = useState<PettyCashAllocationRow[]>([])
   const [allocationsLoading, setAllocationsLoading] = useState(false)
@@ -399,14 +429,20 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
     () => ledger.filter((entry) => ledgerLocationFilter === 'all' || (entry.location || '').trim() === ledgerLocationFilter),
     [ledger, ledgerLocationFilter],
   )
-  const allocationTotals = useMemo(() => allocations.reduce((acc, allocation) => {
-    acc.allocated += Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
-    acc.spent += Number(allocation.spentAmount || allocation.spent_amount || 0)
-    acc.remaining += Number(allocation.remainingAmount ?? (Number(allocation.allocatedAmount || allocation.allocated_amount || 0) - Number(allocation.spentAmount || allocation.spent_amount || 0)))
-    return acc
-  }, { allocated: 0, spent: 0, remaining: 0 }), [allocations])
+  // Names the window the lifetime totals cover, so "TOTAL SPENT" is never ambiguous about its period.
+  const sinceLabel = useMemo(() => {
+    const raw = summary?.since
+    if (!raw) return 'No allocations yet'
+    const d = new Date(raw)
+    if (!Number.isFinite(d.getTime())) return 'Since petty cash began'
+    return `Since ${d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}`
+  }, [summary?.since])
   const contentLoading = dashboardLoading || ledgerLoading
   const requestLocationOptions = useMemo(() => getPettyCashLocationOptions(currentBranchId), [currentBranchId])
+  // A brand nobody has switched petty cash on for yet. Previously this produced a single invented
+  // location called 'Main Location' that would have been written into the ledger; now it produces
+  // none, so the UI has to say so rather than show an empty picker.
+  const branchConfigured = isPettyCashConfiguredForBranch(currentBranchId)
   const expenseFeedTitle = userRole === 'accounts'
     ? 'Branch Expense Ledger Feed'
     : isAllBranchViewer ? 'Recent Expenses · All Branches' : 'Recent Branch Expenses'
@@ -429,18 +465,18 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
 
   /* ---- mutations ---- */
   const submitRequest = useCallback(async () => {
-    if (!canRequestTopUp) { setError(topUpReason || 'Top-up not available right now.'); return }
+    if (!canRequestTopUp) { setFormError(topUpReason || 'Top-up not available right now.'); return }
     const location = requestForm.location.trim()
     const department = requestForm.department.trim()
     const amount = Number(requestForm.requestedAmount)
     const purpose = requestForm.purpose.trim()
-    if (!location || !requestLocationOptions.includes(location)) { setError('Please select a valid location.'); return }
-    if (!department || !PETTY_CASH_DEPARTMENT_OPTIONS.includes(department as typeof PETTY_CASH_DEPARTMENT_OPTIONS[number])) { setError('Please select a department (Sales or Service).'); return }
-    if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a valid amount greater than 0.'); return }
-    if (purpose.length < 5) { setError('Purpose must be at least 5 characters.'); return }
+    if (!location || !requestLocationOptions.includes(location)) { setFormError('Please select a valid location.'); return }
+    if (!department || !PETTY_CASH_DEPARTMENT_OPTIONS.includes(department as typeof PETTY_CASH_DEPARTMENT_OPTIONS[number])) { setFormError('Please select a department (Sales or Service).'); return }
+    if (!Number.isFinite(amount) || amount <= 0) { setFormError('Enter a valid amount greater than 0.'); return }
+    if (purpose.length < 5) { setFormError('Purpose must be at least 5 characters.'); return }
 
     setSubmitting(true)
-    setError(null)
+    setError(null); setFormError(null)
     try {
       const res = await fetch('/api/petty-cash/requests', {
         method: 'POST',
@@ -464,7 +500,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
       await refreshAfterMutation()
       setActiveTab('requests')
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Failed to submit request')
+      setFormError(submitError instanceof Error ? submitError.message : 'Failed to submit request')
       toast({ title: 'Could not submit', description: submitError instanceof Error ? submitError.message : 'Please try again.', variant: 'error' })
     } finally {
       setSubmitting(false)
@@ -475,14 +511,14 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
     const amount = Number(expenseForm.amount)
     const purpose = expenseForm.purpose.trim()
     const location = expenseForm.location.trim()
-    if (!currentAllocation) { setError('No active allocation to post against.'); return }
-    if (!location || !requestLocationOptions.includes(location)) { setError('Please select the location where the money was spent.'); return }
-    if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a valid amount greater than 0.'); return }
-    if (purpose.length < 5) { setError('Purpose must be at least 5 characters.'); return }
-    if (expenseFiles.length === 0) { setError('Please upload at least one bill image or PDF.'); return }
+    if (!currentAllocation) { setFormError('No active allocation to post against.'); return }
+    if (!location || !requestLocationOptions.includes(location)) { setFormError('Please select the location where the money was spent.'); return }
+    if (!Number.isFinite(amount) || amount <= 0) { setFormError('Enter a valid amount greater than 0.'); return }
+    if (purpose.length < 5) { setFormError('Purpose must be at least 5 characters.'); return }
+    if (expenseFiles.length === 0) { setFormError('Please upload at least one bill image or PDF.'); return }
 
     setSubmitting(true)
-    setError(null)
+    setError(null); setFormError(null)
     try {
       const res = await fetch('/api/petty-cash/expenses', {
         method: 'POST',
@@ -514,9 +550,11 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
       setExpenseDialogOpen(false)
       toast({ title: 'Expense posted', description: 'The spend was deducted from your allocation.', variant: 'success' })
       await refreshAfterMutation()
-      setActiveTab('expenses')
+      // Land on the record the user just added to, under its new home.
+      setHistoryView('expenses')
+      setActiveTab('history')
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Failed to post expense')
+      setFormError(submitError instanceof Error ? submitError.message : 'Failed to post expense')
       toast({ title: 'Could not post expense', description: submitError instanceof Error ? submitError.message : 'Please try again.', variant: 'error' })
     } finally {
       setSubmitting(false)
@@ -564,11 +602,11 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
   if (loading && !payload) {
     return (
       <div className="space-y-4">
-        <div className="h-28 animate-pulse rounded-3xl bg-slate-100" />
+        <div className="h-28 animate-pulse motion-reduce:animate-none rounded-3xl bg-slate-100" />
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => <div key={`kpi-skeleton-${index}`} className="h-36 animate-pulse rounded-3xl bg-slate-100" />)}
+          {Array.from({ length: 4 }).map((_, index) => <div key={`kpi-skeleton-${index}`} className="h-36 animate-pulse motion-reduce:animate-none rounded-3xl bg-slate-100" />)}
         </div>
-        <div className="h-80 animate-pulse rounded-3xl bg-slate-100" />
+        <div className="h-80 animate-pulse motion-reduce:animate-none rounded-3xl bg-slate-100" />
       </div>
     )
   }
@@ -582,23 +620,32 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
 
   const tabs: Array<{ key: TabKey; label: string; icon: typeof Wallet }> = [
     { key: 'overview', label: 'Overview', icon: Layers },
-    { key: 'status', label: 'Status', icon: Clock3 },
-    { key: 'requests', label: 'Requests', icon: ClipboardList },
-    { key: 'expenses', label: 'Expenses', icon: ReceiptText },
+    // One key, two words: the same queue is an approver's job list and a creator's own submissions.
+    { key: 'requests', label: canReviewQueue ? 'Approvals' : 'My Requests', icon: ClipboardList },
     // Allocations is a cross-branch supervisor view — only reviewers see it.
-    ...(canReviewQueue ? [{ key: 'allocations' as const, label: 'Allocations', icon: Banknote }] : []),
-    { key: 'ledger', label: 'Ledger', icon: Wallet },
+    ...(canReviewQueue ? [{ key: 'allocations' as const, label: 'Floats', icon: Banknote }] : []),
+    { key: 'history', label: 'History', icon: ReceiptText },
   ]
 
   const branchLabel = currentAllocation ? getBranchLabel(normalizeBranchId(currentAllocation)) : 'No active allocation'
 
   return (
+    /*
+     * reducedMotion="user" honours the OS setting for every Motion component in this subtree —
+     * the spring drawer, the card lift, the AnimatePresence transitions. Motion still happens for
+     * everyone else; opacity fades are preserved, only transforms are dropped, so state changes
+     * stay visible rather than being killed outright. Skeleton shimmer is handled separately with
+     * motion-reduce:animate-none; spinners deliberately keep turning, since they are the only
+     * signal that work is in flight.
+     */
+    <MotionConfig reducedMotion="user">
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-950">Petty Cash</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Allocations, spends, approvals, and an immutable ledger — in one place.</p>
+          {/* No <h1> here: MainLayout already renders "Petty Cash" as the page title directly above.
+              This block keeps only what the layout cannot know — which float you are looking at. */}
+          <p className="text-sm font-semibold text-[var(--kia-text-soft,#475569)]">{branchLabel}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => void refreshAfterMutation()} disabled={contentLoading} className="h-11 gap-2 rounded-2xl border-slate-200 font-bold">
@@ -606,10 +653,10 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
           </Button>
           {canCreate && (
             <>
-              <Button variant="outline" onClick={() => setExpenseDialogOpen(true)} disabled={!canSubmitExpense} className="h-11 gap-2 rounded-2xl border-slate-200 font-bold">
+              <Button variant="outline" onClick={() => { setFormError(null); setExpenseDialogOpen(true) }} disabled={!canSubmitExpense || !branchConfigured} className="h-11 gap-2 rounded-2xl border-slate-200 font-bold">
                 <ReceiptText className="h-4 w-4" /> Submit Expense
               </Button>
-              <Button onClick={() => setRequestDialogOpen(true)} disabled={!canRequestTopUp} className="app-primary-action h-11 gap-2 rounded-2xl font-bold shadow-sm">
+              <Button onClick={() => { setFormError(null); setRequestDialogOpen(true) }} disabled={!canRequestTopUp || !branchConfigured} className="app-primary-action h-11 gap-2 rounded-2xl font-bold shadow-sm">
                 <Plus className="h-4 w-4" /> New Request
               </Button>
             </>
@@ -621,7 +668,17 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</div>
       )}
 
-      {canCreate && !canRequestTopUp && (
+      {canCreate && !branchConfigured && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+          <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Petty cash is not set up for {getBranchLabel(currentBranchId) || 'this branch'} yet — its
+            locations still need to be added before requests or expenses can be raised here.
+          </span>
+        </div>
+      )}
+
+      {canCreate && branchConfigured && !canRequestTopUp && (
         <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
           <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{topUpReason || 'A new request unlocks only when the remaining balance is Rs 1000 or lower.'}</span>
@@ -637,85 +694,72 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
               value={String(summary?.pendingRequestCount ?? 0)}
               subtitle="Awaiting your approval"
               icon={ShieldCheck}
+              showChart={false}
               colorScheme="amber"
-              chartType="bar"
-              chartData={[10, 15, 8, 20, 12, 18, 5]}
-              trend={{ value: '+12%', isPositive: true, label: 'vs last week' }}
               onClick={() => setActiveTab('requests')}
             />
             <KpiCard
               title="ACTIVE ALLOCATIONS"
-              value={allocationsLoading ? '…' : String(allocations.length)}
-              subtitle="Across all branches"
+              value={String(summary?.openAllocationCount ?? 0)}
+              subtitle={`${summary?.lifetimeAllocationCount ?? 0} allocated in total`}
               icon={Banknote}
+              showChart={false}
               colorScheme="blue"
-              chartType="area"
-              chartData={[20, 35, 50, 40, 60, 55, 75]}
-              trend={{ value: '+5%', isPositive: true, label: 'vs last week' }}
               onClick={() => setActiveTab('allocations')}
             />
+            {/* Present tense on purpose: unspent cash is a right-now quantity, not a lifetime one. */}
             <KpiCard
-              title="TOTAL REMAINING"
-              value={formatCurrency(allocationTotals.remaining)}
-              subtitle="Unspent across allocations"
+              title="CASH IN HAND"
+              value={formatCurrency(summary?.remainingNow ?? 0)}
+              subtitle="Unspent across open floats"
               icon={Wallet}
+              showChart={false}
               colorScheme="emerald"
-              chartType="area"
-              chartData={[40, 55, 65, 70, 85, 90, 95]}
-              trend={{ value: '+18%', isPositive: true, label: 'vs last week' }}
             />
             <KpiCard
               title="TOTAL SPENT"
-              value={formatCurrency(allocationTotals.spent)}
-              subtitle="Spent across allocations"
+              value={formatCurrency(summary?.lifetimeSpent ?? 0)}
+              subtitle={sinceLabel}
               icon={TrendingDown}
+              showChart={false}
               colorScheme="rose"
-              chartType="bar"
-              chartData={[15, 25, 30, 45, 60, 40, 35]}
-              trend={{ value: '+8%', isPositive: false, label: 'vs last week' }}
             />
           </>
         ) : (
           <>
+            {/* The creator's own float: these three are about the CURRENT allocation, so they stay
+                present-tense. Only the lifetime card below carries an all-time figure. */}
             <KpiCard
               title="CURRENT ALLOCATION"
               value={formatCurrency(allocationAmount)}
               subtitle={branchLabel}
               icon={Banknote}
+              showChart={false}
               colorScheme="blue"
-              chartType="area"
-              chartData={[30, 40, 50, 60, 70, 80, 90]}
-              trend={{ value: '0%', isPositive: true, label: 'vs last month' }}
             />
             <KpiCard
               title="REMAINING"
               value={formatCurrency(remainingAmount)}
-              subtitle={`${spendPercentage}% of allocation used`}
+              subtitle={`${spendPercentage}% of this allocation used`}
               icon={Wallet}
+              showChart={false}
               colorScheme="emerald"
-              chartType="area"
-              chartData={[90, 80, 70, 60, 50, 40, 30]}
-              trend={{ value: '-12%', isPositive: true, label: 'vs last week' }}
             />
             <KpiCard
               title="SPENT"
-              value={formatCurrency(spentAmount)}
-              subtitle="Live deducted"
+              value={formatCurrency(summary?.lifetimeSpent ?? spentAmount)}
+              subtitle={sinceLabel}
               icon={TrendingDown}
+              showChart={false}
               colorScheme="rose"
-              chartType="bar"
-              chartData={[10, 20, 30, 40, 50, 60, 70]}
-              trend={{ value: '+14%', isPositive: false, label: 'vs last week' }}
             />
             <KpiCard
               title="PENDING REQUESTS"
               value={String(summary?.pendingRequestCount ?? 0)}
               subtitle={canReviewQueue ? 'Awaiting your approval' : 'Your requests in review'}
               icon={ShieldCheck}
+              showChart={false}
               colorScheme="amber"
-              chartType="bar"
-              chartData={[5, 10, 8, 12, 15, 6, 4]}
-              trend={{ value: '+6%', isPositive: true, label: 'vs last week' }}
               onClick={() => setActiveTab('requests')}
             />
           </>
@@ -763,7 +807,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
             >
               {allocationsLoading ? (
                 <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
-                  {Array.from({ length: 3 }).map((_, index) => <div key={`bal-skeleton-${index}`} className="h-28 animate-pulse rounded-2xl bg-slate-50" />)}
+                  {Array.from({ length: 3 }).map((_, index) => <div key={`bal-skeleton-${index}`} className="h-28 animate-pulse motion-reduce:animate-none rounded-2xl bg-slate-50" />)}
                 </div>
               ) : allocations.length === 0 ? (
                 <EmptyState icon={Banknote} title="No active allocations" description="Funded allocations across branches will appear here once approved." />
@@ -778,7 +822,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
                         key={allocation.id}
                         type="button"
                         onClick={() => setActiveTab('allocations')}
-                        className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-slate-300"
+                        className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate font-black text-slate-800">{allocation.location || getBranchLabel(normalizeBranchId(allocation))}</span>
@@ -789,7 +833,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
                           <DepartmentBadge department={allocation.department} />
                         </div>
                         <p className="mt-3 text-2xl font-black tracking-tight text-emerald-600">{formatCurrency(remaining)}</p>
-                        <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Remaining</p>
+                        <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">Remaining</p>
                         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs font-semibold text-slate-500">
                           <span>Allocated {formatCurrency(allocated)}</span>
                           <span className="text-rose-600">Spent {formatCurrency(spent)}</span>
@@ -801,26 +845,40 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
               )}
             </SectionCard>
           )}
+          {/*
+            * A LINK to the queue, not a second copy of it. Overview used to render this same table
+            * under the same "Pending Approval Queue" heading the Requests tab uses, so clicking
+            * Requests showed you the card you were already looking at — and then repeated the whole
+            * expense feed underneath. An overview should say what needs you and get out of the way.
+            */}
           {canReviewQueue && (
-            <SectionCard
-              title="Pending Approval Queue"
-              subtitle="Petty cash requests awaiting your decision"
-              icon={ShieldCheck}
-              iconTone="violet"
-              toolbar={showMdScopeToggle ? <ScopeToggle scope={mdQueueScope} onChange={setMdQueueScope} /> : undefined}
+            <button
+              type="button"
+              onClick={() => setActiveTab('requests')}
+              className="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-colors hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-2"
             >
-              {renderRequestTable(pendingQueue, true)}
-            </SectionCard>
-          )}
-          {isExpenseFeedRole(userRole) && (
-            <SectionCard title={expenseFeedTitle} subtitle={isAllBranchViewer ? 'Recent spends across all branches & dealerships' : 'Recent spends across your branch'} icon={ReceiptText} iconTone="slate">
-              {renderExpenseTable(allExpenses)}
-            </SectionCard>
+              <span className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200">
+                  <ShieldCheck className="h-5 w-5" />
+                </span>
+                <span>
+                  <span className="block text-sm font-black text-slate-900">
+                    {pendingQueue.length === 0
+                      ? 'Nothing waiting on you'
+                      : `${pendingQueue.length} request${pendingQueue.length === 1 ? '' : 's'} waiting on you`}
+                  </span>
+                  <span className="block text-xs font-semibold text-slate-500">
+                    {pendingQueue.length === 0 ? 'The approval queue is clear.' : 'Open the approvals queue to decide.'}
+                  </span>
+                </span>
+              </span>
+              {pendingQueue.length > 0 && (
+                <span className="shrink-0 rounded-xl bg-[var(--dashboard-action-bg)] px-4 py-2 text-xs font-black text-[var(--dashboard-action-fg)]">Review</span>
+              )}
+            </button>
           )}
         </div>
       )}
-
-      {activeTab === 'status' && <PettyCashStatusBoard embedded />}
 
       {activeTab === 'requests' && (
         <SectionCard
@@ -834,7 +892,28 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
         </SectionCard>
       )}
 
-      {activeTab === 'expenses' && (
+      {activeTab === 'history' && (
+        <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1 shadow-sm" role="tablist" aria-label="History view">
+          {([['expenses', 'Expenses'], ['ledger', 'Ledger']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={historyView === key}
+              onClick={() => setHistoryView(key)}
+              className={cn(
+                'inline-flex min-h-11 flex-1 items-center justify-center rounded-xl px-4 text-xs font-black transition-colors sm:min-h-0 sm:py-2',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--dashboard-action-bg)] focus-visible:ring-offset-1',
+                historyView === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'history' && historyView === 'expenses' && (
         <SectionCard
           title={canCreate ? 'Your Expense History' : expenseFeedTitle}
           subtitle="Spends posted against allocations"
@@ -913,13 +992,13 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
               }},
               { header: 'Spending', cell: (allocation) => {
                 const count = Number(allocation.spendCount || 0)
-                if (!count) return <span className="text-xs font-semibold text-slate-400">not spent yet</span>
+                if (!count) return <span className="text-xs font-semibold text-slate-500">not spent yet</span>
                 const first = formatSpendDate(allocation.firstSpendDate)
                 const last = formatSpendDate(allocation.lastSpendDate)
                 return (
                   <span className="whitespace-nowrap text-xs font-semibold text-slate-600">
                     {count} {count === 1 ? 'entry' : 'entries'}
-                    <span className="block text-[10px] font-medium text-slate-400">
+                    <span className="block text-[10px] font-medium text-slate-500">
                       {first === last ? last : first + ' → ' + last}
                     </span>
                   </span>
@@ -931,7 +1010,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
         </SectionCard>
       )}
 
-      {activeTab === 'ledger' && (
+      {activeTab === 'history' && historyView === 'ledger' && (
         <SectionCard
           title="Allocation Ledger"
           subtitle={isAllBranchViewer ? 'Immutable running record of every movement, across all branches' : 'Immutable running record of every movement'}
@@ -969,6 +1048,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
         onSubmit={submitRequest}
         submitting={submitting}
         locationOptions={requestLocationOptions}
+        formError={formError}
       />
       <ExpenseFormDialog
         open={expenseDialogOpen}
@@ -979,6 +1059,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
         submitting={submitting}
         categories={categoryOptions}
         locationOptions={requestLocationOptions}
+        formError={formError}
         allocationNumber={currentAllocation?.allocationNumber || currentAllocation?.allocation_number || ''}
         remainingAmount={remainingAmount}
         expenseFiles={expenseFiles}
@@ -988,11 +1069,16 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
       <RemarksDialog
         open={workflowDialog !== null}
         onOpenChange={(open) => { if (!open) setWorkflowDialog(null) }}
-        title={workflowDialog?.action === 'reject' ? 'Reject Request' : 'Hold Request'}
-        description={workflowDialog?.action === 'reject' ? 'Add a reason for rejecting this petty cash request.' : 'Add a note explaining why this request is on hold.'}
-        actionLabel={workflowDialog?.action === 'reject' ? 'Reject' : 'Hold'}
+        title={workflowDialog?.action === 'approve' ? 'Approve Request' : workflowDialog?.action === 'reject' ? 'Reject Request' : 'Hold Request'}
+        /* Approve used to fire on a single click with no confirmation and no amount echoed, while
+           Hold and Reject both demanded written remarks — friction allocated by history rather than
+           by consequence, on the one action that releases company cash. */
+        description={workflowDialog?.action === 'approve'
+          ? `Approve ${formatCurrency(requestedAmount(workflowDialog.request))} for ${requestedByName(workflowDialog.request)}. This moves it to ${nextOwnerAfterApproval(stageForRequest(workflowDialog.request, userRole))}. Remarks are optional.`
+          : workflowDialog?.action === 'reject' ? 'Add a reason for rejecting this petty cash request.' : 'Add a note explaining why this request is on hold.'}
+        actionLabel={workflowDialog?.action === 'approve' ? 'Approve' : workflowDialog?.action === 'reject' ? 'Reject' : 'Hold'}
         actionVariant={workflowDialog?.action === 'reject' ? 'destructive' : 'default'}
-        remarksRequired
+        remarksRequired={workflowDialog?.action !== 'approve'}
         loading={submitting}
         onConfirm={async (remarks) => {
           if (!workflowDialog) return
@@ -1003,6 +1089,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
       />
       <PettyCashDetailDialog target={detailTarget} onClose={() => setDetailTarget(null)} categories={categoryOptions} />
     </div>
+    </MotionConfig>
   )
 
   async function handleDeleteRequest(requestId: string) {
@@ -1050,16 +1137,26 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
           { header: 'Department', cell: (request) => <DepartmentBadge department={request.department} /> },
           { header: 'Purpose', cell: (request) => <span className="line-clamp-1 max-w-[220px] text-slate-600">{request.purpose || '—'}</span> },
           { header: 'Amount', align: 'right', cell: (request) => <span className="font-black tabular-nums text-slate-900">{formatCurrency(requestedAmount(request))}</span> },
+          /*
+           * The 'Stage' column is gone. It existed only because the Status pill was unreadable
+           * ("Md Pending"), so a reviewer had to read two columns — "MD" and "Md Pending" — to learn
+           * one fact, in two disagreeing vocabularies. Status now reads "Waiting on MD" on its own.
+           */
+          { header: 'Status', cell: (request) => <StatusPill status={request.status} /> },
+          // Absorbed from the deleted Status tab. A queue without "how long" cannot be triaged, and
+          // it was the only column there the improved Status pill does not already carry.
           ...(withActions
             ? [{
-                header: 'Stage',
+                header: 'Waiting',
+                align: 'right' as const,
                 cell: (request: PettyCashRequest) => {
-                  const stage = pettyCashStageLabel(request.status)
-                  return <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ring-1 ring-inset', stage.className)}>{stage.label}</span>
+                  const since = (request as unknown as Record<string, unknown>).updatedAt
+                    ?? (request as unknown as Record<string, unknown>).updated_at
+                    ?? request.createdAt
+                  return <span className="whitespace-nowrap text-xs font-bold text-slate-600">{formatWaitingDuration(since as string | null)}</span>
                 },
               }]
             : []),
-          { header: 'Status', cell: (request) => <StatusPill status={request.status} /> },
           {
             header: 'Actions',
             align: 'right' as const,
@@ -1067,26 +1164,28 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
               <div className="flex items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()}>
                 {withActions && canActOnRequest(userRole, request) && (
                   <>
-                    <button type="button" onClick={() => void applyRequestWorkflow(request.id, stageForRequest(request, userRole), 'approve')} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg bg-[#004e5a] px-2.5 text-xs font-bold text-white transition-colors hover:bg-[#003c46] disabled:opacity-50">
+                    <button type="button" onClick={() => setWorkflowDialog({ request, action: 'approve' })} disabled={submitting} className="flex h-11 sm:h-8 items-center gap-1 rounded-lg bg-[var(--dashboard-action-bg)] px-2.5 text-xs font-bold text-white transition-colors hover:bg-[var(--dashboard-action-hover)] disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1">
                       <CheckCircle2 className="h-3.5 w-3.5" /> Approve
                     </button>
-                    <button type="button" onClick={() => setWorkflowDialog({ request, action: 'hold' })} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg border border-amber-200 px-2.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50">
+                    <button type="button" onClick={() => setWorkflowDialog({ request, action: 'hold' })} disabled={submitting} className="flex h-11 sm:h-8 items-center gap-1 rounded-lg border border-amber-200 px-2.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1">
                       <PauseCircle className="h-3.5 w-3.5" /> Hold
                     </button>
-                    <button type="button" onClick={() => setWorkflowDialog({ request, action: 'reject' })} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg border border-rose-200 px-2.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-50">
+                    <button type="button" onClick={() => setWorkflowDialog({ request, action: 'reject' })} disabled={submitting} className="flex h-11 sm:h-8 items-center gap-1 rounded-lg border border-rose-200 px-2.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1">
                       <XCircle className="h-3.5 w-3.5" /> Reject
                     </button>
                   </>
                 )}
+                {canDeletePettyCashRequestOnClient(request as unknown as Record<string, unknown>, payload?.user, requestedByName(request)) && (
                 <button
                   type="button"
                   onClick={() => void handleDeleteRequest(request.id)}
                   disabled={submitting}
                   title="Delete request"
-                  className="flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/50 px-2.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-50"
+                  className="flex h-11 sm:h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/50 px-2.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1"
                 >
                   <Trash2 className="h-3.5 w-3.5" /> Delete
                 </button>
+                )}
               </div>
             ),
           },
@@ -1137,7 +1236,7 @@ function PillFilter({ label, allLabel, value, options, onChange }: { label: stri
 // Department badge — Sales / Service colour-coded so the department reads at a glance in tables.
 function DepartmentBadge({ department }: { department?: string | null }) {
   const value = (department || '').trim()
-  if (!value) return <span className="text-slate-400">—</span>
+  if (!value) return <span className="text-slate-500">—</span>
   const tone = /service/i.test(value)
     ? 'bg-amber-50 text-amber-700 ring-amber-200'
     : /sales/i.test(value)

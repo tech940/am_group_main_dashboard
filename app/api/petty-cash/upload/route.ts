@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { db } from '@/lib/db'
 import { pettyCashExpenseAttachments } from '@/lib/db/schema'
-import { canAccessPettyCash } from '@/lib/petty-cash/access'
 import { optimizeImage } from '@/lib/images/optimize'
+import { requirePettyCashApiAccess } from '@/lib/petty-cash/api-guard'
 
 const BUCKET_NAME = 'petty-cash'
 const MAX_FILE_SIZE = 100 * 1024 * 1024
@@ -24,9 +23,9 @@ function getExtension(fileName: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const appUser = await getAuthenticatedAppUser()
-    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!canAccessPettyCash(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const gate = await requirePettyCashApiAccess()
+    if (gate.response) return gate.response
+    const appUser = gate.appUser
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json({ error: 'Storage service role key is not configured' }, { status: 500 })
     }

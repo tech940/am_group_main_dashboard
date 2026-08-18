@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { deletePettyCashExpense } from '@/lib/petty-cash/server'
+import { requirePettyCashApiAccess } from '@/lib/petty-cash/api-guard'
 
 export async function DELETE(_request: NextRequest, context: RouteContext<'/api/petty-cash/expenses/[id]'>) {
   try {
-    const appUser = await getAuthenticatedAppUser()
-    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const gate = await requirePettyCashApiAccess()
+    if (gate.response) return gate.response
+    const appUser = gate.appUser
 
     const { id } = await context.params
     const result = await deletePettyCashExpense(appUser, id)

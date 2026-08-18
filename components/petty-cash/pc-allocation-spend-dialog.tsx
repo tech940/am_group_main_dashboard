@@ -136,7 +136,7 @@ export function AllocationSpendBody({
                     ['Entries', String(data.expenseCount)],
                   ].map(([label, value]) => (
                     <div key={label}>
-                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-600">{label}</p>
                       <p className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{value}</p>
                     </div>
                   ))}
@@ -156,7 +156,7 @@ export function AllocationSpendBody({
                 <div className="rounded-2xl border border-dashed border-slate-200 py-14 text-center">
                   <Receipt className="mx-auto h-6 w-6 text-slate-300" />
                   <p className="mt-2 text-sm font-bold text-slate-500">Nothing spent yet</p>
-                  <p className="text-xs text-slate-400">This allocation has no approved expenses against it.</p>
+                  <p className="text-xs text-slate-500">This allocation has no approved expenses against it.</p>
                 </div>
               ) : (
                 data.days.map((day) => (
@@ -170,7 +170,7 @@ export function AllocationSpendBody({
                         <div key={item.expenseNumber} className="flex items-start justify-between gap-3 px-4 py-2.5">
                           <div className="min-w-0">
                             <p className="truncate text-xs font-bold text-slate-800">{item.description || '—'}</p>
-                            <p className="mt-0.5 truncate text-[10px] font-medium text-slate-400">
+                            <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
                               <span className="font-mono">{item.expenseNumber}</span>
                               {item.vendorName ? ` · ${item.vendorName}` : ''}
                               {item.spentByName ? ` · by ${item.spentByName}` : ''}

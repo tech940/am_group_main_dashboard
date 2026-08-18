@@ -81,7 +81,9 @@ function getColumnValue(order: PurchaseOrder, key: string) {
     case 'quantityRequired':
       return order.quantityRequired || order.quantity_required
     case 'estimateIfAny':
-      return order.estimateIfAny || order.estimate_if_any
+      return order.estimateIfAny || order.estimate_if_any || order.amount
+    case 'amount':
+      return order.amount || order.estimateIfAny || order.estimate_if_any
     case 'vendorName':
       return order.vendorName || order.vendor_name
     case 'specialInstructions':
@@ -119,7 +121,17 @@ function formatCurrency(value: unknown) {
     return '-'
   }
 
-  return `Rs. ${String(value)}`
+  const numeric = getNumericAmount(value)
+  if (numeric > 0) {
+    return `Rs. ${numeric.toLocaleString('en-IN')}`
+  }
+
+  const str = String(value).trim()
+  if (str === '0' || str === '0.00' || str === '') {
+    return '-'
+  }
+
+  return `Rs. ${str}`
 }
 
 function getNumericAmount(value: unknown) {
@@ -560,7 +572,7 @@ export function MDTableView({
             const dept = order.department || '—'
             const subDept = order.subDepartment || order.sub_department || ''
             const vendor = order.vendorName || order.vendor_name || '—'
-            const amount = order.amount || '0'
+            const amount = order.amount || order.estimateIfAny || order.estimate_if_any || '0'
             const statusColor = getStatusColor(order.status || '')
             const statusLabel = formatStatusLabel(order.status || '')
             const dateStr = order.createdAt || order.created_at || ''

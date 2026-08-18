@@ -245,7 +245,8 @@ function normalizeQuantity(order: PurchaseOrder) {
 }
 
 function normalizeEstimate(order: PurchaseOrder) {
-  return order.estimate_if_any || order.estimateIfAny || '0'
+  const est = order.estimate_if_any || order.estimateIfAny || order.amount
+  return est ? String(est) : '0'
 }
 
 function normalizeVendorName(order: PurchaseOrder) {
@@ -261,8 +262,8 @@ function normalizeBillImages(order: PurchaseOrder) {
 }
 
 function normalizeOrderAmount(order: PurchaseOrder) {
-  const rawAmount = order.amount || normalizeEstimate(order)
-  const numericAmount = Number.parseFloat(String(rawAmount || '0').replace(/[^0-9.-]/g, ''))
+  const rawAmount = order.amount || order.estimate_if_any || order.estimateIfAny
+  const numericAmount = Number.parseFloat(String(rawAmount || '0').replace(/,/g, '').replace(/[^0-9.-]/g, ''))
 
   return Number.isFinite(numericAmount) ? numericAmount : 0
 }
@@ -1843,7 +1844,7 @@ function PurchaseOrdersPageContent() {
             department: order.department,
             subDepartment: order.subDepartment,
             quantity: parseInt(normalizeQuantity(order), 10) || 0,
-            estimatedCost: parseFloat(normalizeEstimate(order)) || 0,
+            estimatedCost: normalizeOrderAmount(order),
             vendorName: normalizeVendorName(order),
           }}
           onSubmit={(data) => handleStageSubmit('ea_approval', data, order.id)}
@@ -1862,7 +1863,7 @@ function PurchaseOrdersPageContent() {
               department: order.department,
               subDepartment: order.subDepartment,
               quantity: parseInt(normalizeQuantity(order), 10) || 0,
-              estimatedCost: parseFloat(normalizeEstimate(order)) || 0,
+              estimatedCost: normalizeOrderAmount(order),
               vendorName: normalizeVendorName(order),
               eaRemarks: order.eaApprovalRemarks,
             }}
@@ -1881,7 +1882,7 @@ function PurchaseOrdersPageContent() {
               department: order.department,
               subDepartment: order.subDepartment,
               quantity: parseInt(normalizeQuantity(order), 10) || 0,
-              estimatedCost: parseFloat(normalizeEstimate(order)) || 0,
+              estimatedCost: normalizeOrderAmount(order),
               vendorName: normalizeVendorName(order),
             }}
             onSubmit={(data) => handleStageSubmit('ea_approval', data, order.id)}
@@ -1931,7 +1932,7 @@ function PurchaseOrdersPageContent() {
             orderDetails={{
               itemName: normalizeDescription(order),
               quantity: parseInt(normalizeQuantity(order), 10) || 0,
-              estimatedCost: parseFloat(order.amount || normalizeEstimate(order)) || 0,
+              estimatedCost: normalizeOrderAmount(order),
               vendorName: normalizeVendorName(order),
               grnNumber: normalizeOrderNumber(order),
               receivedQuantity: parseInt(normalizeQuantity(order), 10) || 0,
@@ -2202,7 +2203,11 @@ function PurchaseOrdersPageContent() {
                     </div>
                     <div>
                       <p className="text-sm text-slate-500">Estimate</p>
-                      <p className="font-semibold text-slate-900">Rs. {normalizeEstimate(selectedOrder)}</p>
+                      <p className="font-semibold text-slate-900">
+                        {normalizeOrderAmount(selectedOrder) > 0
+                          ? `Rs. ${normalizeOrderAmount(selectedOrder).toLocaleString('en-IN')}`
+                          : (selectedOrder.estimate_if_any || selectedOrder.estimateIfAny || selectedOrder.amount || 'Not specified')}
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm text-slate-500">Current Workflow Stage</p>

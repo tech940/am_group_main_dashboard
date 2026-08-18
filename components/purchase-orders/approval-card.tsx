@@ -20,6 +20,7 @@ interface PurchaseOrder {
   quantity_required?: string
   vendor_name?: string
   amount?: string
+  estimate_if_any?: string
   ea_approval?: string
   ea_remarks?: string
   management_approval?: string
@@ -107,7 +108,12 @@ export function ApprovalCard({ order, userRole, onApprove, onReject }: ApprovalC
         },
         {
           label: 'Estimate',
-          value: order.amount ? `Rs ${parseFloat(order.amount).toLocaleString('en-IN')}` : 'Not shared',
+          value: (() => {
+            const raw = order.amount || order.estimate_if_any
+            if (!raw) return 'Not shared'
+            const num = Number.parseFloat(String(raw).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
+            return Number.isFinite(num) && num > 0 ? `Rs. ${num.toLocaleString('en-IN')}` : String(raw)
+          })(),
           icon: 'time',
         },
       ]}

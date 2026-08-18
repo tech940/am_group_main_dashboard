@@ -9,38 +9,60 @@ export type PettyCashApprover = 'ED' | 'EA' | 'MD' | 'Accounts'
 // 'terminal' = closed (approved / rejected / cancelled), nothing is waiting
 export type PettyCashStageState = 'pending' | 'draft' | 'terminal'
 
+/**
+ * Colour encodes the STATE — what, if anything, someone must do. The words carry WHO.
+ *
+ * The old scheme coloured by stage, which meant four different colours all saying "pending" while
+ * `statusTone` substring-matched 'approved' first and painted still-waiting rows emerald. Green on a
+ * queue reads as finished, so the rows that owed an action were the ones the eye skipped.
+ *   amber  = waiting on someone
+ *   sky    = deliberately paused (on hold)
+ *   emerald= done and funded
+ *   rose   = rejected
+ *   slate  = draft / cancelled — nothing in flight
+ */
+export type PettyCashTone = 'emerald' | 'amber' | 'blue' | 'violet' | 'rose' | 'sky' | 'slate'
+
 export type PettyCashStageInfo = {
+  /** Long form for the Status board's "Current Stage" column. */
   stageLabel: string
+  /**
+   * The single user-facing sentence for a pill or a row. Authored, never derived — this replaces
+   * `getPettyCashStatusLabel`, which was `split('_')` + capitalise and rendered "Md Pending".
+   */
+  pillLabel: string
   approver: PettyCashApprover | null
   state: PettyCashStageState
+  tone: PettyCashTone
 }
 
 // Maps every value of `pettyCashRequestStatusEnum` to a human-readable stage
 // label and the role that currently owns the request. Terminal / draft states
 // have no pending approver.
 const STAGE_INFO: Record<string, PettyCashStageInfo> = {
-  draft: { stageLabel: 'Draft', approver: null, state: 'draft' },
-  submitted: { stageLabel: 'ED Approval', approver: 'ED', state: 'pending' },
-  ed_pending: { stageLabel: 'ED Approval', approver: 'ED', state: 'pending' },
-  ed_on_hold: { stageLabel: 'ED Approval · On Hold', approver: 'ED', state: 'pending' },
-  ed_approved: { stageLabel: 'EA Approval', approver: 'EA', state: 'pending' },
-  ed_rejected: { stageLabel: 'Rejected by ED', approver: null, state: 'terminal' },
-  ea_pending: { stageLabel: 'EA Approval', approver: 'EA', state: 'pending' },
-  ea_on_hold: { stageLabel: 'EA Approval · On Hold', approver: 'EA', state: 'pending' },
-  ea_approved: { stageLabel: 'MD Approval', approver: 'MD', state: 'pending' },
-  ea_rejected: { stageLabel: 'Rejected by EA', approver: null, state: 'terminal' },
-  md_pending: { stageLabel: 'MD Approval', approver: 'MD', state: 'pending' },
-  md_on_hold: { stageLabel: 'MD Approval · On Hold', approver: 'MD', state: 'pending' },
-  md_approved: { stageLabel: 'Accounts', approver: 'Accounts', state: 'pending' },
-  md_rejected: { stageLabel: 'Rejected by MD', approver: null, state: 'terminal' },
-  accounts_pending: { stageLabel: 'Accounts', approver: 'Accounts', state: 'pending' },
-  accounts_on_hold: { stageLabel: 'Accounts · On Hold', approver: 'Accounts', state: 'pending' },
-  approved: { stageLabel: 'Approved & Allocated', approver: null, state: 'terminal' },
-  rejected: { stageLabel: 'Rejected', approver: null, state: 'terminal' },
-  cancelled: { stageLabel: 'Cancelled', approver: null, state: 'terminal' },
+  draft: { stageLabel: 'Draft', pillLabel: 'Draft', approver: null, state: 'draft', tone: 'slate' },
+  submitted: { stageLabel: 'ED Approval', pillLabel: 'Waiting on ED', approver: 'ED', state: 'pending', tone: 'amber' },
+  ed_pending: { stageLabel: 'ED Approval', pillLabel: 'Waiting on ED', approver: 'ED', state: 'pending', tone: 'amber' },
+  ed_on_hold: { stageLabel: 'ED Approval · On Hold', pillLabel: 'On hold — ED', approver: 'ED', state: 'pending', tone: 'sky' },
+  ed_approved: { stageLabel: 'EA Approval', pillLabel: 'Waiting on EA', approver: 'EA', state: 'pending', tone: 'amber' },
+  ed_rejected: { stageLabel: 'Rejected by ED', pillLabel: 'Rejected by ED', approver: null, state: 'terminal', tone: 'rose' },
+  ea_pending: { stageLabel: 'EA Approval', pillLabel: 'Waiting on EA', approver: 'EA', state: 'pending', tone: 'amber' },
+  ea_on_hold: { stageLabel: 'EA Approval · On Hold', pillLabel: 'On hold — EA', approver: 'EA', state: 'pending', tone: 'sky' },
+  ea_approved: { stageLabel: 'MD Approval', pillLabel: 'Waiting on MD', approver: 'MD', state: 'pending', tone: 'amber' },
+  ea_rejected: { stageLabel: 'Rejected by EA', pillLabel: 'Rejected by EA', approver: null, state: 'terminal', tone: 'rose' },
+  md_pending: { stageLabel: 'MD Approval', pillLabel: 'Waiting on MD', approver: 'MD', state: 'pending', tone: 'amber' },
+  md_on_hold: { stageLabel: 'MD Approval · On Hold', pillLabel: 'On hold — MD', approver: 'MD', state: 'pending', tone: 'sky' },
+  md_approved: { stageLabel: 'Accounts', pillLabel: 'Waiting on Accounts', approver: 'Accounts', state: 'pending', tone: 'amber' },
+  md_rejected: { stageLabel: 'Rejected by MD', pillLabel: 'Rejected by MD', approver: null, state: 'terminal', tone: 'rose' },
+  accounts_pending: { stageLabel: 'Accounts', pillLabel: 'Waiting on Accounts', approver: 'Accounts', state: 'pending', tone: 'amber' },
+  accounts_on_hold: { stageLabel: 'Accounts · On Hold', pillLabel: 'On hold — Accounts', approver: 'Accounts', state: 'pending', tone: 'sky' },
+  approved: { stageLabel: 'Approved & Allocated', pillLabel: 'Approved & funded', approver: null, state: 'terminal', tone: 'emerald' },
+  rejected: { stageLabel: 'Rejected', pillLabel: 'Rejected', approver: null, state: 'terminal', tone: 'rose' },
+  cancelled: { stageLabel: 'Cancelled', pillLabel: 'Cancelled', approver: null, state: 'terminal', tone: 'slate' },
+  pending: { stageLabel: 'ED Approval', pillLabel: 'Waiting on ED', approver: 'ED', state: 'pending', tone: 'amber' },
 }
 
-const FALLBACK_STAGE_INFO: PettyCashStageInfo = { stageLabel: 'Unknown', approver: null, state: 'terminal' }
+const FALLBACK_STAGE_INFO: PettyCashStageInfo = { stageLabel: 'Unknown', pillLabel: 'Unknown', approver: null, state: 'terminal', tone: 'slate' }
 
 export function getPettyCashStageInfo(status: string | null | undefined): PettyCashStageInfo {
   if (!status) return FALLBACK_STAGE_INFO

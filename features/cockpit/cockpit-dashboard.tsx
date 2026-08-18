@@ -51,10 +51,34 @@ async function fetchCockpit(): Promise<Cockpit> {
 }
 
 export function CockpitDashboard() {
-  const { data, isLoading, isError, error } = useQuery<Cockpit>({ queryKey: ['cockpit'], queryFn: fetchCockpit })
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<Cockpit>({ queryKey: ['cockpit'], queryFn: fetchCockpit })
 
-  if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-slate-400" /></div>
-  if (isError || !data) return <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm font-bold text-rose-700">{(error as Error)?.message || 'Failed to load cockpit.'}</div>
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center" aria-busy="true" aria-live="polite">
+        <Loader2 className="h-7 w-7 animate-spin text-slate-500 motion-reduce:animate-none" aria-hidden />
+        <span className="sr-only">Loading the group cockpit…</span>
+      </div>
+    )
+  }
+  if (isError || !data) {
+    return (
+      <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-6">
+        <p className="text-sm font-bold text-rose-700">{(error as Error)?.message || 'Failed to load cockpit.'}</p>
+        {/* The global query config sets retry:false, so without this the only way out is a browser
+            reload — on the one page an executive opens to check whether anything is wrong. */}
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-xs font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-700 focus-visible:ring-offset-2"
+        >
+          {isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden />}
+          {isFetching ? 'Retrying…' : 'Try again'}
+        </button>
+      </div>
+    )
+  }
 
   const { meta, service, cash, sales, stock, freshness } = data
 
@@ -63,10 +87,10 @@ export function CockpitDashboard() {
       {/* Context ribbon */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
         <div className="flex items-center gap-2">
-          <Gauge className="h-5 w-5 text-indigo-600" />
+          <Gauge className="h-5 w-5 text-[var(--dashboard-action-bg)]" />
           <div>
-            <p className="text-sm font-black text-slate-800">{meta.monthLabel} <span className="font-semibold text-slate-400">· month to date (through day {meta.throughDay})</span></p>
-            <p className="text-[11px] font-semibold text-slate-400">All figures compared to the same period last year where available.</p>
+            <p className="text-sm font-black text-slate-800">{meta.monthLabel} <span className="font-semibold text-slate-500">· month to date (through day {meta.throughDay})</span></p>
+            <p className="text-[11px] font-semibold text-slate-500">All figures compared to the same period last year where available.</p>
           </div>
         </div>
         {/* One pill per feed. A single group-wide "as of" used to show the NEWEST of the three, so a
@@ -76,9 +100,12 @@ export function CockpitDashboard() {
             const through = f.coverageThrough ? formatDay(f.coverageThrough) : null
             return (
               <div key={f.brand} className="flex items-center gap-1.5 rounded-xl bg-slate-50 px-3 py-1.5" title={f.lastUploadedAt ? `Last upload ${formatAsOf(f.lastUploadedAt)}` : 'Never uploaded'}>
-                <Clock className="h-3.5 w-3.5 text-slate-400" />
+                <Clock className="h-3.5 w-3.5 text-slate-500" />
                 <span className="text-[11px] font-bold text-slate-500">
                   {f.brandLabel.replace(/^AM /, '')} {through ? `through ${through}` : 'no data'}
+                </span>
+                <span className="sr-only">
+                  {f.lastUploadedAt ? `Last upload ${formatAsOf(f.lastUploadedAt)}` : 'Never uploaded'}
                 </span>
               </div>
             )
@@ -97,28 +124,29 @@ export function CockpitDashboard() {
             ? `${formatInt(service.totals.roCount)} ROs · excludes ${service.totals.excluded.join(', ')}`
             : `${formatInt(service.totals.roCount)} ROs · labour + parts`}
           growth={service.totals.growthPct}
-          tone="from-indigo-600 to-indigo-500"
+          tone="from-indigo-700 to-indigo-600"
         />
-        <BigKpi icon={<ShoppingCart className="h-5 w-5" />} label="Approved Purchase Orders" value={formatCurrency(cash.totals.poAmount)} sub={`${formatInt(cash.totals.poCount)} approved · cumulative`} tone="from-[#0B5D7A] to-[#0e7490]" />
-        <BigKpi icon={<Wallet className="h-5 w-5" />} label="Approved Petty-Cash Spend" value={formatCurrency(cash.totals.spendAmount)} sub={`funding ${formatCurrency(cash.totals.fundingAmount)} · cumulative`} tone="from-[#24766d] to-[#2f8f83]" />
+        <BigKpi icon={<ShoppingCart className="h-5 w-5" />} label="Approved Purchase Orders" value={formatCurrency(cash.totals.poAmount)} sub={`${formatInt(cash.totals.poCount)} approved · cumulative`} tone="from-cyan-800 to-cyan-700" />
+        <BigKpi icon={<Wallet className="h-5 w-5" />} label="Approved Petty-Cash Spend" value={formatCurrency(cash.totals.spendAmount)} sub={`funding ${formatCurrency(cash.totals.fundingAmount)} · cumulative`} tone="from-teal-800 to-teal-700" />
       </div>
 
       {/* Service revenue by brand */}
       <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">Service revenue by brand · MTD vs last year</p>
-          <span className="text-[11px] font-semibold text-slate-400">labour + parts, deduped ROs</span>
+          <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">Service revenue by brand · MTD vs last year</h2>
+          <span className="text-[11px] font-semibold text-slate-500">labour + parts, deduped ROs</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
+              <caption className="sr-only">Group service revenue by brand, month to date, compared with the same period last year.</caption>
             <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                <th className="px-5 py-2.5 text-left">Brand</th>
-                <th className="px-5 py-2.5 text-right">Revenue</th>
-                <th className="px-5 py-2.5 text-right">Labour</th>
-                <th className="px-5 py-2.5 text-right">Parts</th>
-                <th className="px-5 py-2.5 text-right">ROs</th>
-                <th className="px-5 py-2.5 text-right">vs LY</th>
+              <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600">
+                <th scope="col" className="px-5 py-2.5 text-left">Brand</th>
+                <th scope="col" className="px-5 py-2.5 text-right">Revenue</th>
+                <th scope="col" className="px-5 py-2.5 text-right">Labour</th>
+                <th scope="col" className="px-5 py-2.5 text-right">Parts</th>
+                <th scope="col" className="px-5 py-2.5 text-right">ROs</th>
+                <th scope="col" className="px-5 py-2.5 text-right">vs LY</th>
               </tr>
             </thead>
             <tbody>
@@ -131,6 +159,9 @@ export function CockpitDashboard() {
                     {b.lagging && b.coverageThrough && (
                       <span className="ml-2 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700" title={`This feed has bills only to ${formatDay(b.coverageThrough)}. Revenue and the vs-LY comparison both cover 1–${formatDay(b.coverageThrough)} of each year.`}>
                         through {formatDay(b.coverageThrough)}
+                        <span className="sr-only">
+                          {` — this feed has bills only to ${formatDay(b.coverageThrough)}; revenue and the versus-last-year comparison both cover 1 to ${formatDay(b.coverageThrough)} of each year.`}
+                        </span>
                       </span>
                     )}
                   </td>
@@ -145,7 +176,7 @@ export function CockpitDashboard() {
                   ) : (
                     // Never a ₹0 here. "unavailable" means we could not read the feed — saying ₹0.00
                     // is what made the group total under-report by half without anyone noticing.
-                    <td className={`px-5 py-3 text-right text-xs font-semibold italic ${b.status === 'unavailable' ? 'text-rose-500' : 'text-slate-400'}`} colSpan={5}>
+                    <td className={`px-5 py-3 text-right text-xs font-semibold italic ${b.status === 'unavailable' ? 'text-rose-700' : 'text-slate-500'}`} colSpan={5}>
                       {b.status === 'unavailable' ? 'Data unavailable — not counted in the group total' : 'No bills this month'}
                     </td>
                   )}
@@ -169,29 +200,30 @@ export function CockpitDashboard() {
             </tbody>
           </table>
         </div>
-        <p className="border-t border-slate-100 px-5 py-2 text-[10px] font-semibold italic text-slate-400">MG and the two-wheeler brands have no service feed and are omitted (not shown as zero).</p>
+        <p className="border-t border-slate-100 px-5 py-2 text-[10px] font-semibold italic text-slate-500">MG and the two-wheeler brands have no service feed and are omitted (not shown as zero).</p>
       </Card>
 
       {/* Cash oversight by brand */}
       <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">Approved cash by branch · cumulative</p>
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400"><Banknote className="h-3.5 w-3.5" />approved POs + petty cash</span>
+          <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">Approved cash by branch · cumulative</h2>
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500"><Banknote className="h-3.5 w-3.5" />approved POs + petty cash</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
+              <caption className="sr-only">Approved purchase orders and petty cash by branch, cumulative to date.</caption>
             <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                <th className="px-5 py-2.5 text-left">Branch</th>
-                <th className="px-5 py-2.5 text-right">Approved POs</th>
-                <th className="px-5 py-2.5 text-right">PO value</th>
-                <th className="px-5 py-2.5 text-right">PC funding</th>
-                <th className="px-5 py-2.5 text-right">PC spend</th>
+              <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600">
+                <th scope="col" className="px-5 py-2.5 text-left">Branch</th>
+                <th scope="col" className="px-5 py-2.5 text-right">Approved POs</th>
+                <th scope="col" className="px-5 py-2.5 text-right">PO value</th>
+                <th scope="col" className="px-5 py-2.5 text-right">PC funding</th>
+                <th scope="col" className="px-5 py-2.5 text-right">PC spend</th>
               </tr>
             </thead>
             <tbody>
               {cash.brands.length === 0 ? (
-                <tr><td className="px-5 py-8 text-center text-sm font-semibold text-slate-400" colSpan={5}>No approved cash activity.</td></tr>
+                <tr><td className="px-5 py-8 text-center text-sm font-semibold text-slate-500" colSpan={5}>No approved cash activity.</td></tr>
               ) : cash.brands.map((b) => (
                 <tr key={b.brand} className="border-b border-slate-50 last:border-0">
                   <td className="px-5 py-3 text-left font-black text-slate-800">{b.brandLabel}</td>
@@ -213,14 +245,14 @@ export function CockpitDashboard() {
             </tbody>
           </table>
         </div>
-        <p className="border-t border-slate-100 px-5 py-2 text-[10px] font-semibold italic text-slate-400">Cumulative approved to date (POs by MD-approval, petty cash by approval). Group total excludes any unassigned-branch rows. Full detail in the CA section.</p>
+        <p className="border-t border-slate-100 px-5 py-2 text-[10px] font-semibold italic text-slate-500">Cumulative approved to date (POs by MD-approval, petty cash by approval). Group total excludes any unassigned-branch rows. Full detail in the CA section.</p>
       </Card>
 
       {/* Vehicle sales — one card per brand with a live feed (KIA only today) */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {sales.brands.map((b) => (
           <Card key={`sales-${b.brand}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2"><Car className="h-4 w-4 text-indigo-600" /><p className="text-[11px] font-black uppercase tracking-widest text-slate-500">{b.label} Sales{b.monthLabel ? ` · ${b.monthLabel}` : ''}</p></div>
+            <div className="mb-4 flex items-center gap-2"><Car className="h-4 w-4 text-[var(--dashboard-action-bg)]" /><h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">{b.label} Sales{b.monthLabel ? ` · ${b.monthLabel}` : ''}</h2></div>
             <div className="grid grid-cols-2 gap-4">
               <MiniStat label="Bookings" value={formatInt(b.bookings)} sub={`target ${formatInt(b.bookingTarget)} · ${formatPct(b.bookingAchievement)}`} />
               <MiniStat label="Deliveries" value={formatInt(b.deliveries)} sub={`target ${formatInt(b.deliveryTarget)} · ${formatPct(b.deliveryAchievement)}`} />
@@ -228,12 +260,12 @@ export function CockpitDashboard() {
               <MiniStat label="Consultants" value={formatInt(b.consultants)} sub="active this month" />
             </div>
             {b.targetBasis === 'auto' && (
-              <p className="mt-3 text-[10px] font-semibold text-slate-400">Targets auto-set: last month + 10% (no target configured for this month)</p>
+              <p className="mt-3 text-[10px] font-semibold text-slate-500">Targets auto-set: last month + 10% (no target configured for this month)</p>
             )}
           </Card>
         ))}
         {sales.brands.length === 0 && (
-          <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2"><p className="text-sm font-semibold text-slate-400">No vehicle sales feed is connected yet.</p></Card>
+          <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2"><p className="text-sm font-semibold text-slate-500">No vehicle sales feed is connected yet.</p></Card>
         )}
       </div>
 
@@ -243,20 +275,20 @@ export function CockpitDashboard() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {stock.brands.map((b) => (
           <Card key={`stock-${b.brand}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2"><Package className="h-4 w-4 text-indigo-600" /><p className="text-[11px] font-black uppercase tracking-widest text-slate-500">{b.label} Stock</p></div>
+            <div className="mb-4 flex items-center gap-2"><Package className="h-4 w-4 text-[var(--dashboard-action-bg)]" /><h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">{b.label} Stock</h2></div>
             {b.available ? (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <MiniStat label="Available" value={formatInt(b.availableStock)} sub="unsold units" />
                 <MiniStat label="Stock Value" value={formatCurrency(b.stockValue)} sub="approx. invoice" />
                 <MiniStat label="Avg Age" value={`${formatInt(b.avgStockAge)}d`} sub="current stock" />
               </div>
             ) : (
-              <p className="text-sm font-semibold italic text-slate-400">No stock feed for this brand.</p>
+              <p className="text-sm font-semibold italic text-slate-500">Stock figures could not be read for this brand — not shown as zero.</p>
             )}
           </Card>
         ))}
         {stock.brands.length === 0 && (
-          <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2"><p className="text-sm font-semibold text-slate-400">No vehicle stock feed is connected yet.</p></Card>
+          <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2"><p className="text-sm font-semibold text-slate-500">No vehicle stock feed is connected yet.</p></Card>
         )}
       </div>
     </div>
@@ -275,7 +307,7 @@ function BigKpi({ icon, label, value, sub, growth, tone }: { icon: React.ReactNo
         )}
       </div>
       <p className="mt-2 text-3xl font-black tracking-tight">{value}</p>
-      <p className="mt-1 text-[11px] font-semibold opacity-80">{sub}</p>
+      <p className="mt-1 text-[11px] font-semibold opacity-90">{sub}</p>
     </div>
   )
 }
@@ -283,15 +315,15 @@ function BigKpi({ icon, label, value, sub, growth, tone }: { icon: React.ReactNo
 function MiniStat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <div>
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">{label}</p>
       <p className="mt-1 text-2xl font-black tracking-tight text-slate-900">{value}</p>
-      <p className="mt-0.5 text-[11px] font-semibold text-slate-400">{sub}</p>
+      <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{sub}</p>
     </div>
   )
 }
 
 function GrowthBadge({ pct }: { pct: number | null }) {
-  if (pct === null || !Number.isFinite(pct)) return <span className="text-xs font-semibold text-slate-400">—</span>
+  if (pct === null || !Number.isFinite(pct)) return <span className="text-xs font-semibold text-slate-500">—</span>
   const up = pct >= 0
   return (
     <span className={cn('inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-black', up ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700')}>

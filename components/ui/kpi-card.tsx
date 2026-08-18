@@ -283,17 +283,23 @@ export const KpiCard: React.FC<KpiCardProps> = ({
           </div>
         </div>
 
-        {/* Top Right Action Button */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onMoreClick?.()
-          }}
-          className="text-slate-300 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-50 transition-colors shrink-0"
-        >
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
+        {/* Top Right Action Button — only when there is actually something behind it. It used to
+            render unconditionally, so every card carried a keyboard-reachable button that did
+            nothing (four per view on screens that pass no handler). Cards that DO pass onMoreClick
+            are unaffected. */}
+        {onMoreClick && (
+          <button
+            type="button"
+            aria-label={`More options for ${title}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMoreClick()
+            }}
+            className="text-slate-300 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-50 transition-colors shrink-0"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Bottom Row: Trend Badge on left, Right-Aligned Compact Sparkline Visual on right */}

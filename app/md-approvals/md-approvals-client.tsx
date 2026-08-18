@@ -139,17 +139,18 @@ function formatDate(createdAt: string | null): string {
  * decided. Fall through to the free-text estimate rather than printing ₹0.
  */
 function amountDisplay(row: MdApprovalRow): string {
-  if (row.amount !== null && row.amount !== undefined) return inr(row.amount)
+  if (row.amount !== null && row.amount !== undefined && row.amount > 0) return inr(row.amount)
   // `amountText` is the purchase-order `estimate_if_any` — a FREE-TEXT field. When it is purely a
   // number it is money and should read as money; when it is prose ("approx 5k, 3 vendors quoted")
   // it is shown verbatim, because "₹approx 5k" would be nonsense.
   if (row.amountText) {
     const numeric = Number(row.amountText.replace(/[,\s₹]/g, ''))
-    if (row.amountText.trim() !== '' && Number.isFinite(numeric)) {
+    if (row.amountText.trim() !== '' && Number.isFinite(numeric) && numeric > 0) {
       return inr(numeric)
     }
     return row.amountText
   }
+  if (row.amount !== null && row.amount !== undefined) return inr(row.amount)
   return '—'
 }
 

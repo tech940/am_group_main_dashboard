@@ -196,21 +196,26 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
 
   // Coverage first: each brand's service window depends on how far its own feed reaches, so this one
   // cheap aggregate probe has to land before the (expensive) per-brand billing queries fan out.
-  const coverage = await fetchFeedCoverage(win.monthStart, win.end)
+  // Deadline-guarded: if the probe stalls, every brand simply loses its lagging-window refinement
+  // rather than the whole page failing. `?? {}` keeps the existing "no coverage" shape.
+  const coverage = (await withDeadline('feed coverage', fetchFeedCoverage(win.monthStart, win.end), BUDGET.coverage)) ?? ({} as Awaited<ReturnType<typeof fetchFeedCoverage>>)
   const kiaWin = brandWindows(win, coverage.kia?.lastBillDate ?? null)
   const hyWin = brandWindows(win, coverage.hyundai?.lastBillDate ?? null)
   const plWin = brandWindows(win, coverage.platinum?.lastBillDate ?? null)
 
-  const [kiaWs, hyundai, platinum, cash, salesSnaps, stockSnaps] = await Promise.all([
-    getKiaWorkshopSummary({ endDate: kiaWin.cyEnd }).catch(() => null),
-    fetchCanonicalHyundaiRoBillingMetrics({ cyStart: hyWin.cyStart, cyEnd: hyWin.cyEnd, lyStart: hyWin.lyStart, lyEnd: hyWin.lyEnd }).catch(() => null),
-    fetchCanonicalRoBillingMetrics({ cyStart: plWin.cyStart, cyEnd: plWin.cyEnd, lyStart: plWin.lyStart, lyEnd: plWin.lyEnd }).catch(() => null),
+  const [kiaWs, hyundai, platinum, cash, salesSnapsRaw, stockSnapsRaw] = await Promise.all([
+    withDeadline('kia workshop', getKiaWorkshopSummary({ endDate: kiaWin.cyEnd }), BUDGET.headline),
+    withDeadline('hyundai ro billing', fetchCanonicalHyundaiRoBillingMetrics({ cyStart: hyWin.cyStart, cyEnd: hyWin.cyEnd, lyStart: hyWin.lyStart, lyEnd: hyWin.lyEnd }), BUDGET.headline),
+    withDeadline('platinum ro billing', fetchCanonicalRoBillingMetrics({ cyStart: plWin.cyStart, cyEnd: plWin.cyEnd, lyStart: plWin.lyStart, lyEnd: plWin.lyEnd }), BUDGET.headline),
     // Cash is the CUMULATIVE approved book (no date filter) — a running commitment/spend total that an
     // exec/CA wants in full, and unlike MTD it is always populated. Service revenue stays month-to-date.
-    getCaBranchSummary({ from: null, to: null }).catch(() => null),
-    Promise.all(salesStockBrands.map((s) => getBrandSalesSnapshot(s.brand, { year: ey, month: em }).catch(() => null))),
-    Promise.all(salesStockBrands.map((s) => getBrandStockSnapshot(s.brand).catch(() => null))),
+    withDeadline('approved cash', getCaBranchSummary({ from: null, to: null }), BUDGET.headline),
+    // Per brand, not per batch: one slow brand must not take the others' cards with it.
+    Promise.all(salesStockBrands.map((s) => withDeadline(`${s.brand} sales`, getBrandSalesSnapshot(s.brand, { year: ey, month: em }), BUDGET.secondary))),
+    Promise.all(salesStockBrands.map((s) => withDeadline(`${s.brand} stock`, getBrandStockSnapshot(s.brand), BUDGET.secondary))),
   ])
+  const salesSnaps = salesSnapsRaw ?? []
+  const stockSnaps = stockSnapsRaw ?? []
 
   // --- Service revenue per brand ---
   //
@@ -293,13 +298,31 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
   }
 
   // --- Vehicle sales & stock per available brand (KIA only today) ---
-  const salesBrands = salesSnaps.filter((s): s is BrandSalesSnapshot => Boolean(s))
-  const stockBrands = stockSnaps.filter((s): s is BrandStockSnapshot => Boolean(s))
-  const salesTotals = salesBrands.reduce(
+  //
+  // A source that timed out is kept as `available: false`, NOT dropped. Filtering it out made the UI
+  // fall through to "No vehicle stock feed is connected yet" — telling an executive the feed does not
+  // exist when it exists and merely did not answer in time. That is the same class of lie as printing
+  // ₹0 for a failed read, which is the thing this whole file was written to stop.
+  const salesBrands = salesSnaps.map((snap, i) => snap ?? ({
+    brand: salesStockBrands[i]?.brand ?? 'unknown',
+    label: salesStockBrands[i]?.label ?? 'Unknown',
+    available: false,
+    monthLabel: null, bookings: 0, deliveries: 0, conversion: 0,
+    bookingTarget: 0, deliveryTarget: 0, bookingAchievement: null, deliveryAchievement: null,
+    consultants: 0, targetBasis: null,
+  } as unknown as BrandSalesSnapshot))
+  const stockBrands = stockSnaps.map((snap, i) => snap ?? ({
+    brand: salesStockBrands[i]?.brand ?? 'unknown',
+    label: salesStockBrands[i]?.label ?? 'Unknown',
+    available: false,
+    availableStock: 0, stockValue: 0, avgStockAge: 0,
+  } as unknown as BrandStockSnapshot))
+  // Placeholders are excluded from totals — an unread feed must not contribute a real zero.
+  const salesTotals = salesBrands.filter((b) => b.available !== false).reduce(
     (a, b) => ({ deliveries: a.deliveries + b.deliveries, bookings: a.bookings + b.bookings }),
     { deliveries: 0, bookings: 0 },
   )
-  const stockTotals = stockBrands.reduce(
+  const stockTotals = stockBrands.filter((b) => b.available !== false).reduce(
     (a, b) => ({ availableStock: a.availableStock + b.availableStock, stockValue: a.stockValue + b.stockValue }),
     { availableStock: 0, stockValue: 0 },
   )
@@ -331,6 +354,54 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
     },
   }
 }
+
+/*
+ * ============================================================================
+ * REQUEST BUDGET — why every source has a deadline
+ * ============================================================================
+ *
+ * Every source below already carried `.catch(() => null)`, which covers a source that THROWS. It
+ * does nothing for a source that simply does not come back, and that is what was happening: a cold
+ * build (no cached key) was measured at over 240s against this route's `maxDuration = 60`, so the
+ * platform killed the request mid-flight and the browser reported a bare "Failed to fetch". The
+ * page was not slow — it was dead on every cache miss.
+ *
+ * The offender is the sales/stock fan-out (kia_sales_report, 90-day window grouped by model and
+ * variant), which is also the least important thing on the page.
+ *
+ * So each source now races a deadline and degrades to `null` — the SAME value `.catch()` already
+ * produced, travelling the same path, which the UI already renders honestly as "Data unavailable —
+ * not counted in the group total" rather than a confident ₹0. The headline numbers (service revenue
+ * and cash) get the large budget; the secondary cards get a small one and drop out first.
+ *
+ * The underlying query is not cancelled — it runs on and populates its own cache, so the NEXT
+ * request is fast. What changes is that it can no longer hold the whole response hostage.
+ */
+const BUDGET = {
+  /** Blocks the fan-out: every brand's window depends on it, so it must be quick or absent. */
+  coverage: 8_000,
+  /** Service revenue + approved cash — the figures an executive actually quotes. */
+  headline: 30_000,
+  /**
+   * Sales & stock cards. Measured at 12-20s cold (the kia_sales_report 90-day model/variant
+   * aggregate), so 12s dropped them almost every cold load. This runs CONCURRENTLY with the
+   * headline budget, so raising it costs nothing in worst case — the ceiling stays
+   * coverage + headline = 38s, comfortably inside maxDuration = 60.
+   */
+  secondary: 25_000,
+} as const
+
+function withDeadline<T>(label: string, work: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const guard = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[cockpit] ${label} exceeded ${ms}ms — omitted from this response, not shown as zero`)
+      resolve(null)
+    }, ms)
+  })
+  return Promise.race([work.catch(() => null), guard]).finally(() => { if (timer) clearTimeout(timer) })
+}
+
 
 export async function getGroupCockpit(input?: { endDate?: string | null }): Promise<CockpitPayload> {
   const win = monthWindows(input?.endDate)

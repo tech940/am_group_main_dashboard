@@ -152,7 +152,7 @@ export function PettyCashDetailDialog({
       <DialogContent className={DRAWER_CLASS}>
         <DialogHeader className="space-y-3 border-b border-slate-100 bg-gradient-to-br from-slate-50 to-white p-6 text-left">
           <div className="flex items-center justify-between gap-3 pr-8">
-            <span className="font-mono text-xs font-bold text-slate-400">{headerNumber}</span>
+            <span className="font-mono text-xs font-bold text-slate-500">{headerNumber}</span>
             {headerStatus ? <StatusPill status={headerStatus} /> : null}
           </div>
           <DialogTitle className="text-2xl font-black tracking-tight text-slate-950">
@@ -177,7 +177,7 @@ export function PettyCashDetailDialog({
                 <DetailField icon={Building2} label="Location" value={field(fetched, row, 'location') || '—'} />
               </div>
               <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Particulars</p>
+                <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">Particulars</p>
                 <p className="mt-1 text-sm font-semibold leading-relaxed text-slate-700">{field(fetched, row, 'particulars', 'purpose') || '—'}</p>
               </div>
               <BillGallery bills={bills} loading={loading} />
@@ -194,7 +194,7 @@ export function PettyCashDetailDialog({
                 <DetailField icon={Wallet} label="Payment Type" value={field(fetched, row, 'typeOfPayment') || '—'} />
               </div>
               <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Purpose</p>
+                <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">Purpose</p>
                 <p className="mt-1 text-sm font-semibold leading-relaxed text-slate-700">{field(fetched, row, 'purpose') || '—'}</p>
               </div>
               <Timeline history={history} loading={loading} />
@@ -210,15 +210,15 @@ function BillGallery({ bills, loading }: { bills: Array<{ url: string; name?: st
   return (
     <div>
       <p className="mb-3 flex items-center gap-2 text-sm font-black text-slate-900">
-        <Receipt className="h-4 w-4 text-slate-400" /> Bill / Invoice{loading ? '' : ` (${bills.length})`}
-        {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+        <Receipt className="h-4 w-4 text-slate-500" /> Bill / Invoice{loading ? '' : ` (${bills.length})`}
+        {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />}
       </p>
       {loading && bills.length === 0 ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, index) => <div key={`bill-skeleton-${index}`} className="aspect-[4/3] animate-pulse rounded-2xl bg-slate-100" />)}
+          {Array.from({ length: 3 }).map((_, index) => <div key={`bill-skeleton-${index}`} className="aspect-[4/3] animate-pulse motion-reduce:animate-none rounded-2xl bg-slate-100" />)}
         </div>
       ) : bills.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-sm font-semibold text-slate-400">
+        <div className="flex items-center gap-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-sm font-semibold text-slate-500">
           <ImageOff className="h-4 w-4" /> No bill uploaded for this expense.
         </div>
       ) : (
@@ -256,8 +256,8 @@ function Timeline({ history, loading }: { history: HistoryItem[]; loading: boole
   return (
     <div>
       <p className="mb-3 flex items-center gap-2 text-sm font-black text-slate-900">
-        <Clock className="h-4 w-4 text-slate-400" /> Timeline
-        {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+        <Clock className="h-4 w-4 text-slate-500" /> Timeline
+        {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />}
       </p>
       {history.length > 0 ? (
         <ol className="space-y-3 border-l-2 border-slate-100 pl-4">
@@ -271,9 +271,9 @@ function Timeline({ history, loading }: { history: HistoryItem[]; loading: boole
           ))}
         </ol>
       ) : loading ? (
-        <p className="text-sm font-medium text-slate-400">Loading history…</p>
+        <p className="text-sm font-medium text-slate-500">Loading history…</p>
       ) : (
-        <p className="text-sm font-medium text-slate-400">No history yet.</p>
+        <p className="text-sm font-medium text-slate-500">No history yet.</p>
       )}
     </div>
   )
@@ -282,7 +282,7 @@ function Timeline({ history, loading }: { history: HistoryItem[]; loading: boole
 function DetailField({ icon: Icon, label, value }: { icon: typeof User2; label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-slate-100 bg-white p-3">
-      <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-400">
+      <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-600">
         <Icon className="h-3.5 w-3.5" /> {label}
       </p>
       <p className="mt-1 truncate text-sm font-bold text-slate-800">{value}</p>

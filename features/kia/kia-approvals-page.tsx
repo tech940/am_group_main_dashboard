@@ -1158,12 +1158,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return null
     }
 
-    if (pendingLabel === 'Pending Accounts') return 'accounts'
+    if (pendingLabel === 'Pending Accounts' || pendingLabel === 'Held by Accounts') return 'accounts'
     if (pendingLabel === 'Pending Payment') return 'payment_done'
-    if (pendingLabel === 'Pending MD') return 'md'
-    if (pendingLabel === 'Pending EA') return 'ea'
-    if (pendingLabel === 'Pending HR') return 'hr'
-    if (pendingLabel.startsWith('Pending ED') || pendingLabel.startsWith('Pending VP') || pendingLabel.startsWith('Pending General Service Manager')) return 'sales_manager'
+    if (pendingLabel === 'Pending MD' || pendingLabel === 'Held by MD') return 'md'
+    if (pendingLabel === 'Pending EA' || pendingLabel === 'Held by EA') return 'ea'
+    if (pendingLabel === 'Pending HR' || pendingLabel === 'Held by HR') return 'hr'
+    if (
+      pendingLabel.startsWith('Pending ED') ||
+      pendingLabel.startsWith('Pending VP') ||
+      pendingLabel.startsWith('Pending General Service Manager') ||
+      pendingLabel.startsWith('Held by ED') ||
+      pendingLabel.startsWith('Held by VP') ||
+      pendingLabel.startsWith('Held by GSM')
+    ) return 'sales_manager'
 
     return null
   }
@@ -3903,14 +3910,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               ? timelineEvents.filter(isRemarkEvent)
               : timelineEvents
 
-            const pendingStageKey = (() => {
-              if (pendingLabel === 'Pending ED') return 'sales_manager'
-              if (pendingLabel === 'Pending Accounts') return 'accounts'
-              if (pendingLabel === 'Pending EA') return 'ea'
-              if (pendingLabel === 'Pending MD') return 'md'
-              if (pendingLabel === 'Pending Payment') return 'payment_done'
-              return null
-            })()
+            const pendingStageKey = getActiveStageKey(detailRow)
 
             const isUserEligibleForPendingStage = pendingStageKey ? isUserAuthorizedForStage(pendingStageKey, detailRow) : false
 

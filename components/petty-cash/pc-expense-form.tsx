@@ -1,6 +1,6 @@
 'use client'
 
-import { FileText, Loader2, MapPin, ReceiptText, UploadCloud, X } from 'lucide-react'
+import { FileText, Loader2, MapPin, ReceiptText, UploadCloud, X, AlertCircle} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -47,6 +47,7 @@ export function ExpenseFormDialog({
   expenseFiles,
   onUpload,
   onRemoveFile,
+  formError,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -61,6 +62,8 @@ export function ExpenseFormDialog({
   expenseFiles: string[]
   onUpload: (files: FileList | null) => void
   onRemoveFile: (index: number) => void
+  /** Client-side validation message for THIS form; rendered in the footer below. */
+  formError?: string | null
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -86,7 +89,7 @@ export function ExpenseFormDialog({
               </Field>
               <Field label="Amount" required>
                 <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">₹</span>
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500">₹</span>
                   <Input
                     type="number"
                     min={1}
@@ -114,7 +117,7 @@ export function ExpenseFormDialog({
                   <SelectTrigger className="h-11 rounded-xl border-slate-200 font-bold">
                     {/* A <div> (not <span>) so the trigger's [&>span]:line-clamp-1 rule can't
                         override this flex row and stack the icon above the text. */}
-                    <div className="flex min-w-0 items-center gap-2"><MapPin className="h-4 w-4 shrink-0 text-slate-400" /><SelectValue placeholder="Where was it spent?" /></div>
+                    <div className="flex min-w-0 items-center gap-2"><MapPin className="h-4 w-4 shrink-0 text-slate-500" /><SelectValue placeholder="Where was it spent?" /></div>
                   </SelectTrigger>
                   <SelectContent>
                     {locationOptions.map((location) => <SelectItem key={location} value={location}>{location}</SelectItem>)}
@@ -134,14 +137,26 @@ export function ExpenseFormDialog({
             </Field>
 
             <div className="space-y-2">
-              <Label className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-                Upload Bill <span className="text-rose-500">*</span>
-              </Label>
-              <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center transition-colors hover:border-slate-300 hover:bg-slate-50">
-                <UploadCloud className="h-6 w-6 text-slate-400" />
+              {/* A <span>, not <Label>: the drop-zone <label> below owns the association, and a second
+                  <label> pointing at no control is a dangling one. */}
+              <span className="block text-[11px] font-black uppercase tracking-wider text-slate-600">
+                Upload Bill <span className="text-rose-600" aria-hidden>*</span>
+                <span className="sr-only"> (required)</span>
+              </span>
+              {/*
+                * sr-only, NOT hidden.
+                *
+                * `hidden` is display:none, which removes the input from the focus order entirely —
+                * and a <label> is not tabbable either, so there was no way to reach this control from
+                * a keyboard at all. On a REQUIRED field that made the expense form impossible to
+                * complete without a mouse. sr-only keeps it visually hidden but focusable, and
+                * focus-within moves the ring onto the drop zone the user can actually see.
+                */}
+              <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center transition-colors hover:border-slate-300 hover:bg-slate-50 focus-within:border-[var(--dashboard-action-bg)] focus-within:ring-2 focus-within:ring-[var(--dashboard-action-bg)]/40">
+                <UploadCloud className="h-6 w-6 text-slate-500" />
                 <span className="text-sm font-bold text-slate-600">Click to upload bills</span>
-                <span className="text-xs font-medium text-slate-400">PNG, JPG, PDF · multiple allowed</span>
-                <input type="file" multiple className="hidden" onChange={(event) => onUpload(event.target.files)} />
+                <span className="text-xs font-medium text-slate-500">PNG, JPG, PDF · multiple allowed</span>
+                <input type="file" multiple className="sr-only" onChange={(event) => onUpload(event.target.files)} />
               </label>
               {expenseFiles.length > 0 && (
                 <div className="space-y-2">
@@ -151,10 +166,10 @@ export function ExpenseFormDialog({
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={url} alt="bill" className="h-9 w-9 rounded-lg object-cover" />
                       ) : (
-                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-400"><FileText className="h-4 w-4" /></span>
+                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><FileText className="h-4 w-4" /></span>
                       )}
                       <a href={url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700 hover:underline">{fileName(url)}</a>
-                      <button type="button" onClick={() => onRemoveFile(index)} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500">
+                      <button type="button" onClick={() => onRemoveFile(index)} className="flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1">
                         <X className="h-4 w-4" />
                       </button>
                     </div>
@@ -164,6 +179,18 @@ export function ExpenseFormDialog({
             </div>
           </div>
 
+          {/*
+            * The validation message lives INSIDE the dialog, beside the button that produced it.
+            * These messages used to go to a page-level banner rendered behind this overlay, so a
+            * failed submit looked like a dead button — the single most demoralising interaction in
+            * software, on the form that moves cash. role="alert" announces it too.
+            */}
+          {formError && (
+            <div role="alert" className="flex items-start gap-2 border-t border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>{formError}</span>
+            </div>
+          )}
           <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 p-4">
             <Button type="button" variant="outline" className="h-11 rounded-xl font-bold" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
             <Button type="submit" className="h-11 rounded-xl bg-emerald-600 px-6 font-bold text-white hover:bg-emerald-700" disabled={submitting}>
@@ -176,13 +203,27 @@ export function ExpenseFormDialog({
   )
 }
 
+/*
+ * A native <label> WRAPPING the control, rather than a <div> beside it.
+ *
+ * These fields rendered a styled <Label> with no htmlFor, so all 19 inputs across the two forms were
+ * announced as unlabelled edit boxes on a form that moves cash. Implicit association names the single
+ * labelable descendant — Input, Textarea and SelectTrigger (a <button>) all qualify — which fixes
+ * every field without threading a generated id through each call site.
+ *
+ * The inner element is a <span>, not <Label>: nesting a <label> inside a <label> is invalid and
+ * breaks the very association this exists to create.
+ */
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <Label className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-        {label} {required && <span className="text-rose-500">*</span>}
-      </Label>
+    <label className="block space-y-1.5">
+      <span className="block text-[11px] font-black uppercase tracking-wider text-slate-600">
+        {label}
+        {required && <span className="text-rose-600" aria-hidden> *</span>}
+        {/* The asterisk is colour + glyph only; name the requirement for screen readers too. */}
+        {required && <span className="sr-only"> (required)</span>}
+      </span>
       {children}
-    </div>
+    </label>
   )
 }
