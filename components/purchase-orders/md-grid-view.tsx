@@ -14,6 +14,7 @@ import {
 } from '@/components/purchase-orders/order-image-preview-button'
 import { formatWorkflowStageLabel, getWorkflowStatusPresentation } from '@/components/purchase-orders/workflow-card-theme'
 import { formatIndiaDateTime } from '@/lib/date-time'
+import { getBranchLabel } from '@/lib/branches'
 import { cn } from '@/lib/utils'
 
 interface PurchaseOrder extends PurchaseOrderDocumentSource {
@@ -37,6 +38,9 @@ interface PurchaseOrder extends PurchaseOrderDocumentSource {
   status: string
   created_at?: string
   createdAt?: string
+  brand?: string
+  specify_other?: string
+  specifyOther?: string
 }
 
 interface Personnel {
@@ -350,7 +354,7 @@ export function MDGridView({
                 statusLabel={status.label}
                 stageLabel={formatWorkflowStageLabel(order.current_stage || order.currentStage)}
                 description={order.special_instructions || order.specialInstructions || vendorName}
-                departmentLine={`${order.department || 'Department'}${(order.sub_department || order.subDepartment) ? ` - ${order.sub_department || order.subDepartment}` : ''}`}
+                departmentLine={`${(order.specify_other || order.specifyOther) ? `${order.specify_other || order.specifyOther} · ` : order.brand ? `${getBranchLabel(order.brand)} · ` : ''}${order.department || 'Department'}${(order.sub_department || order.subDepartment) ? ` - ${order.sub_department || order.subDepartment}` : ''}`}
                 timestampLabel={formatDateTime(order.created_at || order.createdAt || '')}
                 headerAction={(
                   <div className="flex items-center gap-2">

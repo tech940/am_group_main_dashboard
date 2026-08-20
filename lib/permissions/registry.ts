@@ -514,6 +514,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'hyundai.sales_report',
+    name: 'Sales Report',
+    parentKey: 'hyundai.sales',
+    description: 'AM Hyundai sales report analytics workspace, charts, and raw report tables.',
+    sortOrder: 137,
+    actions: ['view'],
+  },
+  {
     key: 'hyundai.sales.discount_approvals',
     name: 'Discount Approvals',
     parentKey: 'hyundai.sales',
@@ -865,6 +873,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   'hyundai.proforma': { href: '/brands/hyundai/proforma' },
   'hyundai.warranty_list': { href: '/brands/hyundai/warranty-list' },
   'hyundai.warranty_claim_list': { href: '/brands/hyundai/warranty-claim-list' },
+  'hyundai.sales_report': { href: '/brands/hyundai/sales-report' },
   'hyundai.sales.discount_approvals': { href: '/brands/hyundai/sales/discount-approvals', aliases: ['/brands/platinum/sales/discount-approvals'] },
   'platinum.business_excellence': { href: '/brands/platinum/business-excellence', aliases: ['/brands/platinum/business-excellence/executive-dashboard', '/brands/platinum/business-excellence/overview'] },
   'platinum.service_appointment': { href: '/brands/platinum/service-appointment' },
@@ -911,7 +920,7 @@ export const DEFAULT_VISIBLE_SECTIONS = new Set<string>([
   'kia.sales_report', 'kia.stock_report', 'kia.bookings', 'kia.proforma',
   'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.demo_job_cards',
   'hyundai.demo_cars_list', 'hyundai.proforma', 'hyundai.warranty_list', 'hyundai.warranty_claim_list',
-  'hyundai.sales.discount_approvals',
+  'hyundai.sales_report', 'hyundai.sales.discount_approvals',
   'platinum.business_excellence', 'platinum.service_appointment', 'platinum.demo_job_cards',
   'platinum.demo_cars_list', 'platinum.proforma', 'platinum.warranty_list', 'platinum.warranty_claim_list',
   'mg.business_excellence', 'mg.service_appointment', 'mg.demo_job_cards', 'mg.demo_cars_list', 'mg.proforma',
@@ -935,7 +944,7 @@ export const RESTRICTED_DEFAULT_PERMISSION_KEYS = new Set<string>(
 // still grantable per-user via the Access Map. Distinct from RESTRICTED_DEFAULT_SECTIONS (super
 // admins only) because EBA is additionally allowed. The allowed-role set lives in
 // lib/permissions/service.ts (SENSITIVE_REPORT_DEFAULT_ROLES).
-export const SENSITIVE_REPORT_SECTIONS = new Set<string>(['kia.sales_report', 'kia.stock_report'])
+export const SENSITIVE_REPORT_SECTIONS = new Set<string>(['kia.sales_report', 'kia.stock_report', 'hyundai.sales_report'])
 
 export const SENSITIVE_REPORT_PERMISSION_KEYS = new Set<string>(
   PERMISSIONS.filter((permission) => SENSITIVE_REPORT_SECTIONS.has(permission.groupKey)).map((permission) => permission.key)
@@ -1014,6 +1023,7 @@ const hyundaiPlatinumExecutiveGroups = [
   'hyundai.warranty_list',
   'hyundai.warranty_claim_list',
   'hyundai.sales',
+  'hyundai.sales_report',
   'hyundai.h_promise',
   'platinum',
   'platinum.service',

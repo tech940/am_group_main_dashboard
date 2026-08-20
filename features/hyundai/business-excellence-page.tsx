@@ -2516,8 +2516,8 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                                   scopes the rest of the dashboard. */}
                               <RevenueLeakagePanel
                                 brand="hyundai"
-                                startDate={appliedDateFilter?.startDate ?? null}
-                                endDate={appliedDateFilter?.endDate ?? null}
+                                startDate={resolveCurrentRange().startDate}
+                                endDate={resolveCurrentRange().endDate}
                               />
                               <BusinessExecutiveDashboard
                                 dateFilter={appliedDateFilter}
@@ -4044,9 +4044,9 @@ function ExecutiveRevenuePerformance({
     const metric = executivePeriod(row, period)
     return (
       <React.Fragment key={`${row.name}-${period}`}>
-        <td className="min-w-[78px] whitespace-nowrap border border-slate-200/70 px-2.5 py-2 text-right font-mono font-black text-slate-900">{formatExecutiveRevenueMoney(metric.cy)}</td>
-        <td className="min-w-[78px] whitespace-nowrap border border-slate-200/70 px-2.5 py-2 text-right font-mono font-bold text-slate-400">{formatExecutiveRevenueMoney(metric.ly)}</td>
-        <td className="min-w-[82px] whitespace-nowrap border border-slate-200/70 px-2.5 py-2 text-center">
+        <td className="min-w-[78px] whitespace-nowrap border border-slate-200 px-2.5 py-2 text-right font-mono font-black text-slate-900">{formatExecutiveRevenueMoney(metric.cy)}</td>
+        <td className="min-w-[78px] whitespace-nowrap border border-slate-200 px-2.5 py-2 text-right font-mono font-bold text-slate-400">{formatExecutiveRevenueMoney(metric.ly)}</td>
+        <td className="min-w-[82px] whitespace-nowrap border border-slate-200 px-2.5 py-2 text-center">
           <ExecutiveGrowthBadge value={metric.growth} />
         </td>
       </React.Fragment>
@@ -4068,7 +4068,7 @@ function ExecutiveRevenuePerformance({
       onToggleExpanded={() => onToggleTable(tableId)}
     >
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight">
+        <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight border border-slate-200">
           <thead className="bg-slate-900 text-slate-200">
             <tr>
               <th className="min-w-[130px] border border-slate-800 px-3 py-2 text-left font-bold text-slate-300">Category</th>
@@ -4083,10 +4083,10 @@ function ExecutiveRevenuePerformance({
               )))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-200">
             {rows.map(({ key, label, row }) => (
               <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-slate-50/80 transition-colors')}>
-                <td className="whitespace-nowrap border border-slate-200/70 px-3 py-2 font-black leading-tight">{label}</td>
+                <td className="whitespace-nowrap border border-slate-200 px-3 py-2 font-black leading-tight">{label}</td>
                 {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => renderPeriodCells(row, period))}
               </tr>
             ))}
@@ -4179,6 +4179,7 @@ function BusinessExecutiveDashboard({
   const [activeExecutiveMetric, setActiveExecutiveMetric] = useState<ROAnalysisType>('load')
   const [activeExecutiveTableMetric, setActiveExecutiveTableMetric] = useState<ROAnalysisType>('load')
   const [expandedExecutiveTable, setExpandedExecutiveTable] = useState<ExecutiveDashboardTableId | null>(null)
+  const [fyViewMode, setFyViewMode] = useState<'all' | 'month-pacing' | 'fy-annual'>('all')
   const selectedDealer = normalizeKiaDealerCode(dealerCode)
   const selectedLocation = selectedDealer || 'all'
   const queryClient = useQueryClient()
@@ -4443,6 +4444,90 @@ function BusinessExecutiveDashboard({
     return Array.from(byFy.values()).sort((a, b) => b.fy.localeCompare(a.fy)).slice(0, 4)
   }, [fyQuery.data])
 
+  const executivePacingData = useMemo(() => {
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const endDate = selectedRange.end
+    const daysInMonth = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).getDate()
+    const throughDay = Math.min(Math.max(endDate.getDate(), 1), daysInMonth)
+    const pacingMultiplier = throughDay > 0 ? daysInMonth / throughDay : 1
+
+    const labourBase = getExecutiveDisplayBaseRows(selectedTable, 'labour')
+    const partsBase = getExecutiveDisplayBaseRows(selectedTable, 'parts')
+    const loadBase = getExecutiveDisplayBaseRows(selectedTable, 'load')
+
+    const findRow = (rows: ROAnalysisRow[], name: string) =>
+      rows.find((r) => r.name.toLowerCase() === name.toLowerCase())
+
+    const mechLabourRow = findRow(labourBase, 'MECH TOTAL')
+    const bsLabourRow = findRow(labourBase, 'Accident')
+    const grandLabourRow = findRow(labourBase, 'Grand Total')
+
+    const mechPartsRow = findRow(partsBase, 'MECH TOTAL')
+    const bsPartsRow = findRow(partsBase, 'Accident')
+    const grandPartsRow = findRow(partsBase, 'Grand Total')
+
+    const mechLoadRow = findRow(loadBase, 'MECH TOTAL')
+    const bsLoadRow = findRow(loadBase, 'Accident')
+    const grandLoadRow = findRow(loadBase, 'Grand Total')
+
+    const mechLabour = Number(mechLabourRow?.metrics.mtd.cy || 0)
+    const bsLabour = Number(bsLabourRow?.metrics.mtd.cy || 0)
+    const totalLabour = Number(grandLabourRow?.metrics.mtd.cy || (mechLabour + bsLabour))
+
+    const mechParts = Number(mechPartsRow?.metrics.mtd.cy || 0)
+    const bsParts = Number(bsPartsRow?.metrics.mtd.cy || 0)
+    const totalParts = Number(grandPartsRow?.metrics.mtd.cy || (mechParts + bsParts))
+
+    const mechLoad = Number(mechLoadRow?.metrics.mtd.cy || 0)
+    const bsLoad = Number(bsLoadRow?.metrics.mtd.cy || 0)
+    const totalLoad = Number(grandLoadRow?.metrics.mtd.cy || (mechLoad + bsLoad))
+
+    return {
+      throughDay,
+      daysInMonth,
+      pacingMultiplier,
+      pctMonthPassed: Math.round((throughDay / daysInMonth) * 100),
+      items: [
+        {
+          category: 'Mechanical',
+          isTotal: false,
+          loadMtd: mechLoad,
+          loadPacing: Math.round(mechLoad * pacingMultiplier),
+          labourMtd: mechLabour,
+          labourPacing: mechLabour * pacingMultiplier,
+          partsMtd: mechParts,
+          partsPacing: mechParts * pacingMultiplier,
+          revenueMtd: mechLabour + mechParts,
+          revenuePacing: (mechLabour + mechParts) * pacingMultiplier,
+        },
+        {
+          category: 'Bodyshop (Accidental)',
+          isTotal: false,
+          loadMtd: bsLoad,
+          loadPacing: Math.round(bsLoad * pacingMultiplier),
+          labourMtd: bsLabour,
+          labourPacing: bsLabour * pacingMultiplier,
+          partsMtd: bsParts,
+          partsPacing: bsParts * pacingMultiplier,
+          revenueMtd: bsLabour + bsParts,
+          revenuePacing: (bsLabour + bsParts) * pacingMultiplier,
+        },
+        {
+          category: 'Grand Total',
+          isTotal: true,
+          loadMtd: totalLoad,
+          loadPacing: Math.round(totalLoad * pacingMultiplier),
+          labourMtd: totalLabour,
+          labourPacing: totalLabour * pacingMultiplier,
+          partsMtd: totalParts,
+          partsPacing: totalParts * pacingMultiplier,
+          revenueMtd: totalLabour + totalParts,
+          revenuePacing: (totalLabour + totalParts) * pacingMultiplier,
+        },
+      ],
+    }
+  }, [dateFilter, selectedTable])
+
   const isLoading = tableQuery.isLoading || branchTableQuery.isLoading || trendQuery.isLoading || fyQuery.isLoading
 
   return (
@@ -4491,33 +4576,33 @@ function BusinessExecutiveDashboard({
               onToggleExpanded={() => toggleExecutiveTable('overall-load')}
             >
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight text-left">
+                <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight text-left border border-slate-200">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
-                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Location</th>
-                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
-                      {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
-                        <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
+                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border border-slate-200">Location</th>
+                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border border-slate-200">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
+                        <th key={label} colSpan={3} className="px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700 border border-slate-200">{label}</th>
                       ))}
                     </tr>
                     <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
-                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label, i) => (
-                        <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
+                        <th key={`${groupIndex}-${label}`} className="px-3 py-1.5 text-center font-bold text-slate-500 border border-slate-200">{label}</th>
                       )))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-200">
                     {locationRows.map((row) => (
                       <tr key={row.label} className={row.label === 'Total' ? 'bg-teal-50/60 font-black text-[#055B65]' : 'bg-white hover:bg-teal-50/30 transition-colors'}>
-                        <td className="px-4 py-3 font-bold text-slate-900 border-r border-slate-100">{row.label}</td>
-                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
-                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => {
+                        <td className="px-4 py-3 font-bold text-slate-900 border border-slate-200">{row.label}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border border-slate-200">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
                           const metric = row[period]
                           return (
                             <React.Fragment key={`${row.label}-${period}`}>
-                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
-                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
-                              <td className={cn("px-3 py-3 text-center", pIdx < 2 && "border-r border-slate-100")}><ExecutiveGrowthBadge value={metric.growth} /></td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900 border border-slate-200">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400 border border-slate-200">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
+                              <td className="px-3 py-3 text-center border border-slate-200"><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
                         })}
@@ -4556,33 +4641,33 @@ function BusinessExecutiveDashboard({
               onToggleExpanded={() => toggleExecutiveTable('service-type-performance')}
             >
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight text-left">
+                <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight text-left border border-slate-200">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-700">
-                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">Service Type</th>
-                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border-r border-slate-200/60">TD</th>
-                      {(['MTD', 'QTD', 'YTD'] as const).map((label, lIdx) => (
-                        <th key={label} colSpan={3} className={cn("px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700", lIdx < 2 && "border-r border-slate-200/60")}>{label}</th>
+                      <th rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-600 border border-slate-200">Service Type</th>
+                      <th rowSpan={2} className="px-3 py-3 text-center font-black uppercase tracking-wider text-slate-600 border border-slate-200">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
+                        <th key={label} colSpan={3} className="px-3 py-2 text-center font-black uppercase tracking-wider text-slate-700 border border-slate-200">{label}</th>
                       ))}
                     </tr>
                     <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
-                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label, i) => (
-                        <th key={`${groupIndex}-${label}`} className={cn("px-3 py-1.5 text-center font-bold text-slate-500", groupIndex < 2 && i === 2 && "border-r border-slate-200/60")}>{label}</th>
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
+                        <th key={`${groupIndex}-${label}`} className="px-3 py-1.5 text-center font-bold text-slate-500 border border-slate-200">{label}</th>
                       )))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-200">
                     {serviceTypeRows.map((row) => (
                       <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white hover:bg-teal-50/30 transition-colors')}>
-                        <td className="px-4 py-3 font-bold text-slate-900 border-r border-slate-100">{row.name}</td>
-                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
-                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => {
+                        <td className="px-4 py-3 font-bold text-slate-900 border border-slate-200">{row.name}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border border-slate-200">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
                           const metric = row[period]
                           return (
                             <React.Fragment key={`${row.name}-${period}`}>
-                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
-                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
-                              <td className={cn("px-3 py-3 text-center", pIdx < 2 && "border-r border-slate-100")}><ExecutiveGrowthBadge value={metric.growth} /></td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-slate-900 border border-slate-200">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-semibold text-slate-400 border border-slate-200">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
+                              <td className="px-3 py-3 text-center border border-slate-200"><ExecutiveGrowthBadge value={metric.growth} /></td>
                             </React.Fragment>
                           )
                         })}
@@ -4680,41 +4765,139 @@ function BusinessExecutiveDashboard({
             </div>
 
             <ExecutiveTableShell
-              title="FY Trends"
-              subtitle="Revenue, parts, labour, load"
+              title="FY Trends & Month Pacing"
+              subtitle="Revenue, parts, labour, load annual performance & current month pacing"
+              headerContentClassName="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between"
+              actions={(
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    { id: 'all', label: 'All Views' },
+                    { id: 'month-pacing', label: 'Month Pacing (Mech & Bodyshop)' },
+                    { id: 'fy-annual', label: 'Annual FY Trends' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setFyViewMode(tab.id as typeof fyViewMode)}
+                      aria-pressed={fyViewMode === tab.id}
+                      className={cn(
+                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
+                        fyViewMode === tab.id
+                          ? 'border-white bg-white text-[#055B65] shadow-xs scale-105'
+                          : 'border-white/20 bg-white/10 text-teal-100 hover:bg-white/20 hover:text-white'
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               isExpanded={expandedExecutiveTable === 'fy-trends'}
               onToggleExpanded={() => toggleExecutiveTable('fy-trends')}
             >
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[620px] border-collapse text-[11px] leading-tight">
-                  <thead className="bg-slate-900 text-slate-100">
-                    <tr>
-                      <th className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Financial Year</th>
-                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Load</th>
-                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Labour</th>
-                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Parts</th>
-                      <th className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fyRows.map((row) => (
-                      <tr key={row.fy} className="bg-white hover:bg-slate-50/80 transition-colors">
-                        <td className="border border-slate-200/70 px-3 py-3 font-black text-slate-900">{row.fy}</td>
-                        <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{row.load.toLocaleString('en-IN')}</td>
-                        <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.labour)}</td>
-                        <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.parts)}</td>
-                        <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.revenue)}</td>
-                      </tr>
-                    ))}
-                    {fyRows.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="border border-slate-200 px-3 py-8 text-center text-sm font-bold text-slate-500">
-                          No FY trend data available for this selection.
-                        </td>
-                      </tr>
+              <div className="space-y-5">
+                {(fyViewMode === 'all' || fyViewMode === 'month-pacing') && (
+                  <div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2.5 px-1">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                          Current Month Pacing Breakdown (Mechanical vs Bodyshop)
+                        </h4>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200/80 px-2.5 py-0.5 rounded-full">
+                        Formula: (MTD ÷ {executivePacingData.throughDay} days) × {executivePacingData.daysInMonth} days ({executivePacingData.pctMonthPassed}% month passed)
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight border border-slate-200">
+                        <caption className="sr-only">Current month pacing for mechanical and bodyshop labour, parts, load and revenue</caption>
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-900 text-slate-100">
+                            <th scope="col" rowSpan={2} className="px-4 py-3 text-left font-black uppercase tracking-wider text-slate-200 border border-slate-700">Category</th>
+                            <th scope="colgroup" colSpan={2} className="px-3 py-2 text-center font-black uppercase tracking-wider text-slate-200 border border-slate-700">Load / JC</th>
+                            <th scope="colgroup" colSpan={2} className="px-3 py-2 text-center font-black uppercase tracking-wider text-teal-300 border border-slate-700">Labour Revenue</th>
+                            <th scope="colgroup" colSpan={2} className="px-3 py-2 text-center font-black uppercase tracking-wider text-amber-300 border border-slate-700">Parts Revenue</th>
+                            <th scope="colgroup" colSpan={2} className="px-3 py-2 text-center font-black uppercase tracking-wider text-emerald-300 border border-slate-700">Total Revenue</th>
+                          </tr>
+                          <tr className="border-b border-slate-200 bg-slate-800 text-slate-300">
+                            <th scope="col" className="px-3 py-1.5 text-center font-bold border border-slate-700">MTD</th>
+                            <th scope="col" className="px-3 py-1.5 text-center font-bold text-teal-200 border border-slate-700">Pacing</th>
+                            <th scope="col" className="px-3 py-1.5 text-center font-bold border border-slate-700">MTD</th>
+                            <th scope="col" className="px-3 py-1.5 text-center font-bold text-teal-200 border border-slate-700">Pacing</th>
+                            <th scope="col" className="px-3 py-1.5 text-center font-bold border border-slate-700">MTD</th>
+                            <th scope="col" className="px-3 py-1.5 text-center font-bold text-amber-200 border border-slate-700">Pacing</th>
+                            <th scope="col" className="px-3 py-1.5 text-center font-bold border border-slate-700">MTD</th>
+                            <th scope="col" className="px-3 py-1.5 text-center font-bold text-emerald-200 border border-slate-700">Pacing</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {executivePacingData.items.map((item) => (
+                            <tr
+                              key={item.category}
+                              className={item.isTotal ? 'bg-teal-50/70 font-black text-[#055B65]' : 'bg-white hover:bg-slate-50 transition-colors'}
+                            >
+                              <td className="px-4 py-3 font-black text-slate-900 border border-slate-200">{item.category}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-medium text-slate-700 border border-slate-200">{item.loadMtd.toLocaleString('en-IN')}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-center font-mono font-black text-[#055B65] border border-slate-200">{item.loadPacing.toLocaleString('en-IN')}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-right font-mono font-medium text-slate-700 border border-slate-200">{formatCurrency(item.labourMtd)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-right font-mono font-black text-teal-700 border border-slate-200">{formatCurrency(item.labourPacing)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-right font-mono font-medium text-slate-700 border border-slate-200">{formatCurrency(item.partsMtd)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-right font-mono font-black text-amber-700 border border-slate-200">{formatCurrency(item.partsPacing)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-right font-mono font-medium text-slate-700 border border-slate-200">{formatCurrency(item.revenueMtd)}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-right font-mono font-black text-emerald-700 border border-slate-200">{formatCurrency(item.revenuePacing)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {(fyViewMode === 'all' || fyViewMode === 'fy-annual') && (
+                  <div>
+                    {fyViewMode === 'all' && (
+                      <div className="flex items-center gap-2 mb-2 px-1 pt-1">
+                        <span className="inline-block w-2 h-2 rounded-full bg-slate-500" />
+                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                          Annual Financial Year History
+                        </h4>
+                      </div>
                     )}
-                  </tbody>
-                </table>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[620px] border-collapse text-[11px] leading-tight border border-slate-200">
+                        <caption className="sr-only">Financial year trends for load, labour, parts and revenue</caption>
+                        <thead className="bg-slate-900 text-slate-100">
+                          <tr>
+                            <th scope="col" className="border border-slate-800 px-3 py-3 text-left font-bold text-slate-300">Financial Year</th>
+                            <th scope="col" className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Load</th>
+                            <th scope="col" className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Labour</th>
+                            <th scope="col" className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Parts</th>
+                            <th scope="col" className="border border-slate-800 px-3 py-3 text-right font-bold text-slate-300">Revenue</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {fyRows.map((row) => (
+                            <tr key={row.fy} className="bg-white hover:bg-slate-50/80 transition-colors motion-reduce:transition-none">
+                              <td className="border border-slate-200/70 px-3 py-3 font-black text-slate-900">{row.fy}</td>
+                              <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{row.load.toLocaleString('en-IN')}</td>
+                              <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.labour)}</td>
+                              <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.parts)}</td>
+                              <td className="border border-slate-200/70 px-3 py-3 text-right font-mono font-black text-slate-900">{formatCurrency(row.revenue)}</td>
+                            </tr>
+                          ))}
+                          {fyRows.length === 0 && (
+                            <tr>
+                              <td colSpan={5} className="border border-slate-200 px-3 py-8 text-center text-sm font-bold text-slate-500">
+                                No FY trend data available for this selection.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             </ExecutiveTableShell>
           </div>
@@ -7774,30 +7957,30 @@ function ServiceTypePerformance({
             {viewMode === 'table' ? (
               <div className="p-6 pb-0">
                 <div className="overflow-x-auto">
-                  <table className="ro-analysis-table w-full text-left border-collapse">
+                  <table className="ro-analysis-table w-full text-left border-collapse border border-slate-200">
                     <thead>
                       <tr className="bg-teal-700 text-white">
-                        <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 min-w-[220px]">Work Type</th>
-                        <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center">TD</th>
-                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-600">MTD</th>
-                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-700">QTD</th>
-                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-600">YTD</th>
+                        <th className="border border-teal-800 px-6 py-5 text-[10px] font-black uppercase tracking-widest min-w-[220px]">Work Type</th>
+                        <th className="border border-teal-800 px-6 py-5 text-[10px] font-black uppercase tracking-widest text-center">TD</th>
+                        <th colSpan={3} className="border border-teal-800 px-4 py-5 text-[10px] font-black uppercase tracking-widest text-center bg-teal-600">MTD</th>
+                        <th colSpan={3} className="border border-teal-800 px-4 py-5 text-[10px] font-black uppercase tracking-widest text-center bg-teal-700">QTD</th>
+                        <th colSpan={3} className="border border-teal-800 px-4 py-5 text-[10px] font-black uppercase tracking-widest text-center bg-teal-600">YTD</th>
                       </tr>
                       <tr className="bg-teal-700 text-white/90">
-                        <th className="px-6 py-3 border-b border-white/5"></th>
-                        <th className="px-6 py-3 border-b border-white/5"></th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">CY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">LY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">Growth</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">CY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">LY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">Growth</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">CY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">LY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">Growth</th>
+                        <th className="border border-teal-800 px-6 py-3"></th>
+                        <th className="border border-teal-800 px-6 py-3"></th>
+                        <th className="border border-teal-800 px-4 py-3 text-[9px] font-bold text-center bg-teal-600">CY</th>
+                        <th className="border border-teal-800 px-4 py-3 text-[9px] font-bold text-center bg-teal-600">LY</th>
+                        <th className="border border-teal-800 px-4 py-3 text-[9px] font-bold text-center bg-teal-600">Growth</th>
+                        <th className="border border-teal-800 px-4 py-3 text-[9px] font-bold text-center bg-teal-700">CY</th>
+                        <th className="border border-teal-800 px-4 py-3 text-[9px] font-bold text-center bg-teal-700">LY</th>
+                        <th className="border border-teal-800 px-4 py-3 text-[9px] font-bold text-center bg-teal-700">Growth</th>
+                        <th className="border border-teal-800 px-4 py-3 text-[9px] font-bold text-center bg-teal-600">CY</th>
+                        <th className="border border-teal-800 px-4 py-3 text-[9px] font-bold text-center bg-teal-600">LY</th>
+                        <th className="border border-teal-800 px-4 py-3 text-[9px] font-bold text-center bg-teal-600">Growth</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-200">
                       {isServerTableLoading && !activeServerTableRows ? (
                         Array.from({ length: 8 }).map((_, index) => (
                           <tr key={`ro-table-skeleton-${index}`} className="border-b border-slate-100">
@@ -7825,7 +8008,7 @@ function ServiceTypePerformance({
                                     : "hover:bg-slate-50/80 bg-white",
                                 getManagementTotalRowClass(row.name)
                               )}>
-                                <td className="px-6 py-4 text-[13px] font-bold">
+                                <td className="border border-slate-200 px-6 py-4 text-[13px] font-bold">
                                   <div className="flex items-center gap-3">
                                     {row.isParent ? (
                                       <button
@@ -7843,11 +8026,11 @@ function ServiceTypePerformance({
                                   </div>
                                 </td>
                                 {!hasCustomComparison && (
-                                  <td className={cn("px-6 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.td)}</td>
+                                  <td className={cn("border border-slate-200 px-6 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.td)}</td>
                                 )}
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-black", isTotal ? "text-slate-900" : "text-slate-900")}>{formatValue(row.cy)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly)}</td>
-                                <td className="px-4 py-4 text-center">
+                                <td className={cn("border border-slate-200 px-4 py-4 text-[13px] text-center font-mono font-black", isTotal ? "text-slate-900" : "text-slate-900")}>{formatValue(row.cy)}</td>
+                                <td className={cn("border border-slate-200 px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly)}</td>
+                                <td className="border border-slate-200 px-4 py-4 text-center">
                                   <span className={cn(
                                     "px-2.5 py-1 rounded-full text-[10px] font-black border shadow-sm",
                                     getGrowthBadgeClass(row.growth)
@@ -7857,9 +8040,9 @@ function ServiceTypePerformance({
                                 </td>
                                 {!hasCustomComparison && (
                                   <>
-                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.qtdCY)}</td>
-                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.qtdLY)}</td>
-                                    <td className="px-4 py-4 text-center">
+                                    <td className={cn("border border-slate-200 px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.qtdCY)}</td>
+                                    <td className={cn("border border-slate-200 px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.qtdLY)}</td>
+                                    <td className="border border-slate-200 px-4 py-4 text-center">
                                       <span className={cn(
                                         "text-[10px] font-black px-2 py-0.5 rounded-full border",
                                         getGrowthBadgeClass(row.qtdGrowth)
@@ -7867,9 +8050,9 @@ function ServiceTypePerformance({
                                         {formatSignedGrowth(row.qtdGrowth)}
                                       </span>
                                     </td>
-                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.ytdCY)}</td>
-                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ytdLY)}</td>
-                                    <td className="px-4 py-4 text-center">
+                                    <td className={cn("border border-slate-200 px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.ytdCY)}</td>
+                                    <td className={cn("border border-slate-200 px-4 py-4 text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ytdLY)}</td>
+                                    <td className="border border-slate-200 px-4 py-4 text-center">
                                       <span className={cn(
                                         "text-[10px] font-black px-2 py-0.5 rounded-full border",
                                         getGrowthBadgeClass(row.ytdGrowth)
@@ -8202,54 +8385,54 @@ function ServiceTypePerformance({
                   </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
+                  <table className="w-full border-collapse border border-slate-200">
                     <thead>
                       <tr className="bg-slate-700 text-white">
-                        <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest border-b border-white/10">Trends</th>
+                        <th className="border border-slate-600 px-6 py-4 text-left text-xs font-black uppercase tracking-widest">Trends</th>
                         {fyTrendsData.map((fy) => (
-                          <th key={fy.fy} className="px-6 py-4 text-center text-xs font-black uppercase tracking-widest border-b border-white/10">
+                          <th key={fy.fy} className="border border-slate-600 px-6 py-4 text-center text-xs font-black uppercase tracking-widest">
                             {fy.fy}
                           </th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100">
-                        <td className="px-6 py-4 text-sm font-bold text-slate-700">Load</td>
+                    <tbody className="divide-y divide-slate-200">
+                      <tr className="hover:bg-slate-50 transition-colors">
+                        <td className="border border-slate-200 px-6 py-4 text-sm font-bold text-slate-700">Load</td>
                         {fyTrendsData.map((fy) => (
-                          <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
+                          <td key={fy.fy} className="border border-slate-200 px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
                             {fy.load.toLocaleString()}
                           </td>
                         ))}
                       </tr>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100 bg-blue-50/30">
-                        <td className="px-6 py-4 text-sm font-bold text-slate-700">Labour</td>
+                      <tr className="hover:bg-slate-50 transition-colors bg-blue-50/30">
+                        <td className="border border-slate-200 px-6 py-4 text-sm font-bold text-slate-700">Labour</td>
                         {fyTrendsData.map((fy) => (
-                          <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
+                          <td key={fy.fy} className="border border-slate-200 px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
                             {fy.labour.toLocaleString()}
                           </td>
                         ))}
                       </tr>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100 bg-purple-50/30">
-                        <td className="px-6 py-4 text-sm font-bold text-slate-700">Part</td>
+                      <tr className="hover:bg-slate-50 transition-colors bg-purple-50/30">
+                        <td className="border border-slate-200 px-6 py-4 text-sm font-bold text-slate-700">Part</td>
                         {fyTrendsData.map((fy) => (
-                          <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
+                          <td key={fy.fy} className="border border-slate-200 px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
                             {fy.parts.toLocaleString()}
                           </td>
                         ))}
                       </tr>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100 bg-teal-50/30">
-                        <td className="px-6 py-4 text-sm font-bold text-slate-700">Lab / Veh</td>
+                      <tr className="hover:bg-slate-50 transition-colors bg-teal-50/30">
+                        <td className="border border-slate-200 px-6 py-4 text-sm font-bold text-slate-700">Lab / Veh</td>
                         {fyTrendsData.map((fy) => (
-                          <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
+                          <td key={fy.fy} className="border border-slate-200 px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
                             {Math.round(fy.labPerVehicle).toLocaleString()}
                           </td>
                         ))}
                       </tr>
-                      <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100 bg-amber-50/30">
-                        <td className="px-6 py-4 text-sm font-bold text-slate-700">Part / Veh</td>
+                      <tr className="hover:bg-slate-50 transition-colors bg-amber-50/30">
+                        <td className="border border-slate-200 px-6 py-4 text-sm font-bold text-slate-700">Part / Veh</td>
                         {fyTrendsData.map((fy) => (
-                          <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
+                          <td key={fy.fy} className="border border-slate-200 px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
                             {Math.round(fy.partPerVehicle).toLocaleString()}
                           </td>
                         ))}
@@ -8297,17 +8480,17 @@ function ServiceTypePerformance({
                 ) : (
                   <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
                     <div className="max-h-[680px] overflow-auto">
-                      <table className="w-full min-w-[1040px] border-collapse text-left">
+                      <table className="w-full min-w-[1040px] border-collapse text-left border border-slate-200">
                         <thead className="sticky top-0 z-10 bg-slate-950 text-white">
                           <tr>
                             {['Rank', 'Service Advisor', 'RO Load', 'Total Revenue', 'Labour', 'Parts', 'Avg Billing', 'Contribution'].map((heading) => (
-                              <th key={heading} className="px-5 py-4 text-[10px] font-black uppercase tracking-widest">
+                              <th key={heading} className="border border-slate-800 px-5 py-4 text-[10px] font-black uppercase tracking-widest">
                                 {heading}
                               </th>
                             ))}
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
+                        <tbody className="divide-y divide-slate-200 bg-white">
                           {serverLeaderboard.map((advisor, index) => {
                             const topRank = index < 3
                             const rankStyles = [
@@ -8332,7 +8515,7 @@ function ServiceTypePerformance({
                             ][index]
                             return (
                             <tr key={advisor.name} className={cn('transition hover:bg-slate-50', rankStyles?.row)}>
-                              <td className="px-5 py-4">
+                              <td className="border border-slate-200 px-5 py-4">
                                 <div className="flex items-center gap-2">
                                   <span className={cn(
                                     'relative inline-flex h-10 w-10 items-center justify-center rounded-2xl border text-xs font-black shadow-lg',
@@ -8350,7 +8533,7 @@ function ServiceTypePerformance({
                                   )}
                                 </div>
                               </td>
-                              <td className="px-5 py-4">
+                              <td className="border border-slate-200 px-5 py-4">
                                 <div className="flex items-center gap-3">
                                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-700 to-blue-700 text-xs font-black text-white shadow-lg shadow-blue-100">
                                     {advisor.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'SP'}
@@ -8361,12 +8544,12 @@ function ServiceTypePerformance({
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-5 py-4 font-mono text-sm font-black text-slate-800">{advisor.load.toLocaleString('en-IN')}</td>
-                              <td className="px-5 py-4 font-mono text-sm font-black text-slate-950">{formatCurrency(advisor.revenue)}</td>
-                              <td className="px-5 py-4 font-mono text-sm font-bold text-teal-700">{formatCurrency(advisor.labour)}</td>
-                              <td className="px-5 py-4 font-mono text-sm font-bold text-amber-700">{formatCurrency(advisor.parts)}</td>
-                              <td className="px-5 py-4 font-mono text-sm font-bold text-slate-700">{formatCurrency(advisor.averageBilling)}</td>
-                              <td className="px-5 py-4">
+                              <td className="border border-slate-200 px-5 py-4 font-mono text-sm font-black text-slate-800">{advisor.load.toLocaleString('en-IN')}</td>
+                              <td className="border border-slate-200 px-5 py-4 font-mono text-sm font-black text-slate-950">{formatCurrency(advisor.revenue)}</td>
+                              <td className="border border-slate-200 px-5 py-4 font-mono text-sm font-bold text-teal-700">{formatCurrency(advisor.labour)}</td>
+                              <td className="border border-slate-200 px-5 py-4 font-mono text-sm font-bold text-amber-700">{formatCurrency(advisor.parts)}</td>
+                              <td className="border border-slate-200 px-5 py-4 font-mono text-sm font-bold text-slate-700">{formatCurrency(advisor.averageBilling)}</td>
+                              <td className="border border-slate-200 px-5 py-4">
                                 <div className="flex items-center gap-3">
                                   <div className="h-2.5 w-28 overflow-hidden rounded-full bg-slate-100">
                                     <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.min(advisor.contribution, 100)}%` }} />

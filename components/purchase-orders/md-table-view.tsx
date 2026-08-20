@@ -13,6 +13,7 @@ import {
 } from './order-image-preview-button'
 import { usePurchaseOrdersViewPreference } from '@/lib/hooks/use-user-preferences'
 import { formatIndiaDateTime } from '@/lib/date-time'
+import { getBranchLabel } from '@/lib/branches'
 import { cn } from '@/lib/utils'
 
 interface PurchaseOrder extends PurchaseOrderDocumentSource {
@@ -21,6 +22,8 @@ interface PurchaseOrder extends PurchaseOrderDocumentSource {
   department?: string
   subDepartment?: string
   sub_department?: string
+  specifyOther?: string
+  specify_other?: string
   requestedBy?: string
   requested_by?: string
   quantityRequired?: string
@@ -39,6 +42,7 @@ interface PurchaseOrder extends PurchaseOrderDocumentSource {
   specialInstructions?: string
   special_instructions?: string
   amount?: string
+  brand?: string
 }
 
 interface MDTableViewProps {
@@ -55,6 +59,7 @@ interface MDTableViewProps {
 const ALL_COLUMNS = [
   { key: 'orderNumber', label: 'Order #', width: 'w-32' },
   { key: 'department', label: 'Department', width: 'w-40' },
+  { key: 'specifyOther', label: 'Location', width: 'w-36' },
   { key: 'subDepartment', label: 'Sub-Department', width: 'w-40' },
   { key: 'requestedBy', label: 'Requested By', width: 'w-48' },
   { key: 'specialInstructions', label: 'Instructions', width: 'w-64' },
@@ -74,6 +79,10 @@ function getColumnValue(order: PurchaseOrder, key: string) {
   switch (key) {
     case 'orderNumber':
       return order.orderNumber || order.order_number
+    case 'specifyOther':
+      return order.specifyOther || order.specify_other || '-'
+    case 'brand':
+      return order.brand ? getBranchLabel(order.brand) : 'All Locations'
     case 'subDepartment':
       return order.subDepartment || order.sub_department
     case 'requestedBy':
@@ -483,6 +492,10 @@ export function MDTableView({
                                 {formatStatusLabel(String(value || ''))}
                               </Badge>
                             </div>
+                          ) : col.key === 'specifyOther' ? (
+                            <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-black text-slate-800">
+                              {hasRenderableValue(value) && value !== '-' ? String(value) : '—'}
+                            </span>
                           ) : col.key === 'createdAt' ? (
                             <span className="text-slate-600">{value ? formatDate(String(value)) : '-'}</span>
                           ) : col.key === 'estimateIfAny' || col.key === 'amount' ? (
@@ -614,11 +627,16 @@ export function MDTableView({
                   </div>
                 </div>
 
-                {/* Tags: Department, Status */}
+                {/* Tags: Department, Location, Status */}
                 <div className="flex flex-wrap gap-1.5">
                   <span className="border border-slate-200 bg-slate-50 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider text-slate-600">
                     {dept} {subDept && `· ${subDept}`}
                   </span>
+                  {(order.specifyOther || order.specify_other) && (
+                    <span className="border border-slate-200 bg-slate-50 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider text-slate-700">
+                      {order.specifyOther || order.specify_other}
+                    </span>
+                  )}
                   <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider text-white", statusColor)}>
                     {statusLabel}
                   </span>

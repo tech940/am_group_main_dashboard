@@ -105,6 +105,8 @@ export function getHyundaiDealerLabel(value: string | null | undefined) {
   return HYUNDAI_BRANCH_DEALERS.find((branch) => branch.dealerCode === normalized)?.label || 'All Locations'
 }
 
+export const getHyundaiBranchLabel = getHyundaiDealerLabel
+
 export function appendHyundaiDealerCodeParam(params: URLSearchParams, dealerCode?: string | null) {
   const normalized = normalizeHyundaiDealerCode(dealerCode)
   if (normalized) params.set('dealer_code', normalized)

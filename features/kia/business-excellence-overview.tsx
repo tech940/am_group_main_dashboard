@@ -875,28 +875,28 @@ function RoBillingPerformanceTable({
         <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-bold text-teal-100 backdrop-blur-xs">Metric | CY | LY | Growth</span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left border-collapse">
+        <table className="w-full min-w-[720px] text-left border-collapse border border-slate-200">
           <caption className="sr-only">RO Billing performance by metric: current year, last year and growth</caption>
           <thead>
-            <tr className="border-b border-slate-200/80 bg-slate-50/80 text-slate-700">
+            <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-700">
               {['Metric', 'CY', 'LY', 'Growth'].map((heading) => (
-                <th key={heading} scope="col" className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <th key={heading} scope="col" className="border border-slate-200 px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
                   {heading}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 text-sm">
+          <tbody className="divide-y divide-slate-200 text-sm">
             {rows.map((row) => {
               const growthValue = row.growth
               const isNeutral = growthValue === null
               const isGood = !isNeutral && (row.positiveIsGood === false ? growthValue <= 0 : growthValue >= 0)
               return (
                 <tr key={row.metric} className="bg-white transition-colors hover:bg-teal-50/30">
-                  <td className="px-6 py-4 font-bold text-slate-900">{row.metric}</td>
-                  <td className="px-6 py-4 font-mono font-black text-slate-950">{row.cy}</td>
-                  <td className="px-6 py-4 font-mono font-semibold text-slate-500">{row.ly}</td>
-                  <td className="px-6 py-4">
+                  <td className="border border-slate-200 px-6 py-4 font-bold text-slate-900">{row.metric}</td>
+                  <td className="border border-slate-200 px-6 py-4 font-mono font-black text-slate-950">{row.cy}</td>
+                  <td className="border border-slate-200 px-6 py-4 font-mono font-semibold text-slate-500">{row.ly}</td>
+                  <td className="border border-slate-200 px-6 py-4">
                     <span className={cn(
                       'inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-black shadow-2xs',
                       isNeutral
@@ -948,36 +948,36 @@ function DetailedRoBillingMatrix({
         <p className="text-xs font-bold text-teal-100/80">Load, Labour, Parts, Labour/Vehicle, Parts/Vehicle</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] border-collapse text-left">
+        <table className="w-full min-w-[980px] border-collapse text-left border border-slate-200">
           <caption className="sr-only">RO Billing matrix: load, labour, parts and per-vehicle metrics for TD, MTD, QTD and YTD with last-year comparison and growth</caption>
           <thead>
             <tr className="border-b border-slate-200/80 bg-slate-50/90 text-slate-700">
-              <th rowSpan={2} scope="col" className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">Metric</th>
-              <th rowSpan={2} scope="col" className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">TD</th>
-              {['MTD', 'QTD', 'YTD'].map((period, pIdx) => (
-                <th key={period} colSpan={3} scope="colgroup" className={cn("px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700", pIdx < 2 && "border-r border-slate-200/60")}>
+              <th rowSpan={2} scope="col" className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border border-slate-200">Metric</th>
+              <th rowSpan={2} scope="col" className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border border-slate-200">TD</th>
+              {['MTD', 'QTD', 'YTD'].map((period) => (
+                <th key={period} colSpan={3} scope="colgroup" className="px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700 border border-slate-200">
                   {period}
                 </th>
               ))}
             </tr>
             <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
-              {['MTD', 'QTD', 'YTD'].flatMap((period, pIdx) => ['CY', 'LY', 'Growth'].map((label, lIdx) => (
-                <th key={`${period}-${label}`} scope="col" className={cn("px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500", pIdx < 2 && lIdx === 2 && "border-r border-slate-200/60")}>
+              {['MTD', 'QTD', 'YTD'].flatMap((period) => ['CY', 'LY', 'Growth'].map((label) => (
+                <th key={`${period}-${label}`} scope="col" className="px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500 border border-slate-200">
                   {label}
                 </th>
               )))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 text-sm">
+          <tbody className="divide-y divide-slate-200 text-sm">
             {rows.map((row) => (
               <tr key={row.metric} className="bg-white transition-colors hover:bg-teal-50/30">
-                <td className="px-5 py-3.5 font-bold text-slate-900 border-r border-slate-100">{row.metric}</td>
-                <td className="px-4 py-3.5 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{row.formatter(row.values.td.cy)}</td>
-                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => (
+                <td className="px-5 py-3.5 font-bold text-slate-900 border border-slate-200">{row.metric}</td>
+                <td className="px-4 py-3.5 text-center font-mono font-black text-[#055B65] border border-slate-200">{row.formatter(row.values.td.cy)}</td>
+                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => (
                   <React.Fragment key={`${row.metric}-${period}`}>
-                    <td className="px-3 py-3.5 text-center font-mono font-black text-slate-900">{row.formatter(row.values[period].cy)}</td>
-                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-600">{row.values[period].ly === 'N/A' ? 'N/A' : row.formatter(row.values[period].ly)}</td>
-                    <td className={cn("px-3 py-3.5 text-center", pIdx < 2 && "border-r border-slate-100")}>{renderGrowth(row.values[period].growth)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-black text-slate-900 border border-slate-200">{row.formatter(row.values[period].cy)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-600 border border-slate-200">{row.values[period].ly === 'N/A' ? 'N/A' : row.formatter(row.values[period].ly)}</td>
+                    <td className="px-3 py-3.5 text-center border border-slate-200">{renderGrowth(row.values[period].growth)}</td>
                   </React.Fragment>
                 ))}
               </tr>
@@ -1041,27 +1041,27 @@ function ServiceTypeRoBillingTable({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1080px] border-collapse text-left">
+        <table className="w-full min-w-[1080px] border-collapse text-left border border-slate-200">
           <caption className="sr-only">RO Billing by service type for TD, MTD, QTD and YTD with last-year comparison and growth</caption>
           <thead>
             <tr className="border-b border-slate-200/80 bg-slate-50/90 text-slate-700">
-              <th rowSpan={2} scope="col" className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">Work Type</th>
-              <th rowSpan={2} scope="col" className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border-r border-slate-200/60">TD</th>
-              {['MTD', 'QTD', 'YTD'].map((period, pIdx) => (
-                <th key={period} colSpan={3} scope="colgroup" className={cn("px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700", pIdx < 2 && "border-r border-slate-200/60")}>
+              <th rowSpan={2} scope="col" className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 border border-slate-200">Work Type</th>
+              <th rowSpan={2} scope="col" className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-600 border border-slate-200">TD</th>
+              {['MTD', 'QTD', 'YTD'].map((period) => (
+                <th key={period} colSpan={3} scope="colgroup" className="px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-700 border border-slate-200">
                   {period}
                 </th>
               ))}
             </tr>
             <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500">
-              {['MTD', 'QTD', 'YTD'].flatMap((period, pIdx) => ['CY', 'LY', 'Growth'].map((label, lIdx) => (
-                <th key={`${period}-${label}`} scope="col" className={cn("px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500", pIdx < 2 && lIdx === 2 && "border-r border-slate-200/60")}>
+              {['MTD', 'QTD', 'YTD'].flatMap((period) => ['CY', 'LY', 'Growth'].map((label) => (
+                <th key={`${period}-${label}`} scope="col" className="px-3 py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-500 border border-slate-200">
                   {label}
                 </th>
               )))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 text-sm">
+          <tbody className="divide-y divide-slate-200 text-sm">
             {rows.map((row) => (
               <tr
                 key={row.name}
@@ -1074,13 +1074,13 @@ function ServiceTypeRoBillingTable({
                     : 'bg-white'
                 )}
               >
-                <td className={cn('px-5 py-3.5 font-bold border-r border-slate-100', row.isGrand ? 'text-[#055B65] font-black' : 'text-slate-900')}>{row.name}</td>
-                <td className="px-4 py-3.5 text-center font-mono font-black text-[#055B65] border-r border-slate-100">{formatter(row.values.td.cy)}</td>
-                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period, pIdx) => (
+                <td className={cn('px-5 py-3.5 font-bold border border-slate-200', row.isGrand ? 'text-[#055B65] font-black' : 'text-slate-900')}>{row.name}</td>
+                <td className="px-4 py-3.5 text-center font-mono font-black text-[#055B65] border border-slate-200">{formatter(row.values.td.cy)}</td>
+                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => (
                   <React.Fragment key={`${row.name}-${period}`}>
-                    <td className="px-3 py-3.5 text-center font-mono font-black text-slate-900">{formatter(row.values[period].cy)}</td>
-                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-600">{row.values[period].ly === 'N/A' ? 'N/A' : formatter(row.values[period].ly)}</td>
-                    <td className={cn("px-3 py-3.5 text-center", pIdx < 2 && "border-r border-slate-100")}>{renderGrowth(row.values[period].growth)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-black text-slate-900 border border-slate-200">{formatter(row.values[period].cy)}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-semibold text-slate-600 border border-slate-200">{row.values[period].ly === 'N/A' ? 'N/A' : formatter(row.values[period].ly)}</td>
+                    <td className="px-3 py-3.5 text-center border border-slate-200">{renderGrowth(row.values[period].growth)}</td>
                   </React.Fragment>
                 ))}
               </tr>
@@ -1823,22 +1823,22 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
             </div>
 
             <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white">
-              <table className="w-full min-w-[680px] border-collapse text-left">
+              <table className="w-full min-w-[680px] border-collapse text-left border border-slate-200">
                 <caption className="sr-only">Business health score factors with weight, score and current signal</caption>
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-slate-700">
                     {['Factor', 'Weight', 'Score', 'Current Signal'].map((heading) => (
-                      <th key={heading} scope="col" className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-600">{heading}</th>
+                      <th key={heading} scope="col" className="border border-slate-200 px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-600">{heading}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-sm">
+                <tbody className="divide-y divide-slate-200 text-sm">
                   {snapshotHealth.components.map((item) => (
                     <tr key={item.label} className="bg-white hover:bg-slate-50/50">
-                      <td className="px-4 py-3 font-bold text-slate-900">{item.label}</td>
-                      <td className="px-4 py-3 font-mono font-black text-slate-700">{item.weight}%</td>
-                      <td className="px-4 py-3 font-mono font-black text-[#055B65]">{item.score}/100</td>
-                      <td className="px-4 py-3 text-xs font-semibold text-slate-600">{item.detail}</td>
+                      <td className="border border-slate-200 px-4 py-3 font-bold text-slate-900">{item.label}</td>
+                      <td className="border border-slate-200 px-4 py-3 font-mono font-black text-slate-700">{item.weight}%</td>
+                      <td className="border border-slate-200 px-4 py-3 font-mono font-black text-[#055B65]">{item.score}/100</td>
+                      <td className="border border-slate-200 px-4 py-3 text-xs font-semibold text-slate-600">{item.detail}</td>
                     </tr>
                   ))}
                 </tbody>

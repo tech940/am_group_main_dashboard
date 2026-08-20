@@ -1059,7 +1059,8 @@ const CONSULTANTS = [
   'NEERAJ',
   'ANSH',
   'JATINDER SINGH',
-  'SAGAR'
+  'SAGAR',
+  'YASIR AHMED'
 ] as const
 
 const MANAGERS = ['SANJEEV KOUL', 'MUZAFFAR IQBALL', 'Irshad Ahmed', 'Rahul Bhasin'] as const
@@ -1070,7 +1071,8 @@ const TLS = [
   'UDHAMPUR',
   'OTHER DEALER',
   'SHIV DEV SINGH',
-  'AKASH BHAT'
+  'AKASH BHAT',
+  'ARSHAD KHAN'
 ] as const
 
 const LEAD_SOURCES = [
@@ -5516,8 +5518,17 @@ function CreateBookingDialog({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Consultant">
-                  <Input readOnly value={form.consultantName || currentUserName || 'You'} className={cn(INPUT_STYLE, 'bg-slate-100/60')} title="Automatically set to the logged-in user" />
+                <Field label="Consultant" required>
+                  {isSalesExec ? (
+                    <Input readOnly value={form.consultantName || currentUserName || 'You'} className={cn(INPUT_STYLE, 'bg-slate-100/60')} title="Automatically set to the logged-in user" />
+                  ) : (
+                    <Select value={form.consultantName || currentUserName || ''} onValueChange={(val) => onChange('consultantName', val)}>
+                      <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Consultant" /></SelectTrigger>
+                      <SelectContent>
+                        {CONSULTANTS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </Field>
                 <Field label="Lead Source" required>
                   <Select value={form.leadSource} onValueChange={(val) => onChange('leadSource', val)}>

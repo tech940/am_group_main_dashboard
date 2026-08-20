@@ -154,6 +154,12 @@ WITH ranked AS (
         NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
         'UNMAPPED'
       ) = 'N6824' THEN 'N6250'
+      WHEN COALESCE(
+        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+        NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+        NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
+        'UNMAPPED'
+      ) IN ('N6828', 'N6848') THEN 'N6828'
       ELSE COALESCE(
         NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
         NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
@@ -169,6 +175,12 @@ WITH ranked AS (
           NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
           'UNMAPPED'
         ) = 'N6824' THEN 'N6250'
+        WHEN COALESCE(
+          NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+          NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+          NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
+          'UNMAPPED'
+        ) IN ('N6828', 'N6848') THEN 'N6828'
         ELSE COALESCE(
           NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
           NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
@@ -189,6 +201,12 @@ WITH ranked AS (
           NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
           'UNMAPPED'
         ) = 'N6824' THEN 'N6250'
+        WHEN COALESCE(
+          NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+          NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+          NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
+          'UNMAPPED'
+        ) IN ('N6828', 'N6848') THEN 'N6828'
         ELSE COALESCE(
           NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
           NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
@@ -225,6 +243,12 @@ WITH ranked AS (
             NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
             'UNMAPPED'
           ) = 'N6824' THEN 'N6250'
+          WHEN COALESCE(
+            NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+            NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+            NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
+            'UNMAPPED'
+          ) IN ('N6828', 'N6848') THEN 'N6828'
           ELSE COALESCE(
             NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
             NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
@@ -293,6 +317,10 @@ WITH ranked AS (
         NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
         'UNMAPPED'
       ) = 'N6824' THEN 'N6250'
+      WHEN COALESCE(
+        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+        'UNMAPPED'
+      ) IN ('N6828', 'N6848') THEN 'N6828'
       ELSE COALESCE(
         NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
         'UNMAPPED'
@@ -313,6 +341,10 @@ WITH ranked AS (
             NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
             'UNMAPPED'
           ) = 'N6824' THEN 'N6250'
+          WHEN COALESCE(
+            NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+            'UNMAPPED'
+          ) IN ('N6828', 'N6848') THEN 'N6828'
           ELSE COALESCE(
             NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
             'UNMAPPED'
@@ -456,16 +488,18 @@ CREATE INDEX IF NOT EXISTS am_platinum_vas_period_summary_v1_period_idx
 CREATE MATERIALIZED VIEW IF NOT EXISTS am_platinum_open_ro_daily_summary_v1 AS
 WITH latest AS (
   SELECT DISTINCT ON (
-    COALESCE(
-      NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''),
-      'UNMAPPED'
-    ),
+    CASE
+      WHEN COALESCE(NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''), 'UNMAPPED') = 'N6824' THEN 'N6250'
+      WHEN COALESCE(NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''), 'UNMAPPED') IN ('N6828', 'N6848') THEN 'N6828'
+      ELSE COALESCE(NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''), 'UNMAPPED')
+    END,
     COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text)
   )
-    COALESCE(
-      NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''),
-      'UNMAPPED'
-    ) AS dealer_code,
+    CASE
+      WHEN COALESCE(NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''), 'UNMAPPED') = 'N6824' THEN 'N6250'
+      WHEN COALESCE(NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''), 'UNMAPPED') IN ('N6828', 'N6848') THEN 'N6828'
+      ELSE COALESCE(NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''), 'UNMAPPED')
+    END AS dealer_code,
     r_o_date::date AS report_date,
     COALESCE(NULLIF(svc_adv, ''), 'Unspecified') AS advisor,
     COALESCE(NULLIF(work_type, ''), 'Others') AS work_type,
@@ -497,10 +531,11 @@ DROP MATERIALIZED VIEW IF EXISTS am_platinum_complaints_daily_summary_v1;
 CREATE MATERIALIZED VIEW am_platinum_complaints_daily_summary_v1 AS
 WITH latest AS (
   SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
-    COALESCE(
-      NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-      'UNMAPPED'
-    ) AS dealer_code,
+    CASE
+      WHEN COALESCE(NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'), 'UNMAPPED') = 'N6824' THEN 'N6250'
+      WHEN COALESCE(NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'), 'UNMAPPED') IN ('N6828', 'N6848') THEN 'N6828'
+      ELSE COALESCE(NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'), 'UNMAPPED')
+    END AS dealer_code,
     COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date AS report_date,
     CASE
       WHEN LOWER(COALESCE(status, '')) IN ('close', 'closed', 'resolved') THEN 'Closed'

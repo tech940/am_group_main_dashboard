@@ -68,8 +68,8 @@ export const BRAND_SALES_STOCK_SOURCES: Record<string, BrandSalesStockSource> = 
   hyundai: {
     brand: 'hyundai',
     label: 'AM Hyundai',
-    available: false,
-    readerImplemented: false,
+    available: true,
+    readerImplemented: true,
     tables: tablesFor('hyundai_'),
     calcProfile: { stockValueUpliftFactor: 1.36 },
   },

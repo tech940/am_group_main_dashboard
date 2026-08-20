@@ -16,6 +16,7 @@ export function platinumSourceDealerSql(
   return sql`
     CASE
       WHEN ${resolved} = 'N6824' THEN 'N6250'
+      WHEN ${resolved} IN ('N6828', 'N6848') THEN 'N6828'
       ELSE ${resolved}
     END
   `

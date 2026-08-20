@@ -236,14 +236,17 @@ END $$;
 ALTER TABLE IF EXISTS public.am_hyundai_vehicle ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.am_hyundai_trips ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.am_hyundai_employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.kia_insurance_form_data ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE IF EXISTS public.am_hyundai_vehicle FORCE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.am_hyundai_trips FORCE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.am_hyundai_employees FORCE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.kia_insurance_form_data FORCE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.am_hyundai_vehicle FROM anon, authenticated, public;
 REVOKE ALL ON TABLE public.am_hyundai_trips FROM anon, authenticated, public;
 REVOKE ALL ON TABLE public.am_hyundai_employees FROM anon, authenticated, public;
+REVOKE ALL ON TABLE public.kia_insurance_form_data FROM anon, authenticated, public;
 
 NOTIFY pgrst, 'reload schema';
 

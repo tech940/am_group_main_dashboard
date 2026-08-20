@@ -67,6 +67,9 @@ export const DEFAULT_PLATINUM_DEALER_CODE: PlatinumDealerCode = 'N5211'
 
 export function normalizePlatinumDealerCode(value: string | null | undefined): PlatinumDealerCode | null {
   const normalized = String(value || '').trim().toUpperCase()
+  if (normalized === 'N6848' || normalized === 'POONCH' || normalized === 'PLATINUM_POONCH') return 'N6828'
+  if (normalized === 'N6824' || normalized === 'RAJOURI' || normalized === 'PLATINUM_RAJOURI') return 'N6250'
+  if (normalized === 'JAMMU' || normalized === 'PLATINUM_JAMMU') return 'N5211'
   return PLATINUM_BRANCH_DEALERS.some((branch) => branch.dealerCode === normalized)
     ? normalized as PlatinumDealerCode
     : null

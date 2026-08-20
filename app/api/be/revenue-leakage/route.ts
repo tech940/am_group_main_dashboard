@@ -30,17 +30,17 @@ export async function GET(request: Request) {
     const brand: LeakageBrand =
       brandParam === 'platinum' ? 'platinum' : brandParam === 'kia' ? 'kia' : 'hyundai'
 
-    // Dates. Default to the last 12 months rather than all-time: the table goes back to 2021 and a
-    // five-year average hides a problem that started this quarter.
+    // Dates. Default to current month (MTD) rather than 12-month rolling:
     const today = new Date()
     const iso = (d: Date) => d.toISOString().slice(0, 10)
     const rawStart = searchParams.get('startDate')
     const rawEnd = searchParams.get('endDate')
     const endDate = rawEnd && /^\d{4}-\d{2}-\d{2}$/.test(rawEnd) ? rawEnd : iso(today)
+    const currentMonthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`
     const startDate =
       rawStart && /^\d{4}-\d{2}-\d{2}$/.test(rawStart)
         ? rawStart
-        : iso(new Date(today.getFullYear() - 1, today.getMonth(), today.getDate()))
+        : currentMonthStart
 
     // ⚠️ The BE overview passes a BRANCH ('JAMMU', 'KATHUA', 'RS_PURA'), not a dealer code. Comparing
     // it to source_dealer_code directly matched nothing and the panel rendered empty for every

@@ -126,6 +126,7 @@ const brandNavigation: SidebarBrand[] = [
         name: 'Sales',
         key: 'sales',
         submenus: [
+          { name: 'Sales Report', href: '/brands/hyundai/sales-report' },
           { name: 'Demo Job Cards', href: '/brands/hyundai/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/hyundai/demo-cars-list' },
           { name: 'Discount Approvals', href: '/brands/hyundai/sales/discount-approvals' },

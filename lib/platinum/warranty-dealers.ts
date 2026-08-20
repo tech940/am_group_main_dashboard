@@ -1,7 +1,7 @@
 export const PLATINUM_WARRANTY_DEALER_GROUPS = [
   { key: 'jammu', label: 'Platinum Jammu', dealerCodes: ['N5211'] },
   { key: 'rajouri', label: 'Platinum Rajouri', dealerCodes: ['N6250', 'N6824'] },
-  { key: 'poonch', label: 'Platinum Poonch', dealerCodes: ['N6828'] },
+  { key: 'poonch', label: 'Platinum Poonch', dealerCodes: ['N6828', 'N6848'] },
 ] as const
 
 export type PlatinumWarrantyDealerGroupKey = (typeof PLATINUM_WARRANTY_DEALER_GROUPS)[number]['key']

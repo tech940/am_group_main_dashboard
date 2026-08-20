@@ -1131,26 +1131,26 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
           </div>
         </div>
         <div className="overflow-auto">
-          <table className="w-full min-w-[1180px] border-collapse text-left">
+          <table className="w-full min-w-[1180px] border-collapse text-left border border-slate-200">
             <caption className="sr-only">Customer complaint register with complaint number, customer and vehicle, dealer, area, days open and status</caption>
             <thead>
               <tr className="bg-slate-900 text-white">
-                <th scope="col" className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Complaint</th>
-                <th scope="col" className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Customer / Vehicle</th>
-                <th scope="col" className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Dealer</th>
-                <th scope="col" className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Area</th>
-                <th scope="col" className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Days</th>
-                <th scope="col" className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Status</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Complaint</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Customer / Vehicle</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Dealer</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Area</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Days</th>
+                <th scope="col" className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-200">
               {(data.rows || []).map((row) => {
                 const isExpanded = expandedRows.has(row.complaintNo)
                 const customerRemark = row.customerRemark || row.remarks
                 return (
                   <React.Fragment key={`${row.complaintNo}-${row.id}`}>
                     <tr className="bg-white hover:bg-slate-50">
-                      <td className="px-4 py-3">
+                      <td className="border border-slate-200 px-4 py-3">
                         <button
                           type="button"
                           onClick={() => toggleRow(row.complaintNo)}
@@ -1165,24 +1165,24 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
                           </span>
                         </button>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="border border-slate-200 px-4 py-3">
                         <p className="text-sm font-black text-slate-900">{row.customerName}</p>
                         <p className="mt-1 text-[11px] font-bold text-slate-500">{row.vehicleModel} / {row.variant}</p>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="border border-slate-200 px-4 py-3">
                         <p className="text-sm font-black text-slate-900">{truncateLabel(row.dealerName, 32)}</p>
                         <p className="mt-1 text-[11px] font-bold text-slate-500">{row.dealerCode} / {row.region}</p>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="border border-slate-200 px-4 py-3">
                         <p className="text-sm font-black text-slate-900">{row.signalArea}</p>
                         <p className="mt-1 text-[11px] font-bold text-slate-500">{row.srSubArea}</p>
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="border border-slate-200 px-4 py-3 text-center">
                         <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-black', riskClass(row.resolutionDays, row.statusGroup))}>
                           {row.resolutionDays}D
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="border border-slate-200 px-4 py-3 text-center">
                         <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-black', statusClass(row.statusGroup))}>
                           {row.statusGroup}
                         </span>
