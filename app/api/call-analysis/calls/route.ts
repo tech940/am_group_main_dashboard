@@ -3,7 +3,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canViewCallAnalysis } from '@/lib/callyzer/access'
 import { getAllCalls } from '@/lib/callyzer/client'
 import { filterCalls, type CallFilters } from '@/lib/callyzer/analytics'
-import { matchCustomers, phone10 } from '@/lib/callyzer/customer-match'
+import { matchCustomers, phone10 } from '@/lib/customer-identity/phone-match'
 
 export const dynamic = 'force-dynamic'
 

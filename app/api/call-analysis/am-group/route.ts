@@ -405,7 +405,7 @@ export async function GET(request: Request) {
           cre_name:
             creId === UNASSIGNED_BRANCH_ID ? 'Unassigned CRE' : dir.profileName.get(creId) || 'CRE Agent',
           branch_id: branchId,
-          branch_name: branchLabel(branchId, dir),
+          branch_name: branchLabel(branchId, dir, creId, dir.profileName.get(creId)),
           brand: branchId ? dir.branchBrand.get(branchId) || null : null,
           /** Attempts in the SELECTED DATE RANGE. Key kept for backwards compatibility. */
           calls_this_month: t.attempts,
@@ -532,6 +532,39 @@ export async function GET(request: Request) {
       connectRate: c.connect_rate,
     }))
 
+    // Hourly trend when viewing single day or today
+    let hourlyTrend: { hour: number; label: string; calls: number; connected: number; missed: number }[] = []
+    if (filters.startDate && filters.endDate && filters.startDate === filters.endDate) {
+      try {
+        const { data: hourRows } = await buildLogQuery(filters, dir, 'started_at, outcome')
+        if (hourRows && hourRows.length > 0) {
+          const hourMap = new Map<number, { calls: number; connected: number; missed: number }>()
+          for (let h = 0; h < 24; h++) hourMap.set(h, { calls: 0, connected: 0, missed: 0 })
+          for (const row of (hourRows as unknown as Array<{ started_at: string; outcome: string }>)) {
+            if (row.started_at) {
+              const d = new Date(row.started_at)
+              const istHour = (d.getUTCHours() + 5 + Math.floor((d.getUTCMinutes() + 30) / 60)) % 24
+              const curr = hourMap.get(istHour) || { calls: 0, connected: 0, missed: 0 }
+              curr.calls += 1
+              if (row.outcome === OUTCOME_ANSWERED) curr.connected += 1
+              if (UNANSWERED_OUTCOMES.includes(row.outcome as any)) curr.missed += 1
+              hourMap.set(istHour, curr)
+            }
+          }
+          hourlyTrend = Array.from(hourMap.entries()).map(([h, val]) => {
+            const ampm = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`
+            return {
+              hour: h,
+              label: ampm,
+              ...val,
+            }
+          })
+        }
+      } catch (err) {
+        console.error('[am-group-call-analysis] hourly trend error:', err)
+      }
+    }
+
     return NextResponse.json({
       // `source` is diagnostic: it says which path produced these numbers.
       source: search ? 'call_log_entries' : 'v_call_activity',
@@ -570,6 +603,7 @@ export async function GET(request: Request) {
       },
       sparklines,
       dailyTrend,
+      hourlyTrend,
       callTypeMix,
       crePerformance,
       branchPerformance,

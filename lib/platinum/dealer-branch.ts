@@ -1,3 +1,5 @@
+import { sql } from 'drizzle-orm'
+
 export const PLATINUM_BRANCH_DEALERS = [
   { label: 'Platinum Jammu', dealerCode: 'N5211' },
   { label: 'Platinum Rajouri', dealerCode: 'N6250' },
@@ -98,3 +100,24 @@ export function appendPlatinumDealerCodeParam(params: URLSearchParams, dealerCod
   const normalized = normalizePlatinumDealerCode(dealerCode)
   if (normalized) params.set('dealer_code', normalized)
 }
+
+export function platinumSourceDealerSql(
+  sourceColumn: ReturnType<typeof sql.raw> = sql.raw('source_dealer_code'),
+  fallbackColumns: ReturnType<typeof sql.raw>[] = [],
+) {
+  const candidates = [
+    sql`NULLIF(UPPER(TRIM(COALESCE(${sourceColumn}::text, ''))), '')`,
+    ...fallbackColumns.map((column) => sql`NULLIF(UPPER(TRIM(COALESCE(${column}::text, ''))), '')`),
+  ]
+  const resolved = sql`COALESCE(${sql.join(candidates, sql`, `)})`
+
+  return sql`
+    CASE
+      WHEN ${resolved} = 'N5211' THEN 'JAMMU'
+      WHEN ${resolved} = 'N6250' THEN 'RAJOURI'
+      WHEN ${resolved} = 'N6828' THEN 'POONCH'
+      ELSE ${resolved}
+    END
+  `
+}
+

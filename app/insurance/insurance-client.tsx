@@ -246,6 +246,24 @@ function CoverStatusPill({ status, days }: { status: string; days: number | null
   )
 }
 
+/**
+ * First and last day of the CURRENT month, in IST.
+ *
+ * Computed in Asia/Kolkata rather than from a bare `new Date()`: for the first 5.5 hours of the 1st,
+ * UTC is still on the previous month, so a UTC-derived default would open the page on last month for
+ * every Indian user through that first morning.
+ */
+function currentMonthRangeIst(): { start: string; end: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const year = Number(parts.find((part) => part.type === 'year')?.value)
+  const month = Number(parts.find((part) => part.type === 'month')?.value)
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const mm = String(month).padStart(2, '0')
+  return { start: `${year}-${mm}-01`, end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}` }
+}
+
 export function InsuranceClient({ initialSearchParams }: { initialSearchParams: SearchParamsInput }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -263,12 +281,20 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
 
   // Date Range Picker Draft vs Applied States
-  const [appliedStartDate, setAppliedStartDate] = useState<string>('')
-  const [appliedEndDate, setAppliedEndDate] = useState<string>('')
+  /*
+   * Default view is the CURRENT MONTH.
+   *
+   * This opened on the entire history — ~41k policies across the three brands — which is both a slow
+   * first paint and almost never the question being asked. Widening is one click in the date picker,
+   * and the year dropdown and custom range are untouched.
+   */
+  const defaultMonthRange = useMemo(() => currentMonthRangeIst(), [])
+  const [appliedStartDate, setAppliedStartDate] = useState<string>(defaultMonthRange.start)
+  const [appliedEndDate, setAppliedEndDate] = useState<string>(defaultMonthRange.end)
   const [appliedYear, setAppliedYear] = useState<string>('all')
 
-  const [pendingStartDate, setPendingStartDate] = useState<string>('')
-  const [pendingEndDate, setPendingEndDate] = useState<string>('')
+  const [pendingStartDate, setPendingStartDate] = useState<string>(defaultMonthRange.start)
+  const [pendingEndDate, setPendingEndDate] = useState<string>(defaultMonthRange.end)
   const [pendingYear, setPendingYear] = useState<string>('all')
   const [calendarOpen, setCalendarOpen] = useState<boolean>(false)
 
@@ -547,8 +573,8 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   // Reset Filters
   const resetFilters = () => {
     setPendingYear('all')
-    setPendingStartDate('')
-    setPendingEndDate('')
+    setPendingStartDate(defaultMonthRange.start)
+    setPendingEndDate(defaultMonthRange.end)
     setDraftDealerCode('all')
     setDraftSubUser('all')
     setDraftInsuranceCompany('all')
@@ -560,8 +586,8 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
     setDraftPaymentMode('all')
 
     setAppliedYear('all')
-    setAppliedStartDate('')
-    setAppliedEndDate('')
+    setAppliedStartDate(defaultMonthRange.start)
+    setAppliedEndDate(defaultMonthRange.end)
     setAppliedDealerCode('all')
     setAppliedSubUser('all')
     setAppliedInsuranceCompany('all')

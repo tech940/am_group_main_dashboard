@@ -46,15 +46,49 @@ export async function GET(
 
   try {
     const supabase = getCreSupabase()
-    const { data: row, error } = await supabase
+
+    // 1. Direct recording lookup
+    let { data: row, error } = await supabase
       .from('call_recordings')
       .select('id, storage_path, upload_status, deleted_at')
       .eq('id', id)
       .maybeSingle()
 
     if (error) throw new Error(error.message)
+
+    // 2. Fallback: check if `id` is a call_log_entries ID linked to a recording
+    if (!row) {
+      const { data: logEntry, error: logError } = await supabase
+        .from('call_log_entries')
+        .select('id, recording_id, deleted_at')
+        .eq('id', id)
+        .maybeSingle()
+
+      if (logError) throw new Error(logError.message)
+
+      if (logEntry?.recording_id) {
+        const { data: recRow, error: recError } = await supabase
+          .from('call_recordings')
+          .select('id, storage_path, upload_status, deleted_at')
+          .eq('id', logEntry.recording_id)
+          .maybeSingle()
+
+        if (recError) throw new Error(recError.message)
+        row = recRow
+      } else if (logEntry) {
+        const { data: recByCallId, error: recCallError } = await supabase
+          .from('call_recordings')
+          .select('id, storage_path, upload_status, deleted_at')
+          .eq('call_id', logEntry.id)
+          .maybeSingle()
+
+        if (recCallError) throw new Error(recCallError.message)
+        row = recByCallId
+      }
+    }
+
     if (!row || row.deleted_at) {
-      return NextResponse.json({ error: 'Recording not found' }, { status: 404 })
+      return NextResponse.json({ error: 'No recording is available for this call.' }, { status: 404 })
     }
 
     // Only an `uploaded` row has an object behind it. Signing a `pending` / `uploading` / `failed`
@@ -65,16 +99,17 @@ export async function GET(
           error:
             row.upload_status === 'failed'
               ? 'This recording failed to upload from the handset, so there is no audio to play.'
-              : 'This recording is still syncing from the handset. Audio appears once the upload completes.',
+              : 'This recording is still syncing from the handset. Audio will appear once the upload completes.',
           uploadStatus: row.upload_status ?? null,
         },
         { status: 409 }
       )
     }
 
+    const cleanPath = row.storage_path.replace(/^recordings\//, '')
     const { data: signed, error: signError } = await supabase.storage
       .from('recordings')
-      .createSignedUrl(row.storage_path, SIGNED_URL_TTL_SECONDS)
+      .createSignedUrl(cleanPath, SIGNED_URL_TTL_SECONDS)
 
     // No public-URL fallback on purpose: the bucket is private, so a public URL would 404 at best
     // and leak customer audio at worst. A failure to sign is reported as a failure.

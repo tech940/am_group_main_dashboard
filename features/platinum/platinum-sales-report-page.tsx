@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { HyundaiRetailReviewPanel } from './hyundai-retail-review-panel'
+import { PlatinumRetailReviewPanel } from './platinum-retail-review-panel'
 import { logApiTimings } from '@/lib/api/client-timing'
 import type {
   ReportKey,
@@ -39,8 +39,8 @@ import type {
   SalesReportListPayload,
   SalesReportMetricPoint,
   SalesReportSummaryPayload,
-} from '@/lib/hyundai/sales-report-types'
-import { getHyundaiBranchLabel } from '@/lib/hyundai/dealer-branch'
+} from '@/lib/platinum/sales-report-types'
+import { getPlatinumBranchLabel } from '@/lib/platinum/dealer-branch'
 import { cn } from '@/lib/utils'
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
@@ -445,7 +445,7 @@ function renderAreaChart(data: Array<Record<string, string | number>>, xKey: str
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <defs>
-            <linearGradient id="hyundaiSalesArea" x1="0" x2="0" y1="0" y2="1">
+            <linearGradient id="platinumSalesArea" x1="0" x2="0" y1="0" y2="1">
               <stop offset="5%" stopColor={color} stopOpacity={0.4} />
               <stop offset="95%" stopColor={color} stopOpacity={0.05} />
             </linearGradient>
@@ -454,7 +454,7 @@ function renderAreaChart(data: Array<Record<string, string | number>>, xKey: str
           <XAxis dataKey={xKey} tick={{ fill: '#64748b', fontSize: 11 }} />
           <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
           <Tooltip formatter={(value) => formatNumber(Number(value))} />
-          <Area type="monotone" dataKey={yKey} stroke={color} fill="url(#hyundaiSalesArea)" strokeWidth={3} />
+          <Area type="monotone" dataKey={yKey} stroke={color} fill="url(#platinumSalesArea)" strokeWidth={3} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -522,7 +522,7 @@ function formatCellValue(column: string, value: unknown) {
   return text
 }
 
-export function HyundaiSalesReportPage({
+export function PlatinumSalesReportPage({
   initialSearchParams = {},
   currentUserRole = null,
 }: {
@@ -631,13 +631,13 @@ export function HyundaiSalesReportPage({
   const deferredRetailSearch = useDeferredValue(retailSearch)
 
   const freshnessQuery = useQuery({
-    queryKey: ['hyundai-sales-report-freshness', selectedDealerCode || 'all'],
+    queryKey: ['platinum-sales-report-freshness', selectedDealerCode || 'all'],
     queryFn: () =>
       fetchReportJson<SalesReportFreshnessPayload>(
-        `/api/brands/hyundai/sales-report/freshness?${buildQueryString({
+        `/api/brands/platinum/sales-report/freshness?${buildQueryString({
           dealer_code: selectedDealerCode,
         })}`,
-        'hyundai-sales-report-freshness',
+        'platinum-sales-report-freshness',
         25000
       ),
     staleTime: 10 * 60 * 1000,
@@ -656,8 +656,8 @@ export function HyundaiSalesReportPage({
    * The default month must have data for the report you are actually looking at.
    *
    * `availableMonths` is a UNION across all four sources, so a month counts as "available" when any
-   * ONE feed has rows for it. Measured 2026-08-20: hyundai_booking_report was current (150 rows this
-   * month) while hyundai_sales_report and hyundai_enquiry_report had not been uploaded since 28/29
+   * ONE feed has rows for it. Measured 2026-08-20: platinum_booking_report was current (150 rows this
+   * month) while platinum_sales_report and platinum_enquiry_report had not been uploaded since 28/29
    * July. August therefore looked available, the page defaulted to it, and the Sales tab — the main
    * tab of a Sales Report — queried a month its own feed had nothing for and rendered empty. It read
    * as "the data is not loading" when the feed was simply 23 days stale.
@@ -699,7 +699,7 @@ export function HyundaiSalesReportPage({
 
   const summaryQuery = useQuery({
     queryKey: [
-      'hyundai-sales-report-summary',
+      'platinum-sales-report-summary',
       hasCompleteCustomRange ? selectedRangeStart : effectiveSelectedYear,
       hasCompleteCustomRange ? selectedRangeEnd : effectiveSelectedMonth,
       selectedDealerCode || 'all',
@@ -708,12 +708,12 @@ export function HyundaiSalesReportPage({
     queryFn: () => {
       const refresh = shouldRefreshNext.current
       return fetchReportJson<SalesReportSummaryPayload>(
-        `/api/brands/hyundai/sales-report/summary?${buildQueryString({
+        `/api/brands/platinum/sales-report/summary?${buildQueryString({
           ...periodQueryParams,
           dealer_code: selectedDealerCode,
           refresh: refresh ? 'true' : undefined,
         })}`,
-        'hyundai-sales-report-summary',
+        'platinum-sales-report-summary',
         25000
       )
     },
@@ -727,7 +727,7 @@ export function HyundaiSalesReportPage({
 
   const reportQuery = useQuery({
     queryKey: [
-      'hyundai-sales-report-report',
+      'platinum-sales-report-report',
       activeReport,
       hasCompleteCustomRange ? selectedRangeStart : effectiveSelectedYear,
       hasCompleteCustomRange ? selectedRangeEnd : effectiveSelectedMonth,
@@ -745,7 +745,7 @@ export function HyundaiSalesReportPage({
     queryFn: () => {
       const refresh = shouldRefreshNext.current
       return fetchReportJson<SalesReportListPayload>(
-        `/api/brands/hyundai/sales-report/reports?${buildQueryString({
+        `/api/brands/platinum/sales-report/reports?${buildQueryString({
           report: activeReport,
           ...periodQueryParams,
           dealer_code: selectedDealerCode,
@@ -759,7 +759,7 @@ export function HyundaiSalesReportPage({
           pageSize: reportPageSize,
           refresh: refresh ? 'true' : undefined,
         })}`,
-        'hyundai-sales-report-reports',
+        'platinum-sales-report-reports',
         25000
       )
     },
@@ -912,7 +912,7 @@ export function HyundaiSalesReportPage({
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 20000)
     const response = await fetch(
-      `/api/brands/hyundai/sales-report/reports?${buildQueryString({
+      `/api/brands/platinum/sales-report/reports?${buildQueryString({
         report: activeReport,
         ...periodQueryParams,
         dealer_code: selectedDealerCode,
@@ -927,7 +927,7 @@ export function HyundaiSalesReportPage({
       { cache: 'no-store', signal: controller.signal }
     ).finally(() => window.clearTimeout(timeout))
 
-    logApiTimings(response, 'hyundai-sales-report-export')
+    logApiTimings(response, 'platinum-sales-report-export')
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as { error?: string } | null
       throw new Error(payload?.error || 'Unable to export report')
@@ -935,7 +935,7 @@ export function HyundaiSalesReportPage({
     const content = await response.text()
     const disposition = response.headers.get('content-disposition') || ''
     const fileNameMatch = disposition.match(/filename="([^"]+)"/i)
-    downloadBlob(content, fileNameMatch?.[1] || `hyundai-${activeReport}.csv`, 'text/csv;charset=utf-8')
+    downloadBlob(content, fileNameMatch?.[1] || `platinum-${activeReport}.csv`, 'text/csv;charset=utf-8')
   }
 
   function handleMonthChange(key: string) {
@@ -1060,7 +1060,7 @@ export function HyundaiSalesReportPage({
   const revenueKpi = summary?.overview.kpis.find((k) => k.label.toLowerCase().includes('revenue'))
 
   return (
-    <MainLayout title="Sales Report" subtitle="AM Hyundai sales analytics workspace">
+    <MainLayout title="Sales Report" subtitle="AM Platinum sales analytics workspace">
       <div className="space-y-6 pb-4">
         {/* Unified Top Header Bar with Date Range, Calendar Picker & Summary Rail */}
         <div className="overflow-hidden rounded-[2rem] border border-[#cbd8e4] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
@@ -1303,7 +1303,7 @@ export function HyundaiSalesReportPage({
                     <SelectItem value="all">All dealers</SelectItem>
                     {(freshness?.dealerOptions || []).map((dealerCode) => (
                       <SelectItem key={dealerCode} value={dealerCode}>
-                        {getHyundaiBranchLabel(dealerCode)} ({dealerCode})
+                        {getPlatinumBranchLabel(dealerCode)} ({dealerCode})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1347,7 +1347,7 @@ export function HyundaiSalesReportPage({
             <div className="flex items-start gap-3">
               <XCircle className="mt-0.5 h-5 w-5 shrink-0" />
               <div>
-                <p className="text-lg font-black">Unable to load Hyundai Sales Report</p>
+                <p className="text-lg font-black">Unable to load Platinum Sales Report</p>
                 <p className="mt-1 text-sm font-medium">{pageError instanceof Error ? pageError.message : 'Unknown error'}</p>
               </div>
             </div>
@@ -1358,7 +1358,7 @@ export function HyundaiSalesReportPage({
           <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] px-4 py-2.5">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--dashboard-primary)]" />
             <p className="text-xs font-bold text-[var(--dashboard-primary-dark)]">
-              Loading {selectedDealerCode ? getHyundaiBranchLabel(selectedDealerCode) : 'all dealerships'} &mdash; figures below are from the previous selection until this finishes.
+              Loading {selectedDealerCode ? getPlatinumBranchLabel(selectedDealerCode) : 'all dealerships'} &mdash; figures below are from the previous selection until this finishes.
             </p>
           </div>
         ) : null}
@@ -1945,10 +1945,7 @@ export function HyundaiSalesReportPage({
           </TabsContent>
 
           <TabsContent value="review" className="space-y-5">
-            <HyundaiRetailReviewPanel
-              year={hasCompleteCustomRange ? Number(selectedRangeStart.slice(0, 4)) : (effectiveSelectedYear || new Date().getFullYear())}
-              month={hasCompleteCustomRange ? Number(selectedRangeStart.slice(5, 7)) : effectiveSelectedMonth}
-            />
+            <PlatinumRetailReviewPanel />
           </TabsContent>
 
           <TabsContent value="retail" className="space-y-5">

@@ -165,6 +165,7 @@ const brandNavigation: SidebarBrand[] = [
         name: 'Sales',
         key: 'sales',
         submenus: [
+          { name: 'Sales Report', href: '/brands/platinum/sales-report' },
           { name: 'Demo Job Cards', href: '/brands/platinum/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/platinum/demo-cars-list' },
           { name: 'Discount Approvals', href: '/brands/platinum/sales/discount-approvals' },

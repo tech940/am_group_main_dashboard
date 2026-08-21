@@ -508,3 +508,6 @@ params:
 [2026-08-18T09:03:39.335Z] GET /api/scrap-erp called
 [2026-08-18T09:03:53.284Z] GET /api/scrap-erp called
 [2026-08-18T09:03:55.762Z] GET /api/scrap-erp called
+[2026-08-21T05:21:15.550Z] GET /api/scrap-erp called
+[2026-08-21T05:22:39.615Z] GET /api/scrap-erp called
+[2026-08-21T05:22:52.459Z] GET /api/scrap-erp called

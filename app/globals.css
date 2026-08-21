@@ -1,4 +1,4 @@
-﻿@import "tailwindcss";
+@import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -520,8 +520,8 @@
     --tw-gradient-to: var(--dashboard-success-strong) var(--tw-gradient-to-position) !important;
   }
 
-  .glass-dashboard-content table :where([class*="bg-emerald-50"], [class*="bg-emerald-100"], [class*="bg-green-50"], [class*="bg-green-100"], [class*="bg-rose-50"], [class*="bg-rose-100"]),
-  .business-excellence-boundaries table :where([class*="bg-emerald-50"], [class*="bg-emerald-100"], [class*="bg-green-50"], [class*="bg-green-100"], [class*="bg-rose-50"], [class*="bg-rose-100"]) {
+  .glass-dashboard-content table :where([class~="bg-emerald-50"], [class~="bg-emerald-100"], [class~="bg-green-50"], [class~="bg-green-100"], [class~="bg-rose-50"], [class~="bg-rose-100"]),
+  .business-excellence-boundaries table :where([class~="bg-emerald-50"], [class~="bg-emerald-100"], [class~="bg-green-50"], [class~="bg-green-100"], [class~="bg-rose-50"], [class~="bg-rose-100"]) {
     background-color: #ffffff !important;
   }
 }
@@ -554,9 +554,15 @@
     text-transform: uppercase !important;
   }
 
-  /* Access Map grid opts out of the global dark thead/th styling above and keeps every sticky
-     cell fully opaque, so scrolling content never shows through the pinned header/column. */
+  /* Access Map grid and Call Analysis clean tables opt out of the global dark thead/th styling */
+  .call-analysis-clean-table thead tr,
   .access-map-grid thead tr { background-color: transparent !important; }
+  .call-analysis-clean-table th {
+    color: #64748b !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em !important;
+    text-transform: capitalize !important;
+  }
   .access-map-grid th {
     font-weight: 800 !important;
     letter-spacing: 0.1em !important;
@@ -1442,8 +1448,8 @@
     background-color: rgba(15, 23, 42, 0.62) !important;
   }
 
-  .dark .glass-dashboard-content table :where([class*="bg-emerald-50"], [class*="bg-emerald-100"], [class*="bg-green-50"], [class*="bg-green-100"], [class*="bg-rose-50"], [class*="bg-rose-100"]),
-  .dark .business-excellence-boundaries table :where([class*="bg-emerald-50"], [class*="bg-emerald-100"], [class*="bg-green-50"], [class*="bg-green-100"], [class*="bg-rose-50"], [class*="bg-rose-100"]) {
+  .dark .glass-dashboard-content table :where([class~="bg-emerald-50"], [class~="bg-emerald-100"], [class~="bg-green-50"], [class~="bg-green-100"], [class~="bg-rose-50"], [class~="bg-rose-100"]),
+  .dark .business-excellence-boundaries table :where([class~="bg-emerald-50"], [class~="bg-emerald-100"], [class~="bg-green-50"], [class~="bg-green-100"], [class~="bg-rose-50"], [class~="bg-rose-100"]) {
     background-color: #ffffff !important;
   }
 

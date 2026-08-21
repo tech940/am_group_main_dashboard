@@ -76,8 +76,8 @@ export const BRAND_SALES_STOCK_SOURCES: Record<string, BrandSalesStockSource> = 
   platinum: {
     brand: 'platinum',
     label: 'AM Platinum',
-    available: false,
-    readerImplemented: false,
+    available: true,
+    readerImplemented: true,
     tables: tablesFor('am_platinum_'),
     calcProfile: { stockValueUpliftFactor: 1.36 },
   },

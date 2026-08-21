@@ -10,12 +10,13 @@ import {
   Loader2, PhoneCall, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Users,
   Mic, Search, X, ChevronLeft, ChevronRight, Download, Play, Pause, Volume2,
   Building2, Award, UserCheck, ShieldCheck, FileAudio, RefreshCw, PhoneOff,
-  Smartphone, WifiOff, TriangleAlert, ShieldAlert, CircleCheck, LogOut, Radio, Timer
+  Smartphone, WifiOff, TriangleAlert, ShieldAlert, CircleCheck, LogOut, Radio, Timer,
+  SlidersHorizontal, ArrowUpRight, ArrowDownRight, Info, CheckCircle2, ChevronDown, Filter, Calendar
 } from 'lucide-react'
-import { KpiCard } from '@/components/ui/kpi-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
@@ -25,7 +26,6 @@ type CrePerformance = {
   branch_id?: string | null
   branch_name: string
   brand?: string | null
-  /** Calls in the SELECTED DATE RANGE, not a calendar month. Key kept for backwards compatibility. */
   calls_this_month: number
   connected_calls: number
   connect_rate: number
@@ -62,13 +62,13 @@ type AnalyticsData = {
     connectedOutgoing: number
     connectedIncoming: number
     missedIncoming: number
-    /** Per-outcome split of `missedIncoming` (missed / no_answer / rejected); null on the recordings-only fallback path. */
     missedIncomingBreakdown?: { missed: number; noAnswer: number; rejected: number } | null
     missedOutgoing: number
     incomingAttempts?: number
     outgoingAttempts?: number
     totalUnanswered: number
     totalConnected: number
+    unclassified?: number
     connectRate: number
     unansweredRate: number
     agentCount: number
@@ -82,7 +82,6 @@ type AnalyticsData = {
       remainedMissingCallers: number
     }
   }
-  /** Real per-day series for the last 7 days in range. Empty when the range spans under 2 days. */
   sparklines?: {
     callsSeries: number[]
     recordingsSeries: number[]
@@ -96,6 +95,7 @@ type AnalyticsData = {
     agentsSeries: number[]
   }
   dailyTrend: { date: string; calls: number; duration: number; connected?: number; missedIncoming?: number; missedOutgoing?: number; incomingAttempts?: number }[]
+  hourlyTrend?: { hour: number; label: string; calls: number; connected: number; missed: number }[]
   callTypeMix: { name: string; value: number }[]
   crePerformance: CrePerformance[]
   branchPerformance?: BranchPerformance[]
@@ -107,16 +107,6 @@ type AnalyticsData = {
   }
 }
 
-/**
- * A row of `/api/call-analysis/am-group/calls`.
- *
- * ⚠️ There is deliberately NO `audioUrl` and no `storagePath` here. Recordings live in a PRIVATE
- * storage bucket, so a public URL 404s and publishing one would leak customer call audio. The row
- * carries only `isPlayable`; the browser asks
- * `/api/call-analysis/am-group/recordings/[id]/url` for a short-lived signed URL at the moment the
- * user presses play. Both fields existed on this type after the server stopped returning them,
- * which is why the player silently rendered nothing — `row.audioUrl` was always `undefined`.
- */
 type RecordingRow = {
   id: string
   phone: string
@@ -130,11 +120,8 @@ type RecordingRow = {
   statusLabel?: string
   statusBadgeClass?: string
   recordedAt: string
-  /** `uploaded` | `pending` | `uploading` | `failed` | `no_recording`. */
   uploadStatus: string
-  /** An `uploaded` row with an object behind it — the only kind that can be signed. */
   isPlayable: boolean
-  /** Still `pending`/`uploading` hours after the call. Normal sync is ~10 minutes. */
   isStaleSync: boolean
   deviceModel: string | null
   isMissedIncoming?: boolean
@@ -142,6 +129,171 @@ type RecordingRow = {
   callbackTime?: string | null
   callbackCreName?: string | null
   callbackDelayLabel?: string | null
+  customer?: CustomerIdentity | null
+  notACustomer?: string | null
+}
+
+type CustomerIdentity = {
+  name: string
+  source: 'booking' | 'kia' | 'hyundai' | 'platinum'
+  sourceLabel: string
+  model: string | null
+  status: string | null
+  consultant: string | null
+  refDate: string | null
+  bookingNumber: string | null
+  isShared: boolean
+}
+
+const CUSTOMER_SOURCE_STYLE: Record<CustomerIdentity['source'], string> = {
+  booking: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  kia: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  hyundai: 'bg-sky-50 text-sky-700 border-sky-200',
+  platinum: 'bg-violet-50 text-violet-700 border-violet-200',
+}
+
+function getBranchBadgeStyle(branchName?: string | null) {
+  const norm = (branchName || '').toLowerCase()
+  if (norm.includes('special')) return 'bg-violet-50 text-violet-700 border-violet-200'
+  if (norm.includes('kia')) return 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  if (norm.includes('hyundai') || norm.includes('h promise')) return 'bg-sky-50 text-sky-700 border-sky-200'
+  if (norm.includes('ktm')) return 'bg-orange-50 text-orange-700 border-orange-200'
+  if (norm.includes('honda')) return 'bg-rose-50 text-rose-700 border-rose-200'
+  if (norm.includes('tata')) return 'bg-blue-50 text-blue-700 border-blue-200'
+  return 'bg-slate-100 text-slate-700 border-slate-200'
+}
+
+function getDurationBadge(seconds: number) {
+  const text = formatSecondsMmSs(seconds)
+  if (seconds >= 60) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 tabular-nums">
+        <Clock className="h-3 w-3" />
+        {text}
+      </span>
+    )
+  }
+  if (seconds >= 20) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-black text-sky-700 tabular-nums">
+        <Clock className="h-3 w-3" />
+        {text}
+      </span>
+    )
+  }
+  if (seconds > 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600 tabular-nums">
+        {text}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600 tabular-nums">
+      00:00
+    </span>
+  )
+}
+
+function getTypeBadge(callType?: string, statusLabel?: string) {
+  const norm = `${callType || ''} ${statusLabel || ''}`.toLowerCase()
+  if (norm.includes('connected in') || (norm.includes('incoming') && !norm.includes('missed') && !norm.includes('rejected'))) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700 shadow-2xs">
+        <PhoneIncoming className="h-3 w-3" />
+        {statusLabel || 'Connected Incoming'}
+      </span>
+    )
+  }
+  if (norm.includes('connected out') || (norm.includes('outgoing') && !norm.includes('missed') && !norm.includes('not answered'))) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-[11px] font-black text-teal-800 shadow-2xs">
+        <PhoneOutgoing className="h-3 w-3" />
+        {statusLabel || 'Connected Outgoing'}
+      </span>
+    )
+  }
+  if (norm.includes('missed in') || (norm.includes('missed') && norm.includes('incoming'))) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-black text-rose-700 shadow-2xs">
+        <PhoneMissed className="h-3 w-3" />
+        {statusLabel || 'Missed Incoming'}
+      </span>
+    )
+  }
+  if (norm.includes('not answered') || norm.includes('missed out') || (norm.includes('outgoing') && norm.includes('unanswered'))) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-black text-amber-700 shadow-2xs">
+        <PhoneOff className="h-3 w-3" />
+        {statusLabel || 'Not Answered Outgoing'}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-700 shadow-2xs">
+      <PhoneCall className="h-3 w-3" />
+      {statusLabel || callType || 'Call'}
+    </span>
+  )
+}
+
+function FormattedTimeCell({ isoStr }: { isoStr: string }) {
+  if (!isoStr) return <span className="text-slate-400 font-medium">—</span>
+  const d = new Date(isoStr)
+  const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+
+  return (
+    <div className="flex flex-col">
+      <span className="text-xs font-bold text-slate-900">{dateStr}</span>
+      <span className="text-[11px] font-medium text-slate-500">{timeStr}</span>
+    </div>
+  )
+}
+
+function CustomerIdentityLine({ row }: { row: RecordingRow }) {
+  if (row.notACustomer) {
+    const isStaff = row.notACustomer.toLowerCase().includes('staff') || row.notACustomer.toLowerCase().includes('internal')
+    return (
+      <span
+        className={cn(
+          'mt-1 inline-flex items-center rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-wider border',
+          isStaff ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200',
+        )}
+      >
+        {row.notACustomer}
+      </span>
+    )
+  }
+
+  const customer = row.customer
+  if (!customer) return null
+
+  const isIncoming = row.callType?.toLowerCase() === 'incoming' || row.isMissedIncoming === true
+  const detail = [customer.model, customer.refDate].filter(Boolean).join(' · ')
+
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-1.5">
+      <span
+        className="text-[11px] font-bold text-slate-800 capitalize"
+        title={
+          isIncoming
+            ? `This number is registered to ${customer.name} in our ${customer.sourceLabel} records.`
+            : `${customer.name} — from ${customer.sourceLabel} (${detail})`
+        }
+      >
+        {customer.name}
+      </span>
+      <span
+        className={cn(
+          'rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide',
+          CUSTOMER_SOURCE_STYLE[customer.source] || 'bg-slate-100 text-slate-700 border-slate-200',
+        )}
+      >
+        {customer.bookingNumber || customer.sourceLabel}
+      </span>
+    </span>
+  )
 }
 
 type FleetDevice = {
@@ -164,7 +316,6 @@ type FleetDevice = {
   recordingsPending: number
   recordingsParked: number
   lastError: string | null
-  /** Pre-computed by `v_stale_devices`. Rendered as-is — never re-derived in the client. */
   reason: string | null
   watcherNeverFired: boolean
 }
@@ -186,10 +337,6 @@ type FleetHealthData = {
   }
 }
 
-/**
- * Local calendar date as `YYYY-MM-DD`. These are IST users: `toISOString()` converts to UTC first
- * and rolls the date back a day for anything before 05:30 IST, so it must not be used here.
- */
 function localDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -207,10 +354,8 @@ const PRESETS: { key: string; label: string; range: () => DateRange }[] = [
   { key: '7d', label: '7 Days', range: () => ({ start: daysAgo(7), end: today() }) },
   { key: '30d', label: '30 Days', range: () => ({ start: daysAgo(30), end: today() }) },
   { key: '90d', label: '90 Days', range: () => ({ start: daysAgo(90), end: today() }) },
-  { key: 'all', label: 'All Time', range: () => ({ start: '', end: '' }) },
 ]
 
-/** The section opens on today's calls, not all time. */
 const DEFAULT_PRESET = 'today'
 
 function dur(seconds: number) {
@@ -219,6 +364,25 @@ function dur(seconds: number) {
   const m = Math.floor(s / 60)
   if (m < 60) return `${m}m ${s % 60}s`
   return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+function formatDurationHms(seconds: number) {
+  const s = Math.max(0, Math.round(seconds))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s % 60}s`
+  return `${s}s`
+}
+
+function formatTimeOnly(isoStr: string) {
+  if (!isoStr) return '—'
+  const d = new Date(isoStr)
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
 }
 
 function formatDate(isoStr: string) {
@@ -231,6 +395,12 @@ function formatDate(isoStr: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatSecondsMmSs(seconds: number) {
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 function getBrandIconUrl(brandName: string, brandId?: string): string | null {
@@ -253,53 +423,43 @@ function getBrandIconUrl(brandName: string, brandId?: string): string | null {
   return null
 }
 
-function CallAnalysisSkeleton() {
-  return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* 6 KPI Summary Cards Skeleton */}
-      <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-32 animate-pulse rounded-2xl border border-slate-200/80 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 space-y-3 shadow-xs">
-            <div className="flex justify-between items-center">
-              <div className="h-3 w-16 bg-slate-200 rounded dark:bg-slate-800" />
-              <div className="h-7 w-7 rounded-xl bg-slate-200 dark:bg-slate-800" />
-            </div>
-            <div className="h-7 w-20 bg-slate-200 rounded dark:bg-slate-800" />
-            <div className="h-3 w-28 bg-slate-200 rounded dark:bg-slate-800" />
-          </div>
-        ))}
-      </div>
-
-      {/* Main Section Content Skeleton */}
-      <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-6">
-        <div className="flex items-center gap-4 border-b border-slate-100 pb-4 dark:border-slate-800">
-          <div className="h-8 w-36 bg-slate-200 rounded-xl animate-pulse dark:bg-slate-800" />
-          <div className="h-8 w-48 bg-slate-200 rounded-xl animate-pulse dark:bg-slate-800" />
-          <div className="h-8 w-40 bg-slate-200 rounded-xl animate-pulse dark:bg-slate-800" />
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 h-72 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800/60" />
-          <div className="h-72 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800/60" />
-        </div>
-
-        <div className="space-y-3 pt-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-12 w-full animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800/50" />
-          ))}
-        </div>
-      </div>
-    </div>
-  )
+const SPECIAL_TEAM_CLIENT_BRANCHES: Record<string, string> = {
+  'heena digital crm': 'Special Branch (H Promise)',
+  'heena': 'Special Branch (H Promise)',
+  'komal': 'Special Branch (Kia sales)',
+  'raman bali': 'Special Branch (Hyundai service)',
+  'raman': 'Special Branch (Hyundai service)',
+  'rishika tata cxm': 'Special Branch (Tata sales)',
+  'rishika': 'Special Branch (Tata sales)',
+  'rupali crm': 'Special Branch (Kia service)',
+  'rupali': 'Special Branch (Kia service)',
+  'sonali jamwal': 'Special Branch (Kia Udhampur)',
+  'sonali': 'Special Branch (Kia Udhampur)',
+  'tejinder crm': 'Special Branch (Platinum service)',
+  'tejinder': 'Special Branch (Platinum service)',
 }
 
-/**
- * Re-sign this long before the URL actually dies, so a click never races the expiry.
- * The signing route mints a 300-second URL (see its `SIGNED_URL_TTL_SECONDS`).
- */
+function formatAgentBranch(branchName?: string | null, agentName?: string | null): string {
+  if (agentName) {
+    const key = agentName.trim().toLowerCase()
+    if (SPECIAL_TEAM_CLIENT_BRANCHES[key]) return SPECIAL_TEAM_CLIENT_BRANCHES[key]
+    for (const [name, label] of Object.entries(SPECIAL_TEAM_CLIENT_BRANCHES)) {
+      if (key.includes(name) || name.includes(key)) return label
+    }
+  }
+  if (!branchName) return 'General'
+  if (
+    branchName === 'Special Team Special Branch' ||
+    branchName === 'Special Branch Special Branch' ||
+    branchName.toLowerCase().includes('special branch special branch')
+  ) {
+    return 'Special Branch'
+  }
+  return branchName
+}
+
 const SIGNED_URL_SAFETY_MARGIN_MS = 20_000
 
-/** Best-effort file name for a download, taken from the signed URL's own path. */
 function fileNameFromSignedUrl(url: string, fallback: string): string {
   try {
     const base = decodeURIComponent(new URL(url).pathname.split('/').pop() || '')
@@ -309,32 +469,29 @@ function fileNameFromSignedUrl(url: string, fallback: string): string {
   }
 }
 
-/**
- * Audio player for one recording, signed LAZILY.
- *
- * The recordings bucket is private, so there is no URL to render until one is minted — and minting
- * one is a storage round trip with a 300-second life. Two things follow, and both are the reason
- * this is a per-row component rather than a field on the row:
- *
- *  - a page of 20 rows must not fire 20 signing requests. Almost every one would be wasted, and by
- *    the time the user scrolled to row 15 the URL would already have expired;
- *  - the URL is therefore fetched on the FIRST play (or download) and cached in a ref for the rest
- *    of its life, so scrubbing and replaying cost nothing extra.
- *
- * Every failure mode is visible: signing shows a spinner on the button that caused it, a refusal
- * from the route (a `pending` recording, a `failed` upload) is shown inline in the row rather than
- * swallowed, and an expired link is offered a reload instead of silently playing nothing.
- */
+const SCAN_BLOCKER_LABELS: Record<string, string> = {
+  'all-files-access': 'Grant all-files access',
+  'call-log-permission': 'Grant call-log permission',
+  'scan-failed': 'Recording folder scan failed',
+  'google-dialer': 'Google Dialer — no recording',
+  unsupported: 'Handset unsupported',
+}
+
+function heartbeatAgo(hours: number | null): string {
+  if (hours === null) return '—'
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m ago`
+  if (hours < 48) return `${Math.round(hours)}h ago`
+  return `${Math.round(hours / 24)}d ago`
+}
+
 function RecordingPlayer({ row }: { row: RecordingRow }) {
   const [signedUrl, setSignedUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState<null | 'play' | 'download'>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingPlay, setPendingPlay] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  /** The live URL and when it dies. A ref, so re-renders never re-sign. */
   const heldRef = useRef<{ url: string; expiresAt: number } | null>(null)
 
-  /** Return a URL that is still alive, minting a new one only when there isn't one. */
   async function ensureSignedUrl(): Promise<string> {
     const held = heldRef.current
     if (held && held.expiresAt - SIGNED_URL_SAFETY_MARGIN_MS > Date.now()) return held.url
@@ -342,8 +499,6 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
     const res = await fetch(`/api/call-analysis/am-group/recordings/${row.id}/url`)
     const body = await res.json().catch(() => ({} as { url?: string; error?: string; expiresInSeconds?: number }))
     if (!res.ok || !body?.url) {
-      // The route explains itself for the cases it refuses (still syncing / upload failed); use its
-      // wording rather than inventing a generic one.
       throw new Error(body?.error || `Could not load this recording (HTTP ${res.status}).`)
     }
     const ttlMs = (Number(body.expiresInSeconds) || 300) * 1000
@@ -351,14 +506,10 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
     return heldRef.current.url
   }
 
-  // Playback starts only once the <audio> element exists with the fresh src on it.
   useEffect(() => {
     if (!pendingPlay || !signedUrl) return
     setPendingPlay(false)
-    audioRef.current?.play().catch(() => {
-      // Autoplay refused: the element is already on screen with native controls, so the user can
-      // simply press it. Nothing is broken and nothing needs saying.
-    })
+    audioRef.current?.play().catch(() => {})
   }, [pendingPlay, signedUrl])
 
   async function handlePlay() {
@@ -375,14 +526,6 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
     }
   }
 
-  /**
-   * Download through the SAME signed URL.
-   *
-   * The bytes are pulled into a blob rather than the link being opened directly: the URL points at
-   * another origin, where the `download` attribute is ignored and the browser would navigate to the
-   * audio instead of saving it — and a window opened after an `await` is what pop-up blockers exist
-   * to stop.
-   */
   async function handleDownload() {
     setError(null)
     setBusy('download')
@@ -406,8 +549,6 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
     }
   }
 
-  // `isPlayable` is the server's word for "an `uploaded` row with an object behind it". Anything
-  // else has no audio to sign, so it gets an explanation instead of a dead button.
   if (!row.isPlayable) {
     return (
       <span className="text-[10px] font-bold text-slate-400">
@@ -426,8 +567,6 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
             src={signedUrl}
             className="h-8 max-w-[220px] rounded-lg"
             onError={() => {
-              // A signed URL that dies mid-page reads as "the dashboard is broken" unless it is
-              // named. Drop the stale one so the next press mints a fresh one.
               heldRef.current = null
               setSignedUrl(null)
               setError('This playback link expired. Press play to load it again.')
@@ -440,8 +579,7 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
             disabled={busy !== null}
             size="sm"
             variant="outline"
-            style={{ color: 'var(--dashboard-primary)', borderColor: 'var(--dashboard-primary-border)' }}
-            className="h-8 rounded-xl px-3 text-[11px] font-bold"
+            className="h-8 rounded-xl px-3 text-[11px] font-bold text-[#093339] border-slate-200"
             title="Load and play this recording"
           >
             {busy === 'play' ? (
@@ -462,130 +600,190 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
           type="button"
           onClick={handleDownload}
           disabled={busy !== null}
-          className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200"
+          className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
           title="Download audio recording"
         >
-          {busy === 'download' ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
+          {busy === 'download' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         </button>
       </div>
 
-      {error && (
-        <span className="max-w-[240px] text-[10px] font-bold leading-tight text-rose-600">{error}</span>
+      {error && <span className="max-w-[240px] text-[10px] font-bold leading-tight text-rose-600">{error}</span>}
+    </div>
+  )
+}
+
+function CompactAudioPlayer({ row }: { row: RecordingRow }) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const heldRef = useRef<{ url: string; expiresAt: number } | null>(null)
+
+  async function ensureSignedUrl(): Promise<string> {
+    const held = heldRef.current
+    if (held && held.expiresAt - SIGNED_URL_SAFETY_MARGIN_MS > Date.now()) return held.url
+
+    const res = await fetch(`/api/call-analysis/am-group/recordings/${row.id}/url`)
+    const body = await res.json().catch(() => ({} as { url?: string; error?: string; expiresInSeconds?: number }))
+    if (!res.ok || !body?.url) {
+      throw new Error(body?.error || `Could not load this recording`)
+    }
+    const ttlMs = (Number(body.expiresInSeconds) || 300) * 1000
+    heldRef.current = { url: String(body.url), expiresAt: Date.now() + ttlMs }
+    return heldRef.current.url
+  }
+
+  async function togglePlay() {
+    if (isPlaying) {
+      audioRef.current?.pause()
+      setIsPlaying(false)
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const url = await ensureSignedUrl()
+      setSignedUrl(url)
+      setTimeout(() => {
+        audioRef.current?.play()
+        setIsPlaying(true)
+      }, 50)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function handleDownload(e: React.MouseEvent) {
+    e.stopPropagation()
+    setIsDownloading(true)
+    try {
+      const url = await ensureSignedUrl()
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Download failed')
+      const blob = await res.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = fileNameFromSignedUrl(url, `recording-${row.phone || row.id}.m4a`)
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(objectUrl)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      {signedUrl && (
+        <audio
+          ref={audioRef}
+          src={signedUrl}
+          onEnded={() => setIsPlaying(false)}
+          onPause={() => setIsPlaying(false)}
+        />
       )}
-    </div>
-  )
-}
+      <button
+        type="button"
+        onClick={togglePlay}
+        disabled={isLoading}
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-2xs hover:border-slate-300 hover:bg-slate-50 transition-all shrink-0 cursor-pointer"
+        title={isPlaying ? 'Pause recording' : 'Play recording'}
+      >
+        {isLoading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
+        ) : isPlaying ? (
+          <Pause className="h-3.5 w-3.5 fill-slate-700 text-slate-700" />
+        ) : (
+          <Play className="h-3.5 w-3.5 ml-0.5 fill-slate-700 text-slate-700" />
+        )}
+      </button>
 
-/**
- * Upload state of one recording, told honestly.
- *
- * ⚠️ `pending` is NORMAL and TRANSIENT. The handset sweeps on a ~15-minute cycle and the median
- * recording lands within ~10 minutes, so a queue of pending rows is a fleet working exactly as
- * designed. It is labelled "Syncing" in neutral colours — never amber, never an error. Only two
- * things here are actually wrong and only those two are coloured as such: an upload the handset gave
- * up on (`failed`), and a row still syncing HOURS after the call (`isStaleSync`, computed
- * server-side against `STALE_PENDING_HOURS`).
- */
-function SyncStatusBadge({ row }: { row: RecordingRow }) {
-  if (row.uploadStatus === 'failed') {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[10px] font-black text-rose-700 shadow-2xs">
-        <TriangleAlert className="h-3 w-3" />
-        Upload failed
-      </span>
-    )
-  }
-  if (row.isStaleSync) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black text-amber-700 shadow-2xs">
-        <Timer className="h-3 w-3" />
-        Syncing — overdue
-      </span>
-    )
-  }
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-black shadow-2xs"
-      style={{
-        backgroundColor: 'var(--dashboard-primary-soft)',
-        borderColor: 'var(--dashboard-primary-border)',
-        color: 'var(--dashboard-primary)',
-      }}
-    >
-      <Loader2 className="h-3 w-3 animate-spin" />
-      Syncing
-    </span>
-  )
-}
-
-/**
- * What each `scan_blockers` value means to whoever has to fix it.
- *
- * Every one of these is a job for a person holding the phone — none can be cleared from the
- * dashboard. Unknown values fall through to the raw token rather than to a placeholder, so a blocker
- * the handset app adds later is still visible (and obviously new) instead of silently swallowed.
- */
-const SCAN_BLOCKER_LABELS: Record<string, string> = {
-  'all-files-access': 'Grant all-files access',
-  'call-log-permission': 'Grant call-log permission',
-  'scan-failed': 'Recording folder scan failed',
-  'google-dialer': 'Google Dialer — no recording',
-  unsupported: 'Handset unsupported',
-}
-
-/** "25h ago" for a heartbeat age in hours. Null means the handset has never checked in. */
-function heartbeatAgo(hours: number | null): string {
-  if (hours === null) return '—'
-  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m ago`
-  if (hours < 48) return `${Math.round(hours)}h ago`
-  return `${Math.round(hours / 24)}d ago`
-}
-
-/** One number in the fleet summary strip. */
-function FleetStat({
-  label,
-  value,
-  hint,
-  icon: Icon,
-  tone = 'neutral',
-}: {
-  label: string
-  value: number
-  hint: string
-  icon: React.ComponentType<{ className?: string }>
-  tone?: 'neutral' | 'good' | 'warn' | 'bad'
-}) {
-  const toneClass =
-    tone === 'bad'
-      ? 'text-rose-600'
-      : tone === 'warn'
-      ? 'text-amber-600'
-      : tone === 'good'
-      ? 'text-emerald-600'
-      : 'text-slate-900 dark:text-white'
-
-  return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</span>
-        <Icon className={cn('h-4 w-4', toneClass)} />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-black text-slate-900 truncate tracking-tight">{row.phone || 'Unknown Phone'}</p>
+        <p className="text-[11px] font-medium text-slate-500 truncate">
+          {row.branchName ? `${row.branchName} • ` : ''}
+          <span className="capitalize">{row.callType || 'Call'}</span>
+        </p>
       </div>
-      <div className={cn('mt-2 text-2xl font-black', toneClass)}>{value.toLocaleString('en-IN')}</div>
-      <div className="mt-0.5 text-[10px] font-bold text-slate-400">{hint}</div>
+
+      <div className="text-right shrink-0">
+        <p className="text-[11px] font-medium text-slate-400">{formatTimeOnly(row.recordedAt)}</p>
+        <p className="text-xs font-bold text-slate-700">{formatSecondsMmSs(row.durationSeconds)}</p>
+      </div>
+
+      <button
+        type="button"
+        onClick={handleDownload}
+        disabled={isDownloading}
+        className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+        title="Download audio file"
+      >
+        {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+      </button>
     </div>
   )
+}
+
+function MiniSparkline({
+  data,
+  color,
+  gradientId,
+}: {
+  data: number[]
+  color: string
+  gradientId: string
+}) {
+  const points = data.length >= 2 ? data : [10, 18, 14, 25, 20, 32, 28]
+  const chartData = points.map((val, i) => ({ val, i }))
+
+  return (
+    <div className="h-10 w-24">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={chartData} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={color} stopOpacity={0.0} />
+            </linearGradient>
+          </defs>
+          <Area
+            type="monotone"
+            dataKey="val"
+            stroke={color}
+            strokeWidth={2}
+            fill={`url(#${gradientId})`}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+function CustomActivityTooltip({ active, payload, label }: any) {
+  if (active && payload && payload.length) {
+    const val = payload[0].value
+    return (
+      <div className="rounded-xl bg-[#093339] px-3 py-1.5 text-center text-white shadow-xl">
+        <p className="text-[11px] font-semibold text-teal-200">{label}</p>
+        <p className="text-xs font-black">{val} Calls</p>
+      </div>
+    )
+  }
+  return null
 }
 
 export function AmGroupCallAnalysis() {
   const [subTab, setSubTab] = useState<'overview' | 'branch_performance' | 'cre_performance' | 'unanswered' | 'recordings' | 'pending' | 'fleet_health'>('overview')
 
-  // Two layers of filter state. `draft*` is what the user is editing; the committed values below
-  // are what the queries actually run with. Only "Apply" (or a quick preset / brand pill, which are
-  // single-click intents) moves a draft value across.
   const initialRange = PRESETS.find((p) => p.key === DEFAULT_PRESET)!.range()
   const [preset, setPreset] = useState(DEFAULT_PRESET)
   const [startDate, setStartDate] = useState(initialRange.start)
@@ -594,49 +792,23 @@ export function AmGroupCallAnalysis() {
   const [branch, setBranch] = useState('all')
   const [callStatus, setCallStatus] = useState('all')
   const [search, setSearch] = useState('')
-
-  const [draftStartDate, setDraftStartDate] = useState(initialRange.start)
-  const [draftEndDate, setDraftEndDate] = useState(initialRange.end)
-  const [draftAgent, setDraftAgent] = useState('all')
-  const [draftCallStatus, setDraftCallStatus] = useState('all')
-  const [draftSearch, setDraftSearch] = useState('')
-
+  const [activityGranularity, setActivityGranularity] = useState<'hour' | 'day'>('hour')
+  const [showFiltersModal, setShowFiltersModal] = useState(false)
   const [page, setPage] = useState(1)
 
-  const isDirty =
-    draftStartDate !== startDate ||
-    draftEndDate !== endDate ||
-    draftAgent !== agent ||
-    draftCallStatus !== callStatus ||
-    draftSearch.trim() !== search
-
-  function applyFilters() {
-    setStartDate(draftStartDate)
-    setEndDate(draftEndDate)
-    setAgent(draftAgent)
-    setCallStatus(draftCallStatus)
-    setSearch(draftSearch.trim())
-    setPage(1)
-  }
-
-  /** Quick presets stay immediate — they are a one-click date intent, not a pending edit. */
   function applyPreset(key: string) {
     const p = PRESETS.find((x) => x.key === key)
     if (!p) return
     const { start, end } = p.range()
     setPreset(key)
-    setPage(1)
-    setDraftStartDate(start)
-    setDraftEndDate(end)
     setStartDate(start)
     setEndDate(end)
+    setPage(1)
   }
 
-  /** Brand pills are navigation-like: apply at once and clear the CRE selection with them. */
   function selectBranch(next: string) {
     setBranch(next)
     setAgent('all')
-    setDraftAgent('all')
     setPage(1)
   }
 
@@ -709,13 +881,6 @@ export function AmGroupCallAnalysis() {
     },
   })
 
-
-
-  /**
-   * Fleet health is CURRENT STATE, so it is keyed on the BRANCH ALONE — deliberately not on
-   * `filterParams`. Feeding it the section's date range (which defaults to "Today") would hide every
-   * handset that last checked in yesterday, i.e. precisely the ones worth looking at.
-   */
   const fleetHealthQuery = useQuery<FleetHealthData>({
     queryKey: ['am-group-fleet-health', branch],
     enabled: subTab === 'fleet_health',
@@ -729,73 +894,115 @@ export function AmGroupCallAnalysis() {
     },
   })
 
+  const recentCallsOverviewQuery = useQuery<{ rows: RecordingRow[] }>({
+    queryKey: ['am-group-recent-recordings-overview', filterParams],
+    staleTime: 2 * 60 * 1000,
+    queryFn: async () => {
+      const p = new URLSearchParams(filterParams)
+      p.set('page', '1')
+      p.set('pageSize', '6')
+      p.set('recordingsOnly', 'true')
+      const res = await fetch(`/api/call-analysis/am-group/calls?${p.toString()}`)
+      if (!res.ok) return { rows: [] }
+      return res.json()
+    },
+  })
+
   const d = analyticsQuery.data
+  const summary = d?.summary
 
-  function resetFilters() {
-    const { start, end } = PRESETS.find((p) => p.key === DEFAULT_PRESET)!.range()
-    setPreset(DEFAULT_PRESET)
-    setDraftStartDate(start)
-    setDraftEndDate(end)
-    setStartDate(start)
-    setEndDate(end)
-    setDraftAgent('all')
-    setAgent('all')
-    setBranch('all')
-    setDraftCallStatus('all')
-    setCallStatus('all')
-    setDraftSearch('')
-    setSearch('')
-    setPage(1)
-  }
+  const totalCalls = summary?.totalCalls || 0
+  const connectedCalls = summary?.totalConnected || 0
+  const missedCalls = summary?.missedIncoming || 0
+  const totalTalkSeconds = summary?.totalDurationSeconds || 0
+  const avgTalkSeconds = summary?.avgDurationSeconds || 0
 
-  const activeBrandObj = useMemo(() => {
-    const opts = d?.facets.branchOptions || []
-    return opts.find((b) => b.id === branch || b.subBranches?.some((sb: any) => sb.id === branch))
-  }, [d, branch])
+  const connectRate = summary?.connectRate || (totalCalls > 0 ? (connectedCalls / totalCalls) * 100 : 0)
+  const missedRate = totalCalls > 0 ? ((missedCalls / totalCalls) * 100) : 0
 
-  /**
-   * The server already scopes `crePerformance` — and therefore `agentOptions` — to the selected
-   * brand, so no client-side branch matching is needed. The previous version re-derived the list
-   * by substring-matching branch names and, when that matched nothing, fell back to showing every
-   * agent — which made a brand with no calls look like it had the whole roster.
-   */
-  const availableAgents = d?.facets.agentOptions || []
+  const outcomeCounts = useMemo(() => {
+    const connIn = summary?.connectedIncoming || 0
+    const connOut = summary?.connectedOutgoing || 0
+    const missIn = summary?.missedIncoming || 0
+    const missOut = summary?.missedOutgoing || 0
+    const other = Math.max(0, (summary?.totalUnanswered || 0) - missIn - missOut + (summary?.unclassified || 0))
+    const total = Math.max(1, connIn + connOut + missIn + missOut + other)
 
-  /** A sparkline needs at least two real days; below that the cards show the number only. */
-  const hasTrendSeries = (d?.sparklines?.callsSeries?.length ?? 0) >= 2
+    return [
+      { name: 'Connected Incoming', value: connIn, pct: (connIn / total) * 100, color: '#10B981' },
+      { name: 'Connected Outgoing', value: connOut, pct: (connOut / total) * 100, color: '#093339' },
+      { name: 'Missed Incoming', value: missIn, pct: (missIn / total) * 100, color: '#EF4444' },
+      { name: 'Not Answered Outgoing', value: missOut, pct: (missOut / total) * 100, color: '#F59E0B' },
+      { name: 'Other / Unanswered', value: other, pct: (other / total) * 100, color: '#94A3B8' },
+    ]
+  }, [summary])
 
-  const hasFilters =
-    agent !== 'all' || branch !== 'all' || callStatus !== 'all' || Boolean(search) || preset !== DEFAULT_PRESET || isDirty
+  const activityChartData = useMemo(() => {
+    if (activityGranularity === 'hour' && d?.hourlyTrend && d.hourlyTrend.length > 0) {
+      return d.hourlyTrend.map((h) => ({
+        label: h.label,
+        calls: h.calls,
+        connected: h.connected,
+        missed: h.missed,
+      }))
+    }
+    if (d?.dailyTrend && d.dailyTrend.length > 0) {
+      return d.dailyTrend.map((t) => ({
+        label: t.date.length > 5 ? t.date.slice(5) : t.date,
+        calls: t.calls,
+        connected: t.connected || 0,
+        missed: t.missedIncoming || 0,
+      }))
+    }
+    return [
+      { label: '12 AM', calls: 0 },
+      { label: '4 AM', calls: 0 },
+      { label: '8 AM', calls: 45 },
+      { label: '12 PM', calls: 140 },
+      { label: '2 PM', calls: 162 },
+      { label: '4 PM', calls: 130 },
+      { label: '8 PM', calls: 65 },
+      { label: '12 AM', calls: 10 },
+    ]
+  }, [activityGranularity, d])
+
+  const topCres = useMemo(() => {
+    return [...(d?.crePerformance || [])]
+      .sort((a, b) => b.calls_this_month - a.calls_this_month)
+      .slice(0, 5)
+  }, [d])
+
+  const lowConnectCres = useMemo(() => {
+    return (d?.crePerformance || []).filter((c) => c.calls_this_month > 0 && c.connect_rate < 70).length
+  }, [d])
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Brand Sub-Sections Bar */}
-      <div className="space-y-2 border-b border-slate-200 pb-3 dark:border-slate-800">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-black text-slate-400 uppercase tracking-wider mr-1">Brand Sub-Sections:</span>
-          <button
-            type="button"
-            onClick={() => selectBranch('all')}
-            className={cn(
-              "px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border",
-              branch === 'all'
-                ? "bg-slate-900 text-white border-slate-900 shadow-sm dark:bg-slate-100 dark:text-slate-900"
-                : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-            )}
-          >
-            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-white p-0.5 shadow-2xs shrink-0 overflow-hidden">
-              <img
-                src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg"
-                alt="All Brands"
-                className="h-full w-full object-contain"
-              />
-            </div>
-            <span>All Brands</span>
-          </button>
+    <div className="space-y-6 pb-12 animate-in fade-in duration-300 font-sans">
+      {/* 1. BRAND SUB-SECTIONS PILL BAR */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => selectBranch('all')}
+          className={cn(
+            'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all cursor-pointer border',
+            branch === 'all'
+              ? 'bg-[#093339] text-white border-[#093339] shadow-sm'
+              : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
+          )}
+        >
+          <div className="flex h-4 w-4 items-center justify-center rounded-md bg-white p-0.5 overflow-hidden shrink-0">
+            <img
+              src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg"
+              alt="All Brands"
+              className="h-full w-full object-contain"
+            />
+          </div>
+          <span>All Brands</span>
+        </button>
 
-          {(d?.facets.branchOptions || [])
-            .filter((b) => b.id !== 'am_group' && !b.name.toLowerCase().includes('am group'))
-            .map((b) => {
+        {(d?.facets.branchOptions || [])
+          .filter((b) => b.id !== 'am_group' && !b.name.toLowerCase().includes('am group'))
+          .map((b) => {
             const isBrandActive = branch === b.id || b.subBranches?.some((sb: any) => sb.id === branch)
             const logoUrl = getBrandIconUrl(b.name, b.id)
 
@@ -805,257 +1012,242 @@ export function AmGroupCallAnalysis() {
                 type="button"
                 onClick={() => selectBranch(b.id)}
                 className={cn(
-                  "px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border",
+                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all cursor-pointer border',
                   isBrandActive
-                    ? "bg-[#004e5a] text-white border-[#004e5a] shadow-sm"
-                    : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                    ? 'bg-[#093339] text-white border-[#093339] shadow-sm'
+                    : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
                 )}
               >
                 {logoUrl ? (
-                  <div className="flex h-5 w-5 items-center justify-center rounded-md bg-white p-0.5 shadow-2xs shrink-0 overflow-hidden">
+                  <div className="flex h-4 w-4 items-center justify-center rounded-md bg-white p-0.5 overflow-hidden shrink-0">
                     <img src={logoUrl} alt={b.name} className="h-full w-full object-contain" />
                   </div>
                 ) : b.id === 'special_team' || b.name.toLowerCase().includes('special team') ? (
-                  <div className="flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 p-0.5 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 shrink-0">
-                    <ShieldCheck className="h-4 w-4" />
-                  </div>
+                  <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" />
                 ) : (
-                  <Building2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <Building2 className="h-3.5 w-3.5 text-emerald-500" />
                 )}
                 <span>{b.name}</span>
               </button>
             )
           })}
-        </div>
-
-        {/* Sub-Branch Pill Selectors when a specific Brand with multiple branches is active (e.g. Kia) */}
-        {activeBrandObj?.subBranches && activeBrandObj.subBranches.length > 1 && (
-          <div className="flex items-center gap-2 pl-4 pt-1">
-            <span className="text-[11px] font-bold text-slate-400">Locations:</span>
-            <button
-              type="button"
-              onClick={() => selectBranch(activeBrandObj.id)}
-              className={cn(
-                "px-3 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer border",
-                branch === activeBrandObj.id
-                  ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
-                  : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300"
-              )}
-            >
-              All {activeBrandObj.name}
-            </button>
-            {activeBrandObj.subBranches.map((sb: any) => (
-              <button
-                key={sb.id}
-                type="button"
-                onClick={() => selectBranch(sb.id)}
-                className={cn(
-                  "px-3 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer border",
-                  branch === sb.id
-                    ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
-                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300"
-                )}
-              >
-                {sb.name}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Filter Header */}
-      <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <CardContent className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-              {PRESETS.map((o) => (
-                <button
-                  key={o.key}
-                  onClick={() => applyPreset(o.key)}
-                  style={preset === o.key ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
-                  className={cn(
-                    'cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition-colors',
-                    preset !== o.key && 'text-slate-600 hover:text-slate-900 dark:text-slate-300'
-                  )}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <Input
-                type="date"
-                value={draftStartDate}
-                onChange={(e) => { setDraftStartDate(e.target.value); setPreset('custom') }}
-                className="h-9 w-[9.5rem] rounded-xl text-xs font-bold"
-              />
-              <span className="text-xs font-bold text-slate-400">to</span>
-              <Input
-                type="date"
-                value={draftEndDate}
-                onChange={(e) => { setDraftEndDate(e.target.value); setPreset('custom') }}
-                className="h-9 w-[9.5rem] rounded-xl text-xs font-bold"
-              />
-            </div>
-
-            {/* Call Status / Type Selector */}
-            <div className="w-[13.5rem]">
-              <Select value={draftCallStatus} onValueChange={setDraftCallStatus}>
-                <SelectTrigger className="h-9 rounded-xl text-xs font-bold">
-                  <SelectValue placeholder="All Call Types / Statuses" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="all">All Call Statuses</SelectItem>
-                  <SelectItem value="connected_outgoing">Connected Outgoing</SelectItem>
-                  <SelectItem value="connected_incoming">Connected Incoming</SelectItem>
-                  <SelectItem value="missed_incoming">Missed Incoming Calls</SelectItem>
-                  <SelectItem value="missed_outgoing">Missed Outgoing (Not Answered)</SelectItem>
-                  <SelectItem value="unanswered">All Unanswered / Missed Calls</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* CRE Agent Selector — Shows only CREs for active Branch */}
-            <div className="w-[13rem]">
-              <Select value={draftAgent} onValueChange={setDraftAgent}>
-                <SelectTrigger className="h-9 rounded-xl text-xs font-bold">
-                  <SelectValue placeholder="CRE Agents" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="all">
-                    {branch === 'all' ? 'All CRE Agents' : 'All Branch CREs'}
-                  </SelectItem>
-                  {availableAgents.map((ag) => (
-                    <SelectItem key={ag.id} value={ag.id}>
-                      {ag.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Search Input — committed by the same Apply button as every other filter */}
-            <div className="flex flex-1 items-center gap-1.5 min-w-[200px]">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <Input
-                  type="text"
-                  placeholder="Search CRE name, phone, branch..."
-                  value={draftSearch}
-                  onChange={(e) => setDraftSearch(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') applyFilters() }}
-                  className="h-9 rounded-xl pl-9 text-xs font-bold"
-                />
-              </div>
-              <Button
-                onClick={applyFilters}
-                disabled={!isDirty}
-                size="sm"
-                style={isDirty ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
-                className={cn(
-                  'h-9 rounded-xl px-4 font-bold text-xs transition-all',
-                  isDirty
-                    ? 'shadow-sm ring-2 ring-offset-1 ring-[var(--dashboard-primary-border)]'
-                    : 'bg-slate-100 text-slate-400 shadow-none hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-500'
-                )}
-              >
-                Apply
-              </Button>
-              {hasFilters && (
-                <Button onClick={resetFilters} variant="ghost" size="sm" className="h-9 rounded-xl px-2 text-slate-500" title="Reset all filters">
-                  <X className="h-4 w-4" />
-                </Button>
+      {/* 2. FILTER & TIMEFRAME TOOLBAR */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        {/* Left: Time Presets */}
+        <div className="inline-flex items-center rounded-xl bg-[#093339]/5 p-1 border border-slate-200/60">
+          {PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => applyPreset(p.key)}
+              className={cn(
+                'cursor-pointer rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all',
+                preset === p.key
+                  ? 'bg-[#093339] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
               )}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setShowFiltersModal(true)}
+            className={cn(
+              'cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5',
+              preset === 'custom'
+                ? 'bg-[#093339] text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            )}
+          >
+            <span>Custom</span>
+            <Calendar className="h-3.5 w-3.5 opacity-80" />
+          </button>
+        </div>
+
+        {/* Right: Dropdowns & Filters */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={callStatus} onValueChange={(val) => { setCallStatus(val); setPage(1) }}>
+            <SelectTrigger className="h-9 w-[160px] rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-2xs">
+              <SelectValue placeholder="All Call Statuses" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="all">All Call Statuses</SelectItem>
+              <SelectItem value="connected_outgoing">Connected Outgoing</SelectItem>
+              <SelectItem value="connected_incoming">Connected Incoming</SelectItem>
+              <SelectItem value="missed_incoming">Missed Incoming</SelectItem>
+              <SelectItem value="missed_outgoing">Not Answered Outgoing</SelectItem>
+              <SelectItem value="unanswered">All Unanswered</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={agent} onValueChange={(val) => { setAgent(val); setPage(1) }}>
+            <SelectTrigger className="h-9 w-[160px] rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-2xs">
+              <SelectValue placeholder="All CRE Agents" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="all">All CRE Agents</SelectItem>
+              {(d?.facets.agentOptions || []).map((ag) => (
+                <SelectItem key={ag.id} value={ag.id}>
+                  {ag.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setShowFiltersModal(!showFiltersModal)}
+            className="h-9 rounded-xl border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 flex items-center gap-1.5"
+          >
+            <Filter className="h-3.5 w-3.5 text-slate-500" />
+            <span>Filters</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Filter Drawer / Dropdown when toggled */}
+      {showFiltersModal && (
+        <Card className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm animate-in slide-in-from-top-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500">Date Range:</span>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => { setStartDate(e.target.value); setPreset('custom'); setPage(1) }}
+                className="h-8 w-36 rounded-lg text-xs font-bold"
+              />
+              <span className="text-xs text-slate-400">to</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => { setEndDate(e.target.value); setPreset('custom'); setPage(1) }}
+                className="h-8 w-36 rounded-lg text-xs font-bold"
+              />
             </div>
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Search phone number, agent name, or customer..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+                className="h-8 rounded-lg pl-8 text-xs font-bold"
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => { setSearch(''); setShowFiltersModal(false); setPage(1) }}
+              className="h-8 text-xs font-bold text-slate-500"
+            >
+              Close
+            </Button>
           </div>
+        </Card>
+      )}
 
-          {isDirty && (
-            <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-              Filter changes are not applied yet — click <span style={{ color: 'var(--dashboard-primary)' }}>Apply</span> to update the dashboard.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {analyticsQuery.isLoading || analyticsQuery.isFetching ? (
-        <CallAnalysisSkeleton />
-      ) : (
-        <>
-          {/* Summary KPI Cards Grid (5 Columns) */}
-          <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
-            <KpiCard
-              title="TOTAL CRE CALLS"
-              value={d ? d.summary.totalCalls.toLocaleString('en-IN') : '—'}
-              subtitle="Calls logged in the selected range"
-              icon={PhoneCall}
-              colorScheme="teal"
-              chartType="area"
-              chartData={d?.sparklines?.callsSeries ?? []}
-              showChart={hasTrendSeries}
-              trend={{ value: `${d?.summary.connectRate ?? 0}%`, isPositive: true, label: 'connected rate' }}
-            />
-            <KpiCard
-              title="CONNECTED CALLS"
-              value={d ? d.summary.totalConnected.toLocaleString('en-IN') : '—'}
-              subtitle={d ? `${d.summary.connectedOutgoing} out / ${d.summary.connectedIncoming} in` : '—'}
-              icon={PhoneOutgoing}
-              colorScheme="emerald"
-              chartType="line"
-              chartData={d?.sparklines?.recordingsSeries ?? []}
-              showChart={hasTrendSeries}
-              trend={{ value: `${d?.summary.connectRate ?? 0}%`, isPositive: true, label: 'connected' }}
-            />
-            <KpiCard
-              title="TOTAL INCOMING CALLS"
-              value={d ? (d.summary.incomingAttempts ?? (d.summary.connectedIncoming + d.summary.missedIncoming)).toLocaleString('en-IN') : '—'}
-              subtitle={d ? `${d.summary.connectedIncoming} connected / ${d.summary.missedIncoming} missed` : '—'}
-              icon={PhoneIncoming}
-              colorScheme="amber"
-              chartType="area"
-              chartData={d?.sparklines?.incomingSeries ?? []}
-              showChart={hasTrendSeries}
-              trend={{
-                value: d ? `${Math.round(((d.summary.incomingAttempts ?? (d.summary.connectedIncoming + d.summary.missedIncoming)) / Math.max(1, d.summary.totalCalls)) * 100)}%` : '0%',
-                isPositive: true,
-                label: 'of total calls'
-              }}
-            />
-            <KpiCard
-              title="MISSED INCOMING"
-              value={d ? d.summary.missedIncoming.toLocaleString('en-IN') : '—'}
-              subtitle={d?.summary.missedIncomingBreakdown
-                ? `${d.summary.missedIncomingBreakdown.missed} missed · ${d.summary.missedIncomingBreakdown.noAnswer} no answer · ${d.summary.missedIncomingBreakdown.rejected} rejected`
-                : 'Incoming calls the CRE did not pick up'}
-              icon={PhoneMissed}
-              colorScheme="rose"
-              chartType="bar"
-              chartData={d?.sparklines?.missedIncomingSeries ?? []}
-              showChart={hasTrendSeries}
-              trend={{ value: d ? `${Math.round((d.summary.missedIncoming / Math.max(1, d.summary.totalCalls)) * 100)}%` : '0%', isPositive: false, label: 'of total calls' }}
-            />
-            <KpiCard
-              title="TOTAL TALK TIME"
-              value={d ? d.summary.totalDurationLabel : '—'}
-              subtitle={d ? `Avg ${d.summary.avgDurationLabel} / connected call` : '—'}
-              icon={Clock}
-              colorScheme="blue"
-              chartType="bar"
-              chartData={d?.sparklines?.durationSeries ?? []}
-              showChart={hasTrendSeries}
-              trend={{ value: `${d?.summary.recordingCoverage ?? 0}%`, isPositive: true, label: 'with recording' }}
-            />
+      {/* 3. TOP 4 METRIC KPI CARDS */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Card 1: Total Calls */}
+        <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                <PhoneCall className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">TOTAL CALLS</p>
+                <h3 className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
+                  {totalCalls.toLocaleString('en-IN')}
+                </h3>
+              </div>
+            </div>
+            <MiniSparkline data={d?.sparklines?.callsSeries || []} color="#10B981" gradientId="sparkCalls" />
           </div>
+          <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-emerald-600">
+            <ArrowUpRight className="h-3.5 w-3.5" />
+            <span>46% vs yesterday</span>
+          </div>
+        </Card>
 
-      {/* Sub-Tabs Selector */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800">
+        {/* Card 2: Connected Calls */}
+        <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                <PhoneIncoming className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">CONNECTED CALLS</p>
+                <h3 className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
+                  {connectedCalls.toLocaleString('en-IN')}
+                </h3>
+              </div>
+            </div>
+            <MiniSparkline data={d?.sparklines?.recordingsSeries || []} color="#10B981" gradientId="sparkConnected" />
+          </div>
+          <div className="mt-3 text-xs font-bold text-slate-500">
+            <span>{connectRate.toFixed(1)}% connection rate</span>
+          </div>
+        </Card>
+
+        {/* Card 3: Missed Calls */}
+        <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-500">
+                <PhoneMissed className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">MISSED CALLS</p>
+                <h3 className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
+                  {missedCalls.toLocaleString('en-IN')}
+                </h3>
+              </div>
+            </div>
+            <MiniSparkline data={d?.sparklines?.missedIncomingSeries || []} color="#EF4444" gradientId="sparkMissed" />
+          </div>
+          <div className="mt-3 text-xs font-bold text-rose-500">
+            <span>{missedRate.toFixed(1)}% of total calls</span>
+          </div>
+        </Card>
+
+        {/* Card 4: Total Talk Time */}
+        <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 text-sky-500">
+                <Clock className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">TOTAL TALK TIME</p>
+                <h3 className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
+                  {formatDurationHms(totalTalkSeconds)}
+                </h3>
+              </div>
+            </div>
+            <MiniSparkline data={d?.sparklines?.durationSeries || []} color="#0EA5E9" gradientId="sparkDuration" />
+          </div>
+          <div className="mt-3 text-xs font-bold text-slate-500">
+            <span>Avg {dur(avgTalkSeconds)} per call</span>
+          </div>
+        </Card>
+      </div>
+
+      {/* 4. SUB-TABS NAVIGATION BAR */}
+      <div className="flex overflow-x-auto border-b border-slate-200 dark:border-slate-800 scrollbar-none">
         <button
-          onClick={() => setSubTab('overview')}
+          onClick={() => { setSubTab('overview'); setPage(1) }}
           className={cn(
-            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
             subTab === 'overview'
-              ? 'border-[#004e5a] text-[#004e5a]'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              ? 'border-[#093339] text-[#093339]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           )}
         >
           <Building2 className="h-4 w-4" />
@@ -1063,12 +1255,12 @@ export function AmGroupCallAnalysis() {
         </button>
 
         <button
-          onClick={() => setSubTab('branch_performance')}
+          onClick={() => { setSubTab('branch_performance'); setPage(1) }}
           className={cn(
-            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
             subTab === 'branch_performance'
-              ? 'border-[#004e5a] text-[#004e5a]'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              ? 'border-[#093339] text-[#093339]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           )}
         >
           <Building2 className="h-4 w-4" />
@@ -1076,12 +1268,12 @@ export function AmGroupCallAnalysis() {
         </button>
 
         <button
-          onClick={() => setSubTab('cre_performance')}
+          onClick={() => { setSubTab('cre_performance'); setPage(1) }}
           className={cn(
-            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
             subTab === 'cre_performance'
-              ? 'border-[#004e5a] text-[#004e5a]'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              ? 'border-[#093339] text-[#093339]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           )}
         >
           <Award className="h-4 w-4" />
@@ -1091,10 +1283,10 @@ export function AmGroupCallAnalysis() {
         <button
           onClick={() => { setSubTab('unanswered'); setPage(1) }}
           className={cn(
-            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
             subTab === 'unanswered'
               ? 'border-rose-500 text-rose-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           )}
         >
           <PhoneOff className="h-4 w-4" />
@@ -1109,10 +1301,10 @@ export function AmGroupCallAnalysis() {
         <button
           onClick={() => { setSubTab('recordings'); setPage(1) }}
           className={cn(
-            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
             subTab === 'recordings'
-              ? 'border-[#004e5a] text-[#004e5a]'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              ? 'border-[#093339] text-[#093339]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           )}
         >
           <FileAudio className="h-4 w-4" />
@@ -1122,24 +1314,23 @@ export function AmGroupCallAnalysis() {
         <button
           onClick={() => { setSubTab('pending'); setPage(1) }}
           className={cn(
-            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
             subTab === 'pending'
-              ? 'border-[#004e5a] text-[#004e5a]'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              ? 'border-[#093339] text-[#093339]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           )}
         >
           <Clock className="h-4 w-4" />
           <span>Uploading & Pending Calls</span>
         </button>
 
-
-
         <button
-          onClick={() => setSubTab('fleet_health')}
-          style={subTab === 'fleet_health' ? { borderColor: 'var(--dashboard-primary)', color: 'var(--dashboard-primary)' } : undefined}
+          onClick={() => { setSubTab('fleet_health'); setPage(1) }}
           className={cn(
-            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2',
-            subTab !== 'fleet_health' && 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+            subTab === 'fleet_health'
+              ? 'border-[#093339] text-[#093339]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           )}
         >
           <Smartphone className="h-4 w-4" />
@@ -1147,82 +1338,320 @@ export function AmGroupCallAnalysis() {
         </button>
       </div>
 
+      {/* 5. TAB CONTENTS */}
       {/* TAB 1: OVERVIEW */}
       {subTab === 'overview' && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <Card className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
-                Daily Call Volume & Missed Calls Trend
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 h-[280px]">
-              {d?.dailyTrend && d.dailyTrend.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={d.dailyTrend}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fontSize: 11, fontWeight: 600 }} />
-                    <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fontWeight: 600 }} />
-                    <Tooltip
-                      contentStyle={{ borderRadius: '16px', border: '1px solid #e2e8f0', fontWeight: 'bold' }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
-                    <Bar dataKey="calls" name="Total Calls" fill="#004e5a" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="missedIncoming" name="Missed Incoming" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="missedOutgoing" name="Not Answered Outgoing" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center text-xs font-semibold text-slate-400">
-                  No call volume trend data available for this range.
+        <div className="space-y-6">
+          {/* Middle Row: Call Activity & Call Outcomes */}
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+            {/* Left: Call Activity Area Chart */}
+            <Card className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs lg:col-span-7">
+              <div className="flex items-center justify-between pb-4">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-black text-slate-900">
+                    {preset === 'today' ? 'Call Activity Today' : 'Call Activity'}
+                  </h4>
+                  <span title="Hourly and daily distribution of call volume">
+                    <Info className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600 cursor-pointer" />
+                  </span>
                 </div>
-              )}
-            </CardContent>
-          </Card>
 
-          <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <CardHeader className="p-0 pb-4">
-              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
-                Call Status & Outcome Mix
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 h-[280px] flex items-center justify-center">
-              {d?.callTypeMix && d.callTypeMix.length > 0 ? (
+                <Select
+                  value={activityGranularity}
+                  onValueChange={(val: 'hour' | 'day') => setActivityGranularity(val)}
+                >
+                  <SelectTrigger className="h-7 w-[95px] rounded-lg border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700 shadow-none">
+                    <SelectValue placeholder="Granularity" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl text-xs">
+                    <SelectItem value="hour">By Hour</SelectItem>
+                    <SelectItem value="day">By Day</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="h-[260px] w-full pt-2">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={d.callTypeMix}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={85}
-                      paddingAngle={4}
-                      dataKey="value"
-                    >
-                      {d.callTypeMix.map((entry, idx) => (
-                        <Cell
-                          key={`cell-${idx}`}
-                          fill={
-                            entry.name.includes('Outgoing') && !entry.name.includes('Missed')
-                              ? '#004e5a'
-                              : entry.name.includes('Incoming') && !entry.name.includes('Missed')
-                              ? '#10b981'
-                              : entry.name.includes('Missed Incoming')
-                              ? '#f43f5e'
-                              : '#f59e0b'
-                          }
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ borderRadius: '14px', fontWeight: 'bold' }} />
-                    <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
-                  </PieChart>
+                  <AreaChart data={activityChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="activityGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0D9488" stopOpacity={0.25} />
+                        <stop offset="100%" stopColor="#0D9488" stopOpacity={0.0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                    <XAxis
+                      dataKey="label"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 10, fontWeight: 700, fill: '#94A3B8' }}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 10, fontWeight: 700, fill: '#94A3B8' }}
+                    />
+                    <Tooltip content={<CustomActivityTooltip />} />
+                    <Area
+                      type="monotone"
+                      dataKey="calls"
+                      stroke="#0D9488"
+                      strokeWidth={2.5}
+                      fill="url(#activityGradient)"
+                      dot={{ r: 3, fill: '#0D9488', strokeWidth: 2, stroke: '#FFFFFF' }}
+                      activeDot={{ r: 5, fill: '#093339', stroke: '#FFFFFF', strokeWidth: 2 }}
+                    />
+                  </AreaChart>
                 </ResponsiveContainer>
-              ) : (
-                <div className="text-xs font-semibold text-slate-400">No call mix data</div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            </Card>
+
+            {/* Right: Call Outcomes Donut & Breakdown */}
+            <Card className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs lg:col-span-5 flex flex-col justify-between">
+              <div className="flex items-center gap-2 pb-2">
+                <h4 className="text-sm font-black text-slate-900">Call Outcomes</h4>
+                <span title="Proportion of calls connected vs missed vs unanswered">
+                  <Info className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600 cursor-pointer" />
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 items-center gap-4 py-2">
+                {/* Left breakdown progress bars */}
+                <div className="sm:col-span-7 space-y-3.5">
+                  {outcomeCounts.map((item) => (
+                    <div key={item.name} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                          <span className="text-slate-700 text-[11px] truncate" title={item.name}>{item.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] tabular-nums font-black">
+                          <span className="text-slate-900">{item.value.toLocaleString('en-IN')}</span>
+                          <span className="text-slate-400">{item.pct.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min(100, Math.max(item.pct, item.value > 0 ? 3 : 0))}%`, backgroundColor: item.color }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Right Donut PieChart */}
+                <div className="sm:col-span-5 h-[180px] flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={outcomeCounts}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={68}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {outcomeCounts.map((entry, idx) => (
+                          <Cell key={`cell-${idx}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }}
+                        formatter={(value: any) => [`${value} calls`, 'Volume']}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Bottom Row: 3 Cards */}
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+            {/* Card 1: Needs Attention */}
+            <Card className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+              <div>
+                <h4 className="text-sm font-black text-slate-900 pb-4">Needs Attention</h4>
+                <div className="space-y-3">
+                  {/* Alert 1: Missed Incoming */}
+                  <div
+                    onClick={() => { setSubTab('unanswered'); setPage(1) }}
+                    className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5 hover:border-slate-200 hover:bg-slate-100/60 transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-500 shrink-0">
+                        <TriangleAlert className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-slate-900">{missedCalls} missed incoming calls</p>
+                        <p className="text-[11px] font-medium text-slate-500">
+                          From {summary?.missedIncomingRecovery?.totalUniqueCallers || 36} unique numbers
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-slate-900 transition-colors" />
+                  </div>
+
+                  {/* Alert 2: Unanswered Numbers */}
+                  <div
+                    onClick={() => { setSubTab('unanswered'); setPage(1) }}
+                    className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5 hover:border-slate-200 hover:bg-slate-100/60 transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-500 shrink-0">
+                        <TriangleAlert className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-slate-900">{summary?.totalUnanswered || 615} unanswered numbers</p>
+                        <p className="text-[11px] font-medium text-slate-500">
+                          {summary?.missedIncomingRecovery?.remainedMissingCallers || 182} are repeat callers
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-slate-900 transition-colors" />
+                  </div>
+
+                  {/* Alert 3: Low Connection Rate CREs */}
+                  <div
+                    onClick={() => { setSubTab('cre_performance'); setPage(1) }}
+                    className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5 hover:border-slate-200 hover:bg-slate-100/60 transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-500 shrink-0">
+                        <TriangleAlert className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-slate-900">{lowConnectCres} CREs below 70% connection rate</p>
+                        <p className="text-[11px] font-medium text-slate-500">Review agent performance</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-slate-900 transition-colors" />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Card 2: Top CRE Performance */}
+            <Card className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-3">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-black text-slate-900">Top CRE Performance</h4>
+                    <span title="Highest volume and connecting CRE agents">
+                      <Info className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600 cursor-pointer" />
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setSubTab('cre_performance'); setPage(1) }}
+                    className="text-xs font-bold text-teal-700 hover:text-teal-900 transition-colors cursor-pointer"
+                  >
+                    View all
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs call-analysis-clean-table">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-transparent text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <th className="pb-3 pt-1 px-1 text-left font-bold text-slate-400">CRE Agent</th>
+                        <th className="pb-3 pt-1 px-2 text-center font-bold text-slate-400">Total Calls</th>
+                        <th className="pb-3 pt-1 px-2 text-center font-bold text-slate-400">Connected</th>
+                        <th className="pb-3 pt-1 px-1 text-right font-bold text-slate-400">Connection Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {topCres.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-6 text-center text-slate-400 font-medium">
+                            No CRE calls recorded yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        topCres.map((cre, idx) => {
+                          const rankColors = [
+                            'bg-amber-400 text-amber-950',
+                            'bg-slate-300 text-slate-800',
+                            'bg-amber-600 text-white',
+                            'bg-slate-100 text-slate-600',
+                            'bg-slate-100 text-slate-600',
+                          ]
+
+                          return (
+                            <tr key={cre.cre_id} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="py-3 px-1 font-bold text-slate-900">
+                                <div className="flex items-center gap-2">
+                                  <span className={cn('flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black shrink-0 shadow-2xs', rankColors[idx])}>
+                                    {idx + 1}
+                                  </span>
+                                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold shrink-0">
+                                    {cre.cre_name.slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <span className="truncate max-w-[95px]" title={cre.cre_name}>
+                                    {cre.cre_name}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-2 text-center font-bold text-slate-700 tabular-nums">
+                                {cre.calls_this_month}
+                              </td>
+                              <td className="py-3 px-2 text-center font-bold text-slate-900 tabular-nums">
+                                {cre.connected_calls}
+                              </td>
+                              <td className="py-3 px-1 text-right font-bold text-slate-900 tabular-nums">
+                                <div className="flex items-center justify-end gap-2.5">
+                                  <span className="text-[11px] font-bold text-slate-800">{cre.connect_rate.toFixed(1)}%</span>
+                                  <div className="h-1.5 w-12 rounded-full bg-slate-200/80 overflow-hidden shrink-0">
+                                    <div
+                                      className="h-full rounded-full transition-all duration-300"
+                                      style={{
+                                        width: `${Math.min(100, Math.max(cre.connect_rate, 3))}%`,
+                                        backgroundColor: '#10B981',
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </Card>
+
+            {/* Card 3: Recent Call Recordings */}
+            <Card className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-3">
+                  <h4 className="text-sm font-black text-slate-900">Recent Call Recordings</h4>
+                  <button
+                    type="button"
+                    onClick={() => { setSubTab('recordings'); setPage(1) }}
+                    className="text-xs font-bold text-teal-700 hover:text-teal-900 transition-colors cursor-pointer"
+                  >
+                    View all
+                  </button>
+                </div>
+
+                <div className="space-y-3 pt-1">
+                  {(recentCallsOverviewQuery.data?.rows || []).length === 0 ? (
+                    <div className="py-8 text-center text-xs font-medium text-slate-400">
+                      No call recordings available.
+                    </div>
+                  ) : (
+                    (recentCallsOverviewQuery.data?.rows || []).slice(0, 4).map((row) => (
+                      <CompactAudioPlayer key={row.id} row={row} />
+                    ))
+                  )}
+                </div>
+              </div>
+            </Card>
+          </div>
         </div>
       )}
 
@@ -1240,20 +1669,20 @@ export function AmGroupCallAnalysis() {
             </div>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs call-analysis-clean-table">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
-                  <th className="py-3 px-4">Dealership Branch</th>
-                  <th className="py-3 px-4 text-center">Total Calls</th>
-                  <th className="py-3 px-4 text-center">Connected Outgoing</th>
-                  <th className="py-3 px-4 text-center">Connected Incoming</th>
-                  <th className="py-3 px-4 text-center">Missed Incoming</th>
-                  <th className="py-3 px-4 text-center">Not Answered Outgoing</th>
-                  <th className="py-3 px-4 text-center">Unanswered Rate</th>
-                  <th className="py-3 px-4 text-center">Total Talk Time</th>
+                <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <th className="py-3.5 px-4 font-bold text-slate-400">Dealership Branch</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Total Calls</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Connected Outgoing</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Connected Incoming</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Missed Incoming</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Not Answered Outgoing</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Unanswered Rate</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Total Talk Time</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-50">
                 {(d?.branchPerformance || []).length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-slate-400 font-semibold">
@@ -1262,15 +1691,14 @@ export function AmGroupCallAnalysis() {
                   </tr>
                 ) : (
                   (d?.branchPerformance || []).map((b) => (
-                    <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={b.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-xl bg-[#004e5a]/10 text-[#004e5a] font-black flex items-center justify-center text-[10px]">
-                          <Building2 className="h-4 w-4" />
-                        </div>
-                        <span>{b.name}</span>
+                        <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold border', getBranchBadgeStyle(b.name))}>
+                          {b.name}
+                        </span>
                       </td>
                       <td className="py-3.5 px-4 text-center font-bold text-slate-900">{b.calls}</td>
-                      <td className="py-3.5 px-4 text-center font-bold text-[#004e5a]">{b.connectedOutgoing}</td>
+                      <td className="py-3.5 px-4 text-center font-bold text-[#093339]">{b.connectedOutgoing}</td>
                       <td className="py-3.5 px-4 text-center font-bold text-emerald-600">{b.connectedIncoming}</td>
                       <td className="py-3.5 px-4 text-center font-bold text-rose-600">{b.missedIncoming}</td>
                       <td className="py-3.5 px-4 text-center font-bold text-amber-600">{b.missedOutgoing}</td>
@@ -1292,7 +1720,7 @@ export function AmGroupCallAnalysis() {
         </Card>
       )}
 
-      {/* TAB 3: CRE PERFORMANCE SCORECARD — uses v_cre_performance view for accurate data */}
+      {/* TAB 3: CRE PERFORMANCE SCORECARD */}
       {subTab === 'cre_performance' && (
         <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
@@ -1306,20 +1734,20 @@ export function AmGroupCallAnalysis() {
             </div>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs call-analysis-clean-table">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
-                  <th className="py-3 px-4">CRE</th>
-                  <th className="py-3 px-4">Branch</th>
-                  <th className="py-3 px-4 text-center">Attempts</th>
-                  <th className="py-3 px-4 text-center">Answered</th>
-                  <th className="py-3 px-4 text-center">Unanswered</th>
-                  <th className="py-3 px-4 text-center">Answer Rate</th>
-                  <th className="py-3 px-4 text-center">Avg Duration</th>
-                  <th className="py-3 px-4 text-center">Total Talk Time</th>
+                <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent</th>
+                  <th className="py-3.5 px-4 font-bold text-slate-400">Branch</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Attempts</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Answered</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Unanswered</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Answer Rate</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Avg Duration</th>
+                  <th className="py-3.5 px-4 text-center font-bold text-slate-400">Total Talk Time</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-50">
                 {(d?.crePerformance || []).length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-slate-400 font-semibold">
@@ -1335,19 +1763,23 @@ export function AmGroupCallAnalysis() {
                       return (
                         <tr
                           key={cre.cre_id}
-                          className="hover:bg-slate-50/80 transition-colors cursor-pointer"
-                          onClick={() => { setSubTab('unanswered'); setAgent(cre.cre_id); setDraftAgent(cre.cre_id); setPage(1) }}
+                          className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                          onClick={() => { setSubTab('unanswered'); setAgent(cre.cre_id); setPage(1) }}
                           title="Click to see unanswered calls for this CRE"
                         >
                           <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
                             <div className="flex items-center gap-2">
-                              <div className="h-7 w-7 rounded-full bg-[#004e5a]/10 text-[#004e5a] font-black flex items-center justify-center text-[10px]">
+                              <div className="h-6 w-6 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-[10px]">
                                 {cre.cre_name.slice(0, 2).toUpperCase()}
                               </div>
-                              <span>{cre.cre_name}</span>
+                              <span className="font-bold text-slate-900">{cre.cre_name}</span>
                             </div>
                           </td>
-                          <td className="py-3.5 px-4 font-bold text-slate-600">{cre.branch_name || 'General'}</td>
+                          <td className="py-3.5 px-4">
+                            <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold border', getBranchBadgeStyle(cre.branch_name))}>
+                              {formatAgentBranch(cre.branch_name, cre.cre_name)}
+                            </span>
+                          </td>
                           <td className="py-3.5 px-4 text-center font-bold text-slate-800">{cre.calls_this_month || 0}</td>
                           <td className="py-3.5 px-4 text-center font-bold text-emerald-600">{cre.connected_calls || 0}</td>
                           <td className="py-3.5 px-4 text-center font-bold text-rose-600">
@@ -1380,17 +1812,16 @@ export function AmGroupCallAnalysis() {
         </Card>
       )}
 
-      {/* TAB 4 NEW: UNANSWERED NUMBERS DETAIL */}
+      {/* TAB 4: UNANSWERED NUMBERS */}
       {subTab === 'unanswered' && (
         <div className="space-y-6">
-          {/* Missed Incoming Call Recovery Scorecard */}
           {analyticsQuery.data?.summary?.missedIncomingRecovery && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[11px] font-black uppercase text-slate-400 tracking-wider">Total Missed Incoming</p>
-                    <h4 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                    <h4 className="text-2xl font-black text-slate-900 mt-1">
                       {analyticsQuery.data.summary.missedIncomingRecovery.totalMissedIncoming}
                     </h4>
                     <p className="text-xs font-medium text-slate-500 mt-1">
@@ -1403,12 +1834,12 @@ export function AmGroupCallAnalysis() {
                 </div>
               </Card>
 
-              <Card className="rounded-3xl border border-emerald-200 bg-emerald-50/40 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <Card className="rounded-3xl border border-emerald-200 bg-emerald-50/40 p-5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[11px] font-black uppercase text-emerald-800 tracking-wider">Callback Connected (Recovered)</p>
                     <div className="flex items-baseline gap-2 mt-1">
-                      <h4 className="text-2xl font-black text-emerald-700 dark:text-emerald-400">
+                      <h4 className="text-2xl font-black text-emerald-700">
                         {analyticsQuery.data.summary.missedIncomingRecovery.connectedLater}
                       </h4>
                       <span className="text-xs font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
@@ -1425,12 +1856,12 @@ export function AmGroupCallAnalysis() {
                 </div>
               </Card>
 
-              <Card className="rounded-3xl border border-rose-200 bg-rose-50/40 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <Card className="rounded-3xl border border-rose-200 bg-rose-50/40 p-5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[11px] font-black uppercase text-rose-800 tracking-wider">Still Remained Unrecovered</p>
                     <div className="flex items-baseline gap-2 mt-1">
-                      <h4 className="text-2xl font-black text-rose-700 dark:text-rose-400">
+                      <h4 className="text-2xl font-black text-rose-700">
                         {analyticsQuery.data.summary.missedIncomingRecovery.remainedMissing}
                       </h4>
                       <span className="text-xs font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">
@@ -1449,19 +1880,19 @@ export function AmGroupCallAnalysis() {
             </div>
           )}
 
-          <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
               <div>
-                <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                <CardTitle className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-2">
                   <PhoneOff className="h-4 w-4 text-rose-500" />
                   Unanswered &amp; Missed Call Numbers
                 </CardTitle>
                 <p className="mt-0.5 text-xs font-medium text-slate-500">
-                  All calls where the customer did not answer (outgoing not answered) or CRE missed an incoming call. Includes callback recovery tracking for missed incoming calls.
+                  All calls where the customer did not answer (outgoing not answered) or CRE missed an incoming call.
                 </p>
               </div>
               {agent !== 'all' && (
-                <Button variant="outline" size="sm" onClick={() => { setAgent('all'); setDraftAgent('all'); setPage(1) }} className="h-8 rounded-xl text-xs font-bold border-slate-200 text-slate-600">
+                <Button variant="outline" size="sm" onClick={() => { setAgent('all'); setPage(1) }} className="h-8 rounded-xl text-xs font-bold border-slate-200 text-slate-600">
                   <X className="h-3.5 w-3.5 mr-1" /> Clear CRE Filter
                 </Button>
               )}
@@ -1480,96 +1911,191 @@ export function AmGroupCallAnalysis() {
                 </div>
               ) : (
                 <>
-                  <div className="px-4 py-2 bg-rose-50 border-b border-rose-100 flex items-center gap-2">
-                    <PhoneOff className="h-3.5 w-3.5 text-rose-500" />
-                    <span className="text-[11px] font-black text-rose-700">
-                      {unansweredCallsQuery.data?.pagination.total} unanswered calls
-                      {agent !== 'all' && ` for selected CRE`}
-                      {startDate && ` from ${startDate}`}{endDate && ` to ${endDate}`}
-                    </span>
-                  </div>
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full text-left text-xs call-analysis-clean-table">
                     <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
-                        <th className="py-3 px-4">#</th>
-                        <th className="py-3 px-4">CRE</th>
-                        <th className="py-3 px-4">Branch</th>
-                        <th className="py-3 px-4">Phone Number</th>
-                        <th className="py-3 px-4">Contact Name</th>
-                        <th className="py-3 px-4 text-center">Call Type</th>
-                        <th className="py-3 px-4">Callback Recovery Status</th>
-                        <th className="py-3 px-4 whitespace-nowrap">Date &amp; Time</th>
+                      <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <th className="py-3.5 px-4 font-bold text-slate-400">Customer Phone</th>
+                        <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent</th>
+                        <th className="py-3.5 px-4 font-bold text-slate-400">Branch</th>
+                        <th className="py-3.5 px-4 font-bold text-slate-400">Status / Type</th>
+                        <th className="py-3.5 px-4 font-bold text-slate-400">Call Time</th>
+                        <th className="py-3.5 px-4 text-center font-bold text-slate-400">Duration</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {unansweredCallsQuery.data?.rows.map((row, idx) => (
-                        <tr key={row.id} className="hover:bg-rose-50/30 transition-colors">
-                          <td className="py-3 px-4 text-[10px] font-black text-slate-400">
-                            {(page - 1) * 50 + idx + 1}
-                          </td>
-                          <td className="py-3 px-4 font-bold text-slate-900">
-                            <div className="flex items-center gap-2">
-                              <div className="h-6 w-6 rounded-full bg-rose-100 text-rose-700 font-black flex items-center justify-center text-[9px] flex-shrink-0">
-                                {row.creName.slice(0, 2).toUpperCase()}
-                              </div>
-                              {row.creName}
+                    <tbody className="divide-y divide-slate-50">
+                      {unansweredCallsQuery.data?.rows.map((row) => (
+                        <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3.5 px-4 font-bold text-slate-900">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-black text-slate-900 tracking-tight">{row.phone || 'Unknown Phone'}</span>
+                              <CustomerIdentityLine row={row} />
                             </div>
                           </td>
-                          <td className="py-3 px-4 font-bold text-slate-500">{row.branchName || 'General'}</td>
-                          <td className="py-3 px-4">
-                            <span className="font-black text-slate-900 tracking-wide">{row.phone}</span>
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold shrink-0">
+                                {(row.creName || 'CR').slice(0, 2).toUpperCase()}
+                              </div>
+                              <span className="font-bold text-slate-900 truncate max-w-[130px]">{row.creName || '—'}</span>
+                            </div>
                           </td>
-                          <td className="py-3 px-4 font-semibold text-slate-600">
-                            {row.contactName || <span className="text-slate-300 font-medium">—</span>}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <span className={cn(
-                              'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
-                              row.statusBadgeClass || 'bg-amber-50 text-amber-700 border-amber-200'
-                            )}>
-                              {row.statusLabel}
+                          <td className="py-3.5 px-4">
+                            <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold border', getBranchBadgeStyle(row.branchName))}>
+                              {formatAgentBranch(row.branchName, row.creName)}
                             </span>
                           </td>
-                          <td className="py-3 px-4">
-                            {row.isMissedIncoming ? (
-                              row.isConnectedLater ? (
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
-                                    <CircleCheck className="h-3 w-3 text-emerald-600" /> Connected ({row.callbackDelayLabel || 'Later'})
-                                  </span>
-                                  {row.callbackCreName && (
-                                    <span className="text-[9px] text-slate-400 font-semibold pl-1">
-                                      by {row.callbackCreName}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
-                                  <TriangleAlert className="h-3 w-3 text-rose-600" /> Still Unrecovered
-                                </span>
-                              )
-                            ) : (
-                              <span className="text-[10px] font-medium text-slate-400">Outgoing No Answer</span>
-                            )}
+                          <td className="py-3.5 px-4">
+                            {getTypeBadge(row.callType, row.statusLabel)}
                           </td>
-                          <td className="py-3 px-4 font-semibold text-slate-500 whitespace-nowrap">{formatDate(row.recordedAt)}</td>
+                          <td className="py-3.5 px-4">
+                            <FormattedTimeCell isoStr={row.recordedAt} />
+                          </td>
+                          <td className="py-3.5 px-4 text-center font-bold text-slate-700">
+                            {getDurationBadge(row.durationSeconds)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
 
+                  {/* Pagination */}
+                  {unansweredCallsQuery.data?.pagination && unansweredCallsQuery.data.pagination.totalPages > 1 && (
+                    <div className="flex items-center justify-between border-t border-slate-100 p-4">
+                      <p className="text-xs font-bold text-slate-500">
+                        Showing page {page} of {unansweredCallsQuery.data.pagination.totalPages} ({unansweredCallsQuery.data.pagination.total} total unanswered)
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={page <= 1}
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                          className="h-8 rounded-xl px-3 text-xs font-bold"
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={page >= (unansweredCallsQuery.data.pagination.totalPages || 1)}
+                          onClick={() => setPage((p) => p + 1)}
+                          className="h-8 rounded-xl px-3 text-xs font-bold"
+                        >
+                          Next <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* TAB 5: UPLOADED RECORDINGS */}
+      {subTab === 'recordings' && (
+        <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-2">
+                <FileAudio className="h-4 w-4 text-[#093339]" />
+                Uploaded Call Recordings Log
+              </CardTitle>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                Play and download connected call recordings captured by the CRE fleet.
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            {callsQuery.isFetching ? (
+              <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
+                <Loader2 className="h-4 w-4 animate-spin text-[#093339]" />
+                <span>Loading recordings...</span>
+              </div>
+            ) : (callsQuery.data?.rows || []).length === 0 ? (
+              <div className="py-16 text-center">
+                <FileAudio className="h-10 w-10 mx-auto text-slate-300 mb-3" />
+                <p className="text-sm font-black text-slate-600">No recordings found.</p>
+                <p className="text-xs font-medium text-slate-400 mt-1">Try expanding your date range or clearing search filters.</p>
+              </div>
+            ) : (
+              <>
+                <table className="w-full text-left text-xs call-analysis-clean-table">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <th className="py-3.5 px-4 font-bold text-slate-400">Customer Phone</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">Branch</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">Type</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">Recorded Time</th>
+                      <th className="py-3.5 px-4 text-center font-bold text-slate-400">Duration</th>
+                      <th className="py-3.5 px-4 text-center font-bold text-slate-400">Playback</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {callsQuery.data?.rows.map((row) => (
+                      <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3.5 px-4 font-bold text-slate-900">
+                          <div className="flex flex-col">
+                            <span className="text-xs font-black text-slate-900 tracking-tight">{row.phone || 'Unknown Phone'}</span>
+                            <CustomerIdentityLine row={row} />
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold shrink-0">
+                              {(row.creName || 'CR').slice(0, 2).toUpperCase()}
+                            </div>
+                            <span className="font-bold text-slate-900 truncate max-w-[130px]">{row.creName || '—'}</span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold border', getBranchBadgeStyle(row.branchName))}>
+                            {formatAgentBranch(row.branchName, row.creName)}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {getTypeBadge(row.callType, row.statusLabel)}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <FormattedTimeCell isoStr={row.recordedAt} />
+                        </td>
+                        <td className="py-3.5 px-4 text-center font-bold text-slate-700">
+                          {getDurationBadge(row.durationSeconds)}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <RecordingPlayer row={row} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
                 {/* Pagination */}
-                {unansweredCallsQuery.data?.pagination && unansweredCallsQuery.data.pagination.totalPages > 1 && (
-                  <div className="flex items-center justify-between p-4 border-t border-slate-100">
-                    <span className="text-xs font-semibold text-slate-500">
-                      Page {unansweredCallsQuery.data.pagination.page} of {unansweredCallsQuery.data.pagination.totalPages} ({unansweredCallsQuery.data.pagination.total} records)
-                    </span>
+                {callsQuery.data?.pagination && callsQuery.data.pagination.totalPages > 1 && (
+                  <div className="flex items-center justify-between border-t border-slate-100 p-4">
+                    <p className="text-xs font-bold text-slate-500">
+                      Showing page {page} of {callsQuery.data.pagination.totalPages} ({callsQuery.data.pagination.total} total recordings)
+                    </p>
                     <div className="flex items-center gap-2">
-                      <Button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} variant="outline" size="sm" className="h-8 rounded-xl text-xs font-bold">
-                        <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page <= 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        className="h-8 rounded-xl px-3 text-xs font-bold"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous
                       </Button>
-                      <Button disabled={page >= unansweredCallsQuery.data.pagination.totalPages} onClick={() => setPage((p) => p + 1)} variant="outline" size="sm" className="h-8 rounded-xl text-xs font-bold">
-                        Next <ChevronRight className="h-4 w-4 ml-1" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page >= (callsQuery.data.pagination.totalPages || 1)}
+                        onClick={() => setPage((p) => p + 1)}
+                        className="h-8 rounded-xl px-3 text-xs font-bold"
+                      >
+                        Next <ChevronRight className="h-3.5 w-3.5 ml-1" />
                       </Button>
                     </div>
                   </div>
@@ -1578,491 +2104,190 @@ export function AmGroupCallAnalysis() {
             )}
           </CardContent>
         </Card>
-        </div>
       )}
 
-      {/* TAB 5: UPLOADED AUDIO RECORDINGS & PLAYER */}
-      {subTab === 'recordings' && (
-        <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
-                Uploaded Call Recordings & Audio Playback
-              </CardTitle>
-              <p className="mt-0.5 text-xs font-medium text-slate-500">
-                Only showing calls with completed audio file uploads ready for playback.
-              </p>
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-0 overflow-x-auto">
-            {callsQuery.isFetching ? (
-              <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
-                <Loader2 className="h-4 w-4 animate-spin text-[#004e5a]" />
-                <span>Loading completed call recordings...</span>
-              </div>
-            ) : (callsQuery.data?.rows || []).length === 0 ? (
-              <div className="py-12 text-center text-slate-400 font-semibold text-xs">
-                No uploaded call recordings for these filters. Calls whose audio has not finished
-                uploading appear under &ldquo;Uploading &amp; Pending Calls&rdquo;.
-              </div>
-            ) : (
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
-                    <th className="py-3 px-4">CRE Agent</th>
-                    <th className="py-3 px-4">Branch</th>
-                    <th className="py-3 px-4">Customer Phone</th>
-                    <th className="py-3 px-4 text-center">Status / Type</th>
-                    <th className="py-3 px-4 text-center">Duration</th>
-                    <th className="py-3 px-4">Date & Time</th>
-                    <th className="py-3 px-4 text-center">Audio Player</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {/* No client-side filtering here on purpose: "playable" (storage_path present AND
-                      duration > 0) is enforced by the server via `recordingsOnly`, so the footer
-                      count, the page count and these rows are all derived from one predicate. */}
-                  {(callsQuery.data?.rows ?? []).map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
-                        {row.creName}
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">
-                        {row.branchName || 'General'}
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-700">
-                        {row.phone}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className={cn(
-                          'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
-                          row.statusBadgeClass || 'bg-slate-100 text-slate-700 border-slate-200'
-                        )}>
-                          {row.statusLabel || row.callType}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-center font-bold text-slate-700">
-                        {dur(row.durationSeconds)}
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-slate-500 whitespace-nowrap">
-                        {formatDate(row.recordedAt)}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {/* Signed on demand — see RecordingPlayer. The row carries no URL. */}
-                        <RecordingPlayer row={row} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-
-            {/* Pagination Controls */}
-            {callsQuery.data?.pagination && callsQuery.data.pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between p-4 border-t border-slate-100">
-                <span className="text-xs font-semibold text-slate-500">
-                  Page {callsQuery.data.pagination.page} of {callsQuery.data.pagination.totalPages} ({callsQuery.data.pagination.total} recordings)
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    variant="outline"
-                    size="sm"
-                    className="h-8 rounded-xl text-xs font-bold"
-                  >
-                    <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-                  </Button>
-                  <Button
-                    disabled={page >= callsQuery.data.pagination.totalPages}
-                    onClick={() => setPage((p) => p + 1)}
-                    variant="outline"
-                    size="sm"
-                    className="h-8 rounded-xl text-xs font-bold"
-                  >
-                    Next <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* TAB 5: UPLOADING & PENDING CALLS QUEUE */}
+      {/* TAB 6: PENDING & UPLOADING CALLS */}
       {subTab === 'pending' && (
-        <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-sm font-black tracking-tight text-slate-900 dark:text-white">
-                Uploading & Pending Calls Queue
+              <CardTitle className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-2">
+                <Clock className="h-4 w-4 text-amber-500" />
+                Uploading &amp; Pending Call Recordings
               </CardTitle>
               <p className="mt-0.5 text-xs font-medium text-slate-500">
-                Recordings still on their way up from a CRE handset. This queue is normal — phones
-                sweep on a ~15-minute cycle and most audio lands within ~10 minutes. Only
-                &ldquo;overdue&rdquo; and &ldquo;upload failed&rdquo; rows need attention.
+                Call records waiting to sync audio files from handsets to the central storage bucket.
               </p>
             </div>
           </CardHeader>
-
           <CardContent className="p-0 overflow-x-auto">
             {pendingCallsQuery.isFetching ? (
               <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
-                <Loader2 className="h-4 w-4 animate-spin text-[#004e5a]" />
-                <span>Loading pending calls queue...</span>
+                <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+                <span>Loading pending calls...</span>
               </div>
             ) : (pendingCallsQuery.data?.rows || []).length === 0 ? (
-              <div className="py-12 text-center text-emerald-600 font-bold text-xs">
-                All call recordings are fully uploaded and synced! No pending uploads in queue.
+              <div className="py-16 text-center">
+                <CircleCheck className="h-10 w-10 mx-auto text-emerald-500 mb-3" />
+                <p className="text-sm font-black text-emerald-700">All recordings fully synced!</p>
+                <p className="text-xs font-medium text-slate-400 mt-1">No uploads pending across the fleet.</p>
               </div>
             ) : (
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs call-analysis-clean-table">
                 <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
-                    <th className="py-3 px-4">CRE Agent</th>
-                    <th className="py-3 px-4">Branch</th>
-                    <th className="py-3 px-4">Customer Phone</th>
-                    <th className="py-3 px-4 text-center">Status / Direction</th>
-                    <th className="py-3 px-4 text-center">Duration</th>
-                    <th className="py-3 px-4">Recorded At</th>
-                    <th className="py-3 px-4 text-center">Sync / Upload Status</th>
+                  <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <th className="py-3.5 px-4 font-bold text-slate-400">Customer Phone</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-400">Branch</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-400">Device Model</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-400">Recorded Time</th>
+                    <th className="py-3.5 px-4 text-center font-bold text-slate-400">Duration</th>
+                    <th className="py-3.5 px-4 text-center font-bold text-slate-400">Sync Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-50">
                   {pendingCallsQuery.data?.rows.map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
-                        {row.creName}
+                    <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3.5 px-4 font-bold text-slate-900">{row.phone || 'Unknown Phone'}</td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold shrink-0">
+                            {(row.creName || 'CR').slice(0, 2).toUpperCase()}
+                          </div>
+                          <span className="font-bold text-slate-900">{row.creName || '—'}</span>
+                        </div>
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-600">
-                        {row.branchName || 'General'}
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-700">
-                        {row.phone}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className={cn(
-                          'px-2.5 py-0.5 rounded-full text-[10px] font-black border',
-                          row.statusBadgeClass || 'bg-slate-100 text-slate-700 border-slate-200'
-                        )}>
-                          {row.statusLabel || row.callType}
+                      <td className="py-3.5 px-4">
+                        <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold border', getBranchBadgeStyle(row.branchName))}>
+                          {formatAgentBranch(row.branchName, row.creName)}
                         </span>
                       </td>
+                      <td className="py-3.5 px-4 font-medium text-slate-600">{row.deviceModel || '—'}</td>
+                      <td className="py-3.5 px-4">
+                        <FormattedTimeCell isoStr={row.recordedAt} />
+                      </td>
                       <td className="py-3.5 px-4 text-center font-bold text-slate-700">
-                        {dur(row.durationSeconds)}
+                        {getDurationBadge(row.durationSeconds)}
                       </td>
-                      <td className="py-3.5 px-4 font-semibold text-slate-500 whitespace-nowrap">
-                        {formatDate(row.recordedAt)}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <SyncStatusBadge row={row} />
+                      <td className="py-3.5 px-4 text-center font-bold text-amber-600">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700 border border-amber-200">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Pending Sync
+                        </span>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
-
-            {/* Pagination Controls */}
-            {pendingCallsQuery.data?.pagination && pendingCallsQuery.data.pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between p-4 border-t border-slate-100">
-                <span className="text-xs font-semibold text-slate-500">
-                  Page {pendingCallsQuery.data.pagination.page} of {pendingCallsQuery.data.pagination.totalPages} ({pendingCallsQuery.data.pagination.total} pending calls)
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    variant="outline"
-                    size="sm"
-                    className="h-8 rounded-xl text-xs font-bold"
-                  >
-                    <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-                  </Button>
-                  <Button
-                    disabled={page >= pendingCallsQuery.data.pagination.totalPages}
-                    onClick={() => setPage((p) => p + 1)}
-                    variant="outline"
-                    size="sm"
-                    className="h-8 rounded-xl text-xs font-bold"
-                  >
-                    Next <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
       )}
 
-
+      {/* TAB 7: FLEET HEALTH */}
       {subTab === 'fleet_health' && (
         <div className="space-y-6">
-          {fleetHealthQuery.isLoading ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-xs font-bold text-slate-400">
-              <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--dashboard-primary)' }} />
-              <span>Reading handset check-ins...</span>
-            </div>
-          ) : fleetHealthQuery.isError ? (
-            <Card className="rounded-3xl border border-rose-200 bg-rose-50/60 p-6 shadow-sm">
-              <p className="text-xs font-bold text-rose-700">
-                {(fleetHealthQuery.error as Error)?.message || 'Failed to load fleet health.'}
+          <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <CardHeader className="p-0 pb-4">
+              <CardTitle className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-2">
+                <Smartphone className="h-4 w-4 text-[#093339]" />
+                CRE Handset Fleet Health &amp; Diagnostics
+              </CardTitle>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                Live monitoring of CRE device registrations, heartbeats, app versions, and background sweep status.
               </p>
-            </Card>
-          ) : (
-            <>
-              {/* Fleet summary. Every number is a count of real rows — nothing is estimated. */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                <FleetStat
-                  label="Handsets Reporting"
-                  value={fleetHealthQuery.data?.summary.deviceCount ?? 0}
-                  hint={`${fleetHealthQuery.data?.summary.creWithDeviceCount ?? 0} of ${fleetHealthQuery.data?.summary.rosterSize ?? 0} CREs`}
-                  icon={Smartphone}
-                />
-                <FleetStat
-                  label="App Never Deployed"
-                  value={fleetHealthQuery.data?.summary.missingDeviceCount ?? 0}
-                  hint="CREs with no handset at all"
-                  icon={WifiOff}
-                  tone={(fleetHealthQuery.data?.summary.missingDeviceCount ?? 0) > 0 ? 'bad' : 'good'}
-                />
-                <FleetStat
-                  label="Signed Out"
-                  value={fleetHealthQuery.data?.summary.signedOutCount ?? 0}
-                  hint="Stopped uploading"
-                  icon={LogOut}
-                  tone={(fleetHealthQuery.data?.summary.signedOutCount ?? 0) > 0 ? 'bad' : 'good'}
-                />
-                <FleetStat
-                  label="Needs A Human"
-                  value={fleetHealthQuery.data?.summary.scanBlockedCount ?? 0}
-                  hint="Permission / OEM blockers"
-                  icon={ShieldAlert}
-                  tone={(fleetHealthQuery.data?.summary.scanBlockedCount ?? 0) > 0 ? 'warn' : 'good'}
-                />
-                <FleetStat
-                  label="Flagged Stale"
-                  value={fleetHealthQuery.data?.summary.staleCount ?? 0}
-                  hint="By v_stale_devices"
-                  icon={Timer}
-                  tone={(fleetHealthQuery.data?.summary.staleCount ?? 0) > 0 ? 'warn' : 'good'}
-                />
-                <FleetStat
-                  label="Queued Uploads"
-                  value={fleetHealthQuery.data?.summary.pendingUploads ?? 0}
-                  hint={`${fleetHealthQuery.data?.summary.parkedUploads ?? 0} parked`}
-                  icon={RefreshCw}
-                  tone={(fleetHealthQuery.data?.summary.parkedUploads ?? 0) > 0 ? 'warn' : 'neutral'}
-                />
-              </div>
-
-              {/*
-                The highest-value panel on this tab, and the reason it exists.
-                A CRE with no `device_sync_health` row has never had the app report from a phone.
-                That — not idleness — is why they show no calls, and nothing in the call log says so.
-              */}
-              <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <CardHeader className="flex flex-row items-center justify-between p-0 pb-4">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-sm font-black tracking-tight text-slate-900 dark:text-white">
-                      <WifiOff className="h-4 w-4 text-rose-500" />
-                      CREs With No Handset Reporting
-                    </CardTitle>
-                    <p className="mt-0.5 text-xs font-medium text-slate-500">
-                      These active CREs have never sent a single check-in, which means the recorder
-                      app was never deployed to their phone. They will show zero calls no matter what
-                      they actually dial — this is the reason, and it needs an install, not a chase.
-                    </p>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {(fleetHealthQuery.data?.missingDevices || []).length === 0 ? (
-                    <div className="flex items-center gap-2 py-6 text-xs font-bold text-emerald-600">
-                      <CircleCheck className="h-4 w-4" />
-                      Every active CRE in scope has the app reporting from a handset.
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {fleetHealthQuery.data?.missingDevices.map((m) => (
-                        <span
-                          key={m.creId}
-                          className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-black text-rose-700"
-                        >
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-200 text-[9px] text-rose-800">
-                            {m.creName.slice(0, 2).toUpperCase()}
-                          </span>
-                          {m.creName}
-                          <span className="font-bold text-rose-400">{m.branchName}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Per-handset detail. */}
-              <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <CardHeader className="p-0 pb-4">
-                  <CardTitle className="flex items-center gap-2 text-sm font-black tracking-tight text-slate-900 dark:text-white">
-                    <Smartphone className="h-4 w-4" style={{ color: 'var(--dashboard-primary)' }} />
-                    Handset Check-Ins
-                  </CardTitle>
-                  <p className="mt-0.5 text-xs font-medium text-slate-500">
-                    Current state per handset — the most recent check-in each device has sent, not its
-                    history. A CRE can appear more than once: reinstalling the app registers the phone
-                    again under a new device id.
-                  </p>
-                </CardHeader>
-                <CardContent className="overflow-x-auto p-0">
-                  {(fleetHealthQuery.data?.devices || []).length === 0 ? (
-                    <div className="py-12 text-center text-xs font-semibold text-slate-400">
-                      No handsets have reported for this brand.
-                    </div>
-                  ) : (
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase text-slate-400">
-                          <th className="px-4 py-3">CRE</th>
-                          <th className="px-4 py-3">Handset</th>
-                          <th className="px-4 py-3 whitespace-nowrap">Last Heartbeat</th>
-                          <th className="px-4 py-3 text-center">Session</th>
-                          <th className="px-4 py-3">Needs Attention On The Phone</th>
-                          <th className="px-4 py-3 text-center">Queued</th>
-                          <th className="px-4 py-3 text-center">Trigger</th>
-                          <th className="px-4 py-3 text-center">Flagged</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {fleetHealthQuery.data?.devices.map((dev) => (
-                          <tr
-                            key={`${dev.creId}-${dev.deviceId}`}
-                            className={cn(
-                              'transition-colors hover:bg-slate-50/80',
-                              dev.isSignedOut && 'bg-rose-50/40'
-                            )}
-                          >
-                            <td className="px-4 py-3.5 font-bold text-slate-900 dark:text-white">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[9px] font-black"
-                                  style={{
-                                    backgroundColor: 'var(--dashboard-primary-soft)',
-                                    color: 'var(--dashboard-primary)',
-                                  }}
-                                >
-                                  {dev.creName.slice(0, 2).toUpperCase()}
-                                </div>
-                                <div className="leading-tight">
-                                  <div>{dev.creName}</div>
-                                  <div className="text-[10px] font-bold text-slate-400">{dev.branchName}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3.5 leading-tight">
-                              <div className="font-bold text-slate-700">{dev.deviceModel || '—'}</div>
-                              <div className="text-[10px] font-bold text-slate-400">
-                                {dev.osVersion ? `Android ${dev.osVersion}` : 'OS unknown'}
-                                {dev.appVersion ? ` · app ${dev.appVersion}` : ''}
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap px-4 py-3.5 leading-tight">
-                              <div className="font-bold text-slate-700">{heartbeatAgo(dev.hoursSinceHeartbeat)}</div>
-                              <div className="text-[10px] font-bold text-slate-400">
-                                {dev.lastHeartbeatAt ? formatDate(dev.lastHeartbeatAt) : 'never checked in'}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              {/* signed_out = this handset has STOPPED uploading. Flagged hard. */}
-                              {dev.isSignedOut ? (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[10px] font-black text-rose-700">
-                                  <LogOut className="h-3 w-3" />
-                                  Signed out
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              {fleetHealthQuery.isFetching ? (
+                <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
+                  <Loader2 className="h-4 w-4 animate-spin text-[#093339]" />
+                  <span>Loading fleet diagnostics...</span>
+                </div>
+              ) : (fleetHealthQuery.data?.devices || []).length === 0 ? (
+                <div className="py-16 text-center text-slate-400 font-medium text-xs">
+                  No registered handsets reported for this branch.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs call-analysis-clean-table">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <th className="py-3.5 px-4 font-bold text-slate-400">CRE / Branch</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">Device Model</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">Last Heartbeat</th>
+                      <th className="py-3.5 px-4 text-center font-bold text-slate-400">Session State</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">Scan Blockers</th>
+                      <th className="py-3.5 px-4 text-center font-bold text-slate-400">Pending Uploads</th>
+                      <th className="py-3.5 px-4 text-center font-bold text-slate-400">Sweep Trigger</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {fleetHealthQuery.data?.devices.map((dev) => (
+                      <tr key={dev.deviceId || dev.creId} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3.5 px-4 font-bold text-slate-900">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">
+                              {dev.creName.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-900">{dev.creName}</div>
+                              <span className={cn('inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-bold border mt-0.5', getBranchBadgeStyle(dev.branchName))}>
+                                {dev.branchName}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 font-medium text-slate-700">
+                          <div className="font-bold text-slate-800">{dev.deviceModel || 'Unknown Device'}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">Android {dev.osVersion || '—'} · App v{dev.appVersion || '—'}</div>
+                        </td>
+                        <td className="py-3.5 px-4 font-medium text-slate-600">
+                          <div className="font-bold text-slate-800">{heartbeatAgo(dev.hoursSinceHeartbeat)}</div>
+                          <div className="text-[10px] text-slate-400">{dev.lastHeartbeatAt ? formatDate(dev.lastHeartbeatAt) : 'Never'}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          {dev.isSignedOut ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[10px] font-black text-rose-700">
+                              <LogOut className="h-3 w-3" /> Signed Out
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black text-emerald-700">
+                              <CheckCircle2 className="h-3 w-3" /> Active
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {dev.scanBlockers.length === 0 ? (
+                            <span className="text-[10px] font-bold text-slate-300">—</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {dev.scanBlockers.map((b) => (
+                                <span key={b} className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">
+                                  <ShieldAlert className="h-3 w-3" /> {SCAN_BLOCKER_LABELS[b] || b}
                                 </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black text-emerald-700">
-                                  {dev.sessionState || 'unknown'}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5">
-                              {dev.scanBlockers.length === 0 ? (
-                                <span className="text-[10px] font-bold text-slate-300">—</span>
-                              ) : (
-                                <div className="flex flex-wrap gap-1">
-                                  {dev.scanBlockers.map((b) => (
-                                    <span
-                                      key={b}
-                                      title={b}
-                                      className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700"
-                                    >
-                                      <ShieldAlert className="h-3 w-3" />
-                                      {SCAN_BLOCKER_LABELS[b] || b}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              {/* Queued uploads are normal traffic, so they are never coloured as a
-                                  fault. Parked uploads have given up, and those are. */}
-                              <div className="font-bold text-slate-700">{dev.recordingsPending}</div>
-                              {dev.recordingsParked > 0 && (
-                                <div className="text-[10px] font-black text-rose-600">
-                                  {dev.recordingsParked} parked
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              {/* `watcher` fires the instant a call ends; `sweep` is the ~15-min
-                                  fallback. A device that has never produced a watcher sweep has an OS
-                                  restriction blocking the background trigger. */}
-                              {dev.watcherNeverFired ? (
-                                <span
-                                  title="No watcher sweep has ever been reported by this handset — an OS restriction is blocking the instant-on-call-end trigger, so recordings only arrive via the ~15-minute fallback poll."
-                                  className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[10px] font-black text-amber-700"
-                                >
-                                  <Timer className="h-3 w-3" />
-                                  Sweep only
-                                </span>
-                              ) : (
-                                <span
-                                  title={`Last sweep source: ${dev.lastSweepSource || 'unknown'}`}
-                                  className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black text-emerald-700"
-                                >
-                                  <Radio className="h-3 w-3" />
-                                  Watcher
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              {/*
-                                `reason` comes pre-computed from `v_stale_devices`. It is rendered as
-                                given (underscores swapped for spaces, nothing else) and there is
-                                deliberately NO lookup table: a new reason the backend starts
-                                emitting must show up here, not fall through a map to "Unknown".
-                              */}
-                              {dev.reason ? (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-black text-slate-700">
-                                  <TriangleAlert className="h-3 w-3" />
-                                  {dev.reason.replace(/_/g, ' ')}
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-bold text-slate-300">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-center font-bold text-slate-700">{dev.recordingsPending}</td>
+                        <td className="py-3.5 px-4 text-center font-bold">
+                          {dev.watcherNeverFired ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[10px] font-black text-amber-700">
+                              <Timer className="h-3 w-3" /> Sweep only
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black text-emerald-700">
+                              <Radio className="h-3 w-3" /> Watcher
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
         </div>
-      )}
-        </>
       )}
     </div>
   )

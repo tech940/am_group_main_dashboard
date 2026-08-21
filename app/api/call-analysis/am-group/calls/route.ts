@@ -17,8 +17,19 @@ import {
   OUTCOME_REJECTED,
   UNANSWERED_OUTCOMES,
   UNASSIGNED_BRANCH_ID,
+  resolveSpecialTeamBranchLabel,
   type CreDirectory,
 } from '@/lib/cre-calls/directory'
+import { resolvePreferredBrand } from '@/lib/cre-calls/brand-source'
+import {
+  lookupKey,
+  matchCustomers,
+  MATCH_SOURCE_LABEL,
+  type CustomerMatch,
+  type MatchSource,
+  type PreferredBrand,
+} from '@/lib/customer-identity/phone-match'
+import { getExcludedNumbers } from '@/lib/customer-identity/exclusions'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,6 +104,36 @@ type EnrichedRow = {
   callbackTime?: string | null
   callbackCreName?: string | null
   callbackDelayLabel?: string | null
+  /**
+   * The digits we will look this number up by, or null when there is nothing lookupable.
+   *
+   * ⚠️ NEVER derive this from `phone`. derivePhoneAndName() falls back to the contact name and then
+   * to the literal 'Saved Mobile Contact', so `phone` legitimately holds strings like
+   * "Rajinder Kour". This is computed from the RAW column instead.
+   */
+  lookupPhone: string | null
+  /** Who this number belongs to according to our own enquiry feeds. Null when we do not know. */
+  customer: CustomerIdentity | null
+  /** Set when the number is ours (staff / lead-routing trunk) rather than a customer's. */
+  notACustomer: string | null
+}
+
+/** A customer identity resolved from our enquiry feeds — never from the handset address book. */
+type CustomerIdentity = {
+  name: string
+  source: MatchSource
+  sourceLabel: string
+  model: string | null
+  status: string | null
+  consultant: string | null
+  /** Date of the enquiry/booking behind this name, so the UI can show how old the evidence is. */
+  refDate: string | null
+  bookingNumber: string | null
+  /**
+   * True when this number resolves to more than one person across our feeds — a household line, a
+   * dealer desk, or a recycled SIM. The name shown is then the best guess, not a fact.
+   */
+  isShared: boolean
 }
 
 /** Recover a phone number or contact name from a recording's file name when the column is empty. */
@@ -289,9 +330,11 @@ export async function GET(request: Request) {
       const creName = dir.profileName.get(row.cre_id) || dir.profileName.get(row.created_by) || 'CRE Agent'
       // Canonical, so the branch column reads "AM Kia" whether the call was logged in Jammu or Udhampur.
       const branchId = resolveBranchId(row, dir)
-      const branchName = branchLabel(branchId, dir)
+      const branchName = branchLabel(branchId, dir, creId, creName)
       const durationSeconds = Number(row.duration_seconds) || 0
       const { phone, contactName } = derivePhoneAndName(row)
+      // From the RAW column, deliberately — see EnrichedRow.lookupPhone.
+      const lookupPhone = lookupKey(row.phone) || null
 
       if (useRecordingsTable) {
         const callType = (row.call_type || 'outgoing').toLowerCase()
@@ -325,6 +368,9 @@ export async function GET(request: Request) {
           isConnectedOutgoing: !isIncoming,
           isConnectedIncoming: isIncoming,
           isUnanswered: false,
+          lookupPhone,
+          customer: null,
+          notACustomer: null,
         }
       }
 
@@ -355,8 +401,97 @@ export async function GET(request: Request) {
         isConnectedOutgoing: desc.connOut,
         isConnectedIncoming: desc.connIn,
         isUnanswered: desc.missIn || desc.missOut,
+        lookupPhone,
+        customer: null,
+        notACustomer: null,
       }
     })
+
+    /*
+     * ── Who is this number? ──────────────────────────────────────────────────────────────────
+     *
+     * The call data lives in the CRE Supabase project; the answer lives in OUR database. The two
+     * cannot be joined, so the numbers are carried across in memory and resolved with one
+     * set-based query here, AFTER paging — a page resolves only a few dozen distinct numbers.
+     *
+     * Never per row: this database is latency-bound (roughly two round trips per statement through
+     * pgbouncer with prepare:false), so 25 lookups would cost 50 round trips to answer what one
+     * query answers in two.
+     *
+     * Grouped by the CRE's brand because a number can exist in more than one brand's enquiry feed
+     * and the CRE tells us which record to believe. In practice a page carries one or two brands,
+     * so this is one or two queries, not one per row.
+     *
+     * Everything here is best-effort: a failure to reach our own database must leave the call log
+     * working with no names, never 500 the tab.
+     */
+    const identifiable = rows.filter((r) => r.lookupPhone)
+    if (identifiable.length > 0) {
+      /*
+       * The CRE's own brand decides which enquiry feed to believe when a number exists in more than
+       * one — a Hyundai-service CRE's calls are about Hyundai. The special-team label is the ONLY
+       * thing that separates the seven special-team CREs, who all share one branch whose brand reads
+       * "Special Team", so "Special Branch (Kia sales)" is what makes Komal's calls resolve against
+       * the KIA feed.
+       */
+      const preferenceFor = (row: EnrichedRow): PreferredBrand =>
+        resolvePreferredBrand(
+          resolveSpecialTeamBranchLabel(row.creId, row.creName),
+          dir.branchBrand.get(row.branchId),
+          row.branchName,
+        )
+
+      const requests = identifiable.map((row) => ({
+        number: row.lookupPhone as string,
+        preferBrand: preferenceFor(row),
+      }))
+
+      /*
+       * Two statements, issued together — and that count is the whole design.
+       *
+       * Measured: the queries themselves run in 0.4-32 ms, but each statement costs ~350 ms of wall
+       * time (pgbouncer, `prepare: false`, ~2 round trips). An earlier version grouped rows by brand
+       * and issued one query per brand plus one for exclusions: five statements, 2.4 SECONDS on a
+       * 50-row page, for ~35 ms of actual work. The preference now travels per number inside the
+       * single match query instead.
+       *
+       * Both are best-effort. Failing to reach our own database must leave the call log working with
+       * no names, never 500 the tab.
+       */
+      const [matches, excluded] = await Promise.all([
+        matchCustomers(requests).catch(() => new Map<string, CustomerMatch>()),
+        // Our own staff and the lead-routing trunks. Measured on this call log: 15 numbers are ours
+        // and six of them ALSO match an enquiry row, so without this a call to a colleague renders a
+        // confident customer identity — one of them resolves to our own company name.
+        getExcludedNumbers(requests.map((r) => r.number)).catch(() => new Map()),
+      ])
+
+      for (const row of rows) {
+        if (!row.lookupPhone) continue
+
+        const exclusion = excluded.get(row.lookupPhone)
+        if (exclusion) {
+          // Say WHY there is no name rather than leaving a blank that reads like missing data.
+          row.notACustomer = exclusion.label
+          continue
+        }
+
+        const match = matches.get(row.lookupPhone)
+        if (!match?.customerName) continue
+
+        row.customer = {
+          name: match.customerName,
+          source: match.source,
+          sourceLabel: MATCH_SOURCE_LABEL[match.source],
+          model: match.model,
+          status: match.status,
+          consultant: match.consultant,
+          refDate: match.refDate,
+          bookingNumber: match.bookingNumber,
+          isShared: match.distinctNames > 1,
+        }
+      }
+    }
 
     // Enrich missed incoming call rows with callback recovery status
     const missedIncomingRows = rows.filter((r) => r.isMissedIncoming && r.phone)

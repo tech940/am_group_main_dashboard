@@ -4,7 +4,7 @@ import { sql, type SQL } from 'drizzle-orm'
 
 import { analyticsDb } from '@/lib/analytics/db'
 import { analyticsTableColumns } from '@/lib/analytics/table-columns'
-import { redactHyundaiReportRows, maskHyundaiPii } from '@/lib/hyundai/pii'
+import { redactPlatinumReportRows, maskPlatinumPii } from '@/lib/platinum/pii'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import type {
@@ -23,18 +23,18 @@ import type {
   SalesReportSummaryPayload,
   SourceKey,
   TemperatureKey,
-} from '@/lib/hyundai/sales-report-types'
+} from '@/lib/platinum/sales-report-types'
 import {
-  HYUNDAI_BRANCH_DEALERS,
-  normalizeHyundaiDealerCode,
-  hyundaiSourceDealerSql,
-} from '@/lib/hyundai/dealer-branch'
+  PLATINUM_BRANCH_DEALERS,
+  normalizePlatinumDealerCode,
+  platinumSourceDealerSql,
+} from '@/lib/platinum/dealer-branch'
 import { getSalesStockSource } from '@/lib/brands/sales-stock-sources'
 import { ENQUIRY_IDENTITY_SQL } from '@/lib/brands/enquiry-identity'
 
 type Row = Record<string, unknown>
 
-const HYUNDAI_TABLES = getSalesStockSource('hyundai')!.tables
+const PLATINUM_TABLES = getSalesStockSource('platinum')!.tables
 
 type TableConfig = {
   key: SourceKey
@@ -97,17 +97,17 @@ function reportDedupeFilter(reportKey: SourceKey) {
   return reportKey === 'enquiry' ? sql` AND dedupe_rank = 1` : sql``
 }
 
-const HYUNDAI_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS = 60 * 10
-const HYUNDAI_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS = 60 * 5
+const PLATINUM_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS = 60 * 10
+const PLATINUM_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS = 60 * 5
 const ALL_DEALERS_CACHE_KEY = '__all__'
-const hyundaiSalesReportFreshnessFallback = new Map<string, SalesReportFreshnessPayload>()
-const hyundaiSalesReportSummaryFallback = new Map<string, SalesReportSummaryPayload>()
+const platinumSalesReportFreshnessFallback = new Map<string, SalesReportFreshnessPayload>()
+const platinumSalesReportSummaryFallback = new Map<string, SalesReportSummaryPayload>()
 
 const TABLES: Record<SourceKey, TableConfig> = {
   enquiry: {
     key: 'enquiry',
     label: 'Enquiry Report',
-    table: HYUNDAI_TABLES.enquiry,
+    table: PLATINUM_TABLES.enquiry,
     dateColumn: 'enquiry_date',
     dealerColumns: ['dealer_code_2', 'source_dealer_code', 'dealer_code', 'main_dealer_code'],
     defaultVisibleColumns: ['enquiry_date', 'customer_id', 'name_of_the_customer', 'contact_number', 'model', 'sub_source', 'consultant_name', 'enquiry_status', 'booking_date', 'retail_date', 'lost_reason'],
@@ -120,7 +120,7 @@ const TABLES: Record<SourceKey, TableConfig> = {
   booking: {
     key: 'booking',
     label: 'Booking Report',
-    table: HYUNDAI_TABLES.booking,
+    table: PLATINUM_TABLES.booking,
     dateColumn: 'booking_date',
     dealerColumns: ['source_dealer_code', 'dealer_code'],
     defaultVisibleColumns: ['booking_date', 'name_of_the_customer', 'contact_number', 'model', 'variant', 'sub_source', 'consultant_name', 'amount_received', 'mode_of_purchase'],
@@ -133,7 +133,7 @@ const TABLES: Record<SourceKey, TableConfig> = {
   sales: {
     key: 'sales',
     label: 'Sales Report',
-    table: HYUNDAI_TABLES.sales,
+    table: PLATINUM_TABLES.sales,
     dateColumn: 'confirm_date',
     dealerColumns: ['dealer_code_2', 'source_dealer_code', 'dealer_code', 'main_dealer_code'],
     defaultVisibleColumns: ['confirm_date', 'delivery_date', 'invoice_date', 'invoice_no', 'registration_name', 'contact_num1', 'model', 'variant', 'color', 'consultant_name', 'sub_source', 'mode_of_purchase', 'dsa_financier', 'basic_amount'],
@@ -146,8 +146,8 @@ const TABLES: Record<SourceKey, TableConfig> = {
   purchase: {
     key: 'purchase',
     label: 'Purchase Report',
-    table: HYUNDAI_TABLES.purchase,
-    // COALESCE, not grn_date alone: grn_date is NULL on ALL 11,238 rows of hyundai_purchase_report,
+    table: PLATINUM_TABLES.purchase,
+    // COALESCE, not grn_date alone: grn_date is NULL on ALL 11,238 rows of platinum_purchase_report,
     // so the Purchase tab could never match a month and rendered empty at every period while the data
     // sat right there. order_date is populated on all 11,238 (max 2026-07-23). Ordered so that a
     // future feed carrying a real GRN date silently takes precedence again — same idiom the sales
@@ -389,8 +389,8 @@ function resolveDateContext(
  *
  * ⚠️ The configs name dealer columns the feeds do not all carry, and referencing a missing column is
  * a PARSE error, so the whole query died rather than returning nothing. Measured against the live
- * schema: hyundai_booking_report has neither `dealer_code_2` nor `main_dealer_code`, and
- * hyundai_purchase_report has no `dealer_code_2`. Every dealer-scoped user therefore got
+ * schema: platinum_booking_report has neither `dealer_code_2` nor `main_dealer_code`, and
+ * platinum_purchase_report has no `dealer_code_2`. Every dealer-scoped user therefore got
  * "Failed query ... column dealer_code_2 does not exist" and the report would not load at all —
  * while an unscoped user (and every probe I ran) saw nothing wrong, because with no dealer filter
  * those columns are never referenced.
@@ -405,20 +405,20 @@ async function dealerFilterSql(
   dealerCode: string | null | undefined,
   config: TableConfig
 ) {
-  const normalized = normalizeHyundaiDealerCode(dealerCode)
+  const normalized = normalizePlatinumDealerCode(dealerCode)
   if (!normalized) return sql``
 
   const present = new Set((await analyticsTableColumns(config.table)).map((c) => c.trim().toLowerCase()))
   const usable = config.dealerColumns.filter((c) => present.size === 0 || present.has(c.trim().toLowerCase()))
 
   if (usable.length === 0) {
-    console.warn(`[hyundai-sales-report] ${config.table} has none of its configured dealer columns (${config.dealerColumns.join(', ')}) — scoping to no rows rather than leaking every branch`)
+    console.warn(`[platinum-sales-report] ${config.table} has none of its configured dealer columns (${config.dealerColumns.join(', ')}) — scoping to no rows rather than leaking every branch`)
     return sql`AND FALSE`
   }
 
   const cols = usable.map((c) => sql.raw(c))
   const [first, ...rest] = cols
-  return sql`AND ${hyundaiSourceDealerSql(first, rest)} = ${normalized}`
+  return sql`AND ${platinumSourceDealerSql(first, rest)} = ${normalized}`
 }
 
 export function normalizeReportKey(value: string | null | undefined): SourceKey {
@@ -429,9 +429,9 @@ export function normalizeReportKey(value: string | null | undefined): SourceKey 
   return 'sales'
 }
 
-export async function getHyundaiSalesReportFreshness(dealerCode?: string | null): Promise<SalesReportFreshnessPayload> {
-  const normalizedDealer = normalizeHyundaiDealerCode(dealerCode)
-  const cacheKey = `hyundai:sales-report:freshness:v2-dedupe:${normalizedDealer || ALL_DEALERS_CACHE_KEY}`
+export async function getPlatinumSalesReportFreshness(dealerCode?: string | null): Promise<SalesReportFreshnessPayload> {
+  const normalizedDealer = normalizePlatinumDealerCode(dealerCode)
+  const cacheKey = `platinum:sales-report:freshness:v2-dedupe:${normalizedDealer || ALL_DEALERS_CACHE_KEY}`
 
   return getCachedData(
     cacheKey,
@@ -533,25 +533,25 @@ export async function getHyundaiSalesReportFreshness(dealerCode?: string | null)
           selectedMonthKey,
           sourceUpdatedAt: maxUpdatedAt,
           availableMonths,
-          dealerOptions: HYUNDAI_BRANCH_DEALERS.map((d) => d.dealerCode),
+          dealerOptions: PLATINUM_BRANCH_DEALERS.map((d) => d.dealerCode),
           sources,
           coverageWarnings: [],
         }
 
-        hyundaiSalesReportFreshnessFallback.set(normalizedDealer || ALL_DEALERS_CACHE_KEY, payload)
+        platinumSalesReportFreshnessFallback.set(normalizedDealer || ALL_DEALERS_CACHE_KEY, payload)
         return payload
       } catch (error) {
-        console.error('[hyundai-sales-report:freshness] failed', error)
-        const fallback = hyundaiSalesReportFreshnessFallback.get(normalizedDealer || ALL_DEALERS_CACHE_KEY)
+        console.error('[platinum-sales-report:freshness] failed', error)
+        const fallback = platinumSalesReportFreshnessFallback.get(normalizedDealer || ALL_DEALERS_CACHE_KEY)
         if (fallback) return fallback
         throw error
       }
     },
-    HYUNDAI_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS
+    PLATINUM_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS
   )
 }
 
-export async function getHyundaiSalesReportSummary(
+export async function getPlatinumSalesReportSummary(
   optionsOrMonthKey?:
     | {
         year?: number | null
@@ -579,13 +579,13 @@ export async function getHyundaiSalesReportSummary(
   const startDate = isObject ? options.startDate : posStartDate
   const endDate = isObject ? options.endDate : posEndDate
 
-  const normalizedDealer = normalizeHyundaiDealerCode(dealerCode)
+  const normalizedDealer = normalizePlatinumDealerCode(dealerCode)
   const dateCtx = resolveDateContext(rawMonthKey, startDate, endDate)
   // The retail transactions list carries a customer phone, so the redaction state is part of the
   // identity of this payload. Without it in the key, the first cleared viewer to warm the cache would
   // hand real numbers to every redacted viewer for the whole TTL.
   const canViewPii = isObject ? Boolean(options.canViewPii) : false
-  const cacheKey = `hyundai:sales-report:summary:v2-dedupe:${normalizedDealer || ALL_DEALERS_CACHE_KEY}:${dateCtx.startDate}:${dateCtx.endDate}:${canViewPii ? 'pii' : 'redacted'}`
+  const cacheKey = `platinum:sales-report:summary:v2-dedupe:${normalizedDealer || ALL_DEALERS_CACHE_KEY}:${dateCtx.startDate}:${dateCtx.endDate}:${canViewPii ? 'pii' : 'redacted'}`
 
   return getCachedData(
     cacheKey,
@@ -1128,7 +1128,7 @@ export async function getHyundaiSalesReportSummary(
         const transactions: SalesRetailTransaction[] = resultRows(salesTransactions).map((r) => ({
           rowKey: safeText(r.row_key),
           customerName: safeText(r.registration_name),
-          phone: maskHyundaiPii(r.contact_num1, canViewPii),
+          phone: maskPlatinumPii(r.contact_num1, canViewPii),
           model: normalizeModel(r.model),
           variant: safeText(r.variant),
           color: safeText(r.color),
@@ -1517,20 +1517,20 @@ export async function getHyundaiSalesReportSummary(
           },
         }
 
-        hyundaiSalesReportSummaryFallback.set(normalizedDealer || ALL_DEALERS_CACHE_KEY, payload)
+        platinumSalesReportSummaryFallback.set(normalizedDealer || ALL_DEALERS_CACHE_KEY, payload)
         return payload
       } catch (error) {
-        console.error('[hyundai-sales-report:summary] failed', error)
-        const fallback = hyundaiSalesReportSummaryFallback.get(normalizedDealer || ALL_DEALERS_CACHE_KEY)
+        console.error('[platinum-sales-report:summary] failed', error)
+        const fallback = platinumSalesReportSummaryFallback.get(normalizedDealer || ALL_DEALERS_CACHE_KEY)
         if (fallback) return fallback
         throw error
       }
     },
-    HYUNDAI_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS
+    PLATINUM_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS
   )
 }
 
-export async function getHyundaiSalesReportTable(
+export async function getPlatinumSalesReportTable(
   optionsOrReport?:
     | {
         report?: string | null
@@ -1605,11 +1605,11 @@ export async function getHyundaiSalesReportTable(
    */
   const canViewPii = isObject ? Boolean(options.canViewPii) : false
   const cacheKey = [
-    'hyundai:sales-report:table:v2-dedupe',
+    'platinum:sales-report:table:v2-dedupe',
     config.key,
     dateCtx.startDate,
     dateCtx.endDateExclusive,
-    normalizeHyundaiDealerCode(dealerCode) || ALL_DEALERS_CACHE_KEY,
+    normalizePlatinumDealerCode(dealerCode) || ALL_DEALERS_CACHE_KEY,
     safeText(search) || 'nosearch',
     `p${safePage}`,
     `n${safePageSize}`,
@@ -1710,7 +1710,7 @@ export async function getHyundaiSalesReportTable(
       defaultVisibleColumns: config.defaultVisibleColumns,
       // Redacted BEFORE the value is cached or serialised, never in the browser. The cache key
       // carries the same flag, so a cleared viewer's entry can never be served to a redacted one.
-      rows: redactHyundaiReportRows(resultRows(dataRows) as Array<Record<string, unknown>>, canViewPii),
+      rows: redactPlatinumReportRows(resultRows(dataRows) as Array<Record<string, unknown>>, canViewPii),
       pagination: {
         page: safePage,
         pageSize: safePageSize,
@@ -1718,10 +1718,10 @@ export async function getHyundaiSalesReportTable(
         totalPages: Math.max(1, Math.ceil(totalRows / safePageSize)),
       },
     }
-  }, HYUNDAI_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS)
+  }, PLATINUM_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS)
 }
 
-export async function getHyundaiSalesReportCsv(
+export async function getPlatinumSalesReportCsv(
   optionsOrReport?:
     | {
         report?: string | null
@@ -1841,8 +1841,8 @@ export async function getHyundaiSalesReportCsv(
   // redaction as the on-screen table — a CSV that leaks what the table hides would make the table's
   // redaction decorative.
   const csvCanViewPii = isObject ? Boolean(options.canViewPii) : false
-  const data = redactHyundaiReportRows(resultRows(rows) as Array<Record<string, unknown>>, csvCanViewPii)
-  const fileName = `hyundai-${config.key}-${dateCtx.key}.csv`
+  const data = redactPlatinumReportRows(resultRows(rows) as Array<Record<string, unknown>>, csvCanViewPii)
+  const fileName = `platinum-${config.key}-${dateCtx.key}.csv`
   if (data.length === 0) {
     return {
       fileName,

@@ -221,4 +221,3 @@ export type SalesReportCsvPayload = {
   fileName: string
   content: string
 }
-

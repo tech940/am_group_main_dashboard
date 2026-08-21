@@ -3,8 +3,8 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canViewCallAnalysis } from '@/lib/callyzer/access'
 import { getAllCalls, getSyncState } from '@/lib/callyzer/client'
 import { buildAnalytics, filterCalls, type CallFilters } from '@/lib/callyzer/analytics'
-import { matchCustomers, phone10 } from '@/lib/callyzer/customer-match'
-import { getExcludedNumbers } from '@/lib/callyzer/excluded-numbers'
+import { matchCustomers, phone10 } from '@/lib/customer-identity/phone-match'
+import { getExcludedNumbers } from '@/lib/customer-identity/exclusions'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,11 +36,16 @@ export async function GET(request: Request) {
     }
 
     // Date bounds go into SQL (call_date is indexed); the rest is in-memory on the slice.
-    const [all, syncState, excluded] = await Promise.all([
+    const [all, syncState] = await Promise.all([
       getAllCalls({ startDate: filters.startDate, endDate: filters.endDate }),
       getSyncState(),
-      getExcludedNumbers(),
     ])
+
+    // The exclusion list is now told which numbers to consider rather than scanning callyzer_calls
+    // itself — that is what lets the CRE section, whose calls live in another database entirely,
+    // reuse it. Scoping the candidates to the loaded range changes no answer: every number the
+    // analytics below can ask about is in `all` by construction, and it is a smaller anti-join.
+    const excluded = await getExcludedNumbers(all.map((c) => c.clientNumber)).catch(() => new Map())
 
     // Only when the user is actually searching: resolve our own customer names for every number in
     // range first, so a search for "Sahil Sharma" matches the name the page displays rather than

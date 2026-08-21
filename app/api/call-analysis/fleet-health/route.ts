@@ -201,7 +201,7 @@ export async function GET(request: Request) {
         // `user_profiles.full_name`. There is no CRE-name literal anywhere in this section.
         creName: dir.profileName.get(r.user_id) || 'CRE Agent',
         branchId: resolvedBranch,
-        branchName: branchLabel(resolvedBranch, dir),
+        branchName: branchLabel(resolvedBranch, dir, r.user_id, dir.profileName.get(r.user_id)),
         deviceId: r.device_id,
         deviceModel: r.device_model || null,
         osVersion: r.os_version || null,
@@ -262,7 +262,7 @@ export async function GET(request: Request) {
           creId: p.id,
           creName: p.full_name || 'CRE Agent',
           branchId: resolvedBranch,
-          branchName: branchLabel(resolvedBranch, dir),
+          branchName: branchLabel(resolvedBranch, dir, p.id, p.full_name),
         }
       })
       .sort((a, b) => a.branchName.localeCompare(b.branchName) || a.creName.localeCompare(b.creName))

@@ -186,7 +186,15 @@ export async function loadCreDirectory(): Promise<CreDirectory> {
   const branchBrand = new Map<string, string | null>()
   for (const b of branches) {
     const canonical = canonicalBranchId.get(b.id) || b.id
-    const label = mergedLabel.get(canonical) || b.display_name || b.code || 'Unknown Branch'
+    let label = mergedLabel.get(canonical) || b.display_name || b.code || 'Unknown Branch'
+    if (
+      b.id === specialBranchId ||
+      (b.code || '').toUpperCase() === 'SPECIAL' ||
+      label.toLowerCase().includes('special branch') ||
+      label.toLowerCase().includes('special team')
+    ) {
+      label = 'Special Branch'
+    }
     // Keyed under BOTH the real id and the canonical id: a caller holding a raw `branch_id` off a
     // call row gets the merged label without having to canonicalise first.
     branchName.set(b.id, label)
@@ -211,6 +219,47 @@ export async function loadCreDirectory(): Promise<CreDirectory> {
   }
 }
 
+export const SPECIAL_TEAM_MEMBER_BRANCHES: Record<string, string> = {
+  // by CRE ID
+  'dd4711da-5b08-4d7a-8703-bf723195f6a6': 'Special Branch (H Promise)',
+  '69083707-bcbe-4f85-9e67-4a182fc025ff': 'Special Branch (Kia sales)',
+  '192a210d-7ca9-406e-8249-4b3085e6d669': 'Special Branch (Hyundai service)',
+  '10fae398-2edf-4bc7-8ece-d8d1827419a0': 'Special Branch (Tata sales)',
+  '574ca8be-c9c8-4feb-9cda-6f8b6a35d1e9': 'Special Branch (Kia service)',
+  'ede2cf45-1b4e-4b29-8ace-c4aaf39ac1e0': 'Special Branch (Kia Udhampur)',
+  '6658df02-ae1d-4d3a-a241-77d58133114f': 'Special Branch (Platinum service)',
+}
+
+export const SPECIAL_TEAM_NAME_BRANCHES: Record<string, string> = {
+  'heena digital crm': 'Special Branch (H Promise)',
+  'heena': 'Special Branch (H Promise)',
+  'komal': 'Special Branch (Kia sales)',
+  'raman bali': 'Special Branch (Hyundai service)',
+  'raman': 'Special Branch (Hyundai service)',
+  'rishika tata cxm': 'Special Branch (Tata sales)',
+  'rishika': 'Special Branch (Tata sales)',
+  'rupali crm': 'Special Branch (Kia service)',
+  'rupali': 'Special Branch (Kia service)',
+  'sonali jamwal': 'Special Branch (Kia Udhampur)',
+  'sonali': 'Special Branch (Kia Udhampur)',
+  'tejinder crm': 'Special Branch (Platinum service)',
+  'tejinder': 'Special Branch (Platinum service)',
+}
+
+export function resolveSpecialTeamBranchLabel(creId?: string | null, creName?: string | null): string | null {
+  if (creId && SPECIAL_TEAM_MEMBER_BRANCHES[creId]) {
+    return SPECIAL_TEAM_MEMBER_BRANCHES[creId]
+  }
+  if (creName) {
+    const key = creName.trim().toLowerCase()
+    if (SPECIAL_TEAM_NAME_BRANCHES[key]) return SPECIAL_TEAM_NAME_BRANCHES[key]
+    for (const [name, label] of Object.entries(SPECIAL_TEAM_NAME_BRANCHES)) {
+      if (key.includes(name) || name.includes(key)) return label
+    }
+  }
+  return null
+}
+
 /**
  * The branch a call is REPORTED under.
  *
@@ -233,9 +282,25 @@ export function resolveBranchId(
 }
 
 /** Display name for a resolved branch id, including the honest fallback for "we do not know". */
-export function branchLabel(branchId: string | null | undefined, dir: CreDirectory): string {
+export function branchLabel(
+  branchId: string | null | undefined,
+  dir: CreDirectory,
+  creId?: string | null,
+  creName?: string | null
+): string {
+  const specialUnit = resolveSpecialTeamBranchLabel(creId, creName || (creId ? dir.profileName.get(creId) : null))
+  if (specialUnit) return specialUnit
+
   if (!branchId || branchId === UNASSIGNED_BRANCH_ID) return UNASSIGNED_BRANCH_LABEL
-  return dir.branchName.get(branchId) || UNASSIGNED_BRANCH_LABEL
+  const raw = dir.branchName.get(branchId) || UNASSIGNED_BRANCH_LABEL
+  if (
+    raw === 'Special Team Special Branch' ||
+    raw === 'Special Branch Special Branch' ||
+    raw.toLowerCase().includes('special branch special branch')
+  ) {
+    return 'Special Branch'
+  }
+  return raw
 }
 
 /**
