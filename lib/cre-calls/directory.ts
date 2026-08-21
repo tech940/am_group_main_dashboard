@@ -58,10 +58,36 @@ export type BranchRow = { id: string; code: string | null; brand: string | null;
 export type ProfileRow = {
   id: string
   full_name: string | null
+  /**
+   * The CRE project's `user_profiles` has exactly TWO phone columns, verified against the live
+   * table: `phone` (populated on 37 of 38 rows) and `alt_phone` (1 of 38).
+   *
+   * It has no `phone_number`, `mobile` or `contact_number`. Those three were declared here and read
+   * in the fallback chain below, but the column does not exist, so `select('*')` never returns them
+   * and they always evaluated to undefined. Removed rather than extended — a fallback that cannot
+   * fire reads like a supported source and invites someone to "fix" missing data by populating a
+   * column nothing queries.
+   */
+  phone?: string | null
+  alt_phone?: string | null
   branch_id: string | null
   role: string | null
   status: string | null
   deleted_at: string | null
+}
+
+export type CreNumberRow = {
+  cre_id: string
+  full_name: string | null
+  email?: string | null
+  role?: string | null
+  sub_team?: string | null
+  branch_name?: string | null
+  branch_code?: string | null
+  branch_label?: string | null
+  number: string
+  kind: 'own' | 'shared' | string
+  number_local: string
 }
 
 export type CreDirectory = {
@@ -70,12 +96,20 @@ export type CreDirectory = {
   profiles: ProfileRow[]
   /** Active CREs only — the roster the scorecard is drawn from. */
   creProfiles: ProfileRow[]
+  /** All registered CRE numbers from v_cre_numbers */
+  creNumbers: CreNumberRow[]
   /** branch id -> display name. Contains BOTH real and canonical ids, so any id resolves. */
   branchName: Map<string, string>
   /** branch id -> brand label, e.g. "Kia" */
   branchBrand: Map<string, string | null>
   /** cre id -> full name */
   profileName: Map<string, string>
+  /** cre id -> primary phone number */
+  profilePhone: Map<string, string | null>
+  /** cre id -> all numbers (own and shared) */
+  profileNumbers: Map<string, CreNumberRow[]>
+  /** 10-digit local number -> CreNumberRow */
+  numberToCre: Map<string, CreNumberRow>
   /** cre id -> the branch on their profile (used when a call row has no branch_id of its own) */
   profileBranch: Map<string, string | null>
   /** brand slug ("am_group") -> REAL branch ids owned by that brand. For SQL scope. */
@@ -102,12 +136,12 @@ export async function loadCreDirectory(): Promise<CreDirectory> {
   // default) and reports no error when it truncates — a silently short profile list would strip
   // every CRE's name and drop them from `creIdsForBranches`, which is exactly the class of bug
   // that made this section show one agent.
-  const [profilesRaw, branchesRaw] = await Promise.all([
+  const [profilesRaw, branchesRaw, creNumbersRaw] = await Promise.all([
     fetchAllPaged<ProfileRow>(
       () =>
         supabase
           .from('user_profiles')
-          .select('id, full_name, branch_id, role, status, deleted_at')
+          .select('*')
           .order('id', { ascending: true }) as unknown as AnyQuery
     ).catch((e) => {
       throw new Error(`Failed to load CRE profiles: ${e instanceof Error ? e.message : String(e)}`)
@@ -121,6 +155,12 @@ export async function loadCreDirectory(): Promise<CreDirectory> {
     ).catch((e) => {
       throw new Error(`Failed to load branch directory: ${e instanceof Error ? e.message : String(e)}`)
     }),
+    fetchAllPaged<CreNumberRow>(
+      () =>
+        supabase
+          .from('v_cre_numbers')
+          .select('*') as unknown as AnyQuery
+    ).catch(() => [] as CreNumberRow[]),
   ])
 
   const specialBranch = branchesRaw.find(
@@ -203,13 +243,42 @@ export async function loadCreDirectory(): Promise<CreDirectory> {
     branchBrand.set(canonical, branchBrand.get(canonical) ?? b.brand)
   }
 
+  const numberToCre = new Map<string, CreNumberRow>()
+  const profileNumbers = new Map<string, CreNumberRow[]>()
+
+  for (const num of creNumbersRaw) {
+    if (num.cre_id) {
+      profileNumbers.set(num.cre_id, [...(profileNumbers.get(num.cre_id) || []), num])
+    }
+    const rawNum = num.number_local || num.number || ''
+    const local = rawNum.replace(/\D/g, '').slice(-10)
+    if (local) {
+      numberToCre.set(local, num)
+    }
+  }
+
+  const profilePhone = new Map<string, string | null>()
+  for (const p of profiles) {
+    const list = profileNumbers.get(p.id) || []
+    const own = list.find((x) => x.kind === 'own')?.number || list[0]?.number
+    profilePhone.set(
+      p.id,
+      // Only the two columns that exist — see ProfileRow. The dropped ones were always undefined.
+      own || p.phone || p.alt_phone || null
+    )
+  }
+
   return {
     branches,
     profiles,
     creProfiles,
+    creNumbers: creNumbersRaw,
     branchName,
     branchBrand,
     profileName: new Map(profiles.map((p) => [p.id, p.full_name || 'CRE Agent'])),
+    profilePhone,
+    profileNumbers,
+    numberToCre,
     profileBranch: new Map(profiles.map((p) => [p.id, p.branch_id])),
     brandBranchIds,
     brandReportingBranchIds,

@@ -23,6 +23,9 @@ import { cn } from '@/lib/utils'
 type CrePerformance = {
   cre_id: string
   cre_name: string
+  cre_phone?: string | null
+  cre_alt_phone?: string | null
+  cre_numbers?: { number: string; kind: string; branch_label?: string | null }[]
   branch_id?: string | null
   branch_name: string
   brand?: string | null
@@ -1768,11 +1771,31 @@ export function AmGroupCallAnalysis() {
                           title="Click to see unanswered calls for this CRE"
                         >
                           <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
-                            <div className="flex items-center gap-2">
-                              <div className="h-6 w-6 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-[10px]">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-[10px] shrink-0">
                                 {cre.cre_name.slice(0, 2).toUpperCase()}
                               </div>
-                              <span className="font-bold text-slate-900">{cre.cre_name}</span>
+                              <div className="flex flex-col">
+                                <span className="font-bold text-slate-900">{cre.cre_name}</span>
+                                <div className="flex flex-col gap-0.5 mt-0.5">
+                                  {cre.cre_phone && (
+                                    <span className="text-[11px] font-semibold text-slate-600 flex items-center gap-1">
+                                      <PhoneCall className="h-2.5 w-2.5 text-slate-400" />
+                                      {cre.cre_phone}
+                                    </span>
+                                  )}
+                                  {cre.cre_alt_phone && (
+                                    <span className="text-[10px] font-bold text-violet-700 flex items-center gap-1" title="Shared desk line">
+                                      <PhoneCall className="h-2.5 w-2.5 text-violet-400" />
+                                      {cre.cre_alt_phone}
+                                      <span className="text-[8px] font-black uppercase text-violet-600 bg-violet-50 border border-violet-200 px-1 rounded">Shared Desk</span>
+                                    </span>
+                                  )}
+                                  {!cre.cre_phone && !cre.cre_alt_phone && (
+                                    <span className="text-[10px] font-medium text-slate-400">No number linked</span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="py-3.5 px-4">

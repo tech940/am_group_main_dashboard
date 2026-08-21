@@ -40,6 +40,18 @@ const DB_POOL_MAX = process.env.NODE_ENV === 'development'
   : positiveInteger(process.env.DATABASE_POOL_MAX, DEFAULT_POOL_MAX)
 const LOCK_TIMEOUT_MS = positiveInteger(process.env.DATABASE_LOCK_TIMEOUT_MS, 3_000)
 const IDLE_IN_TRANSACTION_TIMEOUT_MS = positiveInteger(process.env.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS, 10_000)
+/*
+ * Socket establishment only — NOT a query budget. Measured against the live pooler
+ * (aws-1-ap-northeast-2, i.e. Seoul) a healthy connect takes ~2.3 SECONDS. The previous value of 5s
+ * left under 2x headroom, and ordinary jitter tripped it: /api/user-preferences returned 500 after
+ * 13.3s with `write CONNECT_TIMEOUT` against a completely healthy database (16/60 sessions, nothing
+ * idle-in-transaction).
+ *
+ * Raising it does NOT reintroduce hanging: a slow QUERY is still bounded by statement_timeout, lock
+ * waits by lock_timeout, and stuck transactions by idle_in_transaction_session_timeout. Those are
+ * what protect the pool. This only decides how long to wait for a TCP+TLS handshake.
+ */
+const CONNECT_TIMEOUT_SECONDS = positiveInteger(process.env.DATABASE_CONNECT_TIMEOUT_SECONDS, 20)
 
 type PostgresClient = ReturnType<typeof postgres>
 
@@ -88,6 +100,9 @@ const runtimeClientKey = [
   STATEMENT_TIMEOUT_MS,
   LOCK_TIMEOUT_MS,
   IDLE_IN_TRANSACTION_TIMEOUT_MS,
+  // Must be in the key: without it, dev HMR reuses the previous client and a changed
+  // connect_timeout silently has no effect until a full restart.
+  CONNECT_TIMEOUT_SECONDS,
 ].join('|')
 const shouldReuseGlobalClient = globalForDb.postgresClient && globalForDb.postgresClientKey === runtimeClientKey
 
@@ -102,7 +117,7 @@ const baseClient = shouldReuseGlobalClient && globalForDb.postgresClient ? globa
   // app instances. A large per-process pool lets dashboard fan-out starve auth.
   max: DB_POOL_MAX,
   idle_timeout: 10, // Release connections faster when idle
-  connect_timeout: 5, // Fail fast if connections are starved instead of hanging
+  connect_timeout: CONNECT_TIMEOUT_SECONDS, // see the constant for why this is not 5s
   max_lifetime: 60 * 30, // 30 minutes - recycle connections periodically
   onnotice: () => {}, // Ignore notices
   connection: {

@@ -400,10 +400,17 @@ export async function GET(request: Request) {
     const crePerformance = [...creTotals.entries()]
       .map(([creId, t]) => {
         const branchId = creBranch.get(creId) ?? resolveBranchId({ cre_id: creId }, dir)
+        const nums = dir.profileNumbers?.get(creId) || []
+        const ownNum = nums.find((n) => n.kind === 'own')?.number || dir.profilePhone.get(creId) || null
+        const altNum = nums.find((n) => n.kind === 'shared')?.number || null
+
         return {
           cre_id: creId,
           cre_name:
             creId === UNASSIGNED_BRANCH_ID ? 'Unassigned CRE' : dir.profileName.get(creId) || 'CRE Agent',
+          cre_phone: creId === UNASSIGNED_BRANCH_ID ? null : ownNum,
+          cre_alt_phone: creId === UNASSIGNED_BRANCH_ID ? null : altNum,
+          cre_numbers: nums.map((n) => ({ number: n.number, kind: n.kind, branch_label: n.branch_label })),
           branch_id: branchId,
           branch_name: branchLabel(branchId, dir, creId, dir.profileName.get(creId)),
           brand: branchId ? dir.branchBrand.get(branchId) || null : null,
