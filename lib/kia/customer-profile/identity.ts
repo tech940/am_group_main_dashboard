@@ -32,7 +32,7 @@ import { sql, type SQL } from 'drizzle-orm'
  * ------------------------------------------------------------------------------------ */
 
 /**
- * Last 10 digits. Mirrors `phone10` in lib/callyzer/customer-match.ts:37-40 EXACTLY.
+ * Last 10 digits. Mirrors `phone10` in lib/customer-identity/phone-match.ts EXACTLY.
  *
  * ⚠️ Any index supporting a join on this expression must be written character-for-character
  * the same or Postgres will not use it — see lib/db/migrations/0026_add_phone10_match_indexes.sql,

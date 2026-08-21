@@ -670,7 +670,12 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     name: 'Sales Report',
     parentKey: 'platinum.sales',
     description: 'AM Platinum sales report analytics, trend analysis, consultant performance, and raw feeds.',
-    sortOrder: 153.1,
+    // ⚠️ MUST be a whole number — permission_groups.sort_order is an integer column. This was 153.1
+    // (an attempt to slot between 153 and 154) and Postgres rejected the whole registry sync with
+    // 22P02, which took out the entire Access Map and this section with it. Ordering is resolved
+    // within a parentKey, and duplicate sortOrder values already exist elsewhere in this file, so
+    // sharing 154 with platinum.h_promise (a child of a different parent) is unambiguous.
+    sortOrder: 154,
     actions: ['view'],
   },
   {
@@ -837,6 +842,30 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'edit'],
   },
 ]
+
+/*
+ * `permission_groups.sort_order` is an INTEGER column, and the registry is synced into it on the
+ * first permission read of a process. A fractional value therefore does not fail where it is
+ * written — it fails later, inside `getPermissionCatalog()`, as Postgres 22P02
+ * ("invalid input syntax for type integer"), which throws before any permission resolves.
+ *
+ * That is not a small blast radius: a single `sortOrder: 153.1` on `platinum.sales_report` took out
+ * the whole Admin > Access Map with "Failed to load the access map." AND made the section it was
+ * added for unreachable, because its permission key never made it into the database.
+ *
+ * Failing loudly here — at module load, naming the offending key — turns a confusing production
+ * 500 into an obvious error the moment someone adds a group. Ordering is resolved within a
+ * parentKey, so use the next whole number rather than trying to slot between two existing ones.
+ */
+const NON_INTEGER_SORT_ORDERS = PERMISSION_GROUPS.filter((g) => !Number.isInteger(g.sortOrder))
+if (NON_INTEGER_SORT_ORDERS.length > 0) {
+  throw new Error(
+    `[permissions/registry] sortOrder must be a whole number — permission_groups.sort_order is an ` +
+      `integer column and a fractional value fails the registry sync with Postgres 22P02, taking ` +
+      `down the Access Map and every section. Offending group(s): ` +
+      NON_INTEGER_SORT_ORDERS.map((g) => `${g.key}=${g.sortOrder}`).join(', '),
+  )
+}
 
 // Single source of truth for the route each navigable section lives at. The sidebar's
 // href→permission gating map and route guards are generated from this (see

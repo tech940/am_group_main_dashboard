@@ -596,6 +596,38 @@ export async function getPlatinumSalesReportSummary(
         const enquiryFilter = await dealerFilterSql(dealerCode, TABLES.enquiry)
 
     /*
+     * ── The retail list's customer phone, and why it is conditional ───────────────────────────
+     *
+     * The sales feed masks its own phone column (`98****4048`), so a real number can only come from
+     * the enquiry feed. Recovering it needs a LATERAL correlated per sales row, and its second
+     * branch — UPPER(TRIM(name)) = UPPER(TRIM(name)) — is not indexable, so Postgres seq-scans the
+     * whole 226k-row enquiry table ONCE PER SALES ROW.
+     *
+     * Measured on a twelve-month window: that single statement took 21,690 ms of a 24,172 ms page.
+     * Every other statement on the page runs in parallel and finishes within 4.6 s.
+     *
+     * The number is then handed to maskHyundaiPii(), which replaces it with dots for anyone outside
+     * the PII roles — so for most viewers the page spent 21 seconds computing a value it threw away.
+     * The join is therefore only built when the viewer will actually be shown the result. The cache
+     * key already carries `canViewPii`, so the two variants never serve each other's rows.
+     */
+    const retailPhoneJoin = canViewPii
+      ? sql`LEFT JOIN LATERAL (
+              SELECT e.contact_number
+              FROM ${sql.raw(TABLES.enquiry.table)} e
+              WHERE (
+                (e.customer_id IS NOT NULL AND e.customer_id = s.customerid)
+                OR (UPPER(TRIM(e.name_of_the_customer)) = UPPER(TRIM(s.registration_name)) AND e.model = s.model)
+              )
+              AND e.contact_number IS NOT NULL AND e.contact_number NOT LIKE '%*%' AND LENGTH(e.contact_number) >= 10
+              ORDER BY e.enquiry_date DESC
+              LIMIT 1
+            ) enq ON TRUE`
+      : sql``
+    /** Matches the join above: with no LATERAL there is no `enq` to read from. */
+    const retailPhoneFallback = canViewPii ? sql`enq.contact_number` : sql`NULL::text`
+
+    /*
      * ONE ROW PER ENQUIRY.
      *
      * These feeds re-export the same enquiry on every upload, so a plain COUNT(*) counts uploads.
@@ -780,7 +812,7 @@ export async function getPlatinumSalesReportSummary(
               s.registration_name,
               COALESCE(
                 NULLIF(CASE WHEN s.contact_num1 NOT LIKE '%*%' THEN s.contact_num1 ELSE NULL END, ''),
-                enq.contact_number,
+                ${retailPhoneFallback},
                 s.contact_num1
               ) AS contact_num1,
               s.model,
@@ -798,17 +830,7 @@ export async function getPlatinumSalesReportSummary(
               s.delivery_in_days,
               s.vin_number
             FROM ${sql.raw(TABLES.sales.table)} s
-            LEFT JOIN LATERAL (
-              SELECT e.contact_number
-              FROM ${sql.raw(TABLES.enquiry.table)} e
-              WHERE (
-                (e.customer_id IS NOT NULL AND e.customer_id = s.customerid)
-                OR (UPPER(TRIM(e.name_of_the_customer)) = UPPER(TRIM(s.registration_name)) AND e.model = s.model)
-              )
-              AND e.contact_number IS NOT NULL AND e.contact_number NOT LIKE '%*%' AND LENGTH(e.contact_number) >= 10
-              ORDER BY e.enquiry_date DESC
-              LIMIT 1
-            ) enq ON TRUE
+            ${retailPhoneJoin}
             WHERE s.confirm_date >= ${dateCtx.startDate}::date
               AND s.confirm_date < ${dateCtx.endDateExclusive}::date
               ${salesFilter}
