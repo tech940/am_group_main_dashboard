@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button'
 import { KpiCard } from '@/components/ui/kpi-card'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
 import { getBranchLabel } from '@/lib/branches'
-import { getAllPettyCashLocationOptions, getPettyCashLocationOptions, PETTY_CASH_DEPARTMENT_OPTIONS, isPettyCashConfiguredForBranch } from '@/lib/petty-cash/constants'
+import { getAllPettyCashLocationOptions, getPettyCashLocationOptions, PETTY_CASH_DEPARTMENT_OPTIONS, PETTY_CASH_TOP_UP_THRESHOLD, isPettyCashConfiguredForBranch } from '@/lib/petty-cash/constants'
 import { toast } from '@/hooks/use-toast'
 import { formatWaitingDuration } from '@/lib/petty-cash/status-tracking'
 import { cn } from '@/lib/utils'
@@ -387,15 +387,30 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
   const allRequests = payload?.requests || []
   const allExpenses = payload?.expenses || []
   const showMdScopeToggle = userRole === 'md'
-  // EA / MD / EBA / Developer supervise every branch & dealership; 'all' users too.
-  const isAllBranchViewer = ['ea', 'md', 'eba', 'developer'].includes(userRole) || currentBranchId === 'all'
+  // EA / MD / EBA / Developer / ED supervise every branch & dealership; 'all' users too.
+  // ⚠️ This list MUST match PETTY_CASH_ALL_BRANCH_ROLES (lib/petty-cash/access.ts:25). 'ed' was
+  // missing here while the server already treated it as all-branch, so an ED was served every
+  // brand's rows and then shown them under single-branch labelling and filters.
+  const isAllBranchViewer = ['ea', 'md', 'eba', 'developer', 'ed'].includes(userRole) || currentBranchId === 'all'
   // Back-office reviewers can filter the cross-branch expense feed location-wise.
   const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'eba', 'developer', 'manager', 'general_manager'].includes(userRole)
-  // Seed with the full cross-branch location list (incl. Banihal) so every location is always
-  // selectable in the filter, then add any ad-hoc locations that appear in the data.
+  /*
+   * Locations used to SEED every location filter, so an outlet is selectable before it has data.
+   *
+   * Brand-aware on purpose. It used to be getAllPettyCashLocationOptions() for everyone, which
+   * offered a KIA branch_admin all three brands' outlets — places their rows can never match — and,
+   * worse, stripBrandPrefix (lib/petty-cash/constants.ts:117) reduces "Hyundai Jammu" and
+   * "Platinum Jammu" to the bare "Jammu" that KIA already uses. One "Jammu" entry therefore stands
+   * for three different brands' cash. Narrowing to the viewer's own brand removes that collision
+   * outright for everyone except the all-branch reviewers, who genuinely need the union.
+   */
+  const seededLocationOptions = useMemo(
+    () => (isAllBranchViewer ? getAllPettyCashLocationOptions() : getPettyCashLocationOptions(currentBranchId)),
+    [isAllBranchViewer, currentBranchId],
+  )
   const expenseLocationOptions = useMemo(
-    () => Array.from(new Set([...getAllPettyCashLocationOptions(), ...allExpenses.map((expense) => (expense.location || '').trim()).filter(Boolean)])).sort(),
-    [allExpenses],
+    () => Array.from(new Set([...seededLocationOptions, ...allExpenses.map((expense) => (expense.location || '').trim()).filter(Boolean)])).sort(),
+    [allExpenses, seededLocationOptions],
   )
   const expenseDepartmentOptions = useMemo(
     () => Array.from(new Set(allExpenses.map((expense) => (expense.department || '').trim()).filter(Boolean))).sort(),
@@ -408,8 +423,8 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
       && (expenseDepartmentFilter === 'all' || (expense.department || '').trim() === expenseDepartmentFilter))
   }, [allExpenses, canFilterExpensesByLocation, expenseLocationFilter, expenseDepartmentFilter])
   const allocationLocationOptions = useMemo(
-    () => Array.from(new Set([...getAllPettyCashLocationOptions(), ...allocations.map((allocation) => (allocation.location || '').trim()).filter(Boolean)])).sort(),
-    [allocations],
+    () => Array.from(new Set([...seededLocationOptions, ...allocations.map((allocation) => (allocation.location || '').trim()).filter(Boolean)])).sort(),
+    [allocations, seededLocationOptions],
   )
   const allocationDepartmentOptions = useMemo(
     () => Array.from(new Set(allocations.map((allocation) => (allocation.department || '').trim()).filter(Boolean))).sort(),
@@ -420,10 +435,76 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
       (allocationLocationFilter === 'all' || (allocation.location || '').trim() === allocationLocationFilter)
       && (allocationDepartmentFilter === 'all' || (allocation.department || '').trim() === allocationDepartmentFilter))
   }, [allocations, allocationLocationFilter, allocationDepartmentFilter])
-  // Ledger location filter — seed with all locations (incl. Banihal) + any ad-hoc ones present.
+
+  /*
+   * The Overview's float cards: ACTIVE allocations only, grouped by brand.
+   *
+   * Two problems this closes, one live and one arriving with Hyundai/Platinum:
+   *
+   *  1. LIVE BUG — `allocations` is shared with the Floats tab, whose status filter refetches the
+   *     full history (loadAllocations('all') -> closed rows land in this same array). The Overview
+   *     then rendered closed floats under a subtitle promising "each active allocation", showing
+   *     money as outstanding that had already been settled. The enum is ('active','closed',
+   *     'cancelled'), so filtering to 'active' cannot hide a live float.
+   *
+   *  2. SCALE — MD / EA / EBA / Developer / ED see every brand at once. One brand renders exactly
+   *     the grid that shipped before; from the second brand on, cards sit under a brand heading
+   *     carrying that brand's own totals, so "how much is out at Hyundai" is read, not added up.
+   *
+   * Ordering puts money that needs a decision first: at or below the top-up threshold, then the
+   * smallest remaining balance. Deliberately NOT ranking "nothing spent yet" — a float handed out
+   * this morning is not a problem, and with only a handful of floats that bucket would make a third
+   * of the section shout for no reason.
+   */
+  const activeFloatGroups = useMemo(() => {
+    const readMoney = (allocation: PettyCashAllocationRow) => {
+      const allocated = Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
+      const spent = Number(allocation.spentAmount || allocation.spent_amount || 0)
+      const remaining = Number(allocation.remainingAmount ?? (allocated - spent))
+      return { allocated, spent, remaining }
+    }
+
+    const byBrand = new Map<string, PettyCashAllocationRow[]>()
+    for (const allocation of allocations) {
+      if (String(allocation.status || '').toLowerCase() !== 'active') continue
+      const brand = normalizeBranchId(allocation) || ''
+      const bucket = byBrand.get(brand)
+      if (bucket) bucket.push(allocation)
+      else byBrand.set(brand, [allocation])
+    }
+
+    return Array.from(byBrand.entries())
+      .map(([brand, rows]) => {
+        const totals = rows.reduce((acc, row) => {
+          const { allocated, spent, remaining } = readMoney(row)
+          return { allocated: acc.allocated + allocated, spent: acc.spent + spent, remaining: acc.remaining + remaining }
+        }, { allocated: 0, spent: 0, remaining: 0 })
+        const sorted = [...rows].sort((a, b) => {
+          const left = readMoney(a).remaining
+          const right = readMoney(b).remaining
+          const leftLow = left <= PETTY_CASH_TOP_UP_THRESHOLD ? 0 : 1
+          const rightLow = right <= PETTY_CASH_TOP_UP_THRESHOLD ? 0 : 1
+          return leftLow !== rightLow ? leftLow - rightLow : left - right
+        })
+        return {
+          brand,
+          label: getBranchLabel(brand),
+          rows: sorted,
+          totals,
+          needsTopUp: rows.filter((row) => readMoney(row).remaining <= PETTY_CASH_TOP_UP_THRESHOLD).length,
+        }
+      })
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [allocations])
+
+  // One brand is the everyday case and must look exactly as it always has — the brand heading only
+  // earns its space once there is a second brand to tell apart.
+  const showFloatBrandHeadings = activeFloatGroups.length > 1
+  const activeFloatCount = activeFloatGroups.reduce((total, group) => total + group.rows.length, 0)
+  // Ledger location filter — seeded brand-aware (see seededLocationOptions) + any ad-hoc ones present.
   const ledgerLocationOptions = useMemo(
-    () => Array.from(new Set([...getAllPettyCashLocationOptions(), ...ledger.map((entry) => (entry.location || '').trim()).filter(Boolean)])).sort(),
-    [ledger],
+    () => Array.from(new Set([...seededLocationOptions, ...ledger.map((entry) => (entry.location || '').trim()).filter(Boolean)])).sort(),
+    [ledger, seededLocationOptions],
   )
   const visibleLedger = useMemo(
     () => ledger.filter((entry) => ledgerLocationFilter === 'all' || (entry.location || '').trim() === ledgerLocationFilter),
@@ -448,7 +529,11 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
     : isAllBranchViewer ? 'Recent Expenses · All Branches' : 'Recent Branch Expenses'
 
   const approvalRequests = useMemo(() => {
-    if (userRole !== 'md' || mdQueueScope === 'all') return allRequests
+    // 'all' is not a branch — it is the ABSENCE of a branch pin. Comparing a real row's branch_id
+    // ('kia') against the literal 'all' can never match, so an MD on the group login saw
+    // "Nothing to approve" while requests genuinely waited. The MD scope toggle defaults to 'mine',
+    // so this was the DEFAULT view of the approval queue for exactly the person it exists for.
+    if (userRole !== 'md' || mdQueueScope === 'all' || currentBranchId === 'all') return allRequests
     return allRequests.filter((request) => normalizeBranchId(request) === currentBranchId)
   }, [allRequests, userRole, mdQueueScope, currentBranchId])
 
@@ -645,7 +730,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
         <div>
           {/* No <h1> here: MainLayout already renders "Petty Cash" as the page title directly above.
               This block keeps only what the layout cannot know — which float you are looking at. */}
-          <p className="text-sm font-semibold text-[var(--kia-text-soft,#475569)]">{branchLabel}</p>
+          <p className="text-sm font-semibold text-slate-600">{branchLabel}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => void refreshAfterMutation()} disabled={contentLoading} className="h-11 gap-2 rounded-2xl border-slate-200 font-bold">
@@ -809,38 +894,91 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
                 <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
                   {Array.from({ length: 3 }).map((_, index) => <div key={`bal-skeleton-${index}`} className="h-28 animate-pulse motion-reduce:animate-none rounded-2xl bg-slate-50" />)}
                 </div>
-              ) : allocations.length === 0 ? (
+              ) : activeFloatCount === 0 ? (
                 <EmptyState icon={Banknote} title="No active allocations" description="Funded allocations across branches will appear here once approved." />
               ) : (
-                <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
-                  {allocations.map((allocation) => {
-                    const allocated = Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
-                    const spent = Number(allocation.spentAmount || allocation.spent_amount || 0)
-                    const remaining = Number(allocation.remainingAmount ?? (allocated - spent))
-                    return (
-                      <button
-                        key={allocation.id}
-                        type="button"
-                        onClick={() => setActiveTab('allocations')}
-                        className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate font-black text-slate-800">{allocation.location || getBranchLabel(normalizeBranchId(allocation))}</span>
-                          <StatusPill status={allocation.status} />
+                <div className="space-y-5 p-5">
+                  {activeFloatGroups.map((group) => (
+                    <section key={group.brand || 'unassigned'} aria-label={showFloatBrandHeadings ? group.label : undefined}>
+                      {/*
+                        * The brand heading appears ONLY from the second brand onward. It carries that
+                        * brand's own totals so a reviewer reads the per-brand position instead of
+                        * mentally summing a wall of cards — which is the whole reason this section
+                        * stops scaling once Hyundai and Platinum come online.
+                        */}
+                      {showFloatBrandHeadings && (
+                        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-slate-100 pb-2">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-black text-slate-800">{group.label}</h3>
+                            <span className="text-xs font-bold text-slate-500">
+                              {group.rows.length} {group.rows.length === 1 ? 'float' : 'floats'}
+                            </span>
+                            {group.needsTopUp > 0 && (
+                              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-black text-amber-700 ring-1 ring-inset ring-amber-200">
+                                {group.needsTopUp} need{group.needsTopUp === 1 ? 's' : ''} top-up
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-semibold text-slate-500">
+                            <span className="font-black text-emerald-600">{formatCurrency(group.totals.remaining)}</span> remaining
+                            <span className="px-1.5 text-slate-300">/</span>
+                            {formatCurrency(group.totals.allocated)} allocated
+                            <span className="px-1.5 text-slate-300">/</span>
+                            <span className="text-rose-600">{formatCurrency(group.totals.spent)} spent</span>
+                          </p>
                         </div>
-                        <div className="mt-1 flex items-center gap-2">
-                          <p className="text-xs font-semibold text-slate-500">{getBranchLabel(normalizeBranchId(allocation))}</p>
-                          <DepartmentBadge department={allocation.department} />
-                        </div>
-                        <p className="mt-3 text-2xl font-black tracking-tight text-emerald-600">{formatCurrency(remaining)}</p>
-                        <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">Remaining</p>
-                        <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs font-semibold text-slate-500">
-                          <span>Allocated {formatCurrency(allocated)}</span>
-                          <span className="text-rose-600">Spent {formatCurrency(spent)}</span>
-                        </div>
-                      </button>
-                    )
-                  })}
+                      )}
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {group.rows.map((allocation) => {
+                          const allocated = Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
+                          const spent = Number(allocation.spentAmount || allocation.spent_amount || 0)
+                          const remaining = Number(allocation.remainingAmount ?? (allocated - spent))
+                          const needsTopUp = remaining <= PETTY_CASH_TOP_UP_THRESHOLD
+                          return (
+                            <button
+                              key={allocation.id}
+                              type="button"
+                              onClick={() => setActiveTab('allocations')}
+                              className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-1"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="truncate font-black text-slate-800">{allocation.location || getBranchLabel(normalizeBranchId(allocation))}</span>
+                                <StatusPill status={allocation.status} />
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-2">
+                                {/* The brand line is redundant once a brand heading sits above it. */}
+                                {!showFloatBrandHeadings && (
+                                  <p className="text-xs font-semibold text-slate-500">{getBranchLabel(normalizeBranchId(allocation))}</p>
+                                )}
+                                <DepartmentBadge department={allocation.department} />
+                                {allocation.allocatedToName && (
+                                  <span className="truncate text-xs font-semibold text-slate-500">{allocation.allocatedToName}</span>
+                                )}
+                              </div>
+                              <p className="mt-3 text-2xl font-black tracking-tight text-emerald-600">{formatCurrency(remaining)}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">Remaining</p>
+                                {/*
+                                  * Says WHY this card is sorted to the top. Threshold is the same
+                                  * constant the server uses to unlock a top-up request, so the badge
+                                  * and the button that becomes available agree by construction.
+                                  */}
+                                {needsTopUp && (
+                                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-200">
+                                    Needs top-up
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs font-semibold text-slate-500">
+                                <span>Allocated {formatCurrency(allocated)}</span>
+                                <span className="text-rose-600">Spent {formatCurrency(spent)}</span>
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  ))}
                 </div>
               )}
             </SectionCard>

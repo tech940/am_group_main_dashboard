@@ -13,6 +13,7 @@ import {
   ScrapGroup,
   ScrapFilterState,
   ScrapAiInsight,
+  normalizeScrapLocationName,
 } from '@/lib/scrap-erp/types'
 import {
   DEFAULT_SCRAP_GROUPS,
@@ -152,7 +153,13 @@ export function ScrapErpShell() {
 
       // Location Filter
       if (filters.locations.length > 0) {
-        if (!filters.locations.includes(t.locationId) && !filters.locations.includes(t.locationName)) return false
+        const normLoc = normalizeScrapLocationName(t.locationName)
+        if (
+          !filters.locations.includes(t.locationId) &&
+          !filters.locations.includes(t.locationName) &&
+          !filters.locations.some((fl) => normalizeScrapLocationName(fl) === normLoc)
+        )
+          return false
       }
 
       // Department Filter

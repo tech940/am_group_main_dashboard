@@ -1557,270 +1557,270 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
 
       {/* ALLOT DIALOG */}
       <Dialog open={allotDialogOpen} onOpenChange={setAllotDialogOpen}>
-        <DialogContent className="kia-premium max-w-md rounded-3xl border-0 bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+        <DialogContent className="kia-premium flex flex-col max-h-[90dvh] w-[calc(100vw-1.5rem)] max-w-lg overflow-hidden rounded-3xl border-0 bg-white p-0 shadow-2xl animate-in fade-in zoom-in duration-200">
           <LoaderOverlay show={allotMutation.isPending} variant="vin-match" label="Allotting VIN…" sublabel="Linking the vehicle to the booking" />
-          <DialogHeader className="space-y-2">
+          <DialogHeader className="p-5 pb-3 border-b border-slate-100 bg-white shrink-0 space-y-1">
             <DialogTitle className="text-lg font-extrabold tracking-tight text-[var(--kia-text)]">Allot Vehicle to Booking</DialogTitle>
             <DialogDescription className="text-xs font-medium leading-relaxed text-[var(--kia-text-soft)]">
               Select an approved proforma booking below to link to this vehicle.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Selected VIN Card */}
-          <div className="my-4 flex items-center justify-between rounded-2xl border p-4" style={toneSoftStyle('accent')}>
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">Selected VIN</div>
-              <code className="mt-1 block font-mono text-xs font-extrabold">{allotVin}</code>
+          <div className="flex-1 overflow-y-auto p-5 pt-3 space-y-4">
+            {/* Selected VIN Card */}
+            <div className="flex items-center justify-between rounded-2xl border p-4" style={toneSoftStyle('accent')}>
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">Selected VIN</div>
+                <code className="mt-1 block font-mono text-xs font-extrabold">{allotVin}</code>
+              </div>
+              {(() => {
+                const row = data?.rows?.find(r => r.vin_number === allotVin)
+                if (!row) return null
+                return (
+                  <div className="text-right">
+                    <div className="text-xs font-black text-slate-900 uppercase">{row.model}</div>
+                    <div className="text-[10px] font-bold text-slate-500 mt-0.5">{row.variant}</div>
+                  </div>
+                )
+              })()}
             </div>
+
+            {/*
+              Ageing-stock warning. Purely advisory — it never blocks the allotment, it just makes
+              sure nobody allots a fresh arrival while an older identical car is quietly ageing in the
+              same yard. `older_count` comes from the API over the whole stock table, so it stays
+              accurate no matter how the list above is filtered.
+            */}
             {(() => {
               const row = data?.rows?.find(r => r.vin_number === allotVin)
-              if (!row) return null
+              const olderCount = row?.older_count ?? 0
+              if (!row || olderCount < 1) return null
+              const thisAge = Number(String(row.stock_age || '').replace(/[^0-9]/g, '')) || 0
+              const oldestAge = row.oldest_alternative_age ?? 0
+              const gap = oldestAge - thisAge
               return (
-                <div className="text-right">
-                  <div className="text-xs font-black text-slate-900 uppercase">{row.model}</div>
-                  <div className="text-[10px] font-bold text-slate-500 mt-0.5">{row.variant}</div>
+                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
+                    <div className="min-w-0 space-y-1.5">
+                      <p className="text-xs font-black uppercase tracking-wider text-amber-900">
+                        Older stock available
+                      </p>
+                      <p className="text-[11px] font-semibold leading-relaxed text-amber-900">
+                        {olderCount === 1
+                          ? 'Another identical vehicle has been in stock longer than this one.'
+                          : `${olderCount} other identical vehicles have been in stock longer than this one.`}{' '}
+                        Allotting this one leaves the older stock ageing.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 text-[11px] font-bold text-amber-900">
+                        <span>
+                          This VIN:{' '}
+                          <span className="font-mono tabular-nums">{thisAge}d</span>
+                        </span>
+                        <span>
+                          Oldest:{' '}
+                          <span className="font-mono tabular-nums">{oldestAge}d</span>
+                          {row.oldest_alternative_vin && (
+                            <span className="ml-1 font-mono opacity-70">
+                              …{String(row.oldest_alternative_vin).slice(-8)}
+                            </span>
+                          )}
+                        </span>
+                        {gap > 0 && (
+                          <span className="rounded-lg bg-amber-200/70 px-2 py-0.5">
+                            {gap}d older
+                          </span>
+                        )}
+                      </div>
+                      <p className="pt-0.5 text-[10px] font-semibold text-amber-700">
+                        Same model, variant and outlet. You can still continue if this VIN is the right one.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )
             })()}
-          </div>
 
-          {/*
-            Ageing-stock warning. Purely advisory — it never blocks the allotment, it just makes
-            sure nobody allots a fresh arrival while an older identical car is quietly ageing in the
-            same yard. `older_count` comes from the API over the whole stock table, so it stays
-            accurate no matter how the list above is filtered.
-          */}
-          {(() => {
-            const row = data?.rows?.find(r => r.vin_number === allotVin)
-            const olderCount = row?.older_count ?? 0
-            if (!row || olderCount < 1) return null
-            const thisAge = Number(String(row.stock_age || '').replace(/[^0-9]/g, '')) || 0
-            const oldestAge = row.oldest_alternative_age ?? 0
-            const gap = oldestAge - thisAge
-            return (
-              <div className="mb-1 rounded-2xl border border-amber-300 bg-amber-50 p-4">
-                <div className="flex items-start gap-2.5">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
-                  <div className="min-w-0 space-y-1.5">
-                    <p className="text-xs font-black uppercase tracking-wider text-amber-900">
-                      Older stock available
-                    </p>
-                    <p className="text-[11px] font-semibold leading-relaxed text-amber-900">
-                      {olderCount === 1
-                        ? 'Another identical vehicle has been in stock longer than this one.'
-                        : `${olderCount} other identical vehicles have been in stock longer than this one.`}{' '}
-                      Allotting this one leaves the older stock ageing.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 text-[11px] font-bold text-amber-900">
-                      <span>
-                        This VIN:{' '}
-                        <span className="font-mono tabular-nums">{thisAge}d</span>
-                      </span>
-                      <span>
-                        Oldest:{' '}
-                        <span className="font-mono tabular-nums">{oldestAge}d</span>
-                        {row.oldest_alternative_vin && (
-                          <span className="ml-1 font-mono opacity-70">
-                            …{String(row.oldest_alternative_vin).slice(-8)}
-                          </span>
-                        )}
-                      </span>
-                      {gap > 0 && (
-                        <span className="rounded-lg bg-amber-200/70 px-2 py-0.5">
-                          {gap}d older
-                        </span>
-                      )}
-                    </div>
-                    <p className="pt-0.5 text-[10px] font-semibold text-amber-700">
-                      Same model, variant and outlet. You can still continue if this VIN is the right one.
-                    </p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">
+                  Select Approved Booking
+                </label>
+                {isLoadingBookings ? (
+                  <div className="flex items-center gap-3 h-12 px-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-500 font-semibold animate-pulse">
+                    <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
+                    <span>Fetching eligible bookings...</span>
                   </div>
-                </div>
-              </div>
-            )
-          })()}
-
-          <div className="space-y-4 my-3">
-            <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">
-                Select Approved Booking
-              </label>
-              {isLoadingBookings ? (
-                <div className="flex items-center gap-3 h-12 px-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-500 font-semibold animate-pulse">
-                  <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
-                  <span>Fetching eligible bookings...</span>
-                </div>
-              ) : (
-                <Select value={selectedBookingId} onValueChange={setSelectedBookingId}>
-                  <SelectTrigger className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold shadow-sm hover:border-slate-300 hover:bg-slate-50/30 transition-all">
-                    <SelectValue placeholder="Choose an approved booking..." />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border border-slate-200 bg-white shadow-xl max-h-[250px] z-[120]">
-                    {(() => {
-                      const row = data?.rows?.find(r => r.vin_number === allotVin)
-                      const matchingBookings = row ? getMatchingBookings(row) : []
-                      const modelBookings = row ? bookingsList.filter(b => {
-                        const bModelStr = String(b.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
-                        const rModelStr = String(row.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
-                        return !bModelStr || !rModelStr || bModelStr === rModelStr || bModelStr.includes(rModelStr) || rModelStr.includes(bModelStr)
-                      }) : []
-                      const displayBookings = matchingBookings.length > 0 ? matchingBookings : modelBookings
-                      return (
-                        <>
-                          {displayBookings.map((b) => (
-                            <SelectItem 
-                              key={b.id} 
-                              value={b.id} 
-                              className="text-xs focus:bg-slate-50 cursor-pointer p-3 rounded-lg border-b last:border-b-0 border-slate-100"
-                            >
-                              <div className="flex flex-col gap-0.5">
-                                <div className="font-black text-slate-950 text-[11px] uppercase tracking-wider">{b.bookingNumber}</div>
-                                <div className="font-bold text-slate-800 text-[11px]">{b.customerName}</div>
-                                <div className="text-[10px] text-slate-500 font-semibold">{b.model} • {b.variant}</div>
+                ) : (
+                  <Select value={selectedBookingId} onValueChange={setSelectedBookingId}>
+                    <SelectTrigger className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold shadow-sm hover:border-slate-300 hover:bg-slate-50/30 transition-all">
+                      <SelectValue placeholder="Choose an approved booking..." />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border border-slate-200 bg-white shadow-xl max-h-[250px] z-[120]">
+                      {(() => {
+                        const row = data?.rows?.find(r => r.vin_number === allotVin)
+                        const matchingBookings = row ? getMatchingBookings(row) : []
+                        const modelBookings = row ? bookingsList.filter(b => {
+                          const bModelStr = String(b.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
+                          const rModelStr = String(row.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
+                          return !bModelStr || !rModelStr || bModelStr === rModelStr || bModelStr.includes(rModelStr) || rModelStr.includes(bModelStr)
+                        }) : []
+                        const displayBookings = matchingBookings.length > 0 ? matchingBookings : modelBookings
+                        return (
+                          <>
+                            {displayBookings.map((b) => (
+                              <SelectItem 
+                                key={b.id} 
+                                value={b.id} 
+                                className="text-xs focus:bg-slate-50 cursor-pointer p-3 rounded-lg border-b last:border-b-0 border-slate-100"
+                              >
+                                <div className="flex flex-col gap-0.5">
+                                  <div className="font-black text-slate-950 text-[11px] uppercase tracking-wider">{b.bookingNumber}</div>
+                                  <div className="font-bold text-slate-800 text-[11px]">{b.customerName}</div>
+                                  <div className="text-[10px] text-slate-500 font-semibold">{b.model} • {b.variant}</div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                            {displayBookings.length === 0 && (
+                              <div className="text-xs font-semibold text-slate-400 text-center py-4">
+                                No matching bookings waiting for allocation.
                               </div>
-                            </SelectItem>
-                          ))}
-                          {displayBookings.length === 0 && (
-                            <div className="text-xs font-semibold text-slate-400 text-center py-4">
-                              No matching bookings waiting for allocation.
-                            </div>
-                          )}
-                        </>
-                      )
-                    })()}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
+                            )}
+                          </>
+                        )
+                      })()}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
 
-            {/* Selected Booking Verification Details Panel */}
-            {(() => {
-              const selectedBooking = bookingsList.find(b => b.id === selectedBookingId)
-              if (!selectedBooking) return null
-              return (
-                <div className="mt-4 border border-slate-150 bg-slate-50/70 rounded-2xl p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-200 text-slate-700">
-                  <div className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b border-slate-200 pb-1.5 mb-2">
-                    Verify Booking Details
+              {/* Selected Booking Verification Details Panel */}
+              {(() => {
+                const selectedBooking = bookingsList.find(b => b.id === selectedBookingId)
+                if (!selectedBooking) return null
+                return (
+                  <div className="border border-slate-200/80 bg-slate-50/80 rounded-2xl p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-200 text-slate-700">
+                    <div className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border-b border-slate-200 pb-1.5 mb-2">
+                      Verify Booking Details
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                      <div>
+                        <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Customer</span>
+                        <span className="font-bold text-slate-900">{selectedBooking.customerName}</span>
+                        <span className="text-[10px] text-slate-500 font-semibold block">{maskKiaPii(selectedBooking.customerPhone, canViewCustomerPii)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Booking Number</span>
+                        <span className="font-mono font-black text-indigo-600 uppercase">{selectedBooking.bookingNumber}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Model Preference</span>
+                        <span className="font-black text-slate-950 uppercase">{selectedBooking.model}</span>
+                        <span className="text-[10px] text-slate-500 font-semibold block">{selectedBooking.variant}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Color Preference</span>
+                        <span className="font-semibold text-slate-700">{selectedBooking.color || 'No preference'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Consultant</span>
+                        <span className="font-semibold text-slate-700 uppercase">{selectedBooking.consultantName || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Finance / Bank</span>
+                        <span className="font-semibold text-slate-700">
+                          {selectedBooking.financeRequired ? `Required (${selectedBooking.bankName || 'Pending'})` : 'CASH / self finance'}
+                        </span>
+                      </div>
+                    </div>
+                    {selectedBooking.notes && (
+                      <div className="border-t border-slate-200/60 pt-2">
+                        <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Special Notes</span>
+                        <p className="text-[10px] font-semibold text-slate-600 mt-0.5 leading-relaxed bg-white border border-slate-150 rounded-lg p-2 max-h-20 overflow-y-auto">
+                          {selectedBooking.notes}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
-                    <div>
-                      <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Customer</span>
-                      <span className="font-bold text-slate-900">{selectedBooking.customerName}</span>
-                      <span className="text-[10px] text-slate-500 font-semibold block">{maskKiaPii(selectedBooking.customerPhone, canViewCustomerPii)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Booking Number</span>
-                      <span className="font-mono font-black text-indigo-600 uppercase">{selectedBooking.bookingNumber}</span>
-                    </div>
-                    <div>
-                      <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Model Preference</span>
-                      <span className="font-black text-slate-950 uppercase">{selectedBooking.model}</span>
-                      <span className="text-[10px] text-slate-500 font-semibold block">{selectedBooking.variant}</span>
-                    </div>
-                    <div>
-                      <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Color Preference</span>
-                      <span className="font-semibold text-slate-700">{selectedBooking.color || 'No preference'}</span>
-                    </div>
-                    <div>
-                      <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Consultant</span>
-                      <span className="font-semibold text-slate-700 uppercase">{selectedBooking.consultantName || '-'}</span>
-                    </div>
-                    <div>
-                      <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Finance / Bank</span>
-                      <span className="font-semibold text-slate-700">
-                        {selectedBooking.financeRequired ? `Required (${selectedBooking.bankName || 'Pending'})` : 'CASH / self finance'}
-                      </span>
-                    </div>
-                  </div>
-                  {selectedBooking.notes && (
-                    <div className="border-t border-slate-200/60 pt-2">
-                      <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Special Notes</span>
-                      <p className="text-[10px] font-semibold text-slate-600 mt-0.5 leading-relaxed bg-white border border-slate-150 rounded-lg p-2 max-h-16 overflow-y-auto">
-                        {selectedBooking.notes}
+                )
+              })()}
+
+              {/*
+                Optional extra-payment-time request. Only offered once a booking is selected, because
+                the request is about that booking's allocation.
+              */}
+              {selectedBookingId && (
+                <div className="rounded-xl border border-slate-200 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => (extraTimeOpen ? resetExtraTime() : setExtraTimeOpen(true))}
+                    className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 text-slate-400" />
+                      <span className="text-xs font-black text-slate-800">Request extra payment time</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">optional</span>
+                    </span>
+                    <span className={cn(
+                      'text-[10px] font-black uppercase tracking-wider',
+                      extraTimeOpen ? 'text-rose-600' : 'text-indigo-600',
+                    )}>
+                      {extraTimeOpen ? 'Remove' : 'Add'}
+                    </span>
+                  </button>
+
+                  {extraTimeOpen && (
+                    <div className="space-y-3 border-t border-slate-100 px-3.5 py-3">
+                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-5 text-amber-900">
+                        The standard payment window starts as soon as you allot. It is only extended if
+                        the MD approves this request — don&apos;t promise the customer the longer window yet.
                       </p>
+
+                      <div className="grid gap-3 sm:grid-cols-[9rem_1fr]">
+                        <div>
+                          <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-400 block mb-1">Days requested</span>
+                          <select
+                            value={extraTimeDays}
+                            onChange={(e) => setExtraTimeDays(e.target.value)}
+                            className="h-9 w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-900"
+                          >
+                            <option value="">Choose…</option>
+                            {Array.from({ length: 15 }, (_, i) => i + 1).map((d) => (
+                              <option key={d} value={String(d)}>{d} day{d === 1 ? '' : 's'}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                            Reason <span className="text-rose-600">*</span>
+                          </span>
+                          <Input
+                            value={extraTimeReason}
+                            onChange={(e) => setExtraTimeReason(e.target.value)}
+                            placeholder="Why does this customer need longer?"
+                            className="h-9 rounded-xl border-slate-200 bg-white text-xs font-semibold"
+                          />
+                        </div>
+                      </div>
+
+                      {!extraTimeReady && (
+                        <p className="text-[11px] font-semibold text-rose-700">
+                          Choose the number of days and give a reason, or remove the request.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
-              )
-            })()}
-
-            {/*
-              Optional extra-payment-time request. Only offered once a booking is selected, because
-              the request is about that booking's allocation. The copy has to be unambiguous that the
-              standard window applies immediately and this is only an ask — otherwise a consultant
-              will promise the customer the longer window on the strength of having requested it.
-            */}
-            {selectedBookingId && (
-              <div className="mt-3 rounded-xl border border-slate-200 bg-white">
-                <button
-                  type="button"
-                  onClick={() => (extraTimeOpen ? resetExtraTime() : setExtraTimeOpen(true))}
-                  className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left"
-                >
-                  <span className="flex items-center gap-2">
-                    <Clock className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-xs font-black text-slate-800">Request extra payment time</span>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">optional</span>
-                  </span>
-                  <span className={cn(
-                    'text-[10px] font-black uppercase tracking-wider',
-                    extraTimeOpen ? 'text-rose-600' : 'text-indigo-600',
-                  )}>
-                    {extraTimeOpen ? 'Remove' : 'Add'}
-                  </span>
-                </button>
-
-                {extraTimeOpen && (
-                  <div className="space-y-3 border-t border-slate-100 px-3.5 py-3">
-                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-5 text-amber-900">
-                      The standard payment window starts as soon as you allot. It is only extended if
-                      the MD approves this request — don&apos;t promise the customer the longer window yet.
-                    </p>
-
-                    <div className="grid gap-3 sm:grid-cols-[9rem_1fr]">
-                      <div>
-                        <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-400 block mb-1">Days requested</span>
-                        <select
-                          value={extraTimeDays}
-                          onChange={(e) => setExtraTimeDays(e.target.value)}
-                          className="h-9 w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-900"
-                        >
-                          <option value="">Choose…</option>
-                          {Array.from({ length: 15 }, (_, i) => i + 1).map((d) => (
-                            <option key={d} value={String(d)}>{d} day{d === 1 ? '' : 's'}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                          Reason <span className="text-rose-600">*</span>
-                        </span>
-                        <Input
-                          value={extraTimeReason}
-                          onChange={(e) => setExtraTimeReason(e.target.value)}
-                          placeholder="Why does this customer need longer?"
-                          className="h-9 rounded-xl border-slate-200 bg-white text-xs font-semibold"
-                        />
-                      </div>
-                    </div>
-
-                    {!extraTimeReady && (
-                      <p className="text-[11px] font-semibold text-rose-700">
-                        Choose the number of days and give a reason, or remove the request.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 mt-4 pt-2 border-t border-slate-100">
+          <DialogFooter className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/70 shrink-0 gap-2 sm:gap-0 mt-0">
             <Button variant="outline" className="h-10 rounded-xl text-xs font-black px-4" onClick={() => { setAllotDialogOpen(false); resetExtraTime() }}>
               Cancel
             </Button>
             <Button
-              className="h-10 rounded-xl px-5 text-xs font-bold"
+              className="h-10 rounded-xl px-5 text-xs font-bold bg-slate-950 hover:bg-slate-800 text-white shadow-md"
               disabled={allotMutation.isPending || !selectedBookingId || !extraTimeReady}
               onClick={() => allotMutation.mutate({
                 bookingId: selectedBookingId,
@@ -1836,9 +1836,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
         </DialogContent>
       </Dialog>
 
-      {/* #12 HOLD DIALOG (Customer / Dealer) */}
-      <Dialog open={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
-              {/* BBND Dialog — remarks are MANDATORY (confirm stays disabled until the box has text). */}
+      {/* BBND Dialog — remarks are MANDATORY */}
       <Dialog open={bbndMarkDialogOpen} onOpenChange={setBbndMarkDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <LoaderOverlay show={bbndMarkMutation.isPending} variant="generic" label="Marking BBND…" sublabel="Recording Build But Not Delivered" />
@@ -1877,29 +1875,33 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
         </DialogContent>
       </Dialog>
 
-<DialogContent className="kia-premium max-w-md rounded-3xl border-0 bg-white p-6 shadow-2xl">
+      {/* #12 HOLD DIALOG (Customer / Dealer) */}
+      <Dialog open={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
+        <DialogContent className="kia-premium flex flex-col max-h-[90dvh] w-[calc(100vw-1.5rem)] max-w-md overflow-hidden rounded-3xl border-0 bg-white p-0 shadow-2xl">
           <LoaderOverlay show={holdMutation.isPending} variant="generic" label="Holding vehicle…" sublabel="Marking the VIN on hold" />
-          <DialogHeader className="space-y-2">
+          <DialogHeader className="p-5 pb-3 border-b border-slate-100 bg-white shrink-0 space-y-1">
             <DialogTitle className="text-lg font-extrabold tracking-tight text-[var(--kia-text)]">Hold Vehicle for Dealer</DialogTitle>
             <DialogDescription className="text-xs font-medium leading-relaxed text-[var(--kia-text-soft)]">
               Hold this VIN for a dealer. It is reserved for 48 hours — record payment within the window or it automatically returns to stock.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="my-4 rounded-2xl border p-4" style={toneSoftStyle('accent')}>
-            <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">Selected VIN</div>
-            <code className="mt-1 block font-mono text-xs font-extrabold">{holdVin}</code>
+          <div className="flex-1 overflow-y-auto p-5 pt-3 space-y-4">
+            <div className="rounded-2xl border p-4" style={toneSoftStyle('accent')}>
+              <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">Selected VIN</div>
+              <code className="mt-1 block font-mono text-xs font-extrabold">{holdVin}</code>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">Dealer / Reason</label>
+              <Input value={holdNotes} onChange={(e) => setHoldNotes(e.target.value)} placeholder="Dealer name / reason for hold" className="h-11 rounded-xl border-slate-200 text-xs" />
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">Dealer / Reason</label>
-            <Input value={holdNotes} onChange={(e) => setHoldNotes(e.target.value)} placeholder="Dealer name / reason for hold" className="h-11 rounded-xl border-slate-200 text-xs" />
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0 mt-5 pt-2 border-t border-slate-100">
+          <DialogFooter className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/70 shrink-0 gap-2 sm:gap-0 mt-0">
             <Button variant="outline" className="h-10 rounded-xl text-xs font-black px-4" onClick={() => setHoldDialogOpen(false)}>Cancel</Button>
             <Button
-              className="h-10 rounded-xl px-5 text-xs font-bold"
+              className="h-10 rounded-xl px-5 text-xs font-bold bg-slate-950 hover:bg-slate-800 text-white shadow-md"
               disabled={holdMutation.isPending || !holdNotes.trim()}
               onClick={() => holdMutation.mutate({ vinNumber: holdVin, notes: holdNotes || undefined })}
             >
@@ -1909,18 +1911,18 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
         </DialogContent>
       </Dialog>
 
-      {/* #8 BBND ALLOT DIALOG (Booked-But-Not-in-DMS) */}
+{/* #8 BBND ALLOT DIALOG (Booked-But-Not-in-DMS) */}
       <Dialog open={bbndDialogOpen} onOpenChange={setBbndDialogOpen}>
-        <DialogContent className="kia-premium max-w-md rounded-3xl border-0 bg-white p-6 shadow-2xl">
+        <DialogContent className="kia-premium flex flex-col max-h-[90dvh] w-[calc(100vw-1.5rem)] max-w-md overflow-hidden rounded-3xl border-0 bg-white p-0 shadow-2xl">
           <LoaderOverlay show={bbndMutation.isPending} variant="vin-match" label="Allotting BBND…" sublabel="Registering the vehicle and linking the booking" />
-          <DialogHeader className="space-y-2">
+          <DialogHeader className="p-5 pb-3 border-b border-slate-100 bg-white shrink-0 space-y-1">
             <DialogTitle className="text-lg font-extrabold tracking-tight text-[var(--kia-text)]">Allot BBND Vehicle</DialogTitle>
             <DialogDescription className="text-xs font-medium leading-relaxed text-[var(--kia-text-soft)]">
               Allot a Booked-But-Not-in-DMS vehicle: enter the VIN and details, and link it to an approved booking. It is saved durably like an allotment.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 my-3">
+          <div className="flex-1 overflow-y-auto p-5 pt-3 space-y-3">
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">Approved Booking</label>
               <Select value={bbndBookingId} onValueChange={setBbndBookingId}>
@@ -1950,10 +1952,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             </div>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 mt-4 pt-2 border-t border-slate-100">
+          <DialogFooter className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/70 shrink-0 gap-2 sm:gap-0 mt-0">
             <Button variant="outline" className="h-10 rounded-xl text-xs font-black px-4" onClick={() => setBbndDialogOpen(false)}>Cancel</Button>
             <Button
-              className="h-10 rounded-xl px-5 text-xs font-bold"
+              className="h-10 rounded-xl px-5 text-xs font-bold bg-slate-950 hover:bg-slate-800 text-white shadow-md"
               disabled={bbndMutation.isPending || !bbndBookingId || !bbndVin.trim()}
               onClick={() => bbndMutation.mutate({ bookingId: bbndBookingId, vinNumber: bbndVin.trim(), model: bbndModel.trim(), variant: bbndVariant.trim(), color: bbndColor.trim() })}
             >
@@ -1965,16 +1967,16 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
 
       {/* TRANSFER DIALOG */}
       <Dialog open={transferDialogOpen} onOpenChange={(open) => { setTransferDialogOpen(open); if (!open) { setTransferType(null); setTransferAmountReceived(''); setTransferVehicleModel(''); setTransferVehicleVariant(''); setTransferVehicleColor(''); setTransferVehiclePrice('') } }}>
-        <DialogContent className="kia-premium max-w-lg rounded-2xl border-0 bg-white p-5">
+        <DialogContent className="kia-premium flex flex-col max-h-[90dvh] w-[calc(100vw-1.5rem)] max-w-lg overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-2xl">
           <LoaderOverlay show={transferMutation.isPending} variant="transfer" label="Requesting transfer…" sublabel="Moving the VIN between outlets" />
-          <DialogHeader>
+          <DialogHeader className="p-5 pb-3 border-b border-slate-100 bg-white shrink-0">
             <DialogTitle className="text-base font-extrabold tracking-tight text-[var(--kia-text)]">Request Vehicle Transfer</DialogTitle>
             <DialogDescription className="text-xs font-semibold text-slate-500">
               Initiate a transfer request for VIN <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">{transferVin}</code>.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 my-2">
+          <div className="flex-1 overflow-y-auto p-5 pt-3 space-y-4">
             {/* Step 1: Transfer Type */}
             {!transferType ? (
               <div>

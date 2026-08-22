@@ -67,8 +67,51 @@ function databaseUrlForPgDump(databaseUrl) {
   return parsed.toString()
 }
 
+/**
+ * Find a pg_dump that actually exists on THIS machine.
+ *
+ * PG_DUMP_PATH is honoured first, but only if the file is really there. It was pointing at
+ * `C:/Users/HP/scoop/apps/postgresql/current/bin/pg_dump.exe` — another developer's home directory,
+ * committed to .env — so every backup on any other machine died with a confusing ENOENT naming a
+ * path the user had never heard of. A configured path that does not resolve is now reported as
+ * such and the search continues, instead of being the final answer.
+ */
+function resolvePgDump() {
+  const home = process.env.USERPROFILE || process.env.HOME || ''
+  const configured = process.env.PG_DUMP_PATH
+  const notes = []
+
+  if (configured) {
+    if (fs.existsSync(configured)) return { path: configured, notes }
+    notes.push(`PG_DUMP_PATH is set to "${configured}" but no file exists there — ignoring it.`)
+  }
+
+  const candidates = []
+  for (const base of [
+    'C:/Program Files/PostgreSQL',
+    'C:/Program Files (x86)/PostgreSQL',
+    path.join(home, 'scoop/apps/postgresql'),
+  ]) {
+    try {
+      for (const entry of fs.readdirSync(base)) {
+        candidates.push(path.join(base, entry, 'bin', 'pg_dump.exe'))
+      }
+    } catch { /* base directory absent — nothing to add */ }
+  }
+  candidates.push('C:/Program Files/pgAdmin 4/runtime/pg_dump.exe')
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return { path: candidate, notes }
+  }
+
+  // Fall back to bare `pg_dump` so a PATH install still works.
+  return { path: 'pg_dump', notes }
+}
+
 function runPgDump({ databaseUrl, outputFile }) {
-  const pgDumpPath = process.env.PG_DUMP_PATH || 'pg_dump'
+  const resolved = resolvePgDump()
+  for (const note of resolved.notes) console.warn(`[db-backup] ${note}`)
+  const pgDumpPath = resolved.path
   const args = [
     '--format=custom',
     '--no-owner',
@@ -97,7 +140,13 @@ function runPgDump({ databaseUrl, outputFile }) {
 
     child.on('error', (error) => {
       if (error.code === 'ENOENT') {
-        reject(new Error(`pg_dump was not found. Install PostgreSQL client tools or set PG_DUMP_PATH to pg_dump.exe. Tried: ${pgDumpPath}`))
+        reject(new Error([
+          `pg_dump was not found (tried "${pgDumpPath}").`,
+          'No PostgreSQL client tools appear to be installed on this machine. Install them with:',
+          '  winget install PostgreSQL.PostgreSQL.17',
+          '  scoop install postgresql',
+          'then add its bin folder to PATH, or set PG_DUMP_PATH in .env to the real pg_dump.exe.',
+        ].join('\n')))
         return
       }
       reject(error)

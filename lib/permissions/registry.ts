@@ -1288,6 +1288,12 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
+    // Sales Manager is one of only TWO roles that may RAISE petty cash at all
+    // (canCreatePettyCashRequest, lib/petty-cash/access.ts:41) — yet it held no petty_cash key, in
+    // neither this template nor role_permissions. Verified live: of 4 active KIA sales managers only
+    // 1 could reach the section, via a hand-added user override; the other 3 got a page they were
+    // allowed to open but no link to open it with. No 'audit' — that stays with branch_admin.
+    ...keysForGroups(['petty_cash'], ['view', 'create', 'edit']),
   ],
   // Assistant Manager: a BRANCH GENERALIST who oversees both Sales and Service for the branches
   // they are assigned to. Deliberately view/create/edit with NO approve and NO audit — that is the
@@ -1314,6 +1320,13 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
+    // ED owns the FIRST petty-cash approval stage: a submitted request lands on 'ed_pending'
+    // (lib/petty-cash/constants.ts) and 'ed' is in PETTY_CASH_ALL_BRANCH_ROLES, so this desk sees
+    // every brand's requests. It was nonetheless absent from every petty_cash grant — the page
+    // admits it (PETTY_CASH_VIEW_ROLES, lib/permissions/legacy-module-roles.ts:15) but the sidebar
+    // requires role AND permission (lib/navigation/sections.ts:642), so the link was hidden. The one
+    // live ED works only because somebody hand-granted a user-level override; the next ED would not.
+    ...keysForGroups(['petty_cash'], ['view', 'approve', 'audit']),
   ],
   // KIA Proforma workflow: final approver alongside the Finance Head — reviews & approves/declines
   // proformas (stage 2), and confirms payment received at the booking finance stage.

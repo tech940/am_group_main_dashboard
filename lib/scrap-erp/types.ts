@@ -168,3 +168,21 @@ export interface ScrapAiInsight {
   metricImpact?: string
   timestamp: string
 }
+
+export function normalizeScrapLocationName(rawName: string | null | undefined): string {
+  if (!rawName) return ''
+  const trimmed = String(rawName).trim()
+  const clean = trimmed.toUpperCase().replace(/\s+/g, ' ')
+  if (
+    clean === 'AM HYUNDAI AUTO SQUARE GANGYAL' ||
+    clean === 'AM HYUNDAI AUTO SQUARE - GANGYAL' ||
+    clean === 'AM HYUNDAI AUTO SQUARE- GANGYAL' ||
+    clean === 'AM HYUNDAI AUTO SQUARE -GANGYAL' ||
+    clean === 'AUTO SQUARE GANGYAL' ||
+    clean === 'AUTO SQUARE - GANGYAL' ||
+    clean === 'AM HYUNDAI AUTO SQUARE'
+  ) {
+    return 'AM HYUNDAI AUTO SQUARE - GANGYAL'
+  }
+  return trimmed
+}

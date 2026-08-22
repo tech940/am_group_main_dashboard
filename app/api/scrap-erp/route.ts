@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
-import { ScrapTransaction, ScrapAttachment } from '@/lib/scrap-erp/types'
+import { ScrapTransaction, ScrapAttachment, normalizeScrapLocationName } from '@/lib/scrap-erp/types'
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
 
@@ -78,7 +78,7 @@ function mapDbRowToTransaction(row: Record<string, unknown>): ScrapTransaction {
     groupId: row.group_id ? String(row.group_id) : undefined,
     groupName: row.group_name ? String(row.group_name) : 'JAM',
     locationId: String(row.location_id || ''),
-    locationName: String(row.location_name || ''),
+    locationName: normalizeScrapLocationName(String(row.location_name || '')),
     departmentId: String(row.department_id || ''),
     departmentName: String(row.department_name || ''),
     scrapTypeId: String(row.scrap_type_id || ''),
@@ -214,7 +214,7 @@ export async function POST(request: Request) {
     const soldDate = body.soldDate || new Date().toISOString().split('T')[0]
     const timestamp = body.timestamp || new Date().toISOString()
     const groupName = body.groupName || 'JAM'
-    const locationName = body.locationName || 'Dealership Location'
+    const locationName = normalizeScrapLocationName(body.locationName || 'Dealership Location')
     const departmentName = body.departmentName || 'SERVICE'
     const scrapTypeName = body.scrapTypeName || 'PLASTIC'
     const unit = body.unit || 'Kg'
@@ -249,13 +249,13 @@ export async function POST(request: Request) {
         ${outstandingAmount},
         '${soldByName.replace(/'/g, "''")}',
         '${soldTo.replace(/'/g, "''")}',
-        '${soldDate}',
+        ${soldDate ? `'${soldDate}'` : 'NULL'},
         '${paymentModeName.replace(/'/g, "''")}',
         '${paymentHandoverToName.replace(/'/g, "''")}',
         '${remarks.replace(/'/g, "''")}',
         '${status}',
-        FALSE,
-        FALSE,
+        false,
+        false,
         '${attachmentsJson}'::jsonb,
         NOW(),
         NOW()
@@ -263,40 +263,44 @@ export async function POST(request: Request) {
       RETURNING *
     `))
 
-    const newTx = mapDbRowToTransaction(inserted[0])
-
+    const insertedRow = (inserted as any[])[0]
     return NextResponse.json({
       success: true,
-      transaction: newTx,
-      message: 'Scrap transaction recorded successfully',
+      transaction: mapDbRowToTransaction(insertedRow),
+      message: 'Scrap transaction created successfully',
     })
-  } catch (error) {
+  } catch (error: any) {
+    logToFile(`POST /api/scrap-erp exception: ${String(error.message || error)}`)
     console.error('Error in POST /api/scrap-erp:', error)
     return NextResponse.json({ error: 'Failed to create scrap transaction' }, { status: 500 })
   }
 }
 
 export async function PUT(request: Request) {
+  logToFile('PUT /api/scrap-erp called')
+  const appUser = await getAuthenticatedAppUser()
+  if (!appUser) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  if (!canAccessScrapErp(appUser.role) && !(await isPermissionExplicitlyAllowed(appUser, 'scrap_erp.edit'))) {
+    return NextResponse.json({ error: 'You do not have permission to edit Scrap ERP entries.' }, { status: 403 })
+  }
   try {
+    await ensureScrapAttachmentsColumn()
     const body = await request.json()
-    const { id, transactionNumber } = body
-
-    if (!id && !transactionNumber) {
-      return NextResponse.json({ error: 'Transaction ID or number is required' }, { status: 400 })
+    if (!body.id && !body.transactionNumber) {
+      return NextResponse.json({ error: 'Transaction ID or number required' }, { status: 400 })
     }
 
-    const whereClause = id
-      ? `id = '${String(id).replace(/'/g, "''")}'`
-      : `transaction_number = '${String(transactionNumber).replace(/'/g, "''")}'`
+    const whereClause = body.id
+      ? `id = '${String(body.id).replace(/'/g, "''")}'`
+      : `transaction_number = '${String(body.transactionNumber).replace(/'/g, "''")}'`
 
     const existingRes = await db.execute(sql.raw(`SELECT * FROM scrap_transactions WHERE ${whereClause} LIMIT 1`))
-    if (existingRes.length === 0) {
+    const existing = (existingRes as any[])[0]
+    if (!existing) {
       return NextResponse.json({ error: 'Transaction record not found' }, { status: 404 })
     }
-
-    const existing = existingRes[0]
-    // Same DATE-object trap as mapDbRowToTransaction — see toIsoDate. Without it every row read as
-    // "Thu Jul 30" and `isPreJuly` was permanently false.
     const existingDateStr = toIsoDate(existing.sold_date) || toIsoDate(existing.timestamp) || toIsoDate(existing.created_at)
     const isPreJuly = Boolean(existingDateStr) && existingDateStr < DISTRIBUTION_START_DATE
 

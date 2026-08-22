@@ -2331,8 +2331,15 @@ function PurchaseOrdersPageContent() {
                     <h1 className="text-3xl font-black text-[var(--dashboard-action-bg)]">
                       {userRole === 'ea' ? 'EA Approval Dashboard' : 'MD Approval Dashboard'}
                     </h1>
+                    {/*
+                      * The TOTAL, not the page. `listedOrders` holds only the rows on screen (max
+                      * one page), so this read "6 purchase orders in pending view" beside a footer
+                      * saying "of 42" — two different numbers for the same list, on the same screen.
+                      */}
                     <p className="mt-1 font-semibold text-slate-600">
-                      {listedOrders.length} purchase order{listedOrders.length !== 1 ? 's' : ''} in {approvalFilter} view
+                      {usesPurchaseOrderPagination
+                        ? `${purchaseOrderPagination.total} purchase order${purchaseOrderPagination.total !== 1 ? 's' : ''} in ${approvalFilter} view`
+                        : `${listedOrders.length} purchase order${listedOrders.length !== 1 ? 's' : ''} in ${approvalFilter} view`}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3">

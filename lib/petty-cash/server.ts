@@ -31,8 +31,9 @@ import {
   getPettyCashAllocationVisibilityFilter,
   getPettyCashExpenseVisibilityFilter,
   getPettyCashRequestVisibilityFilter,
+  pettyCashBranchScope,
 } from './access'
-import { PETTY_CASH_TOP_UP_THRESHOLD, isPettyCashExpenseStatus, isPettyCashRequestStatus } from './constants'
+import { PETTY_CASH_TOP_UP_THRESHOLD, getPettyCashUserBrands, isPettyCashExpenseStatus, isPettyCashRequestStatus } from './constants'
 import { sendPettyCashApprovalEmail } from './emails'
 
 type PettyCashAllocationRecord = typeof pettyCashAllocations.$inferSelect
@@ -163,8 +164,28 @@ function makeReference(prefix: 'PCR' | 'PCA' | 'PCE') {
   return `${prefix}-${datepart}-${random}`
 }
 
-function normalizeBranch(appUser: AppUser) {
-  return isBranchValue(appUser.brand) ? appUser.brand : null
+/**
+ * The brand a NEW petty cash request belongs to.
+ *
+ * A row carries exactly ONE branch_id, so a login covering two dealerships has to say which tin the
+ * money is coming from. This used to be `isBranchValue(appUser.brand) ? appUser.brand : null`, an
+ * EXACT match against the brand list — so a shared pin like 'hyundai,platinum' resolved to null and
+ * the caller threw 'Forbidden branch'. That person could not raise petty cash at all.
+ *
+ * Resolution order:
+ *   - one brand  -> use it, and ignore any branchId in the body. Identical to the old behaviour for
+ *                   every single-brand login, which is every creator on the system today.
+ *   - two+       -> require an explicit, own-brand `branchId`; anything else resolves to null.
+ *
+ * Returns null rather than throwing so there is ONE failure channel: the caller's existing
+ * `!branchId || !canManagePettyCashBranch(...)` guard owns the error message.
+ */
+function resolvePettyCashCreationBranch(appUser: AppUser, requestedBranchId?: string | null) {
+  const brands = getPettyCashUserBrands(appUser.brand)
+  if (brands.length === 0) return null
+  if (brands.length === 1) return brands[0]
+  const requested = String(requestedBranchId || '').trim()
+  return requested && brands.includes(requested) ? requested : null
 }
 
 const CREATOR_REQUEST_QUEUE_STATUSES = new Set([
@@ -828,7 +849,7 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
   }
 
   const input = createPettyCashRequestSchema.parse(rawInput)
-  const branchId = normalizeBranch(appUser)
+  const branchId = resolvePettyCashCreationBranch(appUser, input.branchId)
 
   if (!branchId || !canManagePettyCashBranch(appUser, branchId)) {
     throw new Error('Forbidden branch')
@@ -1433,11 +1454,23 @@ export async function getPettyCashLedger(appUser: AppUser, allocationId?: string
   // (EA/MD/EBA/Developer) see EVERY branch's movements; branch-scoped roles only
   // their own. The previous code filtered developers to branchId='all', which
   // matched nothing and left the ledger blank.
-  const branchScoped = !hasPettyCashAllBranchAccess(appUser) && Boolean(appUser.brand) && appUser.brand !== 'all'
+  /*
+   * ⚠️ This used to FAIL OPEN. The old condition was
+   *     !hasPettyCashAllBranchAccess(appUser) && Boolean(appUser.brand) && appUser.brand !== 'all'
+   * so any non-all-branch user whose `brand` was null or unparseable produced branchScoped=false,
+   * ledgerFilter=undefined, and therefore NO WHERE CLAUSE — every brand's cash movements, on the one
+   * screen that is an immutable record of money. `users.brand` is nullable with no default
+   * (lib/db/schema.ts:27), so nothing in the schema prevented it; there are simply no null-brand
+   * users today, which is why it never fired.
+   *
+   * Now the scope decision is role-only, and the brand list itself carries the fail-closed case:
+   * pettyCashBranchScope emits `= ''` for an empty list, which matches nothing.
+   */
+  const branchScoped = !hasPettyCashAllBranchAccess(appUser)
   const ledgerFilter = allocationId
     ? eq(pettyCashLedgerEntries.allocationId, allocationId)
     : branchScoped
-      ? eq(pettyCashLedgerEntries.branchId, appUser.brand as string)
+      ? pettyCashBranchScope(pettyCashLedgerEntries.branchId, getPettyCashUserBrands(appUser.brand))
       : undefined
 
   // Location is derived like the Expenses/Allocations feeds: prefer the expense's own location

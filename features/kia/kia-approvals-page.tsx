@@ -78,6 +78,8 @@ interface ApprovalHistoryEntry {
 
 interface ApprovalRequest {
   id: string
+  /** Per-brand request number, e.g. KIA_0001 (migration 0039). Null only on rows predating it. */
+  requestNo: string | null
   email: string
   name: string
   employeeId: string | null
@@ -253,6 +255,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
   // Bulk selection & popup modal states
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([])
+  /** Which bulk verb is collecting a reason, or null while the four buttons are showing. */
+  const [bulkReasonFor, setBulkReasonFor] = useState<'SEND_BACK' | 'REJECT' | 'HOLD' | null>(null)
+  const [bulkReason, setBulkReason] = useState('')
   const [bulkSuccessModal, setBulkSuccessModal] = useState<{
     open: boolean
     count: number
@@ -520,7 +525,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
   const bulkActionMutation = useMutation({
-    mutationFn: async ({ ids, action, remarks }: { ids: string[]; action: 'APPROVE' | 'REJECT' | 'HOLD'; remarks: string }) => {
+    mutationFn: async ({ ids, action, remarks }: { ids: string[]; action: 'APPROVE' | 'REJECT' | 'HOLD' | 'SEND_BACK'; remarks: string }) => {
       const res = await fetch(`/api/brands/kia/approvals/bulk-action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -761,6 +766,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           <div class="meta-card">
             <div class="meta-grid">
               <div class="meta-item">
+                <span class="meta-label">Request No.</span>
+                <span class="meta-val">${row.requestNo || '—'}</span>
+              </div>
+              <div class="meta-item">
                 <span class="meta-label">Requester Name</span>
                 <span class="meta-val">${row.name}</span>
               </div>
@@ -838,11 +847,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           <table class="history-table">
             <thead>
               <tr>
-                <th style="width: 20%;">User</th>
-                <th style="width: 15%;">Role</th>
-                <th style="width: 15%;">Decision</th>
-                <th style="width: 35%;">Remarks</th>
-                <th style="text-align: right; width: 15%;">Date/Time</th>
+                <th scope="col" style="width: 20%;">User</th>
+                <th scope="col" style="width: 15%;">Role</th>
+                <th scope="col" style="width: 15%;">Decision</th>
+                <th scope="col" style="width: 35%;">Remarks</th>
+                <th scope="col" style="text-align: right; width: 15%;">Date/Time</th>
               </tr>
             </thead>
             <tbody>
@@ -1023,13 +1032,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           <table class="ledger-table">
             <thead>
               <tr>
-                <th style="width: 12%; padding-left: 10px;">Date</th>
-                <th style="width: 25%;">Requester</th>
-                <th style="width: 15%;">Department</th>
-                <th style="width: 20%;">Description</th>
-                <th style="width: 12%;">Payment Type</th>
-                <th style="width: 13%;">Workflow Status</th>
-                <th style="text-align: right; width: 13%; padding-right: 10px;">Amount (₹)</th>
+                <th scope="col" style="width: 12%; padding-left: 10px;">Date</th>
+                <th scope="col" style="width: 25%;">Requester</th>
+                <th scope="col" style="width: 15%;">Department</th>
+                <th scope="col" style="width: 20%;">Description</th>
+                <th scope="col" style="width: 12%;">Payment Type</th>
+                <th scope="col" style="width: 13%;">Workflow Status</th>
+                <th scope="col" style="text-align: right; width: 13%; padding-right: 10px;">Amount (₹)</th>
               </tr>
             </thead>
             <tbody>
@@ -1414,6 +1423,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
       // 2. Search query filter
       const matchesSearch =
+        // The request number first: it is the one term someone types when they already know which
+        // payment they want. Matched loosely so "kia 0001", "KIA_0001" and "0001" all land.
+        (row.requestNo && row.requestNo.toLowerCase().replace(/[^a-z0-9]/g, '')
+          .includes(search.toLowerCase().replace(/[^a-z0-9]/g, ''))) ||
         row.name.toLowerCase().includes(search.toLowerCase()) ||
         row.email.toLowerCase().includes(search.toLowerCase()) ||
         (row.vendorName && row.vendorName.toLowerCase().includes(search.toLowerCase())) ||
@@ -1966,16 +1979,16 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     const hours = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60)
     if (hours >= 120) {
       return (
-        <span className="inline-flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider animate-pulse">
-          <Clock className="w-2.5 h-2.5" />
+        <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 border border-rose-300 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-2xs animate-pulse">
+          <Clock className="w-2.5 h-2.5 text-rose-700" />
           Aging {Math.floor(hours / 24)}d
         </span>
       )
     }
     if (hours >= 48) {
       return (
-        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
-          <Clock className="w-2.5 h-2.5" />
+        <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-2xs">
+          <Clock className="w-2.5 h-2.5 text-amber-700" />
           Aging {Math.floor(hours / 24)}d
         </span>
       )
@@ -2125,6 +2138,26 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
   // Number circle coloring
+  /*
+   * Amount, banded by magnitude — the one place in this row where colour carries DATA rather than
+   * just lifting a value off the white.
+   *
+   * The bands come from the live distribution, not from round numbers that felt right: median
+   * ₹10,000, p75 ₹28,213, p90 ₹2.97L, max ₹1.2 Cr. 91 of 124 requests sit under ₹25k, so tinting
+   * those would tint almost the whole table and signal nothing. They stay plain and the 33 that are
+   * genuinely large escalate — rarity is what gives the top band its force.
+   *
+   * Indigo, deliberately: emerald means paid, amber means pending, rose means rejected and teal is
+   * the primary action in this table. A large amount is none of those things — it is heavy, not
+   * good or bad — so it borrows the dashboard's neutral accent instead of a status hue.
+   */
+  const getAmountBandClass = (value: number) => {
+    if (!Number.isFinite(value) || value < 25_000) return 'text-slate-900 bg-slate-100/80 border-slate-200 dark:text-slate-100 dark:bg-slate-800 dark:border-slate-700'
+    if (value < 100_000) return 'text-indigo-900 bg-indigo-50 border-indigo-200 dark:text-indigo-200 dark:bg-indigo-950 dark:border-indigo-800'
+    if (value < 500_000) return 'text-violet-950 bg-violet-100 border-violet-300 dark:text-violet-100 dark:bg-violet-900 dark:border-violet-700'
+    return 'text-rose-950 bg-rose-100 border-rose-300 dark:text-rose-100 dark:bg-rose-950 dark:border-rose-800 font-extrabold'
+  }
+
   const getNumberBadgeClass = (index: number) => {
     const schemes = [
       'bg-indigo-50 border-indigo-200 text-indigo-700',
@@ -2141,33 +2174,57 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   // Department Badge coloring
   const getDeptBadgeClass = (dept: string) => {
     const d = (dept || '').trim().toUpperCase()
-    if (d.includes('PURCHASE')) return 'bg-purple-100 text-purple-700 border-purple-200'
-    if (d.includes('ACCESSORIES')) return 'bg-indigo-100 text-indigo-700 border-indigo-200'
-    if (d.includes('TRAVEL')) return 'bg-sky-100 text-sky-700 border-sky-200'
-    if (d.includes('MARKETING')) return 'bg-rose-100 text-rose-700 border-rose-200'
-    if (d.includes('REPAIRS')) return 'bg-blue-100 text-blue-700 border-blue-200'
-    if (d.includes('ADMIN')) return 'bg-teal-100 text-teal-700 border-teal-200'
-    if (d.includes('HR')) return 'bg-emerald-100 text-emerald-700 border-emerald-200'
-    if (d.includes('SYSTEM') || d.includes('IT')) return 'bg-blue-100 text-blue-700 border-blue-200'
-    if (d.includes('SALES')) return 'bg-pink-100 text-pink-700 border-pink-200'
-    return 'bg-slate-100 text-slate-700 border-slate-200'
+    if (d.includes('SERVICE') || d.includes('WORKSHOP') || d.includes('BODYSIGN') || d.includes('BODYSHOP')) {
+      return 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold'
+    }
+    if (d.includes('SALES')) {
+      return 'bg-blue-100 text-blue-800 border-blue-300 font-extrabold'
+    }
+    if (d.includes('PURCHASE')) {
+      return 'bg-purple-100 text-purple-800 border-purple-300 font-extrabold'
+    }
+    if (d.includes('ACCESSORIES')) {
+      return 'bg-indigo-100 text-indigo-800 border-indigo-300 font-extrabold'
+    }
+    if (d.includes('TRAVEL')) {
+      return 'bg-sky-100 text-sky-800 border-sky-300 font-extrabold'
+    }
+    if (d.includes('MARKETING') || d.includes('DIGITAL')) {
+      return 'bg-pink-100 text-pink-800 border-pink-300 font-extrabold'
+    }
+    if (d.includes('REPAIRS') || d.includes('MAINTENANCE')) {
+      return 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold'
+    }
+    if (d.includes('ADMIN')) {
+      return 'bg-teal-100 text-teal-800 border-teal-300 font-extrabold'
+    }
+    if (d.includes('HR')) {
+      return 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold'
+    }
+    if (d.includes('SYSTEM') || d.includes('IT') || d.includes('EDP')) {
+      return 'bg-cyan-100 text-cyan-800 border-cyan-300 font-extrabold'
+    }
+    if (d.includes('ACCOUNTS') || d.includes('FINANCE')) {
+      return 'bg-purple-100 text-purple-800 border-purple-300 font-extrabold'
+    }
+    return 'bg-slate-200 text-slate-800 border-slate-300 font-extrabold'
   }
 
   // Payment type badge coloring
   const getPaymentTypeBadgeClass = (type: string) => {
     const t = (type || '').trim().toUpperCase()
-    if (t.includes('ONLINE') || t.includes('TRANSFER')) return 'border-blue-200 text-blue-600 bg-blue-50/20'
-    if (t.includes('NEFT')) return 'border-emerald-200 text-emerald-600 bg-emerald-50/20'
-    if (t.includes('RTGS') || t.includes('CHEQUE')) return 'border-violet-200 text-violet-600 bg-violet-50/20'
-    return 'border-slate-200 text-slate-600 bg-slate-50/20'
+    if (t.includes('ONLINE') || t.includes('TRANSFER')) return 'border-blue-300 text-blue-800 bg-blue-100 font-extrabold'
+    if (t.includes('NEFT')) return 'border-emerald-300 text-emerald-800 bg-emerald-100 font-extrabold'
+    if (t.includes('RTGS') || t.includes('CHEQUE')) return 'border-violet-300 text-violet-800 bg-violet-100 font-extrabold'
+    return 'border-slate-300 text-slate-800 bg-slate-100 font-extrabold'
   }
 
   const getBrandBadgeClass = (brand: string) => {
     const b = (brand || '').trim().toLowerCase()
-    if (b === 'kia') return 'bg-red-50 text-red-700 border-red-200'
-    if (b === 'hyundai') return 'bg-blue-50 text-blue-700 border-blue-200'
-    if (b === 'mg') return 'bg-teal-50 text-teal-700 border-teal-200'
-    return 'bg-slate-50 text-slate-700 border-slate-200'
+    if (b === 'kia') return 'bg-rose-100 text-rose-800 border-rose-300 font-black'
+    if (b === 'hyundai') return 'bg-sky-100 text-sky-800 border-sky-300 font-black'
+    if (b === 'mg') return 'bg-teal-100 text-teal-800 border-teal-300 font-black'
+    return 'bg-slate-100 text-slate-800 border-slate-300 font-black'
   }
 
   const getRoleRemarksStyles = (roleKey: string) => {
@@ -2218,7 +2275,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
   return (
-    <MainLayout title="Kia Approvals" subtitle="Manage payment requests and multi-stage approval workflows">
+    <MainLayout title="Approvals" subtitle="Manage payment requests and multi-stage approval workflows">
       <div className="space-y-6 max-w-full overflow-x-hidden">
 
 
@@ -2237,7 +2294,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             >
               <span>Pending My Approval ({pendingForMeCount})</span>
               {mainSubView === 'requests' && filterScope === 'pending' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
               )}
             </button>
             <button
@@ -2251,7 +2308,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             >
               <span>All Requests ({activeRequestsCount})</span>
               {mainSubView === 'requests' && filterScope === 'all' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
               )}
             </button>
             <button
@@ -2272,7 +2329,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 {sentBackCount}
               </span>
               {mainSubView === 'requests' && filterScope === 'sent_back' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
               )}
             </button>
             <button
@@ -2293,7 +2350,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 {mdRemarksCount}
               </span>
               {mainSubView === 'requests' && filterScope === 'md_remarks' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
               )}
             </button>
             <button
@@ -2307,7 +2364,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 ₹{totalCompletedSpend.toLocaleString('en-IN')}
               </span>
               {mainSubView === 'completed_spend' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
               )}
             </button>
             <button
@@ -2321,7 +2378,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             >
               <span>Vendors ({vendorSummary.length})</span>
               {mainSubView === 'requests' && filterScope === 'vendors' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
               )}
             </button>
             <button
@@ -2335,7 +2392,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             >
               <span>GL Categories ({glSummary.length})</span>
               {mainSubView === 'requests' && filterScope === 'gl_categories' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
               )}
             </button>
           </div>
@@ -2356,7 +2413,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             </div>
             {/* Completed Spend Dashboard Cards */}
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-3xl p-5 shadow-sm border text-white" style={{background: 'linear-gradient(135deg, #055B65 0%, #044951 60%, #03373d 100%)', borderColor: 'rgba(5,91,101,0.3)'}}>
+              <div className="rounded-3xl p-5 shadow-sm border text-white" style={{background: 'linear-gradient(135deg, var(--dashboard-primary) 0%, var(--dashboard-primary-dark) 100%)', borderColor: 'color-mix(in srgb, var(--dashboard-primary) 30%, transparent)'}}>
                 <span className="text-[10px] font-black uppercase tracking-wider block" style={{color: 'rgba(178,201,197,0.9)'}}>Total Approved &amp; Paid Spend</span>
                 <span className="text-2xl font-black text-white mt-1 block">₹{totalCompletedSpend.toLocaleString('en-IN')}</span>
                 <span className="text-[10px] font-semibold block mt-1" style={{color: 'rgba(178,201,197,0.8)'}}>Sum of completed payment orders</span>
@@ -2401,7 +2458,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     className={cn(
                       'px-3 py-1.5 rounded-xl text-xs font-black transition-all',
                       completedDatePreset === preset.id
-                        ? 'bg-[#055B65] text-white shadow-sm'
+                        ? 'bg-[var(--dashboard-action-bg)] text-white shadow-sm'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     )}
                   >
@@ -2495,7 +2552,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
             {/* Completed Payments Table */}
             <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="p-4 text-white flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #055B65 0%, #044951 100%)' }}>
+              <div className="p-4 text-white flex items-center justify-between" style={{ background: 'linear-gradient(135deg, var(--dashboard-primary) 0%, var(--dashboard-primary-dark) 100%)' }}>
                 <div>
                   <h3 className="text-sm font-black tracking-tight">Completed &amp; Approved Vendor Payments</h3>
                   <p className="text-[10px] font-semibold text-teal-100/90">Showing {completedPaymentsList.length} approved orders</p>
@@ -2508,18 +2565,31 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 <table className="w-full text-left text-[11px]">
                   <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
                     <tr>
-                      <th className="px-4 py-3">Vendor / Beneficiary</th>
-                      <th className="px-4 py-3">Payment Type</th>
-                      <th className="px-4 py-3">Department</th>
-                      <th className="px-4 py-3 text-right">Amount (₹)</th>
-                      <th className="px-4 py-3">Payment Date</th>
-                      <th className="px-4 py-3">UTR / Invoice</th>
-                      <th className="px-4 py-3">Status</th>
+                      <th scope="col" className="px-4 py-3">Vendor / Beneficiary</th>
+                      <th scope="col" className="px-4 py-3">Payment Type</th>
+                      <th scope="col" className="px-4 py-3">Department</th>
+                      <th scope="col" className="px-4 py-3 text-right">Amount (₹)</th>
+                      <th scope="col" className="px-4 py-3">Payment Date</th>
+                      <th scope="col" className="px-4 py-3">UTR / Invoice</th>
+                      <th scope="col" className="px-4 py-3">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {completedPaymentsList.map((row) => (
-                      <tr key={row.id} className="hover:bg-slate-50/80 transition-colors cursor-pointer" onClick={() => setDetailRow(row)}>
+                      <tr
+                        key={row.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open request from ${row.name}`}
+                        className="hover:bg-slate-50/80 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-teal-600 transition-colors cursor-pointer"
+                        onClick={() => setDetailRow(row)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setDetailRow(row)
+                          }
+                        }}
+                      >
                         <td className="px-4 py-3 font-black text-slate-900">
                           {row.vendorName || row.name}
                           <span className="block text-[10px] font-semibold text-slate-400">{row.email}</span>
@@ -2661,8 +2731,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               <button
                 type="button"
                 onClick={() => setCalendarOpen(prev => !prev)}
-                className={`h-10 px-4 w-full sm:w-auto rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#055B65] bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer flex items-center justify-between gap-2 transition-all ${
-                  startDate ? 'border-[#055B65] bg-teal-50/50 text-[#055B65]' : ''
+                className={`h-10 px-4 w-full sm:w-auto rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--dashboard-primary)] bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer flex items-center justify-between gap-2 transition-all ${
+                  startDate ? 'border-[var(--dashboard-primary)] bg-teal-50/50 text-[var(--dashboard-primary)]' : ''
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -2678,7 +2748,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     }}
                     className="hover:bg-teal-100 p-0.5 rounded-full"
                   >
-                    <X className="w-3 h-3 text-[#055B65]" />
+                    <X className="w-3 h-3 text-[var(--dashboard-primary)]" />
                   </span>
                 )}
               </button>
@@ -2725,11 +2795,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       const isSelectedEnd = endDate && day.date.toDateString() === endDate.toDateString()
                       const isInRange = startDate && endDate && day.date > startDate && day.date < endDate
 
-                      let cellClass = "h-8 w-8 text-xs flex items-center justify-center rounded-xl transition-all cursor-pointer "
+                      let cellClass = "h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 text-xs flex items-center justify-center rounded-xl transition-all cursor-pointer "
                       if (isSelectedStart) {
-                        cellClass += "bg-[#055B65] text-white font-black"
+                        cellClass += "bg-[var(--dashboard-action-bg)] text-white font-black"
                       } else if (isSelectedEnd) {
-                        cellClass += "bg-[#055B65] text-white font-black"
+                        cellClass += "bg-[var(--dashboard-action-bg)] text-white font-black"
                       } else if (isInRange) {
                         cellClass += "bg-teal-50 text-teal-900 font-bold"
                       } else if (day.isCurrentMonth) {
@@ -2777,7 +2847,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     <button
                       type="button"
                       onClick={() => setCalendarOpen(false)}
-                      className="text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 bg-[#055B65] text-white rounded-xl hover:bg-teal-800"
+                      className="text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 bg-[var(--dashboard-action-bg)] text-white rounded-xl hover:bg-teal-800"
                     >
                       Apply
                     </button>
@@ -2789,7 +2859,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             <select
               value={selectedStage}
               onChange={e => setSelectedStage(e.target.value)}
-              className="h-10 px-4 w-full sm:w-[180px] rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#055B65] bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer appearance-none"
+              className="h-10 px-4 w-full sm:w-[180px] rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--dashboard-primary)] bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer appearance-none"
             >
               <option value="All">All Workflow States</option>
               {/* Ordered to follow the real chain: Stage 1 → HR → EA → MD → Accounts → Payment.
@@ -2815,7 +2885,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               className="h-10 px-4 rounded-2xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5"
             >
               <span>Filters</span>
-              <span className="bg-[#055B65] text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
+              <span className="bg-[var(--dashboard-action-bg)] text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
                 {activeFiltersCount}
               </span>
             </button>
@@ -2849,7 +2919,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               className={cn(
                 "h-9 px-4 rounded-2xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all",
                 showAnalytics
-                  ? "bg-[#055B65] border-[#055B65] text-white hover:bg-teal-800"
+                  ? "bg-[var(--dashboard-action-bg)] border-[var(--dashboard-primary)] text-white hover:bg-teal-800"
                   : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               )}
             >
@@ -2909,7 +2979,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                 <span className="font-mono text-slate-900">₹{vendor.total.toLocaleString('en-IN')}</span>
                               </div>
                               <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-[#055B65] rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                <div className="h-full bg-[var(--dashboard-action-bg)] rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
                               </div>
                             </div>
                           )
@@ -2988,12 +3058,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50">
-                    <th className="py-4 px-6 w-16">#</th>
-                    <th className="py-4 px-6">Vendor Name</th>
-                    <th className="py-4 px-6 text-center">Transactions</th>
-                    <th className="py-4 px-6 text-right">Total Spend (₹)</th>
-                    <th className="py-4 px-6 text-right">Action</th>
+                  <tr className="bg-[#004e5a] text-white border-b border-[#003c46] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
+                    <th scope="col" className="py-3.5 px-6 w-16 text-white font-black">#</th>
+                    <th scope="col" className="py-3.5 px-6 text-white font-black">Vendor Name</th>
+                    <th scope="col" className="py-3.5 px-6 text-center text-white font-black">Transactions</th>
+                    <th scope="col" className="py-3.5 px-6 text-right text-white font-black">Total Spend (₹)</th>
+                    <th scope="col" className="py-3.5 px-6 text-right text-white font-black">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3013,29 +3083,26 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           setSelectedVendorMonth('all')
                           setSelectedVendorName(v.name)
                         }}
-                        className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors cursor-pointer"
+                        className="border-b border-slate-100 last:border-0 hover:bg-teal-50/50 transition-colors cursor-pointer"
                       >
-                        <td className="py-4 px-6 font-mono text-slate-400">
+                        <td className="py-4 px-6 font-mono font-bold text-slate-600">
                           {idx + 1}
                         </td>
-                        <td className="py-4 px-6 font-bold text-slate-900">
+                        <td className="py-4 px-6 font-black text-slate-900">
                           {v.name}
                         </td>
-                        <td className="py-4 px-6 text-center font-bold text-slate-600">
-                          {v.count}
+                        <td className="py-4 px-6 text-center font-bold text-slate-700">
+                          <span className="inline-block px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-xs font-black">
+                            {v.count}
+                          </span>
                         </td>
-                        <td className="py-4 px-6 text-right font-black text-slate-950 text-base">
-                          {v.total.toLocaleString('en-IN')}
+                        <td className="py-4 px-6 text-right font-mono font-black text-sm text-slate-900">
+                          ₹{v.total.toLocaleString('en-IN')}
                         </td>
-                        <td className="py-4 px-6 text-right" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-4 px-6 text-right">
                           <button
-                            onClick={() => {
-                              setVendorStartDate('')
-                              setVendorEndDate('')
-                              setSelectedVendorMonth('all')
-                              setSelectedVendorName(v.name)
-                            }}
-                            className="h-8 px-3.5 rounded-xl border border-slate-200 hover:border-slate-400 bg-white text-xs font-bold text-slate-700 transition-all shadow-sm"
+                            type="button"
+                            className="text-xs font-black text-teal-700 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg border border-teal-200 transition-colors cursor-pointer"
                           >
                             View Ledger
                           </button>
@@ -3063,13 +3130,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50">
-                    <th className="py-4 px-6 w-16">#</th>
-                    <th className="py-4 px-6">GL Code</th>
-                    <th className="py-4 px-6">GL Category Name</th>
-                    <th className="py-4 px-6 text-center">Transactions</th>
-                    <th className="py-4 px-6 text-right">Total Spend (₹)</th>
-                    <th className="py-4 px-6 text-right">Action</th>
+                  <tr className="bg-[#004e5a] text-white border-b border-[#003c46] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
+                    <th scope="col" className="py-3.5 px-6 w-16 text-white font-black">#</th>
+                    <th scope="col" className="py-3.5 px-6 text-white font-black">GL Code</th>
+                    <th scope="col" className="py-3.5 px-6 text-white font-black">GL Category Name</th>
+                    <th scope="col" className="py-3.5 px-6 text-center text-white font-black">Transactions</th>
+                    <th scope="col" className="py-3.5 px-6 text-right text-white font-black">Total Spend (₹)</th>
+                    <th scope="col" className="py-3.5 px-6 text-right text-white font-black">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3141,8 +3208,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[1000px]">
                   <thead>
-                    <tr className="border-b border-slate-100 text-[9px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50 whitespace-nowrap">
-                      <th className="py-2.5 px-3 w-8">
+                    <tr className="bg-[#004e5a] text-white border-b border-[#003c46] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
+                      <th scope="col" className="py-3 px-3.5 w-8">
                         <input
                           type="checkbox"
                           checked={selectedRequestIds.length > 0 && paginatedRows.filter(r => getIsPendingForUser(r)).length > 0 && selectedRequestIds.length === paginatedRows.filter(r => getIsPendingForUser(r)).length}
@@ -3156,20 +3223,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               setSelectedRequestIds([])
                             }
                           }}
-                          className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                          className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer accent-teal-600"
                         />
                       </th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">#</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Requester</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Department</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Vendor</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Purpose / Request Type</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Amount (₹)</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Payment Type</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Submitted On</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Current Stage</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Status</th>
-                      <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Request No.</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Requester</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Department</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Dealer Name</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Purpose / Request Type</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Amount (₹)</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Branch</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Submitted On</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Status</th>
+                      <th scope="col" className="py-3 px-3.5 text-right text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
@@ -3179,90 +3245,45 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       const pendingLabel = getPendingStageLabel(row)
 
                       // Current Stage Display
-                      let stageDisplay = (
-                        <div className="flex flex-col whitespace-nowrap">
-                          <span className="text-slate-900 font-bold flex items-center gap-1.5 text-xs">
-                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                            {pendingLabel.replace('Pending ', '')}
-                          </span>
-                          <span className="text-slate-400 text-[10px] font-bold pl-3">Pending</span>
-                        </div>
-                      )
-                      if (pendingLabel === 'Paid') {
-                        stageDisplay = (
-                          <div className="flex flex-col whitespace-nowrap">
-                            <span className="text-slate-900 font-bold flex items-center gap-1.5 text-xs">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                              Paid
-                            </span>
-                            <span className="text-emerald-600 text-[10px] font-bold pl-3">Approved &amp; Paid</span>
-                          </div>
-                        )
-                      } else if (pendingLabel === 'Pending Payment') {
-                        stageDisplay = (
-                          <div className="flex flex-col whitespace-nowrap">
-                            <span className="text-slate-900 font-bold flex items-center gap-1.5 text-xs">
-                              <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
-                              Pending Payment
-                            </span>
-                            <span className="text-teal-600 text-[10px] font-bold pl-3">Approved (Unpaid)</span>
-                          </div>
-                        )
-                      } else if (pendingLabel === 'Sent Back / Clarification') {
-                        stageDisplay = (
-                          <div className="flex flex-col whitespace-nowrap">
-                            <span className="text-slate-900 font-bold flex items-center gap-1.5 text-xs">
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-bounce" />
-                              Clarification Pending
-                            </span>
-                            <span className="text-amber-600 text-[10px] font-bold pl-3">Sent Back</span>
-                          </div>
-                        )
-                      } else if (pendingLabel.startsWith('Rejected')) {
-                        stageDisplay = (
-                          <div className="flex flex-col whitespace-nowrap">
-                            <span className="text-slate-900 font-bold flex items-center gap-1.5 text-xs">
-                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                              Rejected
-                            </span>
-                            <span className="text-rose-600 text-[10px] font-bold pl-3">Rejected</span>
-                          </div>
-                        )
-                      }
+                      const awaitingDesk = pendingLabel.startsWith('Pending ')
+                        && pendingLabel !== 'Pending Payment'
+                        ? pendingLabel.replace('Pending ', '')
+                        : null
 
                       // Status Badge Display
                       let statusBadge = (
-                        <span className="inline-block bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase whitespace-nowrap">
+                        <span data-status="pending" className="bg-amber-100 text-amber-900 border border-amber-300 approval-status-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9.5px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                           PENDING
                         </span>
                       )
                       if (pendingLabel === 'Paid') {
                         statusBadge = (
-                          <span className="inline-block bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase whitespace-nowrap">
+                          <span data-status="paid" className="bg-emerald-100 text-emerald-900 border border-emerald-300 approval-status-pill inline-block px-2.5 py-1 rounded-full text-[9.5px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
                             PAID
                           </span>
                         )
                       } else if (pendingLabel === 'Pending Payment') {
                         statusBadge = (
-                          <span className="inline-block bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase whitespace-nowrap">
+                          <span data-status="approved" className="bg-teal-100 text-teal-900 border border-teal-300 approval-status-pill inline-block px-2.5 py-1 rounded-full text-[9.5px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
                             APPROVED
                           </span>
                         )
                       } else if (pendingLabel === 'Sent Back / Clarification') {
                         statusBadge = (
-                          <span className="inline-block bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase whitespace-nowrap">
+                          <span data-status="sentback" className="bg-orange-100 text-orange-900 border border-orange-300 approval-status-pill inline-block px-2.5 py-1 rounded-full text-[9.5px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
                             SENT BACK
                           </span>
                         )
                       } else if (pendingLabel.startsWith('Rejected')) {
                         statusBadge = (
-                          <span className="inline-block bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase whitespace-nowrap">
+                          <span data-status="rejected" className="bg-rose-100 text-rose-900 border border-rose-300 approval-status-pill inline-block px-2.5 py-1 rounded-full text-[9.5px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
                             REJECTED
                           </span>
                         )
                       } else if (pendingLabel.startsWith('Held')) {
                         statusBadge = (
-                          <span className="inline-block bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase whitespace-nowrap">
+                          <span data-status="pending" className="bg-slate-200 text-slate-900 border border-slate-300 approval-status-pill inline-block px-2.5 py-1 rounded-full text-[9.5px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
                             HELD
                           </span>
                         )
@@ -3271,10 +3292,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       return (
                         <tr
                           key={row.id}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open request from ${row.name} for ₹${Number(row.amount || 0).toLocaleString('en-IN')}`}
                           onClick={() => setDetailRow(row)}
-                          className="hover:bg-slate-50/50 transition-colors cursor-pointer"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              setDetailRow(row)
+                            }
+                          }}
+                          className="odd:bg-white even:bg-slate-50/80 dark:odd:bg-transparent dark:even:bg-white/[0.04] hover:bg-teal-50/80 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-teal-600 transition-colors cursor-pointer"
                         >
-                          <td className="py-2.5 px-3 w-8" onClick={(e) => e.stopPropagation()}>
+                          <td className="py-3 px-3.5 w-8" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               disabled={!getIsPendingForUser(row)}
@@ -3286,60 +3316,82 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                   setSelectedRequestIds(prev => prev.filter(id => id !== row.id))
                                 }
                               }}
-                              className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                              className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer accent-teal-600"
                             />
                           </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            <span className={`inline-flex items-center justify-center h-6 w-6 rounded-full border text-[10px] font-black tabular-nums ${numberBadge}`}>
-                              {displaySeqNo}
-                            </span>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            {row.requestNo ? (
+                              <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50/90 px-2.5 py-1 font-mono text-xs font-black tracking-wide text-indigo-900 shadow-2xs">
+                                {row.requestNo}
+                              </span>
+                            ) : (
+                              <span className={`inline-flex items-center justify-center h-6 w-6 rounded-full border text-[10px] font-black tabular-nums ${numberBadge}`}>
+                                {displaySeqNo}
+                              </span>
+                            )}
                           </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
+                          <td className="py-3 px-3.5 whitespace-nowrap">
                             <div className="flex flex-col gap-0.5 items-start">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-slate-950 font-bold text-xs">{row.name}</span>
-                                <span className={`inline-block border px-1.5 py-0.2 rounded-full text-[8px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
+                                <span className="text-slate-950 font-black text-xs">{row.name}</span>
+                                <span className={`inline-block border px-1.5 py-0.2 rounded text-[8.5px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
                                   {row.brand || '—'}
                                 </span>
                               </div>
-                              <span className="text-slate-400 text-[10px] font-semibold">{row.email}</span>
+                              <span className="text-slate-500 font-semibold text-[10.5px]">{row.email}</span>
                             </div>
                           </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            <span className={`inline-block border px-2 py-0.5 rounded-full text-[8px] font-black tracking-wider uppercase whitespace-nowrap ${getDeptBadgeClass(row.department || '')}`}>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <span className={`inline-block border px-2.5 py-1 rounded-full text-[9px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs ${getDeptBadgeClass(row.department || '')}`}>
                               {row.department || '—'}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 font-bold text-slate-950 text-xs whitespace-nowrap max-w-[160px] truncate" title={row.vendorName || '—'}>
-                            {row.vendorName || '—'}
-                          </td>
-                          <td className="py-2.5 px-3 text-xs text-slate-500 font-semibold max-w-[180px] truncate" title={row.remarks || '—'}>
-                            {row.remarks || '—'}
-                          </td>
-                          <td className="py-2.5 px-3 font-black text-slate-950 text-sm whitespace-nowrap">
-                            {Number(row.amount || 0).toLocaleString('en-IN')}
-                          </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            <span className={`inline-block border px-2 py-0.5 rounded-full text-[8px] font-black tracking-wider uppercase whitespace-nowrap ${getPaymentTypeBadgeClass(row.typeOfPayment || '')}`}>
-                              {row.typeOfPayment || '—'}
+                          <td className="py-3 px-3.5 whitespace-nowrap max-w-[170px]" title={row.dealerName || '—'}>
+                            <span className="inline-flex items-center max-w-full truncate rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-black text-slate-900 shadow-2xs">
+                              {row.dealerName || '—'}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
+                          <td className="py-3 px-3.5 text-xs text-slate-800 font-bold max-w-[200px] truncate" title={row.remarks || '—'}>
+                            {row.remarks || '—'}
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <span className={`inline-flex items-center rounded-lg px-2.5 py-1 font-black text-xs sm:text-sm font-mono tracking-tight tabular-nums border shadow-2xs ${getAmountBandClass(Number(row.amount || 0))}`}>
+                              ₹{Number(row.amount || 0).toLocaleString('en-IN')}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
                             <div className="flex flex-col items-start gap-0.5">
-                              <span className="text-slate-900 font-bold text-xs block">
+                              <span className="text-xs font-black leading-tight text-slate-900">
+                                {row.location || '—'}
+                              </span>
+                              {row.dealerCode ? (
+                                <span className="inline-block rounded bg-slate-100 border border-slate-200 px-1.5 py-0.2 text-[10px] font-mono font-bold text-slate-600">
+                                  {row.dealerCode}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <div className="flex flex-col items-start gap-0.5">
+                              <span className="text-slate-900 font-black text-xs block">
                                 {new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                               </span>
-                              <span className="text-slate-400 text-[10px] font-semibold">
+                              <span className="text-slate-500 text-[10.5px] font-semibold">
                                 {new Date(row.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                               </span>
                               {getSlaBadge(row.createdAt)}
                             </div>
                           </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            {stageDisplay}
-                          </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            {statusBadge}
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <div className="flex flex-col items-start gap-1">
+                              {statusBadge}
+                              {awaitingDesk ? (
+                                <span className="flex items-center gap-1.5 pl-0.5 text-[10.5px] font-black text-amber-900">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                  with {awaitingDesk}
+                                </span>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
                             <div className="inline-flex items-center gap-1">
@@ -3368,7 +3420,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                         }
                                       }}
                                       disabled={actionMutation.isPending}
-                                      className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-[#004e5a] hover:bg-[#003c46] text-white cursor-pointer border-none"
+                                      className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all bg-[var(--dashboard-action-bg)] hover:bg-[var(--dashboard-action-hover)] text-white cursor-pointer border-none"
                                     >
                                       {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
                                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -3448,7 +3500,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                   e.stopPropagation()
                                   setDetailRow(row)
                                 }}
-                                className="h-8 w-8 rounded-xl border border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 flex items-center justify-center transition-all shadow-sm"
+                                className="h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 rounded-xl border border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 flex items-center justify-center transition-all shadow-sm"
                               >
                                 <Eye className="w-3.5 h-3.5 text-slate-500" />
                               </button>
@@ -3458,7 +3510,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                   e.stopPropagation()
                                   setDetailRow(row)
                                 }}
-                                className="h-8 w-8 rounded-xl border border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 flex items-center justify-center transition-all shadow-sm"
+                                className="h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 rounded-xl border border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 flex items-center justify-center transition-all shadow-sm"
                               >
                                 <MoreVertical className="w-3.5 h-3.5 text-slate-500" />
                               </button>
@@ -3521,19 +3573,23 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {row.approvalType || 'General'}
                       </span>
                       {pendingLabel === 'Paid' ? (
-                        <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                        <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-0.5 rounded-full text-[9.5px] font-black tracking-wider uppercase shadow-2xs">
                           PAID
                         </span>
                       ) : pendingLabel === 'Pending Payment' ? (
-                        <span className="bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                        <span className="bg-teal-100 text-teal-900 border border-teal-300 px-2.5 py-0.5 rounded-full text-[9.5px] font-black tracking-wider uppercase shadow-2xs">
                           APPROVED
                         </span>
+                      ) : pendingLabel === 'Sent Back / Clarification' ? (
+                        <span className="bg-orange-100 text-orange-900 border border-orange-300 px-2.5 py-0.5 rounded-full text-[9.5px] font-black tracking-wider uppercase shadow-2xs">
+                          SENT BACK
+                        </span>
                       ) : pendingLabel.startsWith('Rejected') ? (
-                        <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                        <span className="bg-rose-100 text-rose-900 border border-rose-300 px-2.5 py-0.5 rounded-full text-[9.5px] font-black tracking-wider uppercase shadow-2xs">
                           REJECTED
                         </span>
                       ) : (
-                        <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full text-[9.5px] font-black tracking-wider uppercase shadow-2xs">
                           PENDING
                         </span>
                       )}
@@ -3603,7 +3659,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               }
                             }}
                             disabled={actionMutation.isPending}
-                            className="h-8 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 bg-[#004e5a] text-white shadow-2xs hover:bg-[#003c46]"
+                            className="h-8 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 bg-[var(--dashboard-action-bg)] text-white shadow-2xs hover:bg-[var(--dashboard-action-hover)]"
                           >
                             {actionMutation.isPending && actionMutation.variables?.id === row.id && actionMutation.variables?.action === 'APPROVE' ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -3683,7 +3739,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   <button
                     disabled={currentPage === 1}
                     onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                    className="h-8 w-8 rounded-full hover:bg-slate-100 flex items-center justify-center disabled:opacity-30 disabled:hover:bg-transparent"
+                    className="h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 rounded-full hover:bg-slate-100 flex items-center justify-center disabled:opacity-30 disabled:hover:bg-transparent"
                   >
                     <ChevronLeft className="w-4 h-4 text-slate-600" />
                   </button>
@@ -3697,7 +3753,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           {showEllipsis && <span className="text-xs font-bold text-slate-400 px-1">...</span>}
                           <button
                             onClick={() => setCurrentPage(page)}
-                            className={`h-8 w-8 rounded-full text-xs font-bold transition-all flex items-center justify-center ${
+                            className={`h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 rounded-full text-xs font-bold transition-all flex items-center justify-center ${
                               currentPage === page
                                 ? 'bg-indigo-600 text-white font-black shadow-md shadow-indigo-600/10'
                                 : 'text-slate-600 hover:bg-slate-100'
@@ -3711,7 +3767,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   <button
                     disabled={currentPage === totalPages}
                     onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                    className="h-8 w-8 rounded-full hover:bg-slate-100 flex items-center justify-center disabled:opacity-30 disabled:hover:bg-transparent"
+                    className="h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 rounded-full hover:bg-slate-100 flex items-center justify-center disabled:opacity-30 disabled:hover:bg-transparent"
                   >
                     <ChevronRight className="w-4 h-4 text-slate-600" />
                   </button>
@@ -3740,7 +3796,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
       {/* 4. DETAIL & ACTION CENTER OVERLAY MODAL */}
       <Dialog open={Boolean(detailRow)} onOpenChange={(open) => { if (!open) setDetailRow(null) }}>
-        <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl sm:rounded-[2.5rem] w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] sm:max-w-6xl bg-[#f8fafc] p-0 overflow-hidden shadow-2xl border border-slate-200/80 max-h-[calc(100dvh-1.5rem)] sm:max-h-[92vh] flex flex-col z-50">
+        <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl sm:rounded-[2.5rem] w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] sm:max-w-6xl bg-slate-50 p-0 overflow-hidden shadow-2xl border border-slate-200/80 max-h-[calc(100dvh-1.5rem)] sm:max-h-[92vh] flex flex-col z-50">
           {detailRow && (() => {
             const pendingLabel = getPendingStageLabel(detailRow)
             const isApproved = pendingLabel === 'Fully Approved'
@@ -3955,8 +4011,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             const renderOverviewItem = (label: string, value: string | React.ReactNode, icon: any, className?: string, key?: string | number) => {
               const Icon = icon
               return (
-                <div key={key ?? label} className={cn("border border-slate-100 bg-[#f8fafc]/40 rounded-2xl p-4 flex gap-3 items-start", className)}>
-                  <div className="h-8 w-8 rounded-xl bg-slate-100 border border-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
+                <div key={key ?? label} className={cn("border border-slate-100 bg-slate-50/40 rounded-2xl p-4 flex gap-3 items-start", className)}>
+                  <div className="h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 rounded-xl bg-slate-100 border border-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
                     <Icon className="w-4 h-4" />
                   </div>
                   <div className="space-y-0.5 overflow-hidden flex-1">
@@ -4029,7 +4085,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     <span className={cn("text-[8px] font-black uppercase px-2 py-0.5 rounded border", badgeStyle)}>{badgeText}</span>
                   </div>
                   <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600 shrink-0">
+                    <div className="h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600 shrink-0">
                       {initials}
                     </div>
                     <div className="overflow-hidden">
@@ -4193,7 +4249,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   <button
                     type="button"
                     onClick={() => setDetailRow(null)}
-                    className="absolute right-3 top-3.5 sm:right-6 sm:top-6 z-40 flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-2xs border border-slate-200/80"
+                    className="absolute right-3 top-3.5 sm:right-6 sm:top-6 z-40 flex h-8 w-8 sm:h-9 sm:w-9 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-2xs border border-slate-200/80"
                     aria-label="Close modal"
                     title="Close"
                   >
@@ -4217,6 +4273,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     </div>
 
                     <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                      {detailRow.requestNo ? (
+                        <div className="text-left sm:text-right mr-1 sm:mr-3">
+                          <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">Request No.</span>
+                          <span className="font-mono text-base sm:text-lg font-black tracking-tight text-slate-900 tabular-nums">{detailRow.requestNo}</span>
+                        </div>
+                      ) : null}
                       <div className="text-left sm:text-right mr-1 sm:mr-3">
                         <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">Request Amount</span>
                         <span className="text-xl sm:text-2xl font-black text-slate-900 font-sans tracking-tight">₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}</span>
@@ -4306,7 +4368,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       return (
                         <div className="bg-rose-50 border border-rose-200/80 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
                           <div className="flex items-center gap-2 text-rose-800 text-xs font-black uppercase tracking-wider">
-                            <AlertTriangle className="w-4 h-4 text-rose-600 animate-bounce" />
+                            <AlertTriangle className="w-4 h-4 text-rose-600" aria-hidden="true" />
                             <span>System Risk Alert ({alerts.length})</span>
                           </div>
                           <ul className="list-disc list-inside text-xs font-semibold text-rose-700 space-y-1.5 pl-1.5">
@@ -4340,7 +4402,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       return (
                         <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
                           <div className="flex items-center gap-2 text-amber-800 text-xs font-black uppercase tracking-wider">
-                            <AlertTriangle className="w-4 h-4 text-amber-600 animate-bounce" />
+                            <AlertTriangle className="w-4 h-4 text-amber-600" aria-hidden="true" />
                             <span>Budget Alert</span>
                           </div>
                           <p className="text-xs font-semibold text-amber-700 leading-relaxed">
@@ -4443,9 +4505,18 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                       onClick={() => setPreviewDocUrl(url)}
                                       className="relative h-44 w-full rounded-xl overflow-hidden bg-slate-900/5 border border-slate-200 cursor-pointer group flex items-center justify-center"
                                     >
+                                      {/* Lazy + intrinsic size: a request with five bills otherwise
+                                          fetches five full-size images the instant the drawer opens,
+                                          each one shifting the grid as it lands. The width/height are
+                                          the container's own 176px box, so the slot is reserved
+                                          before the bytes arrive. */}
                                       <img 
                                         src={url} 
                                         alt={doc.label} 
+                                        loading="lazy"
+                                        decoding="async"
+                                        width={352}
+                                        height={176}
                                         className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
                                       />
                                       <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-xs font-bold">
@@ -4582,7 +4653,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     </div>
 
                     {/* Timeline Text Area Footer */}
-                    <div className="p-4 border-t border-slate-100 bg-[#f8fafc]/30 space-y-3 shrink-0">
+                    <div className="p-4 border-t border-slate-100 bg-slate-50/30 space-y-3 shrink-0">
                       <div className="relative">
                         <textarea
                           placeholder="Add a remark..."
@@ -4638,7 +4709,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             })
                           }}
                           className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
-                          style={{ backgroundColor: '#004e5a', color: '#ffffff' }}
+                          style={{ backgroundColor: 'var(--dashboard-action-bg)', color: '#ffffff' }}
                         >
                           {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -4658,7 +4729,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             setActionDecision('SEND_BACK')
                           }}
                           className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
-                          style={{ backgroundColor: '#d97706', color: '#ffffff' }}
+                          style={{ backgroundColor: 'var(--dashboard-warning-text)', color: '#ffffff' }}
                         >
                           <CornerUpLeft className="w-4 h-4" />
                           <span>Send Back</span>
@@ -4672,7 +4743,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             setActionDecision('REJECT')
                           }}
                           className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
-                          style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
+                          style={{ backgroundColor: 'var(--dashboard-danger)', color: '#ffffff' }}
                         >
                           <X className="w-4 h-4" />
                           <span>Reject Request</span>
@@ -4685,8 +4756,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             setActionStage(pendingStageKey!)
                             setActionDecision('HOLD')
                           }}
-                          className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
-                          style={{ backgroundColor: '#475569', color: '#ffffff' }}
+                          /* Hold is a NEUTRAL action — there is no semantic dashboard token for it
+                             (only primary / warning / danger exist), so it uses the Tailwind palette
+                             directly rather than a var() pointing at a token that does not exist. */
+                          className="bg-slate-600 hover:bg-slate-700 text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
                         >
                           <Clock className="w-4 h-4" />
                           <span>Hold Request</span>
@@ -4807,12 +4880,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             <table className="w-full text-left border-collapse">
                               <thead>
                                 <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50">
-                                  <th className="py-3 px-4 w-12">#</th>
-                                  <th className="py-3 px-4">Date</th>
-                                  <th className="py-3 px-4">Requester</th>
-                                  <th className="py-3 px-4">Payment Type</th>
-                                  <th className="py-3 px-4 text-right">Amount (₹)</th>
-                                  <th className="py-3 px-4 text-right">Workflow Status</th>
+                                  <th scope="col" className="py-3 px-4 w-12">#</th>
+                                  <th scope="col" className="py-3 px-4">Date</th>
+                                  <th scope="col" className="py-3 px-4">Requester</th>
+                                  <th scope="col" className="py-3 px-4">Payment Type</th>
+                                  <th scope="col" className="py-3 px-4 text-right">Amount (₹)</th>
+                                  <th scope="col" className="py-3 px-4 text-right">Workflow Status</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
@@ -5071,7 +5144,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 }}
                 disabled={actionMutation.isPending}
                 className="h-10 rounded-2xl text-xs font-black hover:opacity-90"
-                style={{ backgroundColor: '#d97706', color: '#ffffff' }}
+                style={{ backgroundColor: 'var(--dashboard-warning-text)', color: '#ffffff' }}
               >
                 {actionMutation.isPending && actionMutation.variables?.action === 'SEND_BACK' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
                 Send Back
@@ -5097,7 +5170,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 }}
                 disabled={actionMutation.isPending}
                 className="h-10 rounded-2xl text-xs font-black shadow-md hover:opacity-90"
-                style={{ backgroundColor: '#004e5a', color: '#ffffff' }}
+                style={{ backgroundColor: 'var(--dashboard-action-bg)', color: '#ffffff' }}
               >
                 {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
                 {actionStage === 'payment_done' ? 'Record Payment' : 'Approve'}
@@ -5284,12 +5357,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             <table className="w-full text-left border-collapse">
                               <thead>
                                 <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50">
-                                  <th className="py-3 px-4 w-12">#</th>
-                                  <th className="py-3 px-4">Date</th>
-                                  <th className="py-3 px-4">Vendor</th>
-                                  <th className="py-3 px-4">Requester</th>
-                                  <th className="py-3 px-4 text-right">Amount (₹)</th>
-                                  <th className="py-3 px-4 text-right">Workflow Status</th>
+                                  <th scope="col" className="py-3 px-4 w-12">#</th>
+                                  <th scope="col" className="py-3 px-4">Date</th>
+                                  <th scope="col" className="py-3 px-4">Vendor</th>
+                                  <th scope="col" className="py-3 px-4">Requester</th>
+                                  <th scope="col" className="py-3 px-4 text-right">Amount (₹)</th>
+                                  <th scope="col" className="py-3 px-4 text-right">Workflow Status</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
@@ -5386,43 +5459,123 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
           <Button
             onClick={() => setBulkSuccessModal(prev => ({ ...prev, open: false }))}
-            className="w-full h-11 rounded-2xl font-bold bg-[#004e5a] hover:bg-[#003c46] text-white shadow-lg text-xs uppercase tracking-wider"
+            className="w-full h-11 rounded-2xl font-bold bg-[var(--dashboard-action-bg)] hover:bg-[var(--dashboard-action-hover)] text-white shadow-lg text-xs uppercase tracking-wider"
           >
             Got it
           </Button>
         </DialogContent>
       </Dialog>
 
-      {/* Floating Bulk Action Bar */}
+      {/*
+        Floating bulk action bar.
+
+        It was a slate-900 slab carrying a single teal "Bulk Approve" — a dark component floating
+        over a light table, in a colour used nowhere else at that weight, offering one of the four
+        things an approver can do. It now mirrors the per-row actions exactly: same four verbs, same
+        four colours, on a light surface that belongs to the same page.
+
+        Send Back, Reject and Hold all collect a reason first. The server REQUIRES one for
+        SEND_BACK — a send-back email whose "what do I change?" line is blank is useless to the
+        submitter — and rejecting somebody's payment silently is worse. Approve is the only verb
+        that goes straight through, because "approved" needs no explanation.
+      */}
       {selectedRequestIds.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white rounded-3xl px-6 py-4 flex items-center gap-6 shadow-2xl border border-slate-800 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <span className="text-xs font-black tracking-wider uppercase">
-            {selectedRequestIds.length} Requests Selected
-          </span>
-          <div className="flex gap-2">
-            <Button
-              onClick={() => setSelectedRequestIds([])}
-              variant="ghost"
-              className="h-9 px-4 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-850"
-            >
-              Deselect
-            </Button>
-            <button
-              type="button"
-              onClick={() => {
-                bulkActionMutation.mutate({
-                  ids: selectedRequestIds,
-                  action: 'APPROVE',
-                  remarks: 'Bulk approved'
-                })
-              }}
-              disabled={bulkActionMutation.isPending}
-              className="h-9 px-4 rounded-xl text-xs font-black flex items-center gap-1 hover:opacity-90 transition-all border border-[#004e5a] cursor-pointer"
-              style={{ backgroundColor: '#004e5a', color: '#ffffff' }}
-            >
-              {bulkActionMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Bulk Approve'}
-            </button>
-          </div>
+        <div
+          role="region"
+          aria-label={`${selectedRequestIds.length} requests selected`}
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_16px_40px_-12px_rgba(15,23,42,0.28)] animate-in fade-in slide-in-from-bottom-4 duration-300"
+        >
+          {bulkReasonFor ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label htmlFor="bulk-reason" className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                {bulkReasonFor === 'SEND_BACK' ? 'What needs changing?' : bulkReasonFor === 'REJECT' ? 'Reason for rejection' : 'Note for the hold'}
+              </label>
+              <input
+                id="bulk-reason"
+                autoFocus
+                value={bulkReason}
+                onChange={(e) => setBulkReason(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') { setBulkReasonFor(null); setBulkReason('') } }}
+                placeholder={bulkReasonFor === 'SEND_BACK' ? 'Tell them what to fix — this is the email they receive' : 'Visible to the submitter'}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-800 placeholder:font-normal placeholder:text-slate-400 focus:border-slate-400 focus:outline-none sm:w-[22rem]"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setBulkReasonFor(null); setBulkReason('') }}
+                  className="h-10 rounded-xl px-3 text-xs font-bold text-slate-500 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkActionMutation.isPending || !bulkReason.trim()}
+                  onClick={() => {
+                    bulkActionMutation.mutate({ ids: selectedRequestIds, action: bulkReasonFor, remarks: bulkReason.trim() })
+                    setBulkReasonFor(null)
+                    setBulkReason('')
+                  }}
+                  className={`h-10 rounded-xl px-4 text-xs font-black text-white transition-colors disabled:opacity-40 ${
+                    bulkReasonFor === 'REJECT' ? 'bg-rose-600 hover:bg-rose-700'
+                      : bulkReasonFor === 'SEND_BACK' ? 'bg-amber-500 hover:bg-amber-600'
+                      : 'bg-slate-600 hover:bg-slate-700'
+                  }`}
+                >
+                  {bulkActionMutation.isPending
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : `Confirm for ${selectedRequestIds.length}`}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-700">
+                {selectedRequestIds.length} selected
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedRequestIds([])}
+                className="h-9 rounded-xl px-3 text-xs font-bold text-slate-500 hover:bg-slate-100"
+              >
+                Deselect
+              </button>
+              <div className="h-5 w-px bg-slate-200" aria-hidden="true" />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={bulkActionMutation.isPending}
+                  onClick={() => bulkActionMutation.mutate({ ids: selectedRequestIds, action: 'APPROVE', remarks: 'Bulk approved' })}
+                  className="flex h-9 items-center gap-1.5 rounded-xl bg-[var(--dashboard-action-bg)] px-4 text-xs font-black text-white transition-colors hover:bg-[var(--dashboard-action-hover)] disabled:opacity-40"
+                >
+                  {bulkActionMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Check className="h-3.5 w-3.5" /> Approve</>}
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkActionMutation.isPending}
+                  onClick={() => setBulkReasonFor('SEND_BACK')}
+                  className="flex h-9 items-center gap-1.5 rounded-xl bg-amber-500 px-4 text-xs font-black text-white transition-colors hover:bg-amber-600 disabled:opacity-40"
+                >
+                  <CornerUpLeft className="h-3.5 w-3.5" /> Send Back
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkActionMutation.isPending}
+                  onClick={() => setBulkReasonFor('REJECT')}
+                  className="flex h-9 items-center gap-1.5 rounded-xl bg-rose-600 px-4 text-xs font-black text-white transition-colors hover:bg-rose-700 disabled:opacity-40"
+                >
+                  <X className="h-3.5 w-3.5" /> Reject
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkActionMutation.isPending}
+                  onClick={() => setBulkReasonFor('HOLD')}
+                  className="flex h-9 items-center gap-1.5 rounded-xl bg-slate-600 px-4 text-xs font-black text-white transition-colors hover:bg-slate-700 disabled:opacity-40"
+                >
+                  <Clock className="h-3.5 w-3.5" /> Hold
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </MainLayout>

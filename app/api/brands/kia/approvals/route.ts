@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { findMissingApprovalField } from '@/lib/approvals/required-fields'
+import { allocateRequestNumber } from '@/lib/approvals/request-number'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests, glAccounts } from '@/lib/db/schema'
 import { and, asc, eq, or } from 'drizzle-orm'
@@ -35,6 +37,16 @@ export async function POST(request: NextRequest) {
       gst,
     } = body
 
+    /*
+     * Every field except bills/documents is mandatory, for all brands. Enforced HERE because this
+     * endpoint is deliberately unauthenticated — the form's own checks are a courtesy, not a
+     * control. See lib/approvals/required-fields.ts.
+     */
+    const missingField = findMissingApprovalField(body)
+    if (missingField) {
+      return NextResponse.json({ error: missingField }, { status: 400 })
+    }
+
     /**
      * Bills arrive as an ordered array from the single multi-file upload. Older clients (and the
      * re-submit flow) may still send only the two flat fields, so accept either shape.
@@ -52,19 +64,6 @@ export async function POST(request: NextRequest) {
       .map((u: string) => u.trim())
 
     const [mirrorBill1 = null, mirrorBill2 = null] = normalizedBillUrls
-
-    if (!email || !email.trim()) {
-      return NextResponse.json({ error: 'Email Address is required' }, { status: 400 })
-    }
-    if (!name || !name.trim()) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
-    }
-    if (!department || !department.trim()) {
-      return NextResponse.json({ error: 'Department Category (Sales or Service) is mandatory' }, { status: 400 })
-    }
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      return NextResponse.json({ error: 'A valid amount greater than 0 is required' }, { status: 400 })
-    }
 
     // Resolve GL Account: if missing, unmapped, or invalid UUID, fallback gracefully
     let finalGlAccountId: string | null = null
@@ -203,9 +202,15 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Per-brand request number (KIA_0001). Allocated atomically — see the module for why a
+    // single ON CONFLICT statement rather than MAX+1, given this endpoint is public intake.
+    const requestNo = await allocateRequestNumber('kia')
+
     const [inserted] = await db
       .insert(kiaApprovalRequests)
       .values({
+        // Omitted entirely before migration 0039 — naming an absent column fails the insert.
+        ...(requestNo ? { requestNo } : {}),
         email: email.trim(),
         name: name.trim(),
         employeeId: employeeId?.trim() || null,

@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
+import { sendApprovalDecisionEmail } from '@/lib/approvals/decision-emails'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests } from '@/lib/db/schema'
@@ -9,6 +11,13 @@ import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+const ACTION_PAST_TENSE = {
+  APPROVE: 'approved',
+  REJECT: 'rejected',
+  HOLD: 'placed on hold',
+  SEND_BACK: 'sent back',
+} as const
+
 export async function POST(request: Request) {
   try {
     const appUser = await getAuthenticatedAppUser()
@@ -17,13 +26,25 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({}))
-    const { ids, action, remarks } = body // action: 'APPROVE' | 'REJECT' | 'HOLD', remarks: string
+    const { ids, action, remarks } = body // 'APPROVE' | 'REJECT' | 'HOLD' | 'SEND_BACK'
+
+    /*
+     * A send-back with no reason is useless to the submitter — the whole point of the email is the
+     * "what do I change?" line. The single-row flow already required it; bulk must not be the
+     * loophole that lets fifty people receive a blank one.
+     */
+    if (action === 'SEND_BACK' && !String(remarks || '').trim()) {
+      return NextResponse.json(
+        { error: 'A reason is required when sending requests back — it is what the submitter sees.' },
+        { status: 400 }
+      )
+    }
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json({ error: 'Invalid or empty ids list.' }, { status: 400 })
     }
 
-    if (!action || !['APPROVE', 'REJECT', 'HOLD'].includes(action)) {
+    if (!action || !['APPROVE', 'REJECT', 'HOLD', 'SEND_BACK'].includes(action)) {
       return NextResponse.json({ error: 'Invalid action. Must be APPROVE, REJECT, or HOLD.' }, { status: 400 })
     }
 
@@ -41,8 +62,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No matching approval requests found.' }, { status: 404 })
     }
 
+    /*
+     * Branch scope, applied to the WHOLE batch before anything is written.
+     *
+     * Refusing the entire request rather than silently dropping the out-of-scope ids is deliberate:
+     * a partial bulk-approve that reports success is how someone believes they actioned twenty
+     * payments when they actioned twelve. See lib/kia/approval-scope.ts.
+     */
+    const outOfScope = rows.filter((row) => !isApprovalVisibleTo(appUser, row))
+    if (outOfScope.length > 0) {
+      return NextResponse.json(
+        {
+          error: `${outOfScope.length} of ${rows.length} selected requests belong to another branch. Nothing was changed.`,
+        },
+        { status: 403 }
+      )
+    }
+
     const processedRows = []
     const failedRows = []
+    // Reported back so the toast can say "12 sent back, 12 notified" rather than leaving the
+    // approver to assume mail went out.
+    let emailedCount = 0
 
     for (const row of rows) {
       let activeStageKey: 'sales_manager' | 'hr' | 'ea' | 'accounts' | 'md' | null = null
@@ -148,7 +189,37 @@ export async function POST(request: Request) {
 
       // Build updates
       const updates: Partial<typeof kiaApprovalRequests.$inferInsert> = {}
-      const statusVal = action === 'APPROVE' ? 'APPROVED' : action === 'REJECT' ? 'NOT APPROVED' : 'HELD'
+      const statusVal = action === 'APPROVE' ? 'APPROVED'
+        : action === 'REJECT' ? 'NOT APPROVED'
+        : action === 'SEND_BACK' ? 'SENT BACK'
+        : 'HELD'
+
+      /*
+       * SEND_BACK is not a stage decision — it returns the request to the submitter, so every stage
+       * that had signed off is cleared and the whole chain restarts on re-submission. This mirrors
+       * the single-row route exactly; the two used to disagree because bulk simply refused the action.
+       */
+      if (action === 'SEND_BACK') {
+        updates.vpApproval = null
+        updates.hrApproval = null
+        updates.accountApproval = null
+        updates.eaApproval = null
+        updates.managementApproval = null
+        updates.paymentStatus = 'PENDING'
+        updates.sendBackReason = remarks || ''
+        updates.emailSendStatus = 'SentBack'
+
+        sendApprovalDecisionEmail('SEND_BACK', row, {
+          stage: activeStageKey,
+          senderName: appUser.fullName || 'An approver',
+          remarks: remarks || '',
+        })
+        emailedCount++
+
+        await db.update(kiaApprovalRequests).set(updates).where(eq(kiaApprovalRequests.id, row.id))
+        processedRows.push(row.id)
+        continue
+      }
 
       if (activeStageKey === 'sales_manager') {
         updates.vpApproval = statusVal
@@ -179,10 +250,16 @@ export async function POST(request: Request) {
           })
         }
         updates.managementRemarks = remarks || ''
-        if (action === 'REJECT') {
-          updates.emailSendStatus = 'Rejected'
-        } else if (action === 'HOLD') {
-          updates.emailSendStatus = 'Held'
+        if (action === 'REJECT' || action === 'HOLD') {
+          updates.emailSendStatus = action === 'REJECT' ? 'Rejected' : 'Held'
+          // Previously this line was the ONLY thing that happened: the column said 'Rejected' and no
+          // message ever left. The submitter saw nothing.
+          sendApprovalDecisionEmail(action, row, {
+            stage: activeStageKey,
+            senderName: appUser.fullName || 'An approver',
+            remarks: remarks || '',
+          })
+          emailedCount++
         }
       } else if (activeStageKey === 'accounts') {
         updates.accountApproval = statusVal
@@ -191,10 +268,14 @@ export async function POST(request: Request) {
           updates.paymentCompletedAt = new Date()
           updates.paymentCompletedBy = appUser.fullName
           updates.emailSendStatus = 'Completed'
-        } else if (action === 'REJECT') {
-          updates.emailSendStatus = 'Rejected'
-        } else {
-          updates.emailSendStatus = 'Held'
+        } else if (action === 'REJECT' || action === 'HOLD') {
+          updates.emailSendStatus = action === 'REJECT' ? 'Rejected' : 'Held'
+          sendApprovalDecisionEmail(action, row, {
+            stage: activeStageKey,
+            senderName: appUser.fullName || 'An approver',
+            remarks: remarks || '',
+          })
+          emailedCount++
         }
       }
 
@@ -233,8 +314,15 @@ export async function POST(request: Request) {
       success: true,
       processedCount: processedRows.length,
       failedCount: failedRows.length,
+      emailedCount,
       failedRows,
-      message: `Successfully processed ${processedRows.length} approvals. Failed: ${failedRows.length}.`
+      // Names the action rather than always saying "approvals", and states how many submitters were
+      // actually notified — an approver who sends fifty back needs to know fifty emails went out.
+      message: [
+        `${processedRows.length} ${ACTION_PAST_TENSE[action as keyof typeof ACTION_PAST_TENSE] || 'processed'}`,
+        emailedCount > 0 ? `${emailedCount} submitter${emailedCount === 1 ? '' : 's'} notified` : null,
+        failedRows.length > 0 ? `${failedRows.length} failed` : null,
+      ].filter(Boolean).join(' · ')
     })
   } catch (error: any) {
     console.error('Bulk approval handler error:', error)

@@ -162,12 +162,24 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
 
   switch (filter) {
     case 'pending':
-      return or(
-        eq(purchaseOrders.status, 'awaiting_md_approval'),
-        eq(purchaseOrders.status, 'awaiting_ea_approval'),
-        eq(purchaseOrders.status, 'ea_on_hold'),
-        eq(purchaseOrders.status, 'md_on_hold')
-      )
+      /*
+       * ⚠️ MD "pending" is the MD's OWN desk — awaiting_md_approval only.
+       *
+       * This used to return four statuses (awaiting_md_approval, awaiting_ea_approval, ea_on_hold,
+       * md_on_hold), which broke the list in two ways:
+       *
+       *   1. PAGINATION LIED. The client re-filters the page to `status === 'awaiting_md_approval'`
+       *      (app/purchase-orders/page.tsx), so the server sent 12 rows spanning four statuses and
+       *      the table rendered whichever handful matched — measured live: "Showing 1-12 of 42" with
+       *      SIX rows on screen. Because the 18 real rows were scattered across 4 server pages, a
+       *      page could legitimately render zero rows while still claiming 42 total.
+       *   2. HOLD WAS DOUBLE COUNTED. md_on_hold sat in this set AND in the Hold tab, so one order
+       *      appeared in two mutually exclusive buckets.
+       *
+       * The EA branch above has always been the single-status form; this now matches it. Orders
+       * still with the EA remain reachable under All Orders, and held orders live in Hold.
+       */
+      return eq(purchaseOrders.status, 'awaiting_md_approval')
     case 'approved':
       return and(
         eq(purchaseOrders.mdApprovalStatus, 'approved'),
@@ -193,14 +205,11 @@ async function fetchApprovalCounts(role: string, baseFilters: WhereFilter[]) {
 
   const isEa = role === 'ea'
 
+  // Must stay identical to getApprovalFilterExpression's 'pending' arm — a count that disagrees with
+  // the list it labels is what produced the 42-vs-6 mismatch on the MD dashboard.
   const pendingCond = isEa
     ? eq(purchaseOrders.status, 'awaiting_ea_approval')
-    : or(
-        eq(purchaseOrders.status, 'awaiting_md_approval'),
-        eq(purchaseOrders.status, 'awaiting_ea_approval'),
-        eq(purchaseOrders.status, 'ea_on_hold'),
-        eq(purchaseOrders.status, 'md_on_hold')
-      )
+    : eq(purchaseOrders.status, 'awaiting_md_approval')
 
   const approvedCond = isEa
     ? and(

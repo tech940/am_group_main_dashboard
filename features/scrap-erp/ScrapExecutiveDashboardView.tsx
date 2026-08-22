@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ScrapTransaction } from '@/lib/scrap-erp/types'
+import { ScrapTransaction, normalizeScrapLocationName } from '@/lib/scrap-erp/types'
 import {
   TrendingUp,
   DollarSign,
@@ -124,17 +124,17 @@ export function ScrapExecutiveDashboardView({
   // Other Filter States
   const [companyInput, setCompanyInput] = useState<string>('all')
   const [scrapTypeInput, setScrapTypeInput] = useState<string[]>([])
+  const [scrapTypeSearch, setScrapTypeSearch] = useState<string>('')
   const [locationInput, setLocationInput] = useState<string>('all')
 
+  // Applied Filter State
   const [appliedCompany, setAppliedCompany] = useState<string>('all')
   const [appliedScrapType, setAppliedScrapType] = useState<string[]>([])
   const [appliedLocation, setAppliedLocation] = useState<string>('all')
 
-  const [scrapTypeSearch, setScrapTypeSearch] = useState<string>('')
-
-  // Dynamic Option lists derived from transactions
+  // Derive unique options for filter dropdowns
   const companyOptions = useMemo(() => {
-    const names = transactions.map((t) => t.groupName || '').filter(Boolean)
+    const names = transactions.map((t) => formatCompanyName(t.groupName || 'JAMMU AUTOMART')).filter(Boolean)
     return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b))
   }, [transactions])
 
@@ -150,7 +150,7 @@ export function ScrapExecutiveDashboardView({
         (t) => (t.groupName || '').trim().toLowerCase() === companyInput.trim().toLowerCase()
       )
     }
-    const names = list.map((t) => t.locationName || '').filter(Boolean)
+    const names = list.map((t) => normalizeScrapLocationName(t.locationName || '')).filter(Boolean)
     return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b))
   }, [transactions, companyInput])
 
@@ -170,14 +170,17 @@ export function ScrapExecutiveDashboardView({
         const next = prev.filter((t) => t !== type)
         return next.length === 0 ? ['__none__'] : next
       } else {
-        const next = prev.filter((t) => t !== '__none__')
-        const final = [...next, type]
-        if (final.length === scrapTypeOptions.length) {
-          return []
-        }
-        return final
+        return [...prev.filter((t) => t !== '__none__'), type]
       }
     })
+  }
+
+  const handleSelectAllScrapTypes = () => {
+    setScrapTypeInput([])
+  }
+
+  const handleClearAllScrapTypes = () => {
+    setScrapTypeInput(['__none__'])
   }
 
   const isScrapTypeChecked = (type: string) => {
@@ -207,13 +210,11 @@ export function ScrapExecutiveDashboardView({
     setCompanyInput('all')
     setScrapTypeInput([])
     setLocationInput('all')
-
     setAppliedStartDate('')
     setAppliedEndDate('')
     setAppliedCompany('all')
     setAppliedScrapType([])
     setAppliedLocation('all')
-
     setActivePreset('all')
   }
 
@@ -223,30 +224,32 @@ export function ScrapExecutiveDashboardView({
     setEndDateInput(end)
   }
 
-  // Active Multi-Filtered Transactions (Sorted Date High to Low -> Newest Sale First)
+  // Filtered dataset according to active filters
   const activeTxns = useMemo(() => {
     let list = transactions
 
-    // Date filtering
+    // Date Range Filtering
     if (appliedStartDate || appliedEndDate) {
       list = list.filter((t) => {
-        const d = t.soldDate || t.timestamp || t.createdAt
+        const d = (t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
         if (!d) return false
-        const dStr = d.slice(0, 10) // 'YYYY-MM-DD'
-
-        if (appliedStartDate && dStr < appliedStartDate) return false
-        if (appliedEndDate && dStr > appliedEndDate) return false
+        if (appliedStartDate && d < appliedStartDate) return false
+        if (appliedEndDate && d > appliedEndDate) return false
         return true
       })
     }
 
-    // Company (Group) filtering
+    // Company / Dealership Group Filtering
     if (appliedCompany && appliedCompany !== 'all') {
-      list = list.filter((t) => (t.groupName || '').trim().toLowerCase() === appliedCompany.trim().toLowerCase())
+      list = list.filter(
+        (t) =>
+          formatCompanyName(t.groupName || 'JAMMU AUTOMART').toLowerCase() ===
+          appliedCompany.toLowerCase()
+      )
     }
 
-    // Scrap Type filtering
-    if (appliedScrapType && appliedScrapType.length > 0) {
+    // Scrap Type Filtering
+    if (appliedScrapType.length > 0) {
       if (appliedScrapType.includes('__none__')) {
         list = []
       } else {
@@ -256,7 +259,7 @@ export function ScrapExecutiveDashboardView({
 
     // Location filtering
     if (appliedLocation && appliedLocation !== 'all') {
-      list = list.filter((t) => (t.locationName || '').trim().toLowerCase() === appliedLocation.trim().toLowerCase())
+      list = list.filter((t) => normalizeScrapLocationName(t.locationName || '').trim().toLowerCase() === appliedLocation.trim().toLowerCase())
     }
 
     return [...list].sort((a, b) => {
@@ -286,7 +289,6 @@ export function ScrapExecutiveDashboardView({
     const groupMap: Record<string, { amount: number; count: number }> = {}
     const monthMap: Record<string, { amount: number; weight: number; count: number; dateObj: Date }> = {}
 
-    // Reference Date for relative calculations
     const now = new Date()
 
     activeTxns.forEach((t) => {
@@ -294,20 +296,12 @@ export function ScrapExecutiveDashboardView({
       const wt = Number(t.weightQty || 0)
       const pm = (t.paymentModeName || '').toLowerCase()
       
-      // Payment Mode Breakdown covers the SAME rows as Total Revenue above it.
-      //
-      // This used to be gated to `dateStr >= '2026-07-01'`. The gate never actually fired, because
-      // soldDate reached this component as "Thu Jul 30" and 'T' > '2' made every comparison true —
-      // so the card had always shown the full-period figure. Repairing the date format (see
-      // toIsoDate in app/api/scrap-erp/route.ts) would have silently switched it to a July-only
-      // number sitting directly beneath a full-period Total Revenue, with no label saying so.
-      // The three buckets must partition whatever Total Revenue counts, so the gate is gone.
       if (pm.includes('cash')) cash += amt
       else if (pm.includes('cheque')) cheque += amt
       else online += amt
 
       // Location Breakdown
-      const locName = t.locationName || 'Other Location'
+      const locName = normalizeScrapLocationName(t.locationName) || 'Other Location'
       if (!locMap[locName]) locMap[locName] = { amount: 0, weight: 0, count: 0 }
       locMap[locName].amount += amt
       locMap[locName].weight += wt
@@ -535,14 +529,14 @@ export function ScrapExecutiveDashboardView({
     }
 
     const locNames = Array.from(
-      new Set(sourceTxns.map((t) => t.locationName).filter(Boolean))
+      new Set(sourceTxns.map((t) => normalizeScrapLocationName(t.locationName)).filter(Boolean))
     ).sort()
 
     // One "today" for the whole matrix — it used to call new Date() inside every cell.
     const todayIso = toLocalIsoDate(new Date())
 
     const rows = locNames.map((locName) => {
-      const locTxns = sourceTxns.filter((t) => t.locationName === locName)
+      const locTxns = sourceTxns.filter((t) => normalizeScrapLocationName(t.locationName) === locName)
 
       const cellData: Record<
         string,
@@ -1070,7 +1064,7 @@ export function ScrapExecutiveDashboardView({
           </CardHeader>
           <CardContent className="pt-4 pb-4 divide-y divide-slate-100 dark:divide-slate-800">
             {metrics.topLocations.slice(0, 7).map((loc) => {
-              const locTxns = activeTxns.filter((t) => t.locationName === loc.name)
+              const locTxns = activeTxns.filter((t) => normalizeScrapLocationName(t.locationName) === loc.name)
               return (
                 <div
                   key={loc.name}

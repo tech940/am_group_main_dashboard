@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { glAccounts, kiaApprovalRequests } from '@/lib/db/schema'
@@ -74,6 +75,15 @@ export async function POST(
 
     if (!requestRow) {
       return NextResponse.json({ error: 'Approval request not found.' }, { status: 404 })
+    }
+
+    // Branch scope. The list is filtered, so a request the caller cannot see must not be actionable
+    // by id either — see lib/kia/approval-scope.ts.
+    if (!isApprovalVisibleTo(appUser, requestRow)) {
+      return NextResponse.json(
+        { error: 'This request belongs to another branch.' },
+        { status: 403 }
+      )
     }
 
     // Role-based Authorization Checks

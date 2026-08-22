@@ -146,6 +146,32 @@ export function getPettyCashConfiguredBranches() {
   return Object.keys(PETTY_CASH_BRANCH_LOCATIONS)
 }
 
+/**
+ * The concrete brands a login is pinned to.
+ *
+ * `users.brand` is NOT always one brand — a person shared between dealerships carries a
+ * comma-separated assignment like 'hyundai,platinum'. Every other module already splits it:
+ * canAccessBrand (lib/auth/brand-access.ts:14), lib/admin/effective-access.ts:87,
+ * lib/delegation/access.ts:26. Petty cash was the last place still comparing the raw string with
+ * `===`, so a multi-brand user matched NOTHING — no rows on any tab, and 'Forbidden branch' the
+ * moment they tried to create anything.
+ *
+ * Filtered through isBranchValue, so 'all', null and junk all yield [] — the same "matches nothing"
+ * the old `appUser.brand || ''` produced, i.e. it fails CLOSED. Callers that mean "sees everything"
+ * must ask hasPettyCashAllBranchAccess FIRST; this function never says yes to that.
+ *
+ * The `.trim()` is safe rather than an access grant: verified against live data, no `users.brand`
+ * value carries leading or trailing whitespace, so no login gains anything it did not already have.
+ * Case is deliberately NOT normalised — 'KIA' matches nothing today and quietly widening that is
+ * not this function's job.
+ */
+export function getPettyCashUserBrands(brand: string | null | undefined): string[] {
+  return String(brand || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => isBranchValue(value))
+}
+
 export function getPettyCashLocationOptions(branchId: string | null | undefined) {
   const config = PETTY_CASH_BRANCH_LOCATIONS[normalizeBranch(branchId)]
   // Empty, deliberately — see isPettyCashConfiguredForBranch. An unconfigured brand must
@@ -180,3 +206,6 @@ import { getPettyCashStageInfo } from './status-tracking'
 import { HYUNDAI_BRANCH_DEALERS } from '@/lib/hyundai/dealer-branch'
 import { KIA_BRANCH_DEALERS } from '@/lib/kia/dealer-branch'
 import { PLATINUM_BRANCH_DEALERS } from '@/lib/platinum/dealer-branch'
+// lib/branches.ts is a pure constants module (no 'server-only', no db imports), so importing it
+// here keeps this file safe for the 'use client' workspace that already consumes it.
+import { isBranchValue } from '@/lib/branches'

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { approvalRequestNumbersReady } from '@/lib/approvals/request-number'
+import { filterVisibleApprovals } from '@/lib/kia/approval-scope'
 import { canAccessBrand } from '@/lib/auth/brand-access'
 import { canAccessDealer } from '@/lib/auth/dealer-scope'
 import { isSuperAdminRole, hasGlobalAccessRole } from '@/lib/auth/roles'
@@ -17,12 +19,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const requestNumbersReady = await approvalRequestNumbersReady()
+
     const rawRows = await db
       .select({
         id: kiaApprovalRequests.id,
         email: kiaApprovalRequests.email,
         name: kiaApprovalRequests.name,
         employeeId: kiaApprovalRequests.employeeId,
+        // Only selected once migration 0039 has run. Before that the column does not exist and
+        // naming it fails the ENTIRE query with Postgres 42703, taking the approvals list down —
+        // which is what happened. See lib/approvals/request-number.ts.
+        ...(requestNumbersReady ? { requestNo: kiaApprovalRequests.requestNo } : {}),
         location: kiaApprovalRequests.location,
         dealerCode: kiaApprovalRequests.dealerCode,
         dealerName: kiaApprovalRequests.dealerName,
@@ -76,24 +84,9 @@ export async function GET(request: NextRequest) {
       .leftJoin(glAccounts, eq(kiaApprovalRequests.glAccountId, glAccounts.id))
       .orderBy(desc(kiaApprovalRequests.createdAt))
 
-    // Enforce branchwise and dealer scoping
-    const isUnrestricted =
-      isSuperAdminRole(appUser.role) ||
-      hasGlobalAccessRole(appUser.role) ||
-      hasAllBranchAccess(appUser.brand)
-
-    const rows = isUnrestricted
-      ? rawRows
-      : rawRows.filter((row) => {
-          const rowBrand = (row.brand || 'kia').toLowerCase() as BranchValue
-          // Check if user has access to the row's brand
-          if (!canAccessBrand(appUser, rowBrand)) return false
-
-          // Check if user is restricted to specific dealer/branch code or location
-          if (row.dealerCode && !canAccessDealer(appUser, rowBrand, row.dealerCode)) return false
-
-          return true
-        })
+    // Branch + dealer scope. The rule lives in lib/kia/approval-scope.ts so the action, remark,
+    // bulk-action and export routes enforce exactly the same thing this list shows.
+    const rows = filterVisibleApprovals(appUser, rawRows)
 
     console.log('Payment Approvals list fetched rows:', rows.length, 'out of', rawRows.length)
 

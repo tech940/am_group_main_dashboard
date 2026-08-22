@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -39,6 +40,16 @@ export async function POST(
     if (!requestRow) {
       return NextResponse.json({ error: 'Approval request not found.' }, { status: 404 })
     }
+
+    // Branch scope. The list is filtered, so a request the caller cannot see must not be actionable
+    // by id either — see lib/kia/approval-scope.ts.
+    if (!isApprovalVisibleTo(appUser, requestRow)) {
+      return NextResponse.json(
+        { error: 'This request belongs to another branch.' },
+        { status: 403 }
+      )
+    }
+
 
     const historyList = Array.isArray(requestRow.history) ? [...requestRow.history] : []
     const roleLabel = String(appUser.role || '').toUpperCase()

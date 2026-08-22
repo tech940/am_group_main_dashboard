@@ -52,6 +52,7 @@ import {
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { validateEmailDomain } from '@/lib/email-validator'
+import { findMissingApprovalField } from '@/lib/approvals/required-fields'
 import { amountInWordsINR } from '@/lib/kia/print-payment-order'
 import { cn } from '@/lib/utils'
 
@@ -1441,24 +1442,20 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     if (!emailCheck.valid) {
       return setErrorMsg(emailCheck.error || 'Please enter a valid email address.')
     }
-    if (!form.name.trim()) return setErrorMsg('Name is required.')
-    if (!form.location) return setErrorMsg('Location is required.')
-    if (!form.dealerCode) return setErrorMsg('Dealer Code is required.')
-    if (!form.dealerName) return setErrorMsg('Dealer Name is required.')
-    if (!form.department) return setErrorMsg('Department Category (Sales or Service) is mandatory.')
-    if (!form.approvalType) return setErrorMsg('Approval Type is required.')
-    if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
-      return setErrorMsg('Please enter a valid amount greater than 0.')
-    }
-    if (!form.typeOfPayment) return setErrorMsg('Payment Type is required.')
-    
-    // Auto-assign fallback GL Account if not set
-    if (!form.glAccountId && glAccounts.length > 0) {
-      const fallback = glAccounts.find(g => g.glName.toLowerCase().includes('other') || g.glCode === 'GL-999') || glAccounts[0]
-      if (fallback) {
-        setForm(prev => ({ ...prev, glAccountId: fallback.id }))
-      }
-    }
+    /*
+     * Every field except bills and documents is mandatory, for all brands. The rule itself lives in
+     * lib/approvals/required-fields.ts so this form and BOTH create routes enforce the same list —
+     * the server is the real control here, because the endpoint is unauthenticated by design.
+     *
+     * The old GL-account fallback that used to sit here was removed with the same change. It called
+     * setForm() at submit time, which is async, so it never affected the request in flight — the
+     * request went out with the empty value anyway. GL account is now simply required.
+     */
+    const missingField = findMissingApprovalField({
+      ...form,
+      vendorName: form.vendorName || vendorSearch.trim(),
+    })
+    if (missingField) return setErrorMsg(missingField)
 
     // Don't let a request go in while a bill is still uploading — it would submit without it.
     if (bills.some(b => b.loading)) {
@@ -1855,6 +1852,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
 
               <FieldBlock
                 label="Vendor name"
+                required
                 className="relative"
                 hint={vendorsLoading ? 'loading…' : undefined}
               >
@@ -1943,7 +1941,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
               )}
 
               {form.approvalType.toUpperCase().includes('ADVANCE') && (
-                <Field label="Previous advance" className="sm:col-span-2">
+                <Field label="Previous advance" required className="sm:col-span-2">
                   <input
                     type="text"
                     placeholder="Outstanding previous advance, if any"
@@ -2009,7 +2007,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 </SelectShell>
               </Field>
 
-              <Field label="GL account" hint="optional — assigned automatically">
+              <Field label="GL account" required>
                 <SelectShell>
                   <select
                     value={form.glAccountId}
@@ -2038,7 +2036,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
             complete={sectionComplete.documents}
           >
             <div className="space-y-6">
-              <Field label="Remarks" hint="optional">
+              <Field label="Remarks" required>
                 <textarea
                   placeholder="What is this payment for?"
                   rows={3}

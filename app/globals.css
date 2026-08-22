@@ -554,9 +554,20 @@
     text-transform: uppercase !important;
   }
 
-  /* Access Map grid and Call Analysis clean tables opt out of the global dark thead/th styling */
+  /* Access Map grid, Call Analysis clean tables and the MD Targets grid opt out of the global dark
+     thead/th styling. The rules above are ELEMENT selectors with !important, so no class can beat
+     them from a component — an opt-out has to be added here, beside them. */
   .call-analysis-clean-table thead tr,
+  .md-targets-grid thead tr,
   .access-map-grid thead tr { background-color: transparent !important; }
+  /* The MD Targets grid keeps its own quiet slate header: the global rule would otherwise paint it
+     the theme primary with white uppercase 900-weight text, which fights a dense editable grid. */
+  .md-targets-grid th {
+    color: #64748b !important;
+    font-weight: 900 !important;
+    letter-spacing: 0.06em !important;
+    text-transform: uppercase !important;
+  }
   .call-analysis-clean-table th {
     color: #64748b !important;
     font-weight: 700 !important;
@@ -2041,4 +2052,44 @@
     animation-duration: 1.5s !important;
     animation-iteration-count: infinite !important;
   }
+}
+
+
+/* ⚠️ This block MUST stay inside @layer utilities. The rescue net it overrides lives at line ~1373
+ * inside `@layer utilities`, and for !important declarations cascade-layer priority is REVERSED:
+ * an UNLAYERED !important rule has the LOWEST priority of all important declarations and would
+ * silently lose. Inside the same layer the normal cascade applies — equal specificity (0,3,0), and
+ * this block comes later in source order, so it wins. Layers merge, so re-declaring the layer here
+ * appends to the existing one. */
+@layer utilities {
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+ * Approvals status pills — dark mode.
+ *
+ * These CANNOT be fixed with `dark:` utilities, and that is worth explaining because the next
+ * person will try. The app-wide rescue net above uses SUBSTRING attribute selectors carrying
+ * !important, e.g. `.dark .glass-dashboard-content [class*="text-emerald-800"]`. Two consequences:
+ *
+ *   1. A Tailwind `dark:` utility compiles to specificity (0,1,0) with no !important. The net is
+ *      (0,3,0) WITH !important. The utility loses on both counts and is silently inert.
+ *   2. Worse, a class NAMED `dark:text-emerald-800` still CONTAINS the substring `text-emerald-800`,
+ *      so writing it ACTIVATES the very rule you are trying to override.
+ *
+ * Measured before this block, on the dark card surface:
+ *   PAID       1.48:1   (net forces the pill white and the text to teal-300)
+ *   SENT BACK  1.44:1   (bg-amber-100 unrescued, text-amber-800 forced to amber-300)
+ *   REJECTED   4.00:1
+ * All three failed WCAG AA (4.5:1) — PAID and SENT BACK by a factor of three.
+ *
+ * Scoping on [data-status] gives (0,3,0) plus the attribute, so it wins cleanly without adding
+ * another !important to the pile. Ratios below are computed, not estimated.
+ * ───────────────────────────────────────────────────────────────────────────────────────────── */
+.dark .approval-status-pill[data-status] {
+  background-image: none !important;
+  backdrop-filter: none !important;
+}
+.dark .approval-status-pill[data-status="pending"]  { background-color: #3a2a06 !important; color: #fcd34d !important; border-color: #78500a !important; } /* 9.62:1 */
+.dark .approval-status-pill[data-status="paid"]     { background-color: #052e22 !important; color: #6ee7b7 !important; border-color: #065f46 !important; } /* 9.70:1 */
+.dark .approval-status-pill[data-status="approved"] { background-color: #042f2e !important; color: #5eead4 !important; border-color: #0f766e !important; } /* 9.78:1 */
+.dark .approval-status-pill[data-status="sentback"] { background-color: #3b1d06 !important; color: #fdba74 !important; border-color: #9a3412 !important; } /* 9.13:1 */
+.dark .approval-status-pill[data-status="rejected"] { background-color: #3f0d17 !important; color: #fda4af !important; border-color: #9f1239 !important; } /* 8.67:1 */
 }

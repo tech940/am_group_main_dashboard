@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { findMissingApprovalField } from '@/lib/approvals/required-fields'
+import { allocateRequestNumber } from '@/lib/approvals/request-number'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests, approvalsCommonData, glAccounts } from '@/lib/db/schema'
 import { and, asc, eq, or } from 'drizzle-orm'
@@ -32,27 +34,52 @@ export async function POST(
       uploadBillUrl1,
       uploadBillUrl2,
       uploadDocUrl,
+      billUrls,
       glAccountId,
       gst,
       vehicleNumber,
     } = body
 
+    /*
+     * Every field except bills/documents is mandatory, for all brands. Enforced HERE because this
+     * endpoint is deliberately unauthenticated — the form's own checks are a courtesy, not a
+     * control. See lib/approvals/required-fields.ts.
+     */
+    const missingField = findMissingApprovalField(body)
+    if (missingField) {
+      return NextResponse.json({ error: missingField }, { status: 400 })
+    }
+
+    /*
+     * ⚠️ `billUrls` is the field the form actually sends.
+     *
+     * features/approvals/approvals-submit-form.tsx uploads any number of bills and posts them as
+     * `billUrls: string[]`. It does NOT send uploadBillUrl1/2 at all. This route previously read
+     * only those two flat fields, so EVERY non-KIA submission silently lost all of its bills —
+     * measured: the sole Hyundai request had 0 bills stored despite one being uploaded, while KIA
+     * (which has its own route at app/api/brands/kia/approvals/route.ts, and which wins over this
+     * dynamic segment) stored them on 86 of 122.
+     *
+     * The flat fields are still accepted because the signed-token re-submit flow can send that
+     * older shape.
+     *
+     * The first two entries are mirrored back into upload_bill_url_1/2 because the approver UI, the
+     * notification emails and the printed voucher read those columns — writing only the array would
+     * hide the bills from the people approving the payment.
+     */
+    const normalizedBillUrls: string[] = (
+      Array.isArray(billUrls) && billUrls.length
+        ? billUrls
+        : [uploadBillUrl1, uploadBillUrl2]
+    )
+      .filter((u: unknown): u is string => typeof u === 'string' && u.trim().length > 0)
+      .map((u: string) => u.trim())
+
+    const [mirrorBill1 = null, mirrorBill2 = null] = normalizedBillUrls
+
     const emailCheck = validateEmailDomain(email)
     if (!emailCheck.valid) {
       return NextResponse.json({ error: emailCheck.error }, { status: 400 })
-    }
-
-    if (!email || !email.trim()) {
-      return NextResponse.json({ error: 'Email Address is required' }, { status: 400 })
-    }
-    if (!name || !name.trim()) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
-    }
-    if (!department || !department.trim()) {
-      return NextResponse.json({ error: 'Department Category (Sales or Service) is mandatory' }, { status: 400 })
-    }
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      return NextResponse.json({ error: 'A valid amount greater than 0 is required' }, { status: 400 })
     }
 
     // Resolve GL Account: if missing, unmapped, or invalid UUID, fallback gracefully
@@ -111,9 +138,15 @@ export async function POST(
       }
     }
 
+    // Per-brand request number (KIA_0001). Allocated atomically — see the module for why a
+    // single ON CONFLICT statement rather than MAX+1, given this endpoint is public intake.
+    const requestNo = await allocateRequestNumber(normalizedBrand)
+
     const [inserted] = await db
       .insert(kiaApprovalRequests)
       .values({
+        // Omitted entirely before migration 0039 — naming an absent column fails the insert.
+        ...(requestNo ? { requestNo } : {}),
         email: email.trim(),
         name: name.trim(),
         employeeId: employeeId?.trim() || null,
@@ -129,8 +162,9 @@ export async function POST(
         amount: String(amount),
         typeOfPayment: typeOfPayment || null,
         remarks: remarks?.trim() || null,
-        uploadBillUrl1: uploadBillUrl1 || null,
-        uploadBillUrl2: uploadBillUrl2 || null,
+        billUrls: normalizedBillUrls,
+        uploadBillUrl1: mirrorBill1,
+        uploadBillUrl2: mirrorBill2,
         uploadDocUrl: uploadDocUrl || null,
         vpApproval: '',
         accountApproval: '',

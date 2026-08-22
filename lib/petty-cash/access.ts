@@ -1,9 +1,11 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
+import type { PgColumn } from 'drizzle-orm/pg-core'
 import type { AppUser } from '@/lib/auth/app-user'
 import { hasAllBranchAccess } from '@/lib/branches'
 import { pettyCashAllocations, pettyCashExpenses, pettyCashRequests } from '@/lib/db/schema'
 import { isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
+import { getPettyCashUserBrands } from './constants'
 
 type PettyCashRole = AppUser['role']
 type PettyCashRequestRecord = typeof pettyCashRequests.$inferSelect
@@ -28,12 +30,35 @@ export function hasPettyCashAllBranchAccess(appUser: Pick<AppUser, 'role' | 'bra
   return PETTY_CASH_ALL_BRANCH_ROLES.has(appUser.role) || hasAllBranchAccess(appUser.brand)
 }
 
+/**
+ * `branch_id = <brand>` for the single-brand login almost everybody is, `branch_id IN (…)` only
+ * when the login genuinely covers two.
+ *
+ * The one-brand arm emits byte-for-byte the same predicate and the same bound parameter as the old
+ * `eq(col, appUser.brand || '')`, so no live query plan changes and
+ * petty_cash_allocations_branch_status_created_idx is still used.
+ *
+ * The zero-brand arm keeps the old `= ''` (matches nothing) rather than relying on drizzle folding
+ * an empty inArray into FALSE. This predicate is the only thing between a mis-pinned or unpinned
+ * user and every branch's cash, so it fails CLOSED explicitly rather than incidentally.
+ */
+export function pettyCashBranchScope<T extends PgColumn>(column: T, brands: string[]): SQL<unknown> {
+  if (brands.length === 0) return eq(column, '')
+  if (brands.length === 1) return eq(column, brands[0])
+  return inArray(column, brands)
+}
+
+/** Brands this login may act in. Empty for 'all'/null pins — ask hasPettyCashAllBranchAccess first. */
+function brandsOf(appUser: Pick<AppUser, 'brand'>) {
+  return getPettyCashUserBrands(appUser.brand)
+}
+
 /** May this user VIEW petty-cash data scoped to `branchId`? All-branch roles may
  * scope to any brand; everyone else only to their own. Distinct from
  * canManagePettyCashBranch, which governs CREATE (kept branch-strict). */
 export function canViewPettyCashBranch(appUser: AppUser, branchId: string | null | undefined) {
   if (!branchId) return false
-  return hasPettyCashAllBranchAccess(appUser) || appUser.brand === branchId
+  return hasPettyCashAllBranchAccess(appUser) || brandsOf(appUser).includes(branchId)
 }
 
 // Only the Branch Admin (branch_admin) or Sales Manager (sales_manager) submits petty cash requests and expenses.
@@ -70,7 +95,7 @@ export function canApprovePettyCashStage(role: PettyCashRole | null | undefined,
 export function canManagePettyCashBranch(appUser: AppUser, branchId: string | null | undefined) {
   if (!branchId) return false
   if (hasAllBranchAccess(appUser.brand)) return true
-  return appUser.brand === branchId
+  return brandsOf(appUser).includes(branchId)
 }
 
 export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unknown> {
@@ -89,7 +114,7 @@ export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unkno
     appUser.role === 'general_manager' ||
     appUser.role === 'sales_manager'
   ) {
-    return and(...baseFilters, eq(pettyCashRequests.branchId, appUser.brand || ''))!
+    return and(...baseFilters, pettyCashBranchScope(pettyCashRequests.branchId, brandsOf(appUser)))!
   }
 
   return and(...baseFilters, eq(pettyCashRequests.createdBy, appUser.id))!
@@ -111,7 +136,7 @@ export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unkno
     appUser.role === 'general_manager' ||
     appUser.role === 'sales_manager'
   ) {
-    return and(...baseFilters, eq(pettyCashExpenses.branchId, appUser.brand || ''))!
+    return and(...baseFilters, pettyCashBranchScope(pettyCashExpenses.branchId, brandsOf(appUser)))!
   }
 
   return and(...baseFilters, eq(pettyCashExpenses.createdBy, appUser.id))!
@@ -145,29 +170,29 @@ export function getPettyCashAllocationVisibilityFilter(
     return and(
       ...activeOnly,
       eq(pettyCashAllocations.allocatedTo, appUser.id),
-      eq(pettyCashAllocations.branchId, appUser.brand || '')
+      pettyCashBranchScope(pettyCashAllocations.branchId, brandsOf(appUser))
     )!
   }
 
   return and(
     ...activeOnly,
-    eq(pettyCashAllocations.branchId, appUser.brand || '')
+    pettyCashBranchScope(pettyCashAllocations.branchId, brandsOf(appUser))
   )!
 }
 
 export function canReadPettyCashRequest(appUser: AppUser, request: Pick<PettyCashRequestRecord, 'branchId' | 'createdBy'>) {
   if (hasPettyCashAllBranchAccess(appUser)) return true
   if (request.createdBy === appUser.id) return true
-  return canAccessPettyCash(appUser.role) && appUser.brand === request.branchId
+  return canAccessPettyCash(appUser.role) && brandsOf(appUser).includes(request.branchId)
 }
 
 export function canReadPettyCashExpense(appUser: AppUser, expense: Pick<PettyCashExpenseRecord, 'branchId' | 'createdBy'>) {
   if (hasPettyCashAllBranchAccess(appUser)) return true
   if (expense.createdBy === appUser.id) return true
-  return canAccessPettyCash(appUser.role) && appUser.brand === expense.branchId
+  return canAccessPettyCash(appUser.role) && brandsOf(appUser).includes(expense.branchId)
 }
 
 export function canUsePettyCashAllocation(appUser: AppUser, allocation: Pick<PettyCashAllocationRecord, 'branchId' | 'allocatedTo' | 'status'>) {
   if (allocation.status !== 'active') return false
-  return allocation.allocatedTo === appUser.id && appUser.brand === allocation.branchId
+  return allocation.allocatedTo === appUser.id && brandsOf(appUser).includes(allocation.branchId)
 }

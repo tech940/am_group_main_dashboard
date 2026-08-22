@@ -974,6 +974,44 @@ export const kiaSalesTargets = pgTable('kia_sales_targets', {
   kiaSalesTargetsUniqueIdx: uniqueIndex('kia_sales_targets_unique_idx').on(table.dealerCode, table.consultantName, table.year, table.month),
 }))
 
+/**
+ * MD-set monthly targets per brand + branch — sales units, sales revenue, service RO count,
+ * service revenue. Backs the MD-only /targets section. Migration 0043.
+ *
+ * A different GRAIN from kiaSalesTargets above, not a superset of it: that table is per-CONSULTANT
+ * and KIA-only and stays as the individual leaderboard's source. This one is per-BRANCH, per-brand,
+ * and carries service as well as sales.
+ *
+ * ⚠️ Keyed on (brand, dealerCode) — never dealerCode alone. Dealer codes are NOT globally unique
+ * across brands: N6828 is both a Hyundai Billawar sub-code and Platinum Poonch's primary code.
+ *
+ * ⚠️ Every metric is NULLABLE and NULL IS NOT ZERO. NULL means the MD set nothing for that month,
+ * which is what lets the existing LY+10% fallback (lib/brands/sales-stock.ts) still apply; 0 is a
+ * deliberate target of zero. Do not add `.default(0)` — it would erase that distinction.
+ *
+ * `dealerCode` carries the sentinel PETTY-style '__brand__' for a brand-level row. Hyundai and
+ * Platinum sales cannot be split per outlet (their feeds file ~99% of deliveries under one dealer
+ * code), so their sales target is stored once against the sentinel. See lib/targets/constants.ts.
+ */
+export const mdBranchTargets = pgTable('md_branch_targets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  brand: text('brand').notNull(),
+  dealerCode: text('dealer_code').notNull(),
+  year: integer('year').notNull(),   // CALENDAR year
+  month: integer('month').notNull(), // CALENDAR month, 1..12
+  salesUnits: integer('sales_units'),
+  salesRevenue: decimal('sales_revenue', { precision: 14, scale: 2 }),
+  serviceRoCount: integer('service_ro_count'),
+  serviceRevenue: decimal('service_revenue', { precision: 14, scale: 2 }),
+  note: text('note'),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  mdBranchTargetsUniqueIdx: uniqueIndex('md_branch_targets_unique_idx').on(table.brand, table.dealerCode, table.year, table.month),
+  mdBranchTargetsBrandPeriodIdx: index('md_branch_targets_brand_period_idx').on(table.brand, table.year, table.month),
+}))
+
 export const mgUserProfiles = pgTable('mg_user_profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
   authUserId: uuid('auth_user_id').references(() => users.id, { onDelete: 'cascade' }),
@@ -1940,6 +1978,12 @@ export const kiaApprovalRequests = pgTable('kia_approval_requests', {
   // Full ordered list of bills for this request (migration 0034). The two columns below are the
   // legacy first-two mirror, still written and still read by the approver UI, the emails and the
   // printed voucher — see the migration for why they stay.
+  /**
+   * Human-readable, per-brand request number — KIA_0001, HYUNDAI_0001 (migration 0039).
+   * Allocated by lib/approvals/request-number.ts, unique-indexed. Nullable only so the column could
+   * be added to 126 existing rows before the backfill ran; every new row gets one.
+   */
+  requestNo: text('request_no'),
   billUrls: jsonb('bill_urls').$type<string[]>().default([]).notNull(),
   uploadBillUrl1: text('upload_bill_url_1'),
   uploadBillUrl2: text('upload_bill_url_2'),

@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   Activity,
+  Target,
   LayoutGrid,
   CalendarClock,
   ClipboardCheck,
@@ -31,6 +32,7 @@ import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import { canViewBookingPaymentHistory } from '@/lib/kia/booking-payment-history-access'
 import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
+import { canViewMdTargets } from '@/lib/auth/md-targets-access'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
@@ -451,6 +453,18 @@ export function Sidebar() {
     // ── Common / global modules (shared across every branch) ──
     const commonNodes: NavNode[] = []
     if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, external: true, active: pathname === '/cockpit' })
+    // Targets — MD + Developer ONLY. Gated on the role constant, not a permission key: a key would
+    // still reach `admin` and `hr`, because both are family:'super' in lib/permissions/tiers.ts and
+    // the super tier bundle sets every key true, bypassing deny-by-default. The page and every
+    // /api/targets route enforce this same predicate — see lib/auth/md-targets-access.ts.
+    if (canViewMdTargets(userRole)) commonNodes.push({
+      key: '/targets',
+      label: 'Targets',
+      href: '/targets',
+      icon: Target,
+      external: true,
+      active: Boolean(pathname?.startsWith('/targets')),
+    })
     // Delegation Tasks — visible to MD / EA / developer only.
     if (canAccessDelegationTasks && hasPermission('delegation_tasks.view')) commonNodes.push({ key: '/delegation-tasks', label: 'Delegation Tasks', href: '/delegation-tasks', icon: ClipboardList, external: true, active: pathname === '/delegation-tasks' })
     // Purchase Orders — CA lives as a TAB inside this page (app/purchase-orders/page.tsx) for CA/MD/
@@ -473,7 +487,7 @@ export function Sidebar() {
     if (hasPermission('kia.approvals.view')) {
       commonNodes.push({
         key: '/brands/kia/payment-approvals',
-        label: 'Kia Approvals',
+        label: 'Approvals',
         href: '/brands/kia/payment-approvals',
         icon: FileCheck,
         external: true,

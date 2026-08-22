@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { kiaApprovalRequests, glAccounts } from '@/lib/db/schema'
 import { eq, and, or } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { filterVisibleApprovals } from '@/lib/kia/approval-scope'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 
 export async function GET(req: NextRequest) {
@@ -28,6 +29,11 @@ export async function GET(req: NextRequest) {
         createdAt: kiaApprovalRequests.createdAt,
         name: kiaApprovalRequests.name,
         dealerName: kiaApprovalRequests.dealerName,
+        // Selected purely so the branch scope below can be applied — the CSV mapping at rows.map()
+        // names its columns explicitly, so these never reach the export.
+        brand: kiaApprovalRequests.brand,
+        dealerCode: kiaApprovalRequests.dealerCode,
+        location: kiaApprovalRequests.location,
         gst: kiaApprovalRequests.gst,
         glCode: glAccounts.glCode,
         glName: glAccounts.glName,
@@ -49,6 +55,13 @@ export async function GET(req: NextRequest) {
       )
 
     let rows = await query
+
+    /*
+     * Branch scope BEFORE the id filter, so passing explicit ids cannot widen what is exported.
+     * This route previously applied no branch check at all: any authenticated user could export
+     * every approved voucher in the group as a Tally-ready CSV. See lib/kia/approval-scope.ts.
+     */
+    rows = filterVisibleApprovals(appUser, rows)
 
     // If selected IDs were passed, filter down to them
     if (selectedIdsParam) {

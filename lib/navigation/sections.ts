@@ -7,6 +7,7 @@ import {
   canViewRestrictedAnalytics,
   isRestrictedAnalyticsHref,
 } from '@/lib/auth/restricted-analytics'
+import { canViewMdTargets, isMdTargetsHref } from '@/lib/auth/md-targets-access'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { isPettyCashViewRole, isAmFinanceViewRole, isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 
@@ -37,6 +38,17 @@ export const ALL_SECTIONS: SearchSection[] = [
     brand: 'common',
     iconName: 'Gauge',
     initials: 'GC',
+    category: 'common_dashboards',
+  },
+  {
+    id: 'md_targets',
+    name: 'Targets',
+    description: 'MD-only: set monthly sales and service targets for each branch, and track achievement.',
+    href: '/targets',
+    department: 'admin',
+    brand: 'common',
+    iconName: 'Target',
+    initials: 'TG',
     category: 'common_dashboards',
   },
   {
@@ -142,8 +154,11 @@ export const ALL_SECTIONS: SearchSection[] = [
   },
   {
     id: 'kia_approvals',
-    name: 'Kia Approvals',
-    description: 'Review pending Kia payment approval requests, attachments, and multi-stage workflows.',
+    // Named 'Approvals', not 'Kia Approvals': the section now receives submissions from every
+    // brand (Hyundai, Platinum and MG all post through app/api/brands/[brand]/approvals).
+    // The id, href and permission keys stay kia-prefixed so existing grants and links survive.
+    name: 'Approvals',
+    description: 'Review pending payment approval requests, attachments, and multi-stage workflows across brands.',
     href: '/brands/kia/payment-approvals',
     department: 'finance',
     brand: 'common',
@@ -516,6 +531,7 @@ export const ALL_SECTIONS: SearchSection[] = [
 
 export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/cockpit',
+  '/targets',
   '/delegation-tasks',
   '/call-analysis',
   '/insurance',
@@ -624,6 +640,16 @@ export function canUserAccessSection(
   // Scrap
   if (href === '/scrap' || href === '/scrap-erp') {
     return canAccessScrapErp(userRole, permissionMap)
+  }
+
+  // MD Targets — MD + Developer ONLY, and unwidenable.
+  //
+  // Same `return`-not-fall-through shape as the restricted-analytics guard below, for the same
+  // reason: no later branch and no Access-Map grant may re-open it. There is deliberately no
+  // permission key for this section, because a key would still reach `admin` and `hr` through the
+  // super tier bundle — see lib/auth/md-targets-access.ts.
+  if (isMdTargetsHref(href)) {
+    return canViewMdTargets(userRole)
   }
 
   // Call Analysis + Insurance Analysis — MD + Developer ONLY, and unwidenable.
