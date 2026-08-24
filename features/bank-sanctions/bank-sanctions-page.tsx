@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   CreditCard,
   Plus,
@@ -26,6 +26,7 @@ import {
   Eye,
   Pencil,
   Landmark,
+  Layers,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -221,6 +222,19 @@ export function BankSanctionsWorkspace() {
 
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(20)
+  /*
+   * Which location groups are open. Everything starts CLOSED — the point of the grouping is that
+   * the register opens as ~13 location rows you can scan, and you drill into one.
+   */
+  const [expandedLocations, setExpandedLocations] = useState<Set<string>>(new Set())
+  const toggleLocation = useCallback((key: string) => {
+    setExpandedLocations((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
   const [currentPage, setCurrentPage] = useState<number>(1)
 
   // Modal States
@@ -290,11 +304,97 @@ export function BankSanctionsWorkspace() {
     )
   }, [records, locationFilter, loanTypeFilter, statusFilter, search])
 
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(visible.length / pageSize)), [visible.length, pageSize])
-  const paginatedRecords = useMemo(() => {
+  /*
+   * ── Location grouping ──────────────────────────────────────────────────────────────────────
+   * The register is read location-first ("what does KIA owe?"), not as one 73-row list, so rows
+   * are collapsed under their location and the table opens one location at a time.
+   *
+   * ⚠️ Grouped on a NORMALISED key (lower-cased, non-alphanumerics stripped), not the raw string.
+   * Live data holds "Jammu Auto Mart" (11 facilities) AND "Jammuautomart" (2) — the same company
+   * typed two ways. Grouping raw would split one location into two headers whose totals each look
+   * complete and neither is. 14 distinct strings collapse to 13 real locations.
+   * The DISPLAY label is the spelling used by the most facilities, so the header shows the
+   * house style rather than whichever row happened to sort first.
+   */
+  const groupedByLocation = useMemo(() => {
+    const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const groups = new Map<string, { key: string; label: string; rows: SanctionRecord[]; spellings: Map<string, number> }>()
+
+    for (const row of visible) {
+      const key = normalise(row.location) || '__unspecified__'
+      let group = groups.get(key)
+      if (!group) {
+        group = { key, label: row.location, rows: [], spellings: new Map() }
+        groups.set(key, group)
+      }
+      group.rows.push(row)
+      group.spellings.set(row.location, (group.spellings.get(row.location) || 0) + 1)
+    }
+
+    return Array.from(groups.values()).map((group) => {
+      const label = Array.from(group.spellings.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || group.label
+      const totals = group.rows.reduce(
+        (acc, r) => ({
+          creditLimit: acc.creditLimit + (r.creditLimit ?? 0),
+          outstandingAmount: acc.outstandingAmount + (r.outstandingAmount ?? 0),
+          instalment: acc.instalment + (r.instalment ?? 0),
+          interestAmount: acc.interestAmount + (r.interestAmount ?? 0),
+        }),
+        { creditLimit: 0, outstandingAmount: 0, instalment: 0, interestAmount: 0 },
+      )
+      const validRoiRows = group.rows.filter((r) => r.roiPct !== null && r.creditLimit)
+      const totalWeightedRoi = validRoiRows.reduce((acc, r) => acc + (r.roiPct! * (r.creditLimit || 0)), 0)
+      const totalWeight = validRoiRows.reduce((acc, r) => acc + (r.creditLimit || 0), 0)
+      const weightedRoi = totalWeight > 0 ? Number((totalWeightedRoi / totalWeight).toFixed(2)) : null
+      const availableHeadroom = Math.max(0, totals.creditLimit - totals.outstandingAmount)
+
+      return {
+        key: group.key,
+        label,
+        rows: group.rows,
+        totals,
+        drawnPct: totals.creditLimit > 0 ? Math.round((totals.outstandingAmount / totals.creditLimit) * 100) : 0,
+        weightedRoi,
+        availableHeadroom,
+        expiredCount: group.rows.filter((r) => r.expiryStatus === 'old_expired').length,
+        expiringCount: group.rows.filter((r) => r.expiryStatus === 'current_month').length,
+        // More than one spelling in the source data — surfaced on the header so it gets cleaned up
+        // rather than silently merged forever.
+        spellingVariants: group.spellings.size > 1 ? Array.from(group.spellings.keys()) : null,
+      }
+    }).sort((a, b) => b.totals.creditLimit - a.totals.creditLimit)
+  }, [visible])
+
+  const hasNarrowingFilter =
+    search.trim() !== '' || locationFilter !== 'all' || loanTypeFilter !== 'all' || statusFilter !== 'all'
+
+  /*
+   * A search or filter must not leave the user staring at closed headers — typing a bank name
+   * would otherwise appear to return nothing. While anything narrows the list every surviving
+   * group renders open; with no filter, the user's own toggles apply.
+   *
+   * DERIVED, not synced through an effect: writing this into state from a useEffect trips
+   * react-hooks/set-state-in-effect and adds a render just to catch up with something already
+   * knowable. Clearing the filters restores whatever the user had manually opened.
+   */
+  const isGroupOpen = useCallback(
+    (key: string) => hasNarrowingFilter || expandedLocations.has(key),
+    [hasNarrowingFilter, expandedLocations],
+  )
+
+  /*
+   * Pagination now walks LOCATIONS, not rows: paging a grouped table by row would cut a location's
+   * facilities across two pages and make its header totals disagree with what is under it.
+   * With 13 locations and a default page size of 20 the control simply resolves to one page.
+   */
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(groupedByLocation.length / pageSize)),
+    [groupedByLocation.length, pageSize],
+  )
+  const paginatedGroups = useMemo(() => {
     const start = (currentPage - 1) * pageSize
-    return visible.slice(start, start + pageSize)
-  }, [visible, currentPage, pageSize])
+    return groupedByLocation.slice(start, start + pageSize)
+  }, [groupedByLocation, currentPage, pageSize])
 
   const totals = useMemo(() => visible.reduce(
     (acc, r) => ({
@@ -758,7 +858,212 @@ export function BankSanctionsWorkspace() {
               </thead>
 
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-normal">
-                {paginatedRecords.map((row) => {
+                {paginatedGroups.map((group) => {
+                  const isOpen = isGroupOpen(group.key)
+                  return (
+                  <Fragment key={group.key}>
+                    {/* ── Location header: the rich executive summary of one location/group position ── */}
+                    <tr
+                      className={cn(
+                        'group/parent border-y transition-all duration-150 cursor-pointer select-none',
+                        isOpen
+                          ? 'bg-slate-100/90 dark:bg-slate-800/90 border-slate-300 dark:border-slate-600 shadow-2xs'
+                          : 'bg-slate-50/75 dark:bg-slate-900/60 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 border-slate-200/90 dark:border-slate-800',
+                      )}
+                      onClick={() => toggleLocation(group.key)}
+                    >
+                      {/* Facility & Bank column -> Entity Name, Icon, Facility Pill, Expiry Alerts */}
+                      <td className={cn(
+                        'py-3.5 px-4 sticky left-0 z-10 transition-colors',
+                        isOpen
+                          ? 'bg-slate-100 dark:bg-slate-800 border-l-4 border-l-[var(--dashboard-primary)]'
+                          : 'bg-slate-50/95 dark:bg-slate-900/95 group-hover/parent:bg-slate-100/80 dark:group-hover/parent:bg-slate-800/80 border-l-4 border-l-transparent',
+                      )}>
+                        <div className="flex items-center gap-3">
+                          {/* Expand / Collapse Icon Pill */}
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            onClick={(event) => { event.stopPropagation(); toggleLocation(group.key) }}
+                            className={cn(
+                              'flex h-7 w-7 items-center justify-center rounded-lg border transition-all shadow-2xs flex-none cursor-pointer',
+                              isOpen
+                                ? 'bg-[var(--dashboard-primary)] text-white border-[var(--dashboard-primary)] shadow-sm'
+                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300 group-hover/parent:border-slate-400',
+                            )}
+                          >
+                            <ChevronRight
+                              className={cn('h-4 w-4 transition-transform duration-200 motion-reduce:transition-none', isOpen && 'rotate-90 text-white')}
+                              aria-hidden="true"
+                            />
+                          </button>
+
+                          {/* Entity Avatar / Monogram */}
+                          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-black text-xs shadow-2xs flex-none">
+                            {group.label.slice(0, 2).toUpperCase()}
+                          </div>
+
+                          {/* Entity Title & Badges */}
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[13px] font-black tracking-tight text-slate-950 dark:text-white truncate">
+                                {group.label}
+                              </span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-200/80 dark:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-300/60 dark:border-slate-600 tabular-nums shadow-2xs">
+                                <Layers className="h-3 w-3 text-slate-500" />
+                                {group.rows.length} {group.rows.length === 1 ? 'Facility' : 'Facilities'}
+                              </span>
+                              {group.expiredCount > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100/90 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 tabular-nums shadow-2xs">
+                                  <AlertTriangle className="h-2.5 w-2.5" />
+                                  {group.expiredCount} expired
+                                </span>
+                              )}
+                              {group.expiringCount > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100/90 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 tabular-nums shadow-2xs">
+                                  <Clock className="h-2.5 w-2.5" />
+                                  {group.expiringCount} expiring
+                                </span>
+                              )}
+                            </div>
+                            {group.spellingVariants && (
+                              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 truncate">
+                                Merged spellings: {group.spellingVariants.join(' · ')}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Location Column */}
+                      <td className="py-3.5 px-3 whitespace-nowrap">
+                        <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                          Group
+                        </span>
+                      </td>
+
+                      {/* Credit Limit & Headroom */}
+                      <td className="py-3.5 px-3 text-right whitespace-nowrap">
+                        <div className="flex flex-col items-end">
+                          <span className="text-sm font-black tabular-nums text-slate-950 dark:text-white tracking-tight">
+                            {formatCurrencyINR(group.totals.creditLimit)}
+                          </span>
+                          {group.availableHeadroom > 0 && (
+                            <span className="text-[10px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                              Avail: {formatCompactINR(group.availableHeadroom)}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Outstanding & Drawn % with styled progress bar */}
+                      <td className="py-3.5 px-3 text-right">
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <span className="text-sm font-black tabular-nums text-rose-600 dark:text-rose-400 tracking-tight">
+                              {formatCurrencyINR(group.totals.outstandingAmount)}
+                            </span>
+                            <span className={cn(
+                              'text-[10px] font-extrabold tabular-nums px-1.5 py-0.5 rounded-md border shadow-2xs',
+                              group.drawnPct > 90
+                                ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950 dark:text-rose-200'
+                                : group.drawnPct > 75
+                                ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-200'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200',
+                            )}>
+                              {group.drawnPct}%
+                            </span>
+                          </div>
+                          {group.totals.creditLimit > 0 && (
+                            <div className="h-1.5 w-24 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                              <div
+                                className={cn(
+                                  'h-full rounded-full transition-all duration-300',
+                                  group.drawnPct > 90 ? 'bg-rose-500' : group.drawnPct > 75 ? 'bg-amber-500' : 'bg-emerald-500',
+                                )}
+                                style={{ width: `${Math.min(100, group.drawnPct)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Instalment (Monthly Principal) */}
+                      <td className="py-3.5 px-3 text-right whitespace-nowrap">
+                        <div className="flex flex-col items-end">
+                          <span className="text-xs font-bold tabular-nums text-slate-800 dark:text-slate-200">
+                            {formatCurrencyINR(group.totals.instalment)}
+                          </span>
+                          <span className="text-[9px] font-medium text-slate-400 uppercase tracking-tight">Principal</span>
+                        </div>
+                      </td>
+
+                      {/* Weighted Average ROI % */}
+                      <td className="py-3.5 px-3 text-right whitespace-nowrap">
+                        {group.weightedRoi !== null ? (
+                          <span className="inline-block px-2 py-0.5 rounded-md font-bold text-xs tabular-nums bg-purple-100/70 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shadow-2xs">
+                            {group.weightedRoi}% <span className="text-[9px] font-normal text-purple-600 dark:text-purple-400">avg</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-300 dark:text-slate-600">—</span>
+                        )}
+                      </td>
+
+                      {/* Interest */}
+                      <td className="py-3.5 px-3 text-right whitespace-nowrap">
+                        <div className="flex flex-col items-end">
+                          <span className="text-xs font-bold tabular-nums text-slate-800 dark:text-slate-200">
+                            {formatCurrencyINR(group.totals.interestAmount)}
+                          </span>
+                          <span className="text-[9px] font-medium text-slate-400 uppercase tracking-tight">Est. Interest</span>
+                        </div>
+                      </td>
+
+                      {/* Expiry Date / Status Summary across facilities */}
+                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center">
+                          {group.expiredCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                              <AlertTriangle className="h-3 w-3" /> Action Needed
+                            </span>
+                          ) : group.expiringCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                              <Clock className="h-3 w-3" /> Review Expiring
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 className="h-3 w-3" /> All Active
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Docs Count / Status */}
+                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
+                        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                          {group.rows.filter(r => r.documentUrl1 || r.documentUrl2).length}/{group.rows.length} Docs
+                        </span>
+                      </td>
+
+                      {/* Actions: Clean Expand / Collapse Action Button */}
+                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); toggleLocation(group.key) }}
+                          className={cn(
+                            'inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs border',
+                            isOpen
+                              ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100 border-slate-300 dark:border-slate-600 hover:bg-slate-300'
+                              : 'bg-white dark:bg-slate-800 text-[var(--dashboard-primary)] dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/80 hover:border-slate-300',
+                          )}
+                        >
+                          <span>{isOpen ? 'Collapse' : `View ${group.rows.length} ${group.rows.length === 1 ? 'Facility' : 'Facilities'}`}</span>
+                          <ChevronRight className={cn('h-3.5 w-3.5 transition-transform duration-200', isOpen && 'rotate-90')} />
+                        </button>
+                      </td>
+                    </tr>
+
+                    {isOpen && group.rows.map((row) => {
                   const bank = getBankBadge(row.loanType)
                   const facilityType = getFacilityTypeBadge(row.loanType)
                   const locBadge = getLocationBadge(row.location)
@@ -781,7 +1086,7 @@ export function BankSanctionsWorkspace() {
                       )}
                     >
                       {/* Facility & Bank Tags */}
-                      <td className="py-3 px-4 sticky left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800 transition-colors">
+                      <td className="py-3 px-4 sticky left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800 transition-colors pl-12 border-l-4 border-l-slate-200 dark:border-l-slate-700">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={cn('px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider shrink-0 shadow-2xs', bank.bg, bank.text, bank.border)}>
@@ -946,6 +1251,9 @@ export function BankSanctionsWorkspace() {
                       </td>
                     </tr>
                   )
+                    })}
+                  </Fragment>
+                  )
                 })}
               </tbody>
 
@@ -984,15 +1292,20 @@ export function BankSanctionsWorkspace() {
             {/* Left: Items Count & Per Page Selector */}
             <div className="flex items-center gap-3">
               <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                {/* Counts LOCATIONS, because that is what the pages step through now — quoting a
+                    facility range here would describe a page boundary the table no longer has. */}
                 Showing{' '}
                 <strong className="text-slate-900 dark:text-slate-100 tabular-nums font-semibold">
-                  {(currentPage - 1) * pageSize + 1}
+                  {groupedByLocation.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
                 </strong>
                 –
                 <strong className="text-slate-900 dark:text-slate-100 tabular-nums font-semibold">
-                  {Math.min(currentPage * pageSize, visible.length)}
+                  {Math.min(currentPage * pageSize, groupedByLocation.length)}
                 </strong>{' '}
-                of <strong className="text-slate-900 dark:text-slate-100 tabular-nums font-semibold">{visible.length}</strong> facilities
+                of <strong className="text-slate-900 dark:text-slate-100 tabular-nums font-semibold">{groupedByLocation.length}</strong>
+                {groupedByLocation.length === 1 ? ' location' : ' locations'}
+                {' · '}
+                <strong className="text-slate-900 dark:text-slate-100 tabular-nums font-semibold">{visible.length}</strong> facilities
               </span>
 
               {/* Rows Per Page Selector */}

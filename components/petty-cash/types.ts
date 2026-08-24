@@ -45,6 +45,8 @@ export type PettyCashRequest = {
   requested_by_name?: string
   requestedAmount?: string
   requested_amount?: string
+  allocatedAmount?: string
+  allocated_amount?: string
   purpose: string
   location?: string | null
   department?: string | null

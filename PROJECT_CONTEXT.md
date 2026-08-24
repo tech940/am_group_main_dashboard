@@ -1,10 +1,10 @@
 # Project Context
 
-Last updated: 2026-07-04
+Last updated: 2026-08-24
 
 ## Project Overview
 
-Main Dashboard is a Next.js 16 App Router application for AM Group vehicle operations. It covers purchase-order workflow management, Finance Orders, and KIA Business Excellence analytics, with the current build focused on approval workflows plus KIA Business Excellence sections for the unified overview, RO Billing, Workshop Performance, Open RO, and KIA Complaints.
+Main Dashboard is a Next.js 16 App Router application for AM Group vehicle operations. It covers purchase-order workflow management, Petty Cash management, Finance Orders, and multi-brand (KIA, Hyundai, MG, Platinum) Business Excellence analytics, approval workflows, and booking/allocation history.
 
 The application is designed for operational users across Admin, CEO, Purchase Manager, Finance Head, EA, MD, Accounts, and brand/branch-specific teams. The core goals are fast dashboards, controlled workflow visibility, branch-aware access, and executive-style analytics.
 
@@ -777,6 +777,40 @@ Finance Order bank options come from `FINANCE_BANK_OPTIONS` in `lib/dashboard-co
 - Purchase Orders spending/completion UI cleanup.
 - Branch-aware sidebar/backend access hardening.
 - Notification realtime/browser behavior refinement.
+
+## Petty Cash Management & Executive Approvals (August 2026)
+
+- **MD Amount Adjustment Dialog**:
+  - Located in `components/petty-cash/pc-md-approval-dialog.tsx`.
+  - When an MD / MD Office approver (`md`, `eba`, or any approver at `md_approval` stage) clicks Approve on a Petty Cash Float request, a modal dialog appears showing requester, department, branch, location, purpose, and requested amount baseline.
+  - The MD can edit/reduce the approved amount (`allocatedAmount`) using number input or quick percentage preset pills (100% Full, 75%, 50%, 25%).
+  - Real-time comparison banner shows exact reduction/increase (`Reduced by ₹X.XX — Accounts will be authorized to disburse ₹X.XX only`).
+  - Upon MD submission with an optional note/remarks, the request is updated with `allocatedAmount = toMoney(finalApprovedAmount)`, status transitions to `accounts_pending`, and stage moves to `accounts`.
+  - In `accounts` disbursement, Accounts funds/disburses the sanctioned amount (`request.allocatedAmount || request.requestedAmount`) instead of the original requested amount.
+  - History audit trail records `metadata: { requestedAmount, allocatedAmount, modifiedByMd: true }`.
+- **Petty Cash UI & UX Polish**:
+  - Unmissable Action Alert Banner at the top of the Overview tab with animated pulse indicator, high-contrast amber styling, and direct Review Queue CTA for pending approval requests.
+  - Semantic, accessible color styling across action buttons (emerald for approve, amber for hold, rose for reject).
+  - Modern, executive-level BalanceMeter card with clean typography and no duplicate gauges.
+  - Dual amount display in tables and drawer: shows MD-sanctioned amount in bold emerald with original requested amount struck through if modified.
+  - Dedicated approval panel (`components/petty-cash/approval-panel.tsx`) supports quick-action MD approval modal and drawer sanctioned amount editing.
+
+## Public Brand Approvals & Security Architecture (August 2026)
+
+- **Public Submission Forms**:
+  - Approval submission forms at `/brands/[brand]/approvals/submit` (Kia, Hyundai, Platinum) are allowlisted in `proxy.ts` / middleware to allow submission without login.
+  - GL accounts endpoint `GET /api/brands/kia/approvals/gl-accounts` is public for form dropdown population.
+  - Added default approval types: `Crane Charges`, `Key Cutting`, and `Tyre fitting / Puncture` across Kia, Hyundai, Platinum approval forms, GL mappings, and server constants with pre-seeded fallback defaults.
+- **Database Row Level Security (RLS) Hardening**:
+  - Full Supabase security linter compliance: RLS enabled and forced on all operational tables (`am_hyundai_trips`, `mg_employees`, `mg_trips`, `mg_vehicle`, `platinum_test_drive_vehicle`, `trips`, `kia_vehicle`, `kia_trips`, `kia_employees`, `am_hyundai_vehicle`, `am_hyundai_employees`).
+  - Revoked public/anon grants on sensitive employee and vehicle trip tables.
+  - Auto-enable RLS event triggers maintain RLS enforcement on any newly created tables.
+- **Kia Bookings**:
+  - Semantic color-coding applied to Kia Allocation History table.
+- **Bank Sanctions Financial Table UI Redesign**:
+  - Upgraded outer group row UI from basic plain text to executive-level summary cards in `features/bank-sanctions/bank-sanctions-page.tsx`.
+  - Added entity avatar monograms, `Layers` facility counter pills, animated alert badges for expired/expiring facilities, real-time available headroom indicators (`Avail: ₹X.XX Cr`), styled utilization progress meters, weighted average ROI calculation across entity facilities, and interactive `View X Facilities` expand/collapse action buttons.
+  - Added nested tree guide styling (`border-l-4 pl-12`) to child rows so expanded facilities visually group under parent entities.
 
 ## Pending Tasks
 

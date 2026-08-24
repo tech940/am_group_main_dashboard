@@ -146,6 +146,9 @@ export function PettyCashDetailDialog({
     ? field(fetched, row, 'amount')
     : field(fetched, row, 'requestedAmount', 'requested_amount')
   const categoryName = categories.find((category) => category.id === field(fetched, row, 'categoryId', 'category_id'))?.name || null
+  const reqAmt = Number(field(fetched, row, 'requestedAmount', 'requested_amount')) || 0
+  const allocAmt = Number(field(fetched, row, 'allocatedAmount', 'allocated_amount')) || 0
+  const isModifiedRequest = !isExpense && allocAmt > 0 && allocAmt !== reqAmt
 
   return (
     <Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose() }}>
@@ -155,8 +158,18 @@ export function PettyCashDetailDialog({
             <span className="font-mono text-xs font-bold text-slate-500">{headerNumber}</span>
             {headerStatus ? <StatusPill status={headerStatus} /> : null}
           </div>
-          <DialogTitle className="text-2xl font-black tracking-tight text-slate-950">
-            {formatCurrency(headerAmount)}
+          <DialogTitle className="text-2xl font-black tracking-tight text-slate-950 flex flex-wrap items-baseline gap-2">
+            <span>{formatCurrency(isModifiedRequest ? allocAmt : headerAmount)}</span>
+            {isModifiedRequest && (
+              <>
+                <span className="text-xs font-semibold text-slate-400 line-through tabular-nums">
+                  Req: {formatCurrency(reqAmt)}
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  MD Approved
+                </span>
+              </>
+            )}
           </DialogTitle>
           <DialogDescription className="text-sm font-semibold text-slate-500">
             {isExpense ? 'Expense details' : 'Petty cash request details'}
@@ -190,7 +203,7 @@ export function PettyCashDetailDialog({
                 <DetailField icon={Building2} label="Department" value={field(fetched, row, 'department') || '—'} />
                 <DetailField icon={MapPin} label="Location" value={field(fetched, row, 'location') || '—'} />
                 <DetailField icon={CalendarClock} label="Submitted" value={formatDateTime(field(fetched, row, 'submittedAt', 'submitted_at', 'createdAt', 'created_at')) || '—'} />
-                <DetailField icon={Wallet} label="Allocated" value={allocation ? formatCurrency(str(allocation.allocatedAmount)) : '—'} />
+                <DetailField icon={Wallet} label="Sanctioned / Allocated" value={allocAmt > 0 ? formatCurrency(allocAmt) : (allocation ? formatCurrency(str(allocation.allocatedAmount)) : '—')} />
                 <DetailField icon={Wallet} label="Payment Type" value={field(fetched, row, 'typeOfPayment') || '—'} />
               </div>
               <div className="rounded-2xl bg-slate-50 p-4">

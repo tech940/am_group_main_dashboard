@@ -40,6 +40,7 @@ import { RequestFormDialog } from './pc-request-form'
 import { ExpenseFormDialog } from './pc-expense-form'
 import { PettyCashDetailDialog, type DetailTarget } from './pc-detail-dialog'
 import { AllocationSpendDialog } from './pc-allocation-spend-dialog'
+import { MdApprovalAmountDialog } from './pc-md-approval-dialog'
 import {
   BalanceMeter,
   EmptyState,
@@ -196,6 +197,7 @@ export function PettyCashWorkspace() {
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false)
   const [historyView, setHistoryView] = useState<HistoryView>('expenses')
   const [workflowDialog, setWorkflowDialog] = useState<WorkflowDialogState>(null)
+  const [mdApprovalDialog, setMdApprovalDialog] = useState<PettyCashRequest | null>(null)
   const [detailTarget, setDetailTarget] = useState<DetailTarget>(null)
   const [loading, setLoading] = useState(true)
   const [dashboardLoading, setDashboardLoading] = useState(false)
@@ -819,14 +821,19 @@ export function PettyCashWorkspace() {
     }
   }, [expenseForm, currentAllocation, expenseFiles, refreshAfterMutation])
 
-  const applyRequestWorkflow = useCallback(async (id: string, stage: ApprovalStage, action: 'approve' | 'reject' | 'hold', remarks = '') => {
+  const applyRequestWorkflow = useCallback(async (id: string, stage: ApprovalStage, action: 'approve' | 'reject' | 'hold', remarks = '', allocatedAmount?: number) => {
     setSubmitting(true)
     setError(null)
     try {
       const res = await fetch(`/api/petty-cash/requests/${encodeURIComponent(id)}/workflow`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stage, action, remarks }),
+        body: JSON.stringify({
+          stage,
+          action,
+          remarks,
+          allocatedAmount: allocatedAmount !== undefined && Number.isFinite(allocatedAmount) ? Number(allocatedAmount) : undefined,
+        }),
       })
       const result = await res.json().catch(() => null)
       if (!res.ok) throw new Error(result?.error || `Failed to ${action} request`)
@@ -1974,6 +1981,19 @@ export function PettyCashWorkspace() {
             await applyRequestWorkflow(request.id, stageForRequest(request, userRole), action, remarks)
           }}
         />
+        <MdApprovalAmountDialog
+          open={mdApprovalDialog !== null}
+          onOpenChange={(open) => { if (!open) setMdApprovalDialog(null) }}
+          request={mdApprovalDialog}
+          loading={submitting}
+          onConfirm={async ({ remarks, approvedAmount }) => {
+            if (!mdApprovalDialog) return
+            const currentStage = stageForRequest(mdApprovalDialog, userRole)
+            const targetStage = currentStage === 'md_approval' ? 'md_approval' : 'md_approval'
+            await applyRequestWorkflow(mdApprovalDialog.id, targetStage, 'approve', remarks, approvedAmount)
+            setMdApprovalDialog(null)
+          }}
+        />
         <PettyCashDetailDialog target={detailTarget} onClose={() => setDetailTarget(null)} categories={categoryOptions} />
       </div>
     </MotionConfig>
@@ -2032,7 +2052,31 @@ export function PettyCashWorkspace() {
           },
           { header: 'Department', cell: (request) => <DepartmentBadge department={request.department} /> },
           { header: 'Purpose', cell: (request) => <span className="line-clamp-1 max-w-[220px] text-xs font-medium text-slate-600 dark:text-slate-400">{request.purpose || '—'}</span> },
-          { header: 'Amount', align: 'right', cell: (request) => <span className="font-semibold text-sm tabular-nums text-slate-900 dark:text-slate-50">{formatCurrency(requestedAmount(request))}</span> },
+          {
+            header: 'Amount',
+            align: 'right' as const,
+            cell: (request: PettyCashRequest) => {
+              const reqAmt = Number(requestedAmount(request))
+              const allocAmt = Number(request.allocatedAmount || request.allocated_amount || 0)
+              const isModified = allocAmt > 0 && allocAmt !== reqAmt
+
+              return (
+                <div className="flex flex-col items-end">
+                  <span className={cn(
+                    "font-semibold text-sm tabular-nums",
+                    isModified ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-slate-900 dark:text-slate-50"
+                  )}>
+                    {formatCurrency(isModified ? allocAmt : reqAmt)}
+                  </span>
+                  {isModified && (
+                    <span className="text-[10px] text-slate-400 line-through tabular-nums">
+                      Req: {formatCurrency(reqAmt)}
+                    </span>
+                  )}
+                </div>
+              )
+            },
+          },
           { header: 'Status', cell: (request) => <StatusPill status={request.status} /> },
           ...(withActions
             ? [{
@@ -2063,10 +2107,18 @@ export function PettyCashWorkspace() {
 
                 {withActions && canActOnRequest(userRole, request) && (
                   <>
-                    {/* Approve Button (Soft Emerald) */}
+                    {/* Approve Button (Soft Emerald) - Opens MD Amount Modal for MD/EBA */}
                     <button
                       type="button"
-                      onClick={() => setWorkflowDialog({ request, action: 'approve' })}
+                      onClick={() => {
+                        const stage = stageForRequest(request, userRole)
+                        const isMd = userRole === 'md' || userRole === 'eba' || stage === 'md_approval'
+                        if (isMd) {
+                          setMdApprovalDialog(request)
+                        } else {
+                          setWorkflowDialog({ request, action: 'approve' })
+                        }
+                      }}
                       disabled={submitting}
                       className="inline-flex items-center justify-center h-7 px-2.5 rounded-lg text-xs font-bold gap-1 cursor-pointer shadow-2xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-700 transition-colors disabled:opacity-50"
                     >

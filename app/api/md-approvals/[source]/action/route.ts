@@ -77,13 +77,14 @@ async function dispatchPurchaseOrders(request: Request, ids: string[], action: A
 }
 
 /** Petty cash: no bulk endpoint at all, so per-item is the only option. */
-async function dispatchPettyCash(request: Request, ids: string[], action: Action, remarks: string) {
+async function dispatchPettyCash(request: Request, ids: string[], action: Action, remarks: string, extra?: { allocatedAmount?: number | string }) {
   const results: RowResult[] = []
   for (const id of ids) {
     const outcome = await callModule(request, `/api/petty-cash/requests/${id}/workflow`, {
       action,
       stage: 'md_approval',
       remarks,
+      allocatedAmount: extra?.allocatedAmount ? Number(extra.allocatedAmount) : undefined,
     })
     results.push({ id, ok: outcome.ok, error: outcome.error })
   }
@@ -111,7 +112,7 @@ async function dispatchVendorPayments(request: Request, ids: string[], action: A
   return results
 }
 
-const DISPATCH: Record<MdApprovalSourceId, typeof dispatchPurchaseOrders> = {
+const DISPATCH: Record<MdApprovalSourceId, (request: Request, ids: string[], action: Action, remarks: string, extra?: { allocatedAmount?: number | string }) => Promise<RowResult[]>> = {
   purchase_orders: dispatchPurchaseOrders,
   petty_cash: dispatchPettyCash,
   vendor_payments: dispatchVendorPayments,
@@ -146,8 +147,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ sou
     return NextResponse.json({ error: 'A reason is required to reject.' }, { status: 400 })
   }
 
+  const allocatedAmount = body?.allocatedAmount || body?.amount
+
   try {
-    const results = await DISPATCH[sourceId](request, ids, action, remarks)
+    const results = await DISPATCH[sourceId](request, ids, action, remarks, { allocatedAmount })
     const failed = results.filter((r) => !r.ok)
     return NextResponse.json({
       // `ok` reflects whether EVERY item succeeded. A partial batch must never read as success —

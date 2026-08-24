@@ -36,6 +36,8 @@ import { cn } from '@/lib/utils'
 import { getBranchLabel } from '@/lib/branches'
 import { TONE_CLASS } from './pc-shared'
 import type { Tone } from './pc-shared'
+import { MdApprovalAmountDialog } from './pc-md-approval-dialog'
+import type { PettyCashRequest } from './types'
 
 type ApprovalStage = 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'
 
@@ -187,6 +189,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
     stage: ApprovalStage | null
   } | null>(null)
   const [directRemarks, setDirectRemarks] = useState('')
+  const [mdApprovalDialog, setMdApprovalDialog] = useState<PettyCashRequest | null>(null)
   const [stageFilter, setStageFilter] = useState<'all' | ApprovalStage>(() => {
     return (role === 'md' || role === 'eba') ? 'md_approval' : 'all'
   })
@@ -227,6 +230,17 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
   const runActionDirect = useCallback(async (e: React.MouseEvent, requestId: string, action: 'approve' | 'hold' | 'reject', stage: ApprovalStage | null) => {
     e.stopPropagation() // prevent opening detail modal
     if (!stage) return
+
+    const r = String(role).trim().toLowerCase()
+    const targetStage = (stage === 'ea_approval' && (r === 'md' || r === 'eba')) ? 'md_approval' : stage
+
+    if (action === 'approve' && targetStage === 'md_approval') {
+      const targetReq = requests.find((req) => req.id === requestId)
+      if (targetReq) {
+        setMdApprovalDialog(targetReq as unknown as PettyCashRequest)
+        return
+      }
+    }
     
     if (action === 'hold' || action === 'reject') {
       setDirectActionPending({ requestId, action, stage })
@@ -234,11 +248,9 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
       return
     }
     
-    // For 'approve', execute immediately with no remarks!
+    // For other roles approving, execute immediately
     setSubmittingId(requestId)
     try {
-      const r = String(role).trim().toLowerCase()
-      const targetStage = (stage === 'ea_approval' && (r === 'md' || r === 'eba')) ? 'md_approval' : stage
       const body: Record<string, unknown> = { action, stage: targetStage }
       const res = await fetch(`/api/petty-cash/requests/${encodeURIComponent(requestId)}/workflow`, {
         method: 'POST',
@@ -331,7 +343,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
       const r = String(role).trim().toLowerCase()
       const targetStage = (activeStage === 'ea_approval' && (r === 'md' || r === 'eba')) ? 'md_approval' : activeStage
       const body: Record<string, unknown> = { action, stage: targetStage, remarks: remarks.trim() || undefined }
-      if (action === 'approve' && activeStage === 'accounts' && approvedAmount) {
+      if (action === 'approve' && (activeStage === 'accounts' || targetStage === 'md_approval') && approvedAmount) {
         body.allocatedAmount = Number(approvedAmount)
       }
       const res = await fetch(`/api/petty-cash/requests/${encodeURIComponent(selectedId)}/workflow`, {
@@ -643,16 +655,17 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                 <div className="border-t border-slate-100 bg-white p-6">
                   {canAct && activeStage ? (
                     <div className="space-y-3">
-                      {activeStage === 'accounts' && (
+                      {(activeStage === 'accounts' || activeStage === 'md_approval') && (
                         <div>
                           <label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
-                            Approved Amount
+                            {activeStage === 'md_approval' ? 'Sanctioned Amount (Sent to Accounts)' : 'Approved Amount'}
                           </label>
                           <div className="relative mt-1">
                             <Banknote className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                             <Input
                               value={approvedAmount}
                               inputMode="numeric"
+                              placeholder="Enter sanctioned amount"
                               onChange={(event) =>
                                 setApprovedAmount(event.target.value.replace(/[^\d.]/g, ''))
                               }
@@ -781,6 +794,42 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
           </div>
         </DialogContent>
       </Dialog>
+
+      <MdApprovalAmountDialog
+        open={mdApprovalDialog !== null}
+        onOpenChange={(open) => { if (!open) setMdApprovalDialog(null) }}
+        request={mdApprovalDialog}
+        loading={submittingId !== null}
+        onConfirm={async ({ remarks: mdRemarks, approvedAmount: mdApprovedAmount }) => {
+          if (!mdApprovalDialog) return
+          setSubmittingId(mdApprovalDialog.id)
+          try {
+            const res = await fetch(`/api/petty-cash/requests/${encodeURIComponent(mdApprovalDialog.id)}/workflow`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                stage: 'md_approval',
+                action: 'approve',
+                remarks: mdRemarks || undefined,
+                allocatedAmount: mdApprovedAmount,
+              }),
+            })
+            const data = await res.json().catch(() => null)
+            if (!res.ok) throw new Error(data?.error || 'Failed to approve request')
+            toast({
+              title: 'Request approved',
+              description: `Sanctioned amount set to ₹${mdApprovedAmount} and forwarded to Accounts.`,
+              variant: 'success',
+            })
+            setMdApprovalDialog(null)
+            await load()
+          } catch (error) {
+            toast({ title: 'Action failed', description: error instanceof Error ? error.message : 'Please try again.', variant: 'error' })
+          } finally {
+            setSubmittingId(null)
+          }
+        }}
+      />
     </div>
     </MotionConfig>
   )

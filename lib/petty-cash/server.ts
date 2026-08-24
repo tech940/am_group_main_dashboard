@@ -1084,7 +1084,17 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
   } else if (input.stage === 'md_approval') {
     if (!['md_pending', 'md_on_hold', 'ea_pending', 'ea_on_hold', 'ed_approved'].includes(request.status)) throw new Error('Request is not awaiting MD approval')
     if (input.action === 'approve') {
-      updateData = { ...updateData, status: 'accounts_pending', currentStage: 'accounts', mdApprovedBy: appUser.id, mdApprovedAt: now, mdRemarks: null }
+      const finalApprovedAmount = input.allocatedAmount ? parseMoney(input.allocatedAmount) : parseMoney(request.allocatedAmount || request.requestedAmount)
+      if (finalApprovedAmount <= 0) throw new Error('Approved amount must be greater than zero')
+      updateData = {
+        ...updateData,
+        status: 'accounts_pending',
+        currentStage: 'accounts',
+        allocatedAmount: toMoney(finalApprovedAmount),
+        mdApprovedBy: appUser.id,
+        mdApprovedAt: now,
+        mdRemarks: input.remarks || null,
+      }
       newStatus = 'accounts_pending'
       newStage = 'accounts'
     } else if (input.action === 'hold') {
@@ -1105,7 +1115,8 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
       newStatus = 'accounts_on_hold'
       newStage = 'accounts'
     } else {
-      const approvedAmount = parseMoney(request.requestedAmount)
+      const sanctionedAmount = parseMoney(request.allocatedAmount || request.requestedAmount)
+      const approvedAmount = input.allocatedAmount ? parseMoney(input.allocatedAmount) : sanctionedAmount
 
       return await db.transaction(async (tx) => {
         const [activeAllocation] = await tx
@@ -1266,7 +1277,12 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
     remarks: input.remarks || null,
     previousStatus: request.status,
     newStatus,
-    metadata: { nextStage: newStage },
+    metadata: {
+      nextStage: newStage,
+      requestedAmount: request.requestedAmount,
+      allocatedAmount: updateData.allocatedAmount || request.allocatedAmount || null,
+      modifiedByMd: input.stage === 'md_approval' && Boolean(input.allocatedAmount && Number(input.allocatedAmount) !== Number(request.requestedAmount)),
+    },
   })
 
   if (input.action === 'approve') {
@@ -1276,6 +1292,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
       requestedByEmail: request.requestedByEmail,
       createdByUserId: request.createdBy,
       requestedAmount: request.requestedAmount,
+      allocatedAmount: updateData.allocatedAmount ? parseMoney(updateData.allocatedAmount) : (request.allocatedAmount ? parseMoney(request.allocatedAmount) : undefined),
       purpose: request.purpose,
       stage: input.stage,
       action: input.action,
