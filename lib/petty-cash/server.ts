@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } 
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import type { AppUser } from '@/lib/auth/app-user'
-import { isBranchValue } from '@/lib/branches'
+import { hasAllBranchAccess, isBranchValue } from '@/lib/branches'
 import { db } from '@/lib/db'
 import {
   pettyCashAllocations,
@@ -33,7 +33,9 @@ import {
   getPettyCashRequestVisibilityFilter,
   pettyCashBranchScope,
 } from './access'
-import { PETTY_CASH_TOP_UP_THRESHOLD, getPettyCashUserBrands, isPettyCashExpenseStatus, isPettyCashRequestStatus } from './constants'
+import { PETTY_CASH_TOP_UP_THRESHOLD, getPettyCashUserBrands, isPettyCashExpenseStatus, isPettyCashRequestStatus,
+  isPettyCashOwnSubmissionsOnlyRole,
+} from './constants'
 import { sendPettyCashApprovalEmail } from './emails'
 
 type PettyCashAllocationRecord = typeof pettyCashAllocations.$inferSelect
@@ -180,12 +182,33 @@ function makeReference(prefix: 'PCR' | 'PCA' | 'PCE') {
  * Returns null rather than throwing so there is ONE failure channel: the caller's existing
  * `!branchId || !canManagePettyCashBranch(...)` guard owns the error message.
  */
-function resolvePettyCashCreationBranch(appUser: AppUser, requestedBranchId?: string | null) {
-  const brands = getPettyCashUserBrands(appUser.brand)
-  if (brands.length === 0) return null
-  if (brands.length === 1) return brands[0]
+function resolvePettyCashCreationBranch(appUser: AppUser, requestedBranchId?: string | null, location?: string | null) {
   const requested = String(requestedBranchId || '').trim()
-  return requested && brands.includes(requested) ? requested : null
+  if (requested && isBranchValue(requested)) {
+    if (canManagePettyCashBranch(appUser, requested)) {
+      return requested
+    }
+  }
+  const brands = getPettyCashUserBrands(appUser.brand)
+  if (brands.length === 1) return brands[0]
+  if (brands.length > 1 && requested && brands.includes(requested)) return requested
+
+  // Infer branch from location if provided
+  if (location) {
+    const locLower = location.toLowerCase()
+    if (['akhnoor', 'kathua', 'rs pura', 'vijaypur', 'billawar'].includes(locLower)) return 'hyundai'
+    if (['rajouri', 'poonch'].includes(locLower)) return 'platinum'
+    if (['udhampur', 'banihal'].includes(locLower)) return 'kia'
+    if (locLower.includes('hyundai')) return 'hyundai'
+    if (locLower.includes('platinum')) return 'platinum'
+    if (locLower.includes('kia')) return 'kia'
+  }
+
+  if (hasPettyCashAllBranchAccess(appUser) || hasAllBranchAccess(appUser.brand)) {
+    return requested && isBranchValue(requested) ? requested : 'hyundai'
+  }
+
+  return null
 }
 
 const CREATOR_REQUEST_QUEUE_STATUSES = new Set([
@@ -538,10 +561,14 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
 }
 
 export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?: string | null) {
-  // Cross-branch supervisors (EA/MD/EBA/Developer/all) don't own a single
-  // allocation — the "current allocation" KPI is only meaningful once they pick a
-  // branch. Without one, return null and let them use the Allocations list.
-  if (hasPettyCashAllBranchAccess(appUser) && !branchId) return null
+  /*
+   * Cross-branch supervisors NEVER own a float, so they never have a "current allocation" — with
+   * or without a branch selected. The old condition (`&& !branchId`) meant the MD's new brand
+   * switcher would have bypassed this and returned the newest ACTIVE float in that brand — SOMEONE
+   * ELSE'S money — which then seeded the KPI row and, worse, expenseForm.allocationId. Floats
+   * belong to creator roles; supervisors read the Allocations tab.
+   */
+  if (hasPettyCashAllBranchAccess(appUser)) return null
 
   const filters = [getPettyCashAllocationVisibilityFilter(appUser)]
 
@@ -849,7 +876,8 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
   }
 
   const input = createPettyCashRequestSchema.parse(rawInput)
-  const branchId = resolvePettyCashCreationBranch(appUser, input.branchId)
+  const loc = typeof input.requestForm?.location === 'string' ? input.requestForm.location : null
+  const branchId = resolvePettyCashCreationBranch(appUser, input.branchId, loc)
 
   if (!branchId || !canManagePettyCashBranch(appUser, branchId)) {
     throw new Error('Forbidden branch')
@@ -1449,7 +1477,7 @@ export async function getPettyCashExpenseDetails(appUser: AppUser, expenseId: st
   }
 }
 
-export async function getPettyCashLedger(appUser: AppUser, allocationId?: string | null) {
+export async function getPettyCashLedger(appUser: AppUser, allocationId?: string | null, branchId?: string | null) {
   // A specific allocation → its ledger. Otherwise: all-branch supervisors
   // (EA/MD/EBA/Developer) see EVERY branch's movements; branch-scoped roles only
   // their own. The previous code filtered developers to branchId='all', which
@@ -1467,11 +1495,41 @@ export async function getPettyCashLedger(appUser: AppUser, allocationId?: string
    * pettyCashBranchScope emits `= ''` for an empty list, which matches nothing.
    */
   const branchScoped = !hasPettyCashAllBranchAccess(appUser)
-  const ledgerFilter = allocationId
+  /*
+   * An all-branch viewer may narrow to ONE brand (the MD brand switcher). Validated through
+   * canViewPettyCashBranch so a scoped user cannot use the same parameter to widen — for them the
+   * assignment-based scope below still applies regardless of what the query string asks for.
+   */
+  const requestedBranch = branchId && branchId !== 'all' && canViewPettyCashBranch(appUser, branchId)
+    ? branchId
+    : null
+  /*
+   * SUBMITTERS see only the movements of THEIR OWN floats. The ledger is where a branch admin
+   * would otherwise still read every other custodian's spends after the list filters were scoped —
+   * 214 KIA entries across three admins on one immutable money screen. Expressed as a subquery on
+   * their own allocations rather than a join, so it composes with the allocationId case below.
+   */
+  const ownAllocationsOnly = isPettyCashOwnSubmissionsOnlyRole(appUser.role)
+    ? inArray(
+        pettyCashLedgerEntries.allocationId,
+        db.select({ id: pettyCashAllocations.id })
+          .from(pettyCashAllocations)
+          .where(eq(pettyCashAllocations.allocatedTo, appUser.id)),
+      )
+    : undefined
+
+  const scopeFilter = allocationId
     ? eq(pettyCashLedgerEntries.allocationId, allocationId)
     : branchScoped
       ? pettyCashBranchScope(pettyCashLedgerEntries.branchId, getPettyCashUserBrands(appUser.brand))
-      : undefined
+      : requestedBranch
+        ? eq(pettyCashLedgerEntries.branchId, requestedBranch)
+        : undefined
+
+  // Both apply when the viewer is a submitter: their brand AND their own floats.
+  const ledgerFilter = ownAllocationsOnly
+    ? (scopeFilter ? and(scopeFilter, ownAllocationsOnly) : ownAllocationsOnly)
+    : scopeFilter
 
   // Location is derived like the Expenses/Allocations feeds: prefer the expense's own location
   // (for expense entries), else the originating request's location (via allocation → request).

@@ -8,6 +8,7 @@ import {
   isRestrictedAnalyticsHref,
 } from '@/lib/auth/restricted-analytics'
 import { canViewMdTargets, isMdTargetsHref } from '@/lib/auth/md-targets-access'
+import { canViewBankSanctions, isBankSanctionsHref } from '@/lib/auth/bank-sanctions-access'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { isPettyCashViewRole, isAmFinanceViewRole, isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 
@@ -50,6 +51,17 @@ export const ALL_SECTIONS: SearchSection[] = [
     iconName: 'Target',
     initials: 'TG',
     category: 'common_dashboards',
+  },
+  {
+    id: 'bank_sanctions',
+    name: 'Bank Sanctions',
+    description: 'Bank credit facility register: sanction limits, outstandings, expiry alerts and sanction letters.',
+    href: '/bank-sanctions',
+    department: 'finance',
+    brand: 'common',
+    iconName: 'CreditCard',
+    initials: 'BK',
+    category: 'general_modules',
   },
   {
     id: 'call_analysis',
@@ -532,6 +544,7 @@ export const ALL_SECTIONS: SearchSection[] = [
 export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/cockpit',
   '/targets',
+  '/bank-sanctions',
   '/delegation-tasks',
   '/call-analysis',
   '/insurance',
@@ -650,6 +663,14 @@ export function canUserAccessSection(
   // super tier bundle — see lib/auth/md-targets-access.ts.
   if (isMdTargetsHref(href)) {
     return canViewMdTargets(userRole)
+  }
+
+  // Bank Sanctions — EA / MD / Accounts / Developer ONLY, unwidenable. Same `return`-not-
+  // fall-through shape as the guards around it, and load-bearing for the same reason: this href has
+  // no permission key, so without the return it would fall to the function's final `return true`
+  // and become visible to every role. See lib/auth/bank-sanctions-access.ts.
+  if (isBankSanctionsHref(href)) {
+    return canViewBankSanctions(userRole)
   }
 
   // Call Analysis + Insurance Analysis — MD + Developer ONLY, and unwidenable.

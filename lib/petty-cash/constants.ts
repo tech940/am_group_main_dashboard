@@ -164,12 +164,85 @@ export function getPettyCashConfiguredBranches() {
  * value carries leading or trailing whitespace, so no login gains anything it did not already have.
  * Case is deliberately NOT normalised — 'KIA' matches nothing today and quietly widening that is
  * not this function's job.
+ *
+ * (The all-branch ROLE list below is a separate concern: it answers "who ignores assignments
+ * entirely", this function answers "what did the assignment say".)
  */
+/**
+ * Roles that see EVERY petty-cash branch UNCONDITIONALLY — exactly MD and Developer.
+ *
+ * ⚠️ EA, EBA and ED were removed from this list on purpose (2026-08-24, product decision): branch
+ * visibility for every other role now follows the ADMIN-PANEL ASSIGNMENT (`users.brand`). An EA
+ * pinned to 'kia' sees KIA only; an EA assigned 'kia,hyundai' sees both; an EA assigned 'all'
+ * still sees everything — via hasAllBranchAccess, not via their role. The assignment is the single
+ * lever, which is what makes Admin → Users the answer to every "who can see what" question.
+ *
+ * Lives HERE (client-safe) rather than in access.ts because the workspace needs the same predicate
+ * for its labels, filters and brand switcher — and access.ts value-imports the whole DB schema, so
+ * the client must never import it. One list, both sides; this is the drift that produced the
+ * sidebar/page desync incidents.
+ */
+/**
+ * Roles that SUBMIT petty cash, and therefore see ONLY WHAT THEY THEMSELVES SUBMITTED.
+ *
+ * A branch admin is a custodian of their own float, not a supervisor of the branch: before
+ * 2026-08-24 all three KIA branch admins could see each other's 55/55/75 expenses (185 rows each)
+ * simply because they shared a brand. Approvers (EA/ED/MD/accounts) still see the whole branch —
+ * they cannot review a queue they cannot see — but a submitter's view is now their own work only.
+ *
+ * ⚠️ This is NOT the same set as canCreatePettyCashRequest, which was widened to every role — an
+ * EA or MD may now raise a request, and they still see the whole branch, which is correct for a
+ * supervisor. "May create" and "sees only what they created" are genuinely different questions;
+ * keep the two lists independent rather than deriving one from the other.
+ */
+export const PETTY_CASH_OWN_SUBMISSIONS_ONLY_ROLES = ['branch_admin', 'sales_manager'] as const
+
+export function isPettyCashOwnSubmissionsOnlyRole(role: string | null | undefined): boolean {
+  return (PETTY_CASH_OWN_SUBMISSIONS_ONLY_ROLES as readonly string[])
+    .includes(String(role || '').trim().toLowerCase())
+}
+
+export const PETTY_CASH_ALL_BRANCH_ROLES = ['developer', 'md'] as const
+
+export function isPettyCashAllBranchRole(role: string | null | undefined): boolean {
+  return (PETTY_CASH_ALL_BRANCH_ROLES as readonly string[]).includes(String(role || '').trim().toLowerCase())
+}
+
 export function getPettyCashUserBrands(brand: string | null | undefined): string[] {
   return String(brand || '')
     .split(',')
     .map((value) => value.trim())
     .filter((value) => isBranchValue(value))
+}
+
+/**
+ * Why is this user's petty cash empty? One answer, computed one way.
+ *
+ *   'configured'   — they have at least one brand petty cash runs at (or they see every branch)
+ *   'unassigned'   — no branch on their account at all; an admin has to set one
+ *   'unconfigured' — assigned a real group brand petty cash was never switched on for
+ *                    ('honda' = AM Diamond Honda, 'tata' = AM Tata)
+ *
+ * ⚠️ Do NOT ask isPettyCashConfiguredForBranch() the RAW `users.brand` string. It is an exact key
+ * lookup, and the raw value is not always one brand — all three of these answered wrongly:
+ *   'all'          -> false, so MDs and developers were told "not set up for Unassigned Branch"
+ *   'kia,hyundai'  -> false, so a shared multi-brand login was told its own brands were
+ *                     unconfigured AND had its create buttons disabled
+ *   'honda'        -> false correctly, but the message was gated on being a CREATOR, so an EA
+ *                     pinned to Honda got a dashboard of zeros with no explanation at all
+ * Split first, then ask per brand. That is what this function does.
+ */
+export type PettyCashBrandStatus = 'configured' | 'unassigned' | 'unconfigured'
+
+export function getPettyCashBrandStatus(
+  brand: string | null | undefined,
+  isAllBranchViewer: boolean,
+): PettyCashBrandStatus {
+  // An all-branch viewer is never "unconfigured" — they see every brand that exists.
+  if (isAllBranchViewer) return 'configured'
+  const brands = getPettyCashUserBrands(brand)
+  if (brands.length === 0) return 'unassigned'
+  return brands.some((value) => isPettyCashConfiguredForBranch(value)) ? 'configured' : 'unconfigured'
 }
 
 export function getPettyCashLocationOptions(branchId: string | null | undefined) {

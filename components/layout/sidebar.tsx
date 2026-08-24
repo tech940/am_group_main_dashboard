@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import {
   Activity,
   Target,
+  CreditCard,
   LayoutGrid,
   CalendarClock,
   ClipboardCheck,
@@ -33,6 +34,7 @@ import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import { canViewBookingPaymentHistory } from '@/lib/kia/booking-payment-history-access'
 import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
 import { canViewMdTargets } from '@/lib/auth/md-targets-access'
+import { canViewBankSanctions } from '@/lib/auth/bank-sanctions-access'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
@@ -464,6 +466,17 @@ export function Sidebar() {
       icon: Target,
       external: true,
       active: Boolean(pathname?.startsWith('/targets')),
+    })
+    // Bank Sanctions — EA / MD / Accounts / Developer only, via the hardcoded role constant. Not a
+    // permission key: admin and hr are family:'super' in the tier model and a key would leak to
+    // them. The page and every /api/bank-sanctions route enforce the identical predicate.
+    if (canViewBankSanctions(userRole)) commonNodes.push({
+      key: '/bank-sanctions',
+      label: 'Bank Sanctions',
+      href: '/bank-sanctions',
+      icon: CreditCard,
+      external: true,
+      active: Boolean(pathname?.startsWith('/bank-sanctions')),
     })
     // Delegation Tasks — visible to MD / EA / developer only.
     if (canAccessDelegationTasks && hasPermission('delegation_tasks.view')) commonNodes.push({ key: '/delegation-tasks', label: 'Delegation Tasks', href: '/delegation-tasks', icon: ClipboardList, external: true, active: pathname === '/delegation-tasks' })

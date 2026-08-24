@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { approvalsCommonData, approvalsBranchesConfig } from '@/lib/db/schema'
 import { eq, or, and } from 'drizzle-orm'
 import { getBranchLabel } from '@/lib/branches'
+import { getPettyCashLocationOptions } from '@/lib/petty-cash/constants'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +19,7 @@ export async function GET(
     const brandDisplayName = getBranchLabel(normalizedBrand)
 
     // 2. Fetch locations configured for this brand
-    const locations = await db
+    let locations = await db
       .select({
         location: approvalsBranchesConfig.location,
         dealerCode: approvalsBranchesConfig.dealerCode,
@@ -26,6 +27,15 @@ export async function GET(
       })
       .from(approvalsBranchesConfig)
       .where(eq(approvalsBranchesConfig.brand, normalizedBrand))
+
+    if (!locations || locations.length === 0) {
+      const fallbackOptions = getPettyCashLocationOptions(normalizedBrand)
+      locations = fallbackOptions.map((loc) => ({
+        location: loc,
+        dealerCode: '',
+        dealerName: `${brandDisplayName} ${loc}`,
+      }))
+    }
 
     // 3. Fetch approval types (matching brand or 'all')
     const typesRows = await db
@@ -40,7 +50,31 @@ export async function GET(
           )
         )
       )
-    const approvalTypes = Array.from(new Set(typesRows.map(r => r.value.trim()))).sort()
+    let approvalTypes = Array.from(
+      new Set([
+        ...typesRows.map((r) => r.value.trim()),
+        'Crane Charges',
+        'Key Cutting',
+        'Tyre fitting / Puncture',
+      ])
+    ).sort()
+
+    if (!approvalTypes || approvalTypes.length === 0) {
+      approvalTypes = [
+        'Crane Charges',
+        'Key Cutting',
+        'Tyre fitting / Puncture',
+        'Marketing & Promotions',
+        'Office Supplies & Stationery',
+        'Repairs & Maintenance',
+        'Customer Hospitality & Relations',
+        'Staff Welfare',
+        'Fuel & Local Travel',
+        'Vendor & Service Invoices',
+        'Utility & Operational Expenses',
+        'Other Business Expenses',
+      ]
+    }
 
     // 4. Fetch vendors (matching brand or 'all')
     const vendorsRows = await db

@@ -31,6 +31,15 @@ export type AllocationHistoryRow = {
   color: string
   engineNo: string
   stockSource: string
+  /**
+   * The booking amount the customer put down, from the booking's PROFORMA
+   * (kia_proformas.booking_amount) — kia_bookings has no such column; it only carries loan_amount.
+   *
+   * NULL, not 0, when the booking has no proforma yet: 32 of 144 allocations are in that state and
+   * rendering them as Rs0 would assert a deposit of zero that nobody recorded. The default on the
+   * proforma column is itself '0', so a real 0 and a missing proforma are different facts.
+   */
+  bookingAmount: number | null
   allocatedBy: string
   allocatedAt: string | null
   expiresAt: string | null
@@ -139,6 +148,8 @@ export async function getAllocationHistory(filters: AllocationHistoryFilters) {
       COALESCE(a.color, '') AS color,
       COALESCE(a.engine_no, '') AS engine_no,
       COALESCE(a.stock_source, '') AS stock_source,
+      -- Deliberately NOT COALESCEd to 0: a missing proforma must stay NULL. See the type comment.
+      p.booking_amount AS booking_amount,
       COALESCE(u.full_name, u.email, 'Unknown') AS allocated_by,
       a.allocated_at, a.expires_at,
       COALESCE(r.full_name, r.email) AS released_by,
@@ -151,6 +162,10 @@ export async function getAllocationHistory(filters: AllocationHistoryFilters) {
       COUNT(*) OVER () AS total_count
     FROM kia_vehicle_allocations a
     LEFT JOIN kia_bookings b ON b.id = a.booking_id
+    -- LEFT so an allocation whose booking has no proforma still appears (32 of 144 today).
+    -- deleted_at IS NULL is part of the JOIN, not the WHERE: in the WHERE it would turn this
+    -- LEFT JOIN into an inner one and silently drop those rows from the trail.
+    LEFT JOIN kia_proformas p ON p.id = b.proforma_id AND p.deleted_at IS NULL
     LEFT JOIN users u ON u.id = a.allocated_by
     LEFT JOIN users r ON r.id = a.released_by
     WHERE ${where}
@@ -189,6 +204,9 @@ export async function getAllocationHistory(filters: AllocationHistoryFilters) {
       color: str(r.color),
       engineNo: str(r.engine_no),
       stockSource: str(r.stock_source),
+      bookingAmount: r.booking_amount === null || r.booking_amount === undefined
+        ? null
+        : Number(r.booking_amount),
       allocatedBy: str(r.allocated_by),
       allocatedAt: iso(r.allocated_at),
       expiresAt,
@@ -222,10 +240,33 @@ export async function getAllocationHistorySummary(filters: AllocationHistoryFilt
       COUNT(*) FILTER (WHERE a.released_at IS NOT NULL AND a.release_reason = '${esc(AUTO_EXPIRY_REASON)}')::int AS no_payment,
       COUNT(*) FILTER (WHERE a.released_at IS NOT NULL AND COALESCE(a.release_reason, '') <> '${esc(AUTO_EXPIRY_REASON)}')::int AS manual,
       COUNT(DISTINCT a.vin_number)::int AS vehicles,
-      COUNT(DISTINCT a.booking_id)::int AS bookings
+      COUNT(DISTINCT a.booking_id)::int AS bookings,
+      /*
+       * Booking amount across the WHOLE filtered trail, not the visible page.
+       *
+       * A footer total under a paginated table would describe only the rows on screen while
+       * looking like the total — the same shape as the purchase-orders "Showing 1-12 of 42" bug.
+       * Summed here, it moves with the filters and ignores paging, which is what a total should do.
+       *
+       * DISTINCT on booking_id because one booking can hold several allocations over time
+       * (allocate -> release -> re-allocate); summing per allocation would multiply one customer's
+       * deposit by the number of cars they were ever assigned.
+       */
+      COALESCE(SUM(DISTINCT_AMT.amt), 0)::float8 AS booking_amount_total,
+      COUNT(DISTINCT_AMT.amt)::int AS booking_amount_rows
     FROM kia_vehicle_allocations a
     LEFT JOIN kia_bookings b ON b.id = a.booking_id
     LEFT JOIN users u ON u.id = a.allocated_by
+    LEFT JOIN LATERAL (
+      -- One amount per BOOKING, attributed to its first allocation row only.
+      SELECT p.booking_amount::numeric AS amt
+      FROM kia_proformas p
+      WHERE p.id = b.proforma_id AND p.deleted_at IS NULL
+        AND p.booking_amount::numeric > 0
+        AND a.id = (SELECT a2.id FROM kia_vehicle_allocations a2
+                    WHERE a2.booking_id = a.booking_id
+                    ORDER BY a2.allocated_at NULLS LAST, a2.id LIMIT 1)
+    ) DISTINCT_AMT ON TRUE
     WHERE ${where}
   `))
   const r = ((Array.isArray(result) ? result[0] : {}) || {}) as Record<string, unknown>
@@ -239,6 +280,10 @@ export async function getAllocationHistorySummary(filters: AllocationHistoryFilt
     overdue: n(r.overdue),
     vehicles: n(r.vehicles),
     bookings: n(r.bookings),
+    /** Total booking amount over the whole filtered trail, deduped per booking. */
+    bookingAmountTotal: n(r.booking_amount_total),
+    /** How many bookings actually contributed — the rest have no proforma yet. */
+    bookingAmountRows: n(r.booking_amount_rows),
   }
 }
 

@@ -1125,7 +1125,12 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
     customerPhone: text(input.customerPhone),
     dealerCode: normalizeKiaDealerCode(input.dealerCode) || text(input.dealerCode).toUpperCase(),
     model: text(input.model).toUpperCase(),
-    variant: text(input.variant),
+    // ⚠️ Uppercased to match `model`. It previously was not, so the duplicate check below compared a
+    // raw-case variant against stored values and a difference in casing alone defeated it. Live rows
+    // carry both 'NEW SELTOS DIESEL' and 'New Seltos Diesel', so case variance is real here, and the
+    // unique index in migration 0044 keys on UPPER(BTRIM(...)) — the two must agree or the app check
+    // passes and the database then rejects the insert.
+    variant: text(input.variant).toUpperCase(),
     consultantName: text(input.consultantName) || appUser.fullName,
   }
 
@@ -1133,14 +1138,27 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
     if (!value) throw new Error(`${key} is required`)
   }
 
-  // Prevent same-day duplicate bookings (same customer phone, model, and variant)
+  /*
+   * Same-day duplicate guard: same customer phone, model and variant on the same IST day.
+   *
+   * ⚠️ Compared case-insensitively. `required.model` is uppercased but STORED rows are not
+   * consistently normalised — the live table holds both 'NEW SELTOS DIESEL' and 'New Seltos Diesel'
+   * (the bulk importer writes mixed case). An `eq()` on the raw column therefore missed exactly the
+   * duplicates this check exists to stop.
+   *
+   * ⚠️ This check is NOT atomic — it runs before the transaction below, so two concurrent submits
+   * can both pass it. That hole is closed by kia_bookings_same_day_unique_idx (migration 0044),
+   * which enforces the identical rule in the database. This check survives because it produces a
+   * sentence a user can act on; the index produces a Postgres 23505. Both are needed, and they MUST
+   * agree on normalisation — the index keys on UPPER(BTRIM(...)) too.
+   */
   const duplicates = await db.select({ id: kiaBookings.id })
     .from(kiaBookings)
     .where(
       and(
         eq(kiaBookings.customerPhone, required.customerPhone),
-        eq(kiaBookings.model, required.model),
-        eq(kiaBookings.variant, required.variant),
+        sql`UPPER(BTRIM(${kiaBookings.model})) = ${required.model}`,
+        sql`UPPER(BTRIM(COALESCE(${kiaBookings.variant}, ''))) = ${required.variant}`,
         isNull(kiaBookings.deletedAt),
         sql`timezone('Asia/Kolkata', ${kiaBookings.createdAt})::date = (now() at time zone 'Asia/Kolkata')::date`
       )
@@ -1565,7 +1583,23 @@ export async function createFinancePayoutForDeliveredBooking(tx: DbTx, booking: 
 
 export async function generateKiaBookingProforma(id: string, appUser: AppUser) {
   return db.transaction(async (tx) => {
-    const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
+    /*
+     * FOR UPDATE is load-bearing, not defensive noise.
+     *
+     * The idempotency below (`if (booking.proformaId) return booking`) is what stops a second
+     * proforma being generated for the same booking. But Postgres runs at READ COMMITTED here, so
+     * without a row lock two concurrent calls BOTH read proforma_id as null, both insert, and the
+     * second UPDATE silently overwrites the first proforma's id on the booking — leaving an orphan
+     * proforma in the approval chain that no booking points at.
+     *
+     * Locking the booking row serialises the pair: the second caller blocks until the first commits,
+     * then reads the now-populated proforma_id and returns without inserting. This is the atomic
+     * version of the check that was already intended here.
+     */
+    const [booking] = await tx.select().from(kiaBookings)
+      .where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt)))
+      .limit(1)
+      .for('update')
     if (!booking) throw new Error('Booking not found')
     if (booking.proformaId) return booking
 

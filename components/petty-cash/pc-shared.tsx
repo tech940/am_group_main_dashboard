@@ -3,7 +3,16 @@
 import { getPettyCashStageInfo } from '@/lib/petty-cash/status-tracking'
 
 import { motion } from 'motion/react'
-import type { ReactNode } from 'react'
+import { useState, useMemo, useEffect, type ReactNode } from 'react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Wallet,
+} from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { getPettyCashStatusLabel } from '@/lib/petty-cash/constants'
 import type {
@@ -14,7 +23,7 @@ import type {
 } from './types'
 
 /* ------------------------------------------------------------------ */
-/* Formatting + normalize helpers (ported verbatim from the old page)  */
+/* Formatting + normalize helpers                                      */
 /* ------------------------------------------------------------------ */
 
 export function formatCurrency(value: number | string | null | undefined) {
@@ -75,54 +84,51 @@ export function expenseVendor(expense: PettyCashExpense) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Status pill                                                         */
+/* Status pill & Location badge helper                                 */
 /* ------------------------------------------------------------------ */
 
 export type Tone = 'emerald' | 'amber' | 'blue' | 'violet' | 'rose' | 'sky' | 'slate'
 
-/*
- * Status tones — the approval state of money, so both themes have to be legible.
- *
- * These carried no dark treatment and were unreadable at 1.28–1.62:1 in dark mode. The cause is not
- * a missing `dark:` here but the app-wide rescue in globals.css (`.dark .glass-dashboard-content
- * [class*="text-…-700"]`), which forces the TEXT light with !important while leaving a tinted
- * background — bg-*-50 is not on its background list — so it produced light-on-light.
- *
- * Two consequences worth knowing before editing:
- *   1. A `dark:text-*` here CANNOT win against that !important. For emerald/amber/blue the fix is to
- *      darken the BACKGROUND so the already-forced-light text lands correctly (6.55–7.69:1).
- *   2. rose and violet need the opposite treatment. `text-rose-700` is rescued to
- *      var(--dashboard-risk-text), which resolves to pure #ff0000 and tops out at 4.43:1 on any
- *      tint — unreachable. Naming the shade rose-900 steps outside the rescue's match list so we own
- *      both modes again (8.71:1 light / 9.24:1 dark). violet was never rescued at all.
- */
 export const TONE_CLASS: Record<Tone, string> = {
-  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/70 dark:ring-emerald-700/50',
-  amber: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-900/70 dark:ring-amber-700/50',
-  blue: 'bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-900/70 dark:ring-blue-700/50',
-  violet: 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/50 dark:text-violet-300 dark:ring-violet-700/50',
-  rose: 'bg-rose-50 text-rose-900 ring-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-800/50',
-  // sky is not in the rescue's match list either, so — like violet — we own both modes outright.
-  sky: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-700/50',
-  // bg-slate-100 IS on the rescue's background list, so this tone already flips correctly.
-  slate: 'bg-slate-100 text-slate-600 ring-slate-200',
+  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:ring-emerald-800/60',
+  amber: 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:ring-amber-800/60',
+  blue: 'bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:ring-blue-800/60',
+  violet: 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/60 dark:text-violet-300 dark:ring-violet-800/60',
+  rose: 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:ring-rose-800/60',
+  sky: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:ring-sky-800/60',
+  slate: 'bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700',
 }
 
-/**
- * Tone comes from STAGE_INFO, not from substring matching.
- *
- * The old body tested `value.includes('approved')` BEFORE any stage check, so `ed_approved` and
- * `ea_approved` — both `state: 'pending'` — rendered emerald. On a queue, green means done, so the
- * rows still owing an approval were exactly the ones a reviewer's eye skipped.
- */
+export function getLocationBadge(location: string): { bg: string; text: string; border: string } {
+  const upper = (location || '').toUpperCase()
+  if (upper.includes('JAMMU AUTO MART') || upper.includes('JAM')) {
+    return { bg: 'bg-purple-50 dark:bg-purple-950/60', text: 'text-purple-700 dark:text-purple-300', border: 'border-purple-200 dark:border-purple-800' }
+  }
+  if (upper.includes('SMAM')) {
+    return { bg: 'bg-cyan-50 dark:bg-cyan-950/60', text: 'text-cyan-700 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-800' }
+  }
+  if (upper.includes('PLATINUM')) {
+    return { bg: 'bg-amber-50 dark:bg-amber-950/60', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800' }
+  }
+  if (upper.includes('HYUNDAI')) {
+    return { bg: 'bg-blue-50 dark:bg-blue-950/60', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800' }
+  }
+  if (upper.includes('TATA')) {
+    return { bg: 'bg-indigo-50 dark:bg-indigo-950/60', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800' }
+  }
+  if (upper.includes('MG')) {
+    return { bg: 'bg-rose-50 dark:bg-rose-950/60', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800' }
+  }
+  return { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-700 dark:text-slate-300', border: 'border-slate-200 dark:border-slate-700' }
+}
+
 export function statusTone(status: string): Tone {
   return getPettyCashStageInfo(status).tone
 }
 
-
 export function StatusPill({ status }: { status: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ring-1 ring-inset', TONE_CLASS[statusTone(status)])}>
+    <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider ring-1 ring-inset shadow-2xs', TONE_CLASS[statusTone(status)])}>
       {getPettyCashStatusLabel(status)}
     </span>
   )
@@ -150,17 +156,17 @@ export function SectionCard({
   className?: string
 }) {
   return (
-    <section className={cn('overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm', className)}>
-      <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <section className={cn('overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs', className)}>
+      <div className="flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           {Icon && (
-            <span className={cn('flex h-10 w-10 items-center justify-center rounded-2xl ring-1 ring-inset', TONE_CLASS[iconTone])}>
+            <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl ring-1 ring-inset shadow-2xs', TONE_CLASS[iconTone])}>
               <Icon className="h-5 w-5" />
             </span>
           )}
           <div>
-            <h3 className="text-base font-black tracking-tight text-slate-900">{title}</h3>
-            {subtitle && <p className="text-xs font-semibold text-slate-500">{subtitle}</p>}
+            <h3 className="text-base font-bold tracking-tight text-slate-900 dark:text-slate-50">{title}</h3>
+            {subtitle && <p className="text-xs font-medium text-slate-500">{subtitle}</p>}
           </div>
         </div>
         {toolbar}
@@ -173,17 +179,17 @@ export function SectionCard({
 export function EmptyState({ icon: Icon, title, description }: { icon: React.ComponentType<{ className?: string }>; title: string; description: string }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-        <Icon className="h-7 w-7" />
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 dark:bg-slate-800 text-slate-400">
+        <Icon className="h-6 w-6" />
       </div>
-      <h4 className="mt-4 text-base font-black text-slate-900">{title}</h4>
-      <p className="mt-1 max-w-sm text-sm font-medium text-slate-500">{description}</p>
+      <h4 className="mt-3 text-sm font-bold text-slate-800 dark:text-slate-200">{title}</h4>
+      <p className="mt-0.5 max-w-sm text-xs font-medium text-slate-400">{description}</p>
     </div>
   )
 }
 
 /* ------------------------------------------------------------------ */
-/* Summary KPI card (animated counter)                                 */
+/* Summary KPI card                                                    */
 /* ------------------------------------------------------------------ */
 
 export function SummaryCard({
@@ -207,23 +213,23 @@ export function SummaryCard({
   return (
     <Wrapper
       layout
-      whileHover={onClick ? { y: -3 } : undefined}
+      whileHover={onClick ? { y: -2 } : undefined}
       onClick={onClick}
       className={cn(
-        'flex flex-col gap-3 rounded-3xl border bg-white p-5 text-left shadow-sm transition-colors',
-        active ? 'border-[var(--dashboard-action-bg)] ring-2 ring-[var(--dashboard-action-bg)]/15' : 'border-slate-200',
-        onClick && 'cursor-pointer hover:border-slate-300',
+        'flex flex-col gap-3 rounded-2xl border bg-white dark:bg-slate-900 p-5 text-left shadow-xs transition-all',
+        active ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-800',
+        onClick && 'cursor-pointer hover:border-slate-300 dark:hover:border-slate-700',
       )}
     >
       <div className="flex items-center justify-between">
-        <span className={cn('flex h-11 w-11 items-center justify-center rounded-2xl ring-1 ring-inset', TONE_CLASS[tone])}>
+        <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl ring-1 ring-inset shadow-2xs', TONE_CLASS[tone])}>
           <Icon className="h-5 w-5" />
         </span>
       </div>
       <div>
-        <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">{label}</p>
-        <p className="mt-1 text-2xl font-black tracking-tight text-slate-950">{value}</p>
-        {meta && <p className="mt-0.5 text-xs font-semibold text-slate-500">{meta}</p>}
+        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
+        <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-slate-950 dark:text-slate-50">{value}</p>
+        {meta && <p className="mt-0.5 text-xs font-medium text-slate-400">{meta}</p>}
       </div>
     </Wrapper>
   )
@@ -244,29 +250,75 @@ export function BalanceMeter({
   remaining: number
   percentage: number
 }) {
+  const isLow = remaining <= 1000
+
   return (
-    <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-[var(--dashboard-action-bg)] to-[var(--dashboard-action-hover)] p-6 text-white shadow-sm">
+    <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-black uppercase tracking-wider text-white/70">Remaining Balance</p>
-        <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-black">{percentage}% used</span>
-      </div>
-      <p className="mt-2 text-4xl font-black tracking-tight">{formatCurrency(remaining)}</p>
-      <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-white/20">
-        <motion.div
-          className="h-full rounded-full bg-white"
-          initial={{ width: 0 }}
-          animate={{ width: `${Math.min(100, percentage)}%` }}
-          transition={{ type: 'spring', stiffness: 120, damping: 20 }}
-        />
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-white/60">Allocated</p>
-          <p className="font-black">{formatCurrency(allocation)}</p>
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300">
+            <Wallet className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Remaining Balance
+            </p>
+            <p className="text-[11px] font-medium text-slate-400">
+              Active Float in Hand
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-white/60">Spent</p>
-          <p className="font-black">{formatCurrency(spent)}</p>
+        <span
+          className={cn(
+            'px-2.5 py-1 rounded-lg text-xs font-bold tabular-nums border shadow-2xs',
+            isLow
+              ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300'
+              : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300'
+          )}
+        >
+          {percentage}% spent
+        </span>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-baseline justify-between">
+          <p
+            className={cn(
+              'text-3xl font-bold tabular-nums tracking-tight',
+              isLow ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
+            )}
+          >
+            {formatCurrency(remaining)}
+          </p>
+          <span className="text-xs font-medium text-slate-400">
+            {formatCurrency(allocation - spent)} available
+          </span>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+          <motion.div
+            className={cn(
+              'h-full rounded-full transition-all',
+              percentage > 90 ? 'bg-amber-500' : percentage > 75 ? 'bg-indigo-500' : 'bg-emerald-500'
+            )}
+            initial={{ width: 0 }}
+            animate={{ width: `${Math.min(100, percentage)}%` }}
+            transition={{ type: 'spring', stiffness: 120, damping: 20 }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100 dark:border-slate-800 text-xs">
+        <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Allocated Float</p>
+          <p className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100 mt-0.5">
+            {formatCurrency(allocation)}
+          </p>
+        </div>
+        <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Spent to Date</p>
+          <p className="text-sm font-bold tabular-nums text-rose-600 dark:text-rose-400 mt-0.5">
+            {formatCurrency(spent)}
+          </p>
         </div>
       </div>
     </div>
@@ -274,7 +326,7 @@ export function BalanceMeter({
 }
 
 /* ------------------------------------------------------------------ */
-/* Generic premium table                                               */
+/* Generic Table with Built-in Pagination                              */
 /* ------------------------------------------------------------------ */
 
 export function RecordTable<T>({
@@ -284,6 +336,8 @@ export function RecordTable<T>({
   empty,
   rowKey,
   onRowClick,
+  pageSizeOptions = [20, 40, 100],
+  defaultPageSize = 20,
 }: {
   rows: T[]
   columns: Array<{ header: string; align?: 'left' | 'right'; cell: (row: T) => ReactNode; className?: string }>
@@ -291,74 +345,190 @@ export function RecordTable<T>({
   empty: ReactNode
   rowKey: (row: T) => string
   onRowClick?: (row: T) => void
+  pageSizeOptions?: number[]
+  defaultPageSize?: number
 }) {
+  const [pageSize, setPageSize] = useState<number>(defaultPageSize)
+  const [currentPage, setCurrentPage] = useState<number>(1)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [rows.length, pageSize])
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(rows.length / pageSize)), [rows.length, pageSize])
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * pageSize
+    return rows.slice(start, start + pageSize)
+  }, [rows, currentPage, pageSize])
+
   if (loading) {
     return (
       <div className="space-y-2 p-5">
         {Array.from({ length: 5 }).map((_, index) => (
-          <div key={`row-skeleton-${index}`} className="h-12 animate-pulse motion-reduce:animate-none rounded-xl bg-slate-50" />
+          <div key={`row-skeleton-${index}`} className="h-12 animate-pulse motion-reduce:animate-none rounded-xl bg-slate-50 dark:bg-slate-800/40" />
         ))}
       </div>
     )
   }
+
   if (rows.length === 0) return <>{empty}</>
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[820px] border-collapse text-left text-sm">
-        <thead>
-          <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-black uppercase tracking-wider text-slate-600">
-            {columns.map((column) => (
-              <th key={column.header} className={cn('px-4 py-3 font-black', column.align === 'right' && 'text-right')}>{column.header}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            /*
-             * Row click opens the detail dialog, and it used to be the ONLY way in — a bare
-             * onClick on a <tr> with no tabIndex and no key handler, so keyboard and screen-reader
-             * users could not open a single record.
-             *
-             * tabIndex + Enter/Space rather than role="button": that role would replace the row
-             * semantics a table user navigates by, trading one barrier for another.
-             */
-            <tr
-              key={rowKey(row)}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
-              tabIndex={onRowClick ? 0 : undefined}
-              onKeyDown={onRowClick ? (event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  onRowClick(row)
-                }
-              } : undefined}
-              className={cn(
-                'border-b border-slate-50 transition-colors last:border-b-0 hover:bg-slate-50/60',
-                onRowClick && 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dashboard-action-bg)]',
-              )}
-            >
+    <div className="overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] border-collapse text-left text-xs font-sans">
+          <thead>
+            <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-950 text-white">
               {columns.map((column) => (
-                <td key={column.header} className={cn('px-4 py-3 align-middle font-semibold text-slate-700', column.align === 'right' && 'text-right', column.className)}>
-                  {column.cell(row)}
-                </td>
+                <th key={column.header} className={cn('px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-300', column.align === 'right' && 'text-right')}>
+                  {column.header}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-normal">
+            {paginatedRows.map((row) => (
+              <tr
+                key={rowKey(row)}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onKeyDown={onRowClick ? (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onRowClick(row)
+                  }
+                } : undefined}
+                className={cn(
+                  'transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40',
+                  onRowClick && 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500',
+                )}
+              >
+                {columns.map((column) => (
+                  <td key={column.header} className={cn('px-4 py-3 align-middle font-medium text-slate-700 dark:text-slate-300', column.align === 'right' && 'text-right', column.className)}>
+                    {column.cell(row)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination Footer */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+            Showing{' '}
+            <strong className="text-slate-900 dark:text-slate-100 tabular-nums font-semibold">
+              {(currentPage - 1) * pageSize + 1}
+            </strong>
+            –
+            <strong className="text-slate-900 dark:text-slate-100 tabular-nums font-semibold">
+              {Math.min(currentPage * pageSize, rows.length)}
+            </strong>{' '}
+            of <strong className="text-slate-900 dark:text-slate-100 tabular-nums font-semibold">{rows.length}</strong> records
+          </span>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-500">Per page:</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(val) => setPageSize(Number(val))}
+            >
+              <SelectTrigger className="h-7 w-[76px] rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                {pageSizeOptions.map((opt) => (
+                  <SelectItem key={opt} value={String(opt)} className="text-xs font-medium">
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(1)}
+            disabled={currentPage === 1}
+            className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40"
+            title="First Page"
+          >
+            <ChevronsLeft className="h-3.5 w-3.5" />
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40"
+            title="Previous Page"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Button>
+
+          <div className="flex items-center gap-1 px-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+              .map((p, idx, arr) => {
+                const prev = arr[idx - 1]
+                const showEllipsis = prev && p - prev > 1
+                return (
+                  <span key={p} className="flex items-center">
+                    {showEllipsis && <span className="px-1 text-slate-400 text-xs">…</span>}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(p)}
+                      className={cn(
+                        'h-7 min-w-[28px] px-2 rounded-lg text-xs font-semibold tabular-nums transition-colors cursor-pointer',
+                        currentPage === p
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-2xs font-bold'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800'
+                      )}
+                    >
+                      {p}
+                    </button>
+                  </span>
+                )
+              })}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40"
+            title="Next Page"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={currentPage === totalPages}
+            className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40"
+            title="Last Page"
+          >
+            <ChevronsRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }
 
-/**
- * Mirror of deletePettyCashRequest's two rules (lib/petty-cash/server.ts): pending only, and
- * submitter only (developer / super_admin excepted).
- *
- * Lives here because the workspace and the status board render the SAME record and disagreed about
- * it — the board guarded the button correctly, the workspace rendered it on every row for every
- * role, so a reviewer saw a red Delete on 30 requests and every one returned "Only the user who
- * submitted this request can delete it." One function, both call sites.
- */
+/* ------------------------------------------------------------------ */
+/* Deletion Rule Guard                                                */
+/* ------------------------------------------------------------------ */
+
 export function canDeletePettyCashRequestOnClient(
   request: Record<string, unknown> & { status?: string | null },
   currentUser: { id?: string | null; role?: string | null; email?: string | null; fullName?: string | null } | null | undefined,

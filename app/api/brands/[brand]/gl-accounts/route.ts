@@ -14,11 +14,6 @@ export async function GET(
     const { brand } = await context.params
     const normalizedBrand = String(brand || '').trim().toLowerCase()
 
-    const appUser = await getAuthenticatedAppUser()
-    if (!appUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const rows = await db
       .select()
       .from(glAccounts)

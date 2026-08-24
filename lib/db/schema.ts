@@ -1012,6 +1012,65 @@ export const mdBranchTargets = pgTable('md_branch_targets', {
   mdBranchTargetsBrandPeriodIdx: index('md_branch_targets_brand_period_idx').on(table.brand, table.year, table.month),
 }))
 
+/**
+ * Bank Sanction Limits — one row per credit facility (CC/OD/TL account). Ported from the
+ * "Bank Sanction Limit System" Google Sheet; /bank-sanctions, EA/MD/Accounts/Developer only.
+ * Migration 0045.
+ *
+ * ⚠️ Loan-type uniqueness is enforced by a DB expression index on the sheet's own rule — the LAST
+ * NUMBER in the name identifies the facility ("CC A/c 4501" ≡ "OD 4501"); a numberless name
+ * deduplicates on its lower-cased text. The friendly pre-check lives in lib/bank-sanctions/store.ts
+ * and MUST keep the identical rule, or the app passes and the database then rejects.
+ */
+export const bankSanctionLimits = pgTable('bank_sanction_limits', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  loanType: text('loan_type').notNull(),
+  location: text('location').notNull(),
+  creditLimit: decimal('credit_limit', { precision: 16, scale: 2 }),
+  instalment: decimal('instalment', { precision: 16, scale: 2 }),
+  // A NUMBER — the sheet stored "12%" text and appended '%' in three places; the UI adds the suffix.
+  roiPct: decimal('roi_pct', { precision: 7, scale: 3 }),
+  interestAmount: decimal('interest_amount', { precision: 16, scale: 2 }),
+  outstandingAmount: decimal('outstanding_amount', { precision: 16, scale: 2 }),
+  dateOfSanction: date('date_of_sanction'),
+  installmentDueOn: date('installment_due_on'),
+  installmentPaidOn: date('installment_paid_on'),
+  expiryDate: date('expiry_date'),
+  guarantor: text('guarantor'),
+  collateral: text('collateral'),
+  primarySecurity: text('primary_security'),
+  corporateGuarantee: text('corporate_guarantee'),
+  documentUrl1: text('document_url_1'),
+  documentUrl2: text('document_url_2'),
+  alertEmail: text('alert_email'),
+  createdBy: uuid('created_by').references(() => users.id),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  bankSanctionLocationIdx: index('bank_sanction_limits_location_idx').on(table.location),
+  bankSanctionExpiryIdx: index('bank_sanction_limits_expiry_idx').on(table.expiryDate),
+}))
+
+/**
+ * Append-only audit trail — the sheet's "Form Responses 1" equivalent, but it also records WHO
+ * changed the row (the sheet only carried a timestamp) and keeps the final snapshot of a DELETED
+ * record, which the sheet lost entirely. record_id is SET NULL on delete so history outlives it.
+ */
+export const bankSanctionHistory = pgTable('bank_sanction_history', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  recordId: uuid('record_id').references(() => bankSanctionLimits.id, { onDelete: 'set null' }),
+  action: text('action').notNull(), // 'created' | 'updated' | 'deleted'
+  loanType: text('loan_type').notNull(),
+  location: text('location').notNull(),
+  snapshot: jsonb('snapshot').notNull(),
+  changedBy: uuid('changed_by').references(() => users.id),
+  changedByEmail: text('changed_by_email'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  bankSanctionHistoryRecordIdx: index('bank_sanction_history_record_idx').on(table.recordId, table.createdAt),
+}))
+
 export const mgUserProfiles = pgTable('mg_user_profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
   authUserId: uuid('auth_user_id').references(() => users.id, { onDelete: 'cascade' }),

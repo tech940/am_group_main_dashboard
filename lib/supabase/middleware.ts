@@ -44,18 +44,27 @@ export async function updateSession(request: NextRequest) {
     // perform the definitive server-side check once.
   }
 
+  const pathname = request.nextUrl.pathname
+
   // Public paths that must never require authentication (allowlist takes priority)
-  const publicPaths = [
-    '/brands/kia/payment-approvals/submit',
-    '/brands/kia/approvals/submit',
-    '/brands/hyundai/discount-approvals/submit',
-    '/brands/platinum/discount-approvals/submit',
+  const publicPrefixes = [
+    '/auth',
+    '/track',
   ]
-  const isPublicPath = publicPaths.some(path => request.nextUrl.pathname.startsWith(path))
+
+  // Any public form submission (approvals, discount-approvals, payment-approvals) or tracking link
+  const isPublicPath =
+    publicPrefixes.some(prefix => pathname.startsWith(prefix)) ||
+    pathname.endsWith('/submit') ||
+    pathname.includes('/submit/') ||
+    pathname.includes('/resubmit') ||
+    pathname.includes('/approvals/submit') ||
+    pathname.includes('/discount-approvals/submit') ||
+    pathname.includes('/payment-approvals/submit')
 
   // Protected routes
   const protectedPaths = ['/dashboard', '/workshop', '/recon', '/inventory', '/reports', '/team', '/admin', '/brands', '/purchase-orders', '/am-finance']
-  const isProtectedPath = !isPublicPath && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))
+  const isProtectedPath = !isPublicPath && protectedPaths.some(path => pathname.startsWith(path))
   const hasAuthCookie = request.cookies.getAll().some(({ name, value }) => (
     name.startsWith('sb-')
     && name.includes('auth-token')

@@ -254,7 +254,10 @@ const APPROVAL_TYPE_TO_GL_CODE: Record<string, string> = {
   'Statutory Payment (PF / ESIC / GST / RTO)': 'GL-060',
   'Professional Fee': 'GL-057',
   'Driver Expenses': 'GL-052',
-  'Driver Expense': 'GL-052'
+  'Driver Expense': 'GL-052',
+  'Crane Charges': 'GL-052',
+  'Key Cutting': 'GL-039',
+  'Tyre fitting / Puncture': 'GL-039',
 }
 
 // GL Code to Vendor suggestions mapping
@@ -304,8 +307,75 @@ const DEPARTMENT_OPTIONS = [
   'EMI',
   'NEW JOINING',
   'LABOUR CHARGES',
-  'OTHER'
+  'OTHER',
 ]
+
+const DEFAULT_APPROVAL_TYPES = [
+  'Crane Charges',
+  'Key Cutting',
+  'Tyre fitting / Puncture',
+  'Accessories Purchase',
+  'Advance Against Salary',
+  'Card Payment',
+  'Corporate Card Payment',
+  'Driver Expenses',
+  'Event / Promotion / Advertising',
+  'Fast Tag',
+  'Freight & Courier',
+  'Fuel Filling',
+  'Fund Transfer (OEM / EW / Wallet)',
+  'House Keeping',
+  'Incentive Disbursement',
+  'Labour Payment',
+  'Maintenance & Repair',
+  'Marketing & Promotions',
+  'Office Supplies & Stationery',
+  'Pantry / Refreshment',
+  'Part Purchase',
+  'Part Purchasing From Other Dealer',
+  'Professional Fee',
+  'Rent',
+  'Salary Disbursement',
+  'Spare Parts Purchase',
+  'Staff Uniform',
+  'Staff Welfare',
+  'Statutory Payment (PF / ESIC / GST / RTO)',
+  'Training Expenses',
+  'Travelling & Conveyance',
+  'Utility & Subscription',
+  'Vehicle Stock Transfer',
+  'Vendor Payment (Bill / Invoice)',
+  'Workshop / Job Work (Sublet)',
+  'Others',
+]
+
+const DEFAULT_LOCATIONS_BY_BRAND: Record<string, Array<{ location: string; dealerCode: string; dealerName: string }>> = {
+  kia: [
+    { location: 'Jammu', dealerCode: 'KIA-JM', dealerName: 'AM Kia Jammu' },
+    { location: 'Udhampur', dealerCode: 'KIA-UD', dealerName: 'AM Kia Udhampur' },
+    { location: 'Banihal', dealerCode: 'KIA-BN', dealerName: 'AM Kia Banihal' },
+  ],
+  hyundai: [
+    { location: 'Jammu', dealerCode: 'HYU-JM', dealerName: 'AM Hyundai Jammu' },
+    { location: 'Akhnoor', dealerCode: 'HYU-AK', dealerName: 'AM Hyundai Akhnoor' },
+    { location: 'Kathua', dealerCode: 'HYU-KT', dealerName: 'AM Hyundai Kathua' },
+    { location: 'RS Pura', dealerCode: 'HYU-RS', dealerName: 'AM Hyundai RS Pura' },
+    { location: 'Vijaypur', dealerCode: 'HYU-VJ', dealerName: 'AM Hyundai Vijaypur' },
+    { location: 'Billawar', dealerCode: 'HYU-BL', dealerName: 'AM Hyundai Billawar' },
+  ],
+  platinum: [
+    { location: 'Jammu', dealerCode: 'PLT-JM', dealerName: 'AM Platinum Jammu' },
+    { location: 'Kathua', dealerCode: 'PLT-KT', dealerName: 'AM Platinum Kathua' },
+    { location: 'Udhampur', dealerCode: 'PLT-UD', dealerName: 'AM Platinum Udhampur' },
+  ],
+  mg: [
+    { location: 'Jammu', dealerCode: 'MG-JM', dealerName: 'AM MG Jammu' },
+    { location: 'Srinagar', dealerCode: 'MG-SR', dealerName: 'AM MG Srinagar' },
+  ],
+  tata: [
+    { location: 'Jammu', dealerCode: 'TAT-JM', dealerName: 'AM Tata Jammu' },
+  ],
+}
 
 const PAYMENT_TYPE_OPTIONS = [
   'CREDIT',
@@ -970,11 +1040,11 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     }
   }, [])
 
-  // Dynamic configuration state loaded from API
-  const [brandDisplayName, setBrandDisplayName] = useState('')
-  const [locations, setLocations] = useState<LocationConfig[]>([])
-  const [approvalTypes, setApprovalTypes] = useState<string[]>([])
-  const [loadingConfig, setLoadingConfig] = useState(true)
+  // Dynamic configuration state loaded from API with instant fallback defaults
+  const [brandDisplayName, setBrandDisplayName] = useState(() => brand.toUpperCase())
+  const [locations, setLocations] = useState<LocationConfig[]>(() => DEFAULT_LOCATIONS_BY_BRAND[brand.toLowerCase()] || DEFAULT_LOCATIONS_BY_BRAND.kia)
+  const [approvalTypes, setApprovalTypes] = useState<string[]>(() => DEFAULT_APPROVAL_TYPES)
+  const [loadingConfig, setLoadingConfig] = useState(false)
 
   const [vendors, setVendors] = useState<VendorOption[]>([])
   const [vendorsLoading, setVendorsLoading] = useState(true)
@@ -996,15 +1066,21 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
   useEffect(() => {
     setLoadingConfig(true)
     fetch(`/api/brands/${brand}/approvals/config`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
+      .then(async (res) => {
+        if (!res.ok) return null
+        return res.json().catch(() => null)
+      })
+      .then((data) => {
+        if (data && data.success) {
           setBrandDisplayName(data.brandDisplayName || brand.toUpperCase())
           setLocations(data.locations || [])
-          setApprovalTypes((data.approvalTypes || []).filter((t: string) => t.toLowerCase() !== 'petty cash'))
+          const fetchedTypes = (data.approvalTypes || []).filter((t: string) => t.toLowerCase() !== 'petty cash')
+          const requiredTypes = ['Crane Charges', 'Key Cutting', 'Tyre fitting / Puncture']
+          const combined = Array.from(new Set([...fetchedTypes, ...requiredTypes])).sort()
+          setApprovalTypes(combined)
         }
       })
-      .catch(err => console.error('Error loading config:', err))
+      .catch((err) => console.error('Error loading config:', err))
       .finally(() => setLoadingConfig(false))
   }, [brand])
 
@@ -1012,9 +1088,16 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
   useEffect(() => {
     setVendorsLoading(true)
     fetch(`/api/brands/${brand}/vendors`)
-      .then(res => res.json())
-      .then(data => setVendors(data.vendors || []))
-      .catch(err => console.error('Error fetching vendors:', err))
+      .then(async (res) => {
+        if (!res.ok) return null
+        return res.json().catch(() => null)
+      })
+      .then((data) => {
+        if (data && Array.isArray(data.vendors)) {
+          setVendors(data.vendors)
+        }
+      })
+      .catch((err) => console.error('Error fetching vendors:', err))
       .finally(() => setVendorsLoading(false))
   }, [brand])
 
@@ -1022,18 +1105,23 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
   useEffect(() => {
     setGlLoading(true)
     fetch(`/api/brands/${brand}/gl-accounts`)
-      .then(res => res.json())
-      .then(data => {
-        const rows = data.rows || []
-        setGlAccounts(rows)
-        setForm(prev => {
-          if (prev.glAccountId) return prev
-          const targetCode = APPROVAL_TYPE_TO_GL_CODE[prev.approvalType] || 'GL-001'
-          const matched = rows.find((g: any) => g.glCode === targetCode) || rows[0]
-          return { ...prev, glAccountId: matched?.id || '' }
-        })
+      .then(async (res) => {
+        if (!res.ok) return null
+        return res.json().catch(() => null)
       })
-      .catch(err => console.error('Error fetching GL accounts:', err))
+      .then((data) => {
+        if (data && Array.isArray(data.rows)) {
+          const rows = data.rows
+          setGlAccounts(rows)
+          setForm((prev) => {
+            if (prev.glAccountId) return prev
+            const targetCode = APPROVAL_TYPE_TO_GL_CODE[prev.approvalType] || 'GL-001'
+            const matched = rows.find((g: any) => g.glCode === targetCode) || rows[0]
+            return { ...prev, glAccountId: matched?.id || '' }
+          })
+        }
+      })
+      .catch((err) => console.error('Error fetching GL accounts:', err))
       .finally(() => setGlLoading(false))
   }, [brand])
 
@@ -1433,6 +1521,15 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     }
   }
 
+  const uniqueNames = useMemo(() => {
+    const fromState = locations.map(l => l.dealerName || l.location).filter(Boolean)
+    if (fromState.length > 0) {
+      return Array.from(new Set(fromState)).sort()
+    }
+    const brandDefaults = DEFAULT_LOCATIONS_BY_BRAND[brand.toLowerCase()] || []
+    return brandDefaults.map(l => l.dealerName || l.location).sort()
+  }, [locations, brand])
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setErrorMsg('')
@@ -1557,8 +1654,6 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
       </div>
     )
   }
-
-  const uniqueNames = Array.from(new Set(locations.map(l => l.dealerName))).sort()
 
   /* ---- Live docket state -------------------------------------------------------------------
    * The submitter has no dashboard to check afterwards, so everything they are about to send is
@@ -1771,55 +1866,56 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 </SelectShell>
               </Field>
 
-              {/* 2. Department Dropdown (Filtered based on Sales or Service) */}
+              {/* 2. Department Dropdown */}
               <Field label="Department" required>
-                <SelectShell disabled={!form.department}>
+                <SelectShell>
                   <select
                     required
-                    disabled={!form.department}
-                    value={form.specifyOtherDepartment || form.department || ''}
+                    value={form.specifyOtherDepartment || ''}
                     onChange={e => {
                       const val = e.target.value
+                      const isService = ['SERVICE', 'SPARE PARTS', 'BODY SHOP', 'LABOUR CHARGES', 'MAINTENANCE'].includes(val)
                       setForm(prev => ({
                         ...prev,
-                        specifyOtherDepartment: val
+                        specifyOtherDepartment: val,
+                        department: prev.department || (isService ? 'SERVICE' : 'SALES'),
                       }))
                     }}
                     className={SELECT_CLASS}
                   >
-                    <option value="">
-                      {!form.department ? 'First select Sales or Service' : 'Select Department'}
-                    </option>
-                    {form.department === 'SALES' && [
-                      'SALES',
-                      'Accessories',
-                      'CRM',
-                      'INSURANCE',
-                      'HP ROMISE',
-                      'EMI',
-                      'NEW JOINING',
-                      'SALES & SERVICE',
-                      'HR',
-                      'ADMIN',
-                      'ACCOUNTS',
-                      'EDP / IT',
-                      'OTHER'
-                    ].map(opt => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                    {form.department === 'SERVICE' && [
-                      'SERVICE',
-                      'SPARE PARTS',
-                      'BODY SHOP',
-                      'LABOUR CHARGES',
-                      'MAINTENANCE',
-                      'SALES & SERVICE',
-                      'HR',
-                      'ADMIN',
-                      'ACCOUNTS',
-                      'EDP / IT',
-                      'OTHER'
-                    ].map(opt => (
+                    <option value="">Select Department</option>
+                    {(form.department === 'SALES'
+                      ? [
+                          'SALES',
+                          'Accessories',
+                          'CRM',
+                          'INSURANCE',
+                          'HP ROMISE',
+                          'EMI',
+                          'NEW JOINING',
+                          'SALES & SERVICE',
+                          'HR',
+                          'ADMIN',
+                          'ACCOUNTS',
+                          'EDP / IT',
+                          'OTHER',
+                        ]
+                      : form.department === 'SERVICE'
+                      ? [
+                          'SERVICE',
+                          'SPARE PARTS',
+                          'BODY SHOP',
+                          'LABOUR CHARGES',
+                          'MAINTENANCE',
+                          'SALES & SERVICE',
+                          'HR',
+                          'ADMIN',
+                          'ACCOUNTS',
+                          'EDP / IT',
+                          'OTHER',
+                        ]
+                      : DEPARTMENT_OPTIONS
+                    ).map(opt => (
                       <option key={opt} value={opt}>{opt}</option>
                     ))}
                   </select>

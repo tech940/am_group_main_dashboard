@@ -11,7 +11,11 @@ export async function GET(request: NextRequest) {
     const appUser = gate.appUser
 
     return NextResponse.json({
-      ledger: await getPettyCashLedger(appUser, request.nextUrl.searchParams.get('allocationId')),
+      ledger: await getPettyCashLedger(
+        appUser,
+        request.nextUrl.searchParams.get('allocationId'),
+        request.nextUrl.searchParams.get('branchId'),
+      ),
     })
   } catch (error) {
     console.error('GET /api/petty-cash/reports failed:', error)

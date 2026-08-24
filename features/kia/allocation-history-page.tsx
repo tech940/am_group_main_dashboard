@@ -19,6 +19,8 @@ import { cn } from '@/lib/utils'
 type Row = {
   id: string; bookingId: string; bookingNumber: string; customerName: string; dealerCode: string
   vin: string; model: string; variant: string; color: string; engineNo: string; stockSource: string
+  /** From the booking's proforma. NULL when the booking has no proforma yet — not the same as 0. */
+  bookingAmount: number | null
   allocatedBy: string; allocatedAt: string | null; expiresAt: string | null
   releasedBy: string | null; releasedAt: string | null; releaseReason: string | null
   paymentConfirmedAt: string | null; allocationStatus: string
@@ -39,6 +41,11 @@ const OUTCOMES = [
 const fmt = (v: string | null) =>
   v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
 const nfmt = (n: number) => Math.round(n || 0).toLocaleString('en-IN')
+/**
+ * Booking amount for one row. NULL renders as an em dash, never "₹0" — 32 of 144 allocations belong
+ * to bookings with no proforma, and printing ₹0 there would assert a deposit nobody recorded.
+ */
+const money = (n: number | null) => (n === null || n === undefined ? '—' : `₹${nfmt(n)}`)
 
 function held(minutes: number | null) {
   if (minutes === null) return '—'
@@ -48,15 +55,36 @@ function held(minutes: number | null) {
 }
 
 function OutcomePill({ outcome, expired, overdue }: { outcome: string; expired: boolean; overdue: boolean }) {
-  const cls = outcome === 'Awaiting payment' ? (overdue ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-blue-100 text-blue-700 border-blue-200')
-    : outcome === 'Payment confirmed' ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
-      : outcome.includes('no payment') ? 'bg-rose-100 text-rose-700 border-rose-200'
-        : 'bg-amber-100 text-amber-700 border-amber-200'
+  let cls = 'bg-slate-50 text-slate-700 border-slate-200'
+  let dotCls = 'bg-slate-500'
+
+  if (outcome === 'Payment confirmed') {
+    cls = 'bg-emerald-50 text-emerald-800 border-emerald-300'
+    dotCls = 'bg-emerald-500'
+  } else if (outcome === 'Awaiting payment') {
+    if (overdue) {
+      cls = 'bg-amber-50 text-amber-800 border-amber-300'
+      dotCls = 'bg-amber-500'
+    } else {
+      cls = 'bg-blue-50 text-blue-800 border-blue-300'
+      dotCls = 'bg-blue-500'
+    }
+  } else if (outcome.includes('no payment')) {
+    cls = 'bg-rose-50 text-rose-800 border-rose-300'
+    dotCls = 'bg-rose-500'
+  } else if (outcome.includes('manual') || outcome.includes('Released')) {
+    cls = 'bg-orange-50 text-orange-800 border-orange-300'
+    dotCls = 'bg-orange-500'
+  }
+
   return (
-    <span className={cn('inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-bold', cls)}
-      title={expired ? 'Released at or after the countdown expiry' : undefined}>
-      {outcome}
-      {overdue && ' · overdue'}
+    <span
+      className={cn('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[9.5px] font-bold shadow-xs', cls)}
+      title={expired ? 'Released at or after the countdown expiry' : undefined}
+    >
+      <span className={cn('h-1.5 w-1.5 rounded-full', dotCls)} />
+      <span>{outcome}</span>
+      {overdue && <span className="font-black text-amber-700">· Overdue</span>}
     </span>
   )
 }
@@ -95,13 +123,15 @@ export function AllocationHistoryPage({ embedded = false }: { embedded?: boolean
   const exportCsv = () => {
     if (typeof document === 'undefined' || !rows.length) return
     const head = ['Booking ID', 'Customer', 'Dealer', 'Model', 'Variant', 'Colour', 'VIN', 'Engine No',
-      'Allocated By', 'Allocated At', 'Countdown Expiry', 'Released At', 'Released By', 'Reason', 'Held', 'Status']
+      'Booking Amount', 'Allocated By', 'Allocated At', 'Countdown Expiry', 'Released At', 'Released By', 'Reason', 'Held', 'Status']
     const esc = (v: string | number) => {
       const t = String(v ?? '')
       return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
     }
     const lines = [head.join(','), ...rows.map((r) => [
       r.bookingNumber, r.customerName, r.dealerCode, r.model, r.variant, r.color, r.vin, r.engineNo,
+      // Raw number for the CSV (no ₹, no separators) so it lands in Excel as a number, not text.
+      r.bookingAmount === null ? '' : r.bookingAmount,
       r.allocatedBy, fmt(r.allocatedAt), fmt(r.expiresAt), fmt(r.releasedAt), r.releasedBy || '',
       r.releaseReason || '', held(r.heldMinutes), r.outcome,
     ].map(esc).join(','))]
@@ -142,21 +172,33 @@ export function AllocationHistoryPage({ embedded = false }: { embedded?: boolean
         </div>
 
         {s && (
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
             {([
-              ['Total events', s.total, 'bg-slate-900', `across ${nfmt(s.vehicles)} vehicles`],
-              ['Awaiting payment', s.active, 'bg-blue-600', s.overdue > 0 ? `${nfmt(s.overdue)} past the countdown` : 'all within the window'],
-              ['Payment confirmed', s.paid, 'bg-emerald-600', 'held and paid for'],
-              ['Released — no payment', s.noPayment, 'bg-rose-600', 'returned to free stock'],
-              ['Released — manual', s.manual, 'bg-amber-600', 'released for another reason'],
-            ] as [string, number, string, string][]).map(([label, value, tone, note]) => (
+              ['Total events', nfmt(s.total), 'bg-slate-900', `across ${nfmt(s.vehicles)} vehicles`],
+              ['Awaiting payment', nfmt(s.active), 'bg-blue-600', s.overdue > 0 ? `${nfmt(s.overdue)} past the countdown` : 'all within the window'],
+              ['Payment confirmed', nfmt(s.paid), 'bg-emerald-600', 'held and paid for'],
+              ['Released — no payment', nfmt(s.noPayment), 'bg-rose-600', 'returned to free stock'],
+              ['Released — manual', nfmt(s.manual), 'bg-amber-600', 'released for another reason'],
+              /*
+               * Booking amount over the WHOLE filtered trail, not the page — a footer total under a
+               * paginated table describes only what is on screen while looking like the total.
+               * Counted once per BOOKING: 38 of 74 bookings hold more than one allocation, so
+               * summing per row inflated ₹10.37L to ₹18.96L.
+               */
+              [
+                'Booking amount',
+                `₹${nfmt(s.bookingAmountTotal)}`,
+                'bg-indigo-600',
+                `from ${nfmt(s.bookingAmountRows)} booking${s.bookingAmountRows === 1 ? '' : 's'} with a proforma`,
+              ],
+            ] as [string, string, string, string][]).map(([label, value, tone, note]) => (
               <Card key={label} className="rounded-2xl border border-slate-200 bg-white shadow-xs">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2">
                     <span className={cn('h-2 w-2 rounded-full', tone)} />
                     <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
                   </div>
-                  <p className="mt-1 text-2xl font-black text-slate-950">{nfmt(value)}</p>
+                  <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{value}</p>
                   <p className="text-[10px] font-medium text-slate-400">{note}</p>
                 </CardContent>
               </Card>
@@ -197,45 +239,165 @@ export function AllocationHistoryPage({ embedded = false }: { embedded?: boolean
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-[11px]">
-              <thead className="bg-slate-50">
+              <thead className="bg-[#074e5b] text-white">
                 <tr>
-                  {['Booking', 'Customer', 'Vehicle', 'Allocated by', 'Allocated at', 'Countdown expiry',
+                  {['Booking', 'Customer', 'Vehicle', 'Booking amount', 'Allocated by', 'Allocated at', 'Countdown expiry',
                     'Returned to free stock', 'Reason', 'Held', 'Status'].map((h) => (
-                    <th key={h} className="whitespace-nowrap px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-400">{h}</th>
+                    <th
+                      key={h}
+                      scope="col"
+                      className={`whitespace-nowrap px-3.5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-100 ${h === 'Booking amount' ? 'text-right' : 'text-left'}`}
+                    >
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {q.isLoading || q.isPlaceholderData ? (
-                  <tr><td colSpan={10} className="py-16 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-slate-300" /></td></tr>
+                  <tr><td colSpan={11} className="py-16 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-slate-300" /></td></tr>
                 ) : q.isError ? (
-                  <tr><td colSpan={10} className="py-16 text-center text-[12px] font-semibold text-rose-700">{(q.error as Error)?.message}</td></tr>
+                  <tr><td colSpan={11} className="py-16 text-center text-[12px] font-semibold text-rose-700">{(q.error as Error)?.message}</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={10} className="py-16 text-center text-[12px] font-semibold text-slate-400">No allocation events match this filter.</td></tr>
-                ) : rows.map((r) => (
-                  <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                    <td className="whitespace-nowrap px-3 py-3">
-                      <p className="font-mono text-[10px] font-bold text-slate-900">{r.bookingNumber || '—'}</p>
-                      <p className="text-[9px] font-semibold text-slate-400">{r.dealerCode}</p>
-                    </td>
-                    <td className="px-3 py-3 font-bold text-slate-800">{r.customerName || '—'}</td>
-                    <td className="px-3 py-3">
-                      <p className="font-bold text-slate-800">{r.model || '—'}</p>
-                      <p className="text-[9px] text-slate-500">{[r.variant, r.color].filter(Boolean).join(' · ')}</p>
-                      {r.vin && <p className="font-mono text-[9px] text-slate-400">{r.vin}</p>}
-                    </td>
-                    <td className="px-3 py-3 font-semibold text-slate-700">{r.allocatedBy}</td>
-                    <td className="whitespace-nowrap px-3 py-3 text-slate-600">{fmt(r.allocatedAt)}</td>
-                    <td className="whitespace-nowrap px-3 py-3 text-slate-600">{fmt(r.expiresAt)}</td>
-                    <td className="whitespace-nowrap px-3 py-3 text-slate-600">
-                      {fmt(r.releasedAt)}
-                      {r.releasedBy && <p className="text-[9px] text-slate-400">by {r.releasedBy}</p>}
-                    </td>
-                    <td className="max-w-56 px-3 py-3 text-slate-600">{r.releaseReason || '—'}</td>
-                    <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{held(r.heldMinutes)}</td>
-                    <td className="px-3 py-3"><OutcomePill outcome={r.outcome} expired={r.expired} overdue={r.overdue} /></td>
-                  </tr>
-                ))}
+                  <tr><td colSpan={11} className="py-16 text-center text-[12px] font-semibold text-slate-400">No allocation events match this filter.</td></tr>
+                ) : rows.map((r) => {
+                  const isPaid = r.outcome === 'Payment confirmed'
+                  const isActive = r.outcome === 'Awaiting payment'
+                  const isOverdue = r.overdue
+                  const isNoPayment = r.outcome.includes('no payment')
+                  const isManual = r.outcome.includes('manual')
+
+                  let rowBorderCls = 'border-l-4 border-l-slate-300'
+                  let rowBgCls = 'hover:bg-slate-50/80'
+
+                  if (isPaid) {
+                    rowBorderCls = 'border-l-4 border-l-emerald-500 bg-emerald-50/15 hover:bg-emerald-50/35'
+                  } else if (isActive && isOverdue) {
+                    rowBorderCls = 'border-l-4 border-l-amber-500 bg-amber-50/20 hover:bg-amber-50/45'
+                  } else if (isActive) {
+                    rowBorderCls = 'border-l-4 border-l-blue-500 bg-blue-50/10 hover:bg-blue-50/30'
+                  } else if (isNoPayment) {
+                    rowBorderCls = 'border-l-4 border-l-rose-500 bg-rose-50/10 hover:bg-rose-50/30'
+                  } else if (isManual) {
+                    rowBorderCls = 'border-l-4 border-l-orange-400 bg-orange-50/10 hover:bg-orange-50/30'
+                  }
+
+                  return (
+                    <tr key={r.id} className={cn('transition-colors', rowBorderCls, rowBgCls)}>
+                      {/* 1. Booking */}
+                      <td className="whitespace-nowrap px-3.5 py-3">
+                        <span className="inline-block font-mono text-[10.5px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded shadow-xs">
+                          {r.bookingNumber || '—'}
+                        </span>
+                        {r.dealerCode && (
+                          <div className="mt-1">
+                            <span className="inline-block px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200/70">
+                              {r.dealerCode}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* 2. Customer */}
+                      <td className="px-3.5 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-slate-200 text-slate-700 text-[10px] font-black shadow-xs">
+                            {r.customerName ? r.customerName.charAt(0).toUpperCase() : 'C'}
+                          </div>
+                          <span className="font-bold text-slate-900 leading-tight">
+                            {r.customerName || '—'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* 3. Vehicle */}
+                      <td className="px-3.5 py-3">
+                        <p className="font-bold text-slate-950 text-[11px] tracking-tight">{r.model || '—'}</p>
+                        <div className="mt-0.5">
+                          <span className="inline-block bg-slate-100 text-slate-700 font-medium text-[9.5px] px-1.5 py-0.5 rounded border border-slate-200/80">
+                            {[r.variant, r.color].filter(Boolean).join(' · ')}
+                          </span>
+                        </div>
+                        {r.vin && (
+                          <div className="mt-0.5">
+                            <span className="inline-block font-mono text-[9px] font-semibold text-amber-900 bg-amber-50/90 border border-amber-200/80 px-1.5 py-0.2 rounded">
+                              {r.vin}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* 4. Booking Amount */}
+                      <td className="whitespace-nowrap px-3.5 py-3 text-right font-bold tabular-nums">
+                        {r.bookingAmount !== null && r.bookingAmount !== undefined ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200/90 font-bold tabular-nums text-[11.5px] shadow-xs">
+                            {money(r.bookingAmount)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-medium">—</span>
+                        )}
+                      </td>
+
+                      {/* 5. Allocated By */}
+                      <td className="px-3.5 py-3">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 text-sky-800 border border-sky-200/80 px-2 py-0.5 text-[10px] font-semibold">
+                          {r.allocatedBy}
+                        </span>
+                      </td>
+
+                      {/* 6. Allocated At */}
+                      <td className="whitespace-nowrap px-3.5 py-3 text-slate-700 font-medium text-[10.5px]">
+                        {fmt(r.allocatedAt)}
+                      </td>
+
+                      {/* 7. Countdown Expiry */}
+                      <td className="whitespace-nowrap px-3.5 py-3">
+                        {r.expired || r.overdue ? (
+                          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                            {fmt(r.expiresAt)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-700 font-medium text-[10.5px]">{fmt(r.expiresAt)}</span>
+                        )}
+                      </td>
+
+                      {/* 8. Returned to Free Stock */}
+                      <td className="whitespace-nowrap px-3.5 py-3">
+                        {r.releasedAt ? (
+                          <div>
+                            <span className="inline-block font-semibold text-rose-700 text-[10px] bg-rose-50/80 px-1.5 py-0.5 rounded border border-rose-200/70">
+                              {fmt(r.releasedAt)}
+                            </span>
+                            {r.releasedBy && <p className="text-[9px] font-medium text-slate-500 mt-0.5">by {r.releasedBy}</p>}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 font-medium">—</span>
+                        )}
+                      </td>
+
+                      {/* 9. Reason */}
+                      <td className="max-w-52 px-3.5 py-3 text-slate-700 text-[10.5px] font-medium leading-relaxed">
+                        {r.releaseReason || '—'}
+                      </td>
+
+                      {/* 10. Held */}
+                      <td className="whitespace-nowrap px-3.5 py-3">
+                        {r.heldMinutes !== null ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200/80 font-bold text-[10px] tabular-nums">
+                            {held(r.heldMinutes)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-medium">—</span>
+                        )}
+                      </td>
+
+                      {/* 11. Status */}
+                      <td className="px-3.5 py-3">
+                        <OutcomePill outcome={r.outcome} expired={r.expired} overdue={r.overdue} />
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

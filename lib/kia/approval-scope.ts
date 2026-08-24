@@ -3,6 +3,7 @@ import 'server-only'
 import type { AppUser } from '@/lib/auth/app-user'
 import { canAccessBrand } from '@/lib/auth/brand-access'
 import { parseUserDealers } from '@/lib/dealers/registry'
+import { approvalBranchTokens } from '@/lib/kia/approval-branches'
 import { isSuperAdminRole } from '@/lib/auth/roles'
 import { hasAllBranchAccess, type BranchValue } from '@/lib/branches'
 
@@ -51,6 +52,47 @@ export function canSeeAllApprovals(appUser: AppUser | null): boolean {
 }
 
 /**
+ * Branch tokens an approvals user may be pinned to, for one brand.
+ *
+ * ── Why this is not just parseUserDealers ─────────────────────────────────────────────────────
+ * parseUserDealers filters a pin against the brand's DMS dealer registry, and some branches that
+ * genuinely submit payment requests are not in it. BANIHAL is the live example: the approvals form
+ * offers it as a location (LOCATION_OPTIONS in features/kia/kia-approvals-page.tsx) and 7 requests
+ * worth ~Rs12.5L are filed against dealer_code 'JK502', but KIA_BRANCH_DEALERS holds only JK402 and
+ * JK501. So parseUserDealers silently dropped 'JK502' from any pin, and NO pin could reach those
+ * rows — they were visible only to all-branch users. A branch nobody can be scoped to is a branch
+ * whose own staff cannot see their own requests.
+ *
+ * Fixing it in KIA_BRANCH_DEALERS was the wrong lever: that registry feeds the sales, stock and
+ * Business Excellence dealer pickers, where Banihal has no DMS data at all and would appear as a
+ * permanently empty branch. Petty Cash hit exactly this and solved it the same way — see
+ * `extraLocations: ['Banihal']` in lib/petty-cash/constants.ts. This is that pattern, scoped to
+ * approvals so the blast radius stays here.
+ *
+ * ⚠️ These are ADDITIVE and must stay narrow. Every token added here becomes grantable, so it must
+ * correspond to a real branch that really submits approvals — never a convenience alias.
+ */
+function resolveApprovalBranchPins(rowBrand: string, dealers: string | null | undefined): Set<string> {
+  const registered = parseUserDealers(rowBrand, dealers).map((code) => code.trim().toUpperCase())
+  const allowed = new Set(registered)
+
+  // Admit approval-only tokens the DMS registry does not carry, but ONLY when the user was actually
+  // pinned to them — this widens what a pin can express, never what an unpinned user can see.
+  const extras = approvalBranchTokens(rowBrand)
+  if (extras.length) {
+    const pins = String(dealers || '').split(',').map((v) => v.trim().toUpperCase()).filter(Boolean)
+    for (const extra of extras) {
+      if (pins.includes(extra.toUpperCase())) {
+        // A pin on either token opens both, so 'JK502' and 'BANIHAL' are interchangeable in a pin
+        // and a row identified by either code or location still matches.
+        for (const token of extras) allowed.add(token.toUpperCase())
+      }
+    }
+  }
+  return allowed
+}
+
+/**
  * True when `appUser` may see this request.
  *
  * Two gates, both of which must pass for a scoped user:
@@ -91,10 +133,9 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
    * depends on its lenient-when-unpinned behaviour. So the pin is read directly here, and an empty
    * pin denies. Approvals is stricter than the rest of the app on purpose.
    */
-  const pinned = parseUserDealers(rowBrand, appUser.dealers)
-  if (!pinned.length) return false
+  const allowed = resolveApprovalBranchPins(rowBrand, appUser.dealers)
+  if (!allowed.size) return false
 
-  const allowed = new Set(pinned.map((c) => c.trim().toUpperCase()))
   return allowed.has(code.toUpperCase()) || allowed.has(location.toUpperCase())
 }
 

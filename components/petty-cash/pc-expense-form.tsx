@@ -72,13 +72,13 @@ export function ExpenseFormDialog({
           onSubmit={(event) => { event.preventDefault(); onSubmit() }}
           className="flex max-h-[92dvh] flex-col"
         >
-          <DialogHeader className="space-y-2 border-b border-slate-100 bg-gradient-to-br from-teal-700 to-emerald-600 p-6 text-white">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
+          <DialogHeader className="space-y-2 border-b border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 text-white">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-emerald-400 border border-white/10">
               <ReceiptText className="h-5 w-5" />
             </span>
             <DialogTitle className="text-2xl font-black tracking-tight text-white">Submit Expense</DialogTitle>
-            <DialogDescription className="text-sm font-semibold text-white/70">
-              Post a spend against your active allocation. Remaining: {formatCurrency(remainingAmount)}.
+            <DialogDescription className="text-sm font-semibold text-slate-300">
+              Post a spend against your active allocation. Remaining: <span className="text-emerald-400 font-bold">{formatCurrency(remainingAmount)}</span>.
             </DialogDescription>
           </DialogHeader>
 

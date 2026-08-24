@@ -5,7 +5,7 @@ import type { AppUser } from '@/lib/auth/app-user'
 import { hasAllBranchAccess } from '@/lib/branches'
 import { pettyCashAllocations, pettyCashExpenses, pettyCashRequests } from '@/lib/db/schema'
 import { isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
-import { getPettyCashUserBrands } from './constants'
+import { getPettyCashUserBrands, isPettyCashAllBranchRole, isPettyCashOwnSubmissionsOnlyRole } from './constants'
 
 type PettyCashRole = AppUser['role']
 type PettyCashRequestRecord = typeof pettyCashRequests.$inferSelect
@@ -17,17 +17,15 @@ export function canAccessPettyCash(role: PettyCashRole | null | undefined) {
   return isPettyCashViewRole(role)
 }
 
-// Org-level roles that supervise petty cash across the WHOLE system. In petty
-// cash `branchId` is the brand (e.g. 'kia') and the individual dealership
-// (JK402 = KIA Jammu, JK501 = KIA Udhampur, …) lives in requestForm.location —
-// so "all branches" here means every brand AND every dealership. These roles are
-// not tied to a single branch and must see requests, expenses and allocations
-// everywhere. (MD/EBA already had this for requests; EA + expenses + allocations
-// were inconsistently branch-scoped — this makes it uniform.)
-const PETTY_CASH_ALL_BRANCH_ROLES = new Set<string>(['developer', 'ea', 'md', 'eba', 'ed'])
-
+/**
+ * Unconditional all-branch supervision is now MD + Developer ONLY (the list lives in
+ * ./constants.ts so the client shares it). Every other role — INCLUDING EA, EBA and ED — sees
+ * exactly the branches their admin-panel assignment grants: `users.brand` of 'kia' means KIA only,
+ * 'kia,hyundai' means both, and 'all' still opens everything via hasAllBranchAccess. The
+ * assignment, not the role, is the lever.
+ */
 export function hasPettyCashAllBranchAccess(appUser: Pick<AppUser, 'role' | 'brand'>) {
-  return PETTY_CASH_ALL_BRANCH_ROLES.has(appUser.role) || hasAllBranchAccess(appUser.brand)
+  return isPettyCashAllBranchRole(appUser.role) || hasAllBranchAccess(appUser.brand)
 }
 
 /**
@@ -61,14 +59,38 @@ export function canViewPettyCashBranch(appUser: AppUser, branchId: string | null
   return hasPettyCashAllBranchAccess(appUser) || brandsOf(appUser).includes(branchId)
 }
 
-// Only the Branch Admin (branch_admin) or Sales Manager (sales_manager) submits petty cash requests and expenses.
-// Everyone else in the chain (EA, MD/EBA, Accounts, developer) reviews/approves.
 export function canCreatePettyCashRequest(role: PettyCashRole | null | undefined) {
-  return role === 'branch_admin' || role === 'sales_manager'
+  const r = String(role || '').trim().toLowerCase()
+  return (
+    r === 'branch_admin' ||
+    r === 'sales_manager' ||
+    r === 'developer' ||
+    r === 'admin' ||
+    r === 'manager' ||
+    r === 'general_manager' ||
+    r === 'md' ||
+    r === 'accounts' ||
+    r === 'ea' ||
+    r === 'eba' ||
+    r === 'ed'
+  )
 }
 
 export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined) {
-  return role === 'branch_admin' || role === 'sales_manager'
+  const r = String(role || '').trim().toLowerCase()
+  return (
+    r === 'branch_admin' ||
+    r === 'sales_manager' ||
+    r === 'developer' ||
+    r === 'admin' ||
+    r === 'manager' ||
+    r === 'general_manager' ||
+    r === 'md' ||
+    r === 'accounts' ||
+    r === 'ea' ||
+    r === 'eba' ||
+    r === 'ed'
+  )
 }
 
 export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {
@@ -94,25 +116,43 @@ export function canApprovePettyCashStage(role: PettyCashRole | null | undefined,
 
 export function canManagePettyCashBranch(appUser: AppUser, branchId: string | null | undefined) {
   if (!branchId) return false
-  if (hasAllBranchAccess(appUser.brand)) return true
+  if (hasPettyCashAllBranchAccess(appUser) || hasAllBranchAccess(appUser.brand)) return true
   return brandsOf(appUser).includes(branchId)
 }
 
 export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unknown> {
   const baseFilters: SQL<unknown>[] = [isNull(pettyCashRequests.deletedAt)]
 
-  // EA / MD / EBA / Developer (and any 'all' user) see every branch's requests.
+  // MD / Developer (and any user ASSIGNED 'all' in the admin panel) see every branch's requests.
   if (hasPettyCashAllBranchAccess(appUser)) {
     return and(...baseFilters)!
   }
 
+  /*
+   * SUBMITTERS (branch_admin / sales_manager) see ONLY THEIR OWN requests. They are custodians of
+   * their own float, not supervisors of the branch — three KIA branch admins used to see each
+   * other's submissions because they shared a brand. Branch scope is kept alongside the ownership
+   * test as defence in depth, so a row mis-tagged to another brand cannot surface either.
+   */
+  if (isPettyCashOwnSubmissionsOnlyRole(appUser.role)) {
+    return and(
+      ...baseFilters,
+      pettyCashBranchScope(pettyCashRequests.branchId, brandsOf(appUser)),
+      eq(pettyCashRequests.createdBy, appUser.id),
+    )!
+  }
+
   if (
     appUser.role === 'admin' ||
-    appUser.role === 'branch_admin' ||
     appUser.role === 'accounts' ||
     appUser.role === 'manager' ||
     appUser.role === 'general_manager' ||
-    appUser.role === 'sales_manager'
+    // Approver roles, brand-scoped by ASSIGNMENT since they left the all-branch list. Without this
+    // arm they would fall through to the createdBy-only fallback below and — as reviewers who never
+    // create requests — see an empty queue.
+    appUser.role === 'ea' ||
+    appUser.role === 'eba' ||
+    appUser.role === 'ed'
   ) {
     return and(...baseFilters, pettyCashBranchScope(pettyCashRequests.branchId, brandsOf(appUser)))!
   }
@@ -123,18 +163,29 @@ export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unkno
 export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unknown> {
   const baseFilters: SQL<unknown>[] = [isNull(pettyCashExpenses.deletedAt)]
 
-  // EA / MD / EBA / Developer (and any 'all' user) see every branch's expenses.
+  // MD / Developer (and any user ASSIGNED 'all') see every branch's expenses.
   if (hasPettyCashAllBranchAccess(appUser)) {
     return and(...baseFilters)!
   }
 
+  // Submitters see only their own spends — see the request filter above for why.
+  if (isPettyCashOwnSubmissionsOnlyRole(appUser.role)) {
+    return and(
+      ...baseFilters,
+      pettyCashBranchScope(pettyCashExpenses.branchId, brandsOf(appUser)),
+      eq(pettyCashExpenses.createdBy, appUser.id),
+    )!
+  }
+
   if (
     appUser.role === 'admin' ||
-    appUser.role === 'branch_admin' ||
     appUser.role === 'accounts' ||
     appUser.role === 'manager' ||
     appUser.role === 'general_manager' ||
-    appUser.role === 'sales_manager'
+    // Same as the request filter above: assignment-scoped approvers, not createdBy-only.
+    appUser.role === 'ea' ||
+    appUser.role === 'eba' ||
+    appUser.role === 'ed'
   ) {
     return and(...baseFilters, pettyCashBranchScope(pettyCashExpenses.branchId, brandsOf(appUser)))!
   }
@@ -159,7 +210,7 @@ export function getPettyCashAllocationVisibilityFilter(
     ? []
     : [eq(pettyCashAllocations.status, 'active')]
 
-  // EA / MD / EBA / Developer (and any 'all' user) see every branch's allocations.
+  // MD / Developer (and any user ASSIGNED 'all') see every branch's allocations.
   if (hasPettyCashAllBranchAccess(appUser)) {
     // `and()` of an empty list is undefined, so a lone TRUE keeps the return type honest when the
     // status predicate is dropped and no other predicate applies to this role.
@@ -180,15 +231,22 @@ export function getPettyCashAllocationVisibilityFilter(
   )!
 }
 
+/*
+ * ⚠️ The by-id reads must agree with the list filters above, or a submitter who cannot SEE another
+ * admin's row in the list could still OPEN it by guessing the id. Hence the explicit submitter
+ * check before the brand fallback.
+ */
 export function canReadPettyCashRequest(appUser: AppUser, request: Pick<PettyCashRequestRecord, 'branchId' | 'createdBy'>) {
   if (hasPettyCashAllBranchAccess(appUser)) return true
   if (request.createdBy === appUser.id) return true
+  if (isPettyCashOwnSubmissionsOnlyRole(appUser.role)) return false
   return canAccessPettyCash(appUser.role) && brandsOf(appUser).includes(request.branchId)
 }
 
 export function canReadPettyCashExpense(appUser: AppUser, expense: Pick<PettyCashExpenseRecord, 'branchId' | 'createdBy'>) {
   if (hasPettyCashAllBranchAccess(appUser)) return true
   if (expense.createdBy === appUser.id) return true
+  if (isPettyCashOwnSubmissionsOnlyRole(appUser.role)) return false
   return canAccessPettyCash(appUser.role) && brandsOf(appUser).includes(expense.branchId)
 }
 

@@ -33,6 +33,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AUTO_DEACTIVATION_EXEMPT_ROLES, AUTO_DEACTIVATION_IDLE_DAYS } from '@/lib/auth/user-deactivation-config'
 import { BRANCH_OPTIONS } from '@/lib/branches'
 import { getBrandDealers } from '@/lib/dealers/registry'
+import { getApprovalOnlyBranches } from '@/lib/kia/approval-branches'
 import { formatIstDateTime } from '@/lib/date-time'
 import { cn } from '@/lib/utils'
 import { AccessControlPanel } from './access-control-panel'
@@ -451,7 +452,23 @@ function isSingleBrand(brand: string): boolean {
 // Branch/dealer scope within a single brand. Only shown when the brand has dealer locations
 // (KIA, Hyundai, Platinum). No selection = the user sees every branch of the brand.
 function DealerSelector({ brand, value, onChange }: { brand: string; value: string[]; onChange: (value: string[]) => void }) {
-  const options = isSingleBrand(brand) ? getBrandDealers(brand) : []
+  /*
+   * Registered DMS dealers PLUS approval-only branches.
+   *
+   * Banihal is a real KIA outlet with no DMS dealer code, so it is absent from getBrandDealers and
+   * was therefore impossible to tick — meaning nobody could be granted its payment approvals, and
+   * its own staff could not see their own requests. See lib/kia/approval-branches.ts.
+   *
+   * Safe to offer: getUserDealerScope returns DEALER_SCOPE_NONE for a pin that resolves to no
+   * registered dealer, so ticking Banihal fails CLOSED in sales and Business Excellence rather than
+   * widening them. It only opens what the approvals scope explicitly honours.
+   */
+  const options = isSingleBrand(brand)
+    ? [
+        ...getBrandDealers(brand),
+        ...getApprovalOnlyBranches(brand).map((b) => ({ code: b.code, label: `${b.label} — approvals only` })),
+      ]
+    : []
   if (options.length === 0) return null
 
   const toggle = (code: string) => {

@@ -54,7 +54,8 @@ import {
   Database,
   Activity,
   CornerUpLeft,
-  Printer
+  Printer,
+  Trash2
 } from 'lucide-react'
 import { KpiCard } from '@/components/ui/kpi-card'
 import { printPaymentOrder } from '@/lib/kia/print-payment-order'
@@ -62,6 +63,65 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
+import { INDIA_TIME_ZONE } from '@/lib/date-time'
+
+/*
+ * ── EVERY timestamp on this screen is IST, wherever the viewer is ─────────────────────────────
+ *
+ * `toLocaleDateString('en-IN')` sets the LOCALE, not the timezone. It renders Indian *formatting*
+ * using the viewer's own clock — so the same approval read one date for a user in Jammu and another
+ * for a user in New York, and during SSR it rendered in the server's zone (UTC on Vercel) instead of
+ * either. For a payment approval trail, "when was this submitted" has to be one answer.
+ *
+ * These wrappers pin timeZone to Asia/Kolkata and are the ONLY way dates should be formatted in this
+ * file. Adding `timeZone` to 25 individual call sites would have worked exactly once — the next
+ * person adding a column would reach for toLocaleDateString again.
+ *
+ * ⚠️ istDayKey uses en-CA deliberately: it yields YYYY-MM-DD, and it is used for GROUPING and CSV
+ * export keys, not display. Grouping on a browser-local day silently mis-buckets every row created
+ * after 18:30 UTC, which is early evening in India — i.e. exactly when a dealership is busiest.
+ */
+const IST = INDIA_TIME_ZONE
+
+/** "22 Aug 2026" */
+function istDate(value: Date | string | null | undefined): string {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-IN', { timeZone: IST, day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+/** "10:50 am" */
+function istTime(value: Date | string | null | undefined): string {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString('en-IN', { timeZone: IST, hour: '2-digit', minute: '2-digit', hour12: true })
+}
+
+/** "22 Aug 2026, 10:50 am IST" — the suffix is deliberate on an audit trail. */
+function istDateTime(value: Date | string | null | undefined): string {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return `${istDate(value)}, ${istTime(value)} IST`
+}
+
+/** "August 2026" — month/year label. */
+function istMonthYear(value: Date | string | null | undefined): string {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-IN', { timeZone: IST, month: 'long', year: 'numeric' })
+}
+
+/** "2026-08-22" in IST — for grouping keys, CSV columns and <input type="date"> values. */
+function istDayKey(value: Date | string | null | undefined): string {
+  if (!value) return ''
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-CA', { timeZone: IST })
+}
 
 const LOCATION_OPTIONS = ['JAMMU', 'UDHAMPUR', 'BANIHAL']
 const BRAND_OPTIONS = ['KIA', 'HYUNDAI', 'MG', 'TATA', 'PLATINUM']
@@ -214,7 +274,7 @@ const getMdRemarksList = (req: ApprovalRequest | null | undefined): { user: stri
               user: h.user || 'MD',
               role: h.role || 'MD',
               remark: trimmed,
-              date: h.timestamp ? new Date(h.timestamp).toLocaleDateString('en-IN') : undefined
+              date: h.timestamp ? istDate(h.timestamp) : undefined
             })
           }
         } else if (isRealRemarkText(h.remarks)) {
@@ -225,7 +285,7 @@ const getMdRemarksList = (req: ApprovalRequest | null | undefined): { user: stri
               user: h.user || 'MD',
               role: h.role || 'MD',
               remark: trimmed,
-              date: h.timestamp ? new Date(h.timestamp).toLocaleDateString('en-IN') : undefined
+              date: h.timestamp ? istDate(h.timestamp) : undefined
             })
           }
         }
@@ -341,9 +401,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
   const dateRangeLabel = useMemo(() => {
     if (!startDate) return 'Filter by Date'
-    const startStr = startDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    const startStr = istDate(startDate)
     if (!endDate) return `${startStr}`
-    const endStr = endDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    const endStr = istDate(endDate)
     return `${startStr} - ${endStr}`
   }, [startDate, endDate])
 
@@ -457,6 +517,59 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       toast({ title: 'Action failed', description: err instanceof Error ? err.message : 'Please check your role permissions.', variant: 'error' })
     }
   })
+
+  /*
+   * DEVELOPER-ONLY hard delete.
+   *
+   * ⚠️ Checked against `developer` alone — NOT the usual ['developer','admin'] pair used elsewhere in
+   * this file, and NOT effectiveRole (which maps developer/admin onto 'md' for approval purposes).
+   * The MD is the business approver on this screen; letting the approver erase approvals removes the
+   * only independent record that one happened. The server enforces the identical single-role check.
+   */
+  const isDeveloper = (currentUser.role || '').trim().toLowerCase() === 'developer'
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/brands/kia/approvals/${id}`, { method: 'DELETE' })
+      const resData = await res.json().catch(() => ({}))
+      if (!res.ok || resData.error) throw new Error(resData.error || 'Failed to delete payment order')
+      return resData as { requestNo?: string | null }
+    },
+    onSuccess: (resData) => {
+      toast({
+        title: 'Payment order deleted',
+        description: `${resData.requestNo || 'The request'} has been permanently removed.`,
+        variant: 'success',
+      })
+      // The row is gone — close any drawer pointing at it before refetching.
+      setDetailRow(null)
+      queryClient.invalidateQueries({ queryKey: ['kia-approval-requests'] })
+    },
+    onError: (err) => {
+      toast({
+        title: 'Delete failed',
+        description: err instanceof Error ? err.message : 'Only a developer can delete a payment order.',
+        variant: 'error',
+      })
+    },
+  })
+
+  const handleDeleteOrder = (row: ApprovalRequest) => {
+    const label = row.requestNo || row.name
+    const amount = Number(row.amount || 0).toLocaleString('en-IN')
+    // Irreversible and unarchived, so the confirm names the row and its amount rather than asking
+    // 'are you sure?' about something unidentified in a dense list of similar requests.
+    const paidWarning = row.paymentStatus === 'PAID'
+      ? '\n\nThis order is already marked PAID.'
+      : ''
+    const message = [
+      `Permanently delete ${label}?`,
+      `${row.name} — ₹${amount}`,
+      `This cannot be undone. The request and its full approval history will be erased.${paidWarning}`,
+    ].join('\n\n')
+    if (!window.confirm(message)) return
+    deleteMutation.mutate(row.id)
+  }
 
   const handleInvoiceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -578,7 +691,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           <td style="padding: 12px 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #475569;">${hist.role}</td>
           <td style="padding: 12px 0; font-size: 11px; font-weight: bold; text-transform: uppercase;"><span style="display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 9px; font-weight: 900; background: ${hist.action === 'APPROVED' ? '#ecfdf5; color: #065f46; border: 1px solid #a7f3d0' : hist.action === 'HELD' ? '#fffbeb; color: #92400e; border: 1px solid #fde68a' : '#fef2f2; color: #991b1b; border: 1px solid #fecaca'}">${hist.action}</span></td>
           <td style="padding: 12px 0; font-size: 11px; color: #475569; font-style: italic; font-weight: 600;">"${hist.remarks || 'No comment'}"</td>
-          <td style="padding: 12px 0; font-size: 11px; color: #64748b; text-align: right; font-weight: bold;">${new Date(hist.timestamp).toLocaleString('en-IN')}</td>
+          <td style="padding: 12px 0; font-size: 11px; color: #64748b; text-align: right; font-weight: bold;">${istDateTime(hist.timestamp)}</td>
         </tr>
       `).join('')
       : '<tr><td colspan="5" style="padding: 20px 0; text-align: center; color: #94a3b8; font-size: 12px; font-weight: 600;">No approval history recorded.</td></tr>'
@@ -831,7 +944,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               </div>
               <div class="meta-item" style="grid-column: span 2;">
                 <span class="meta-label">Submitted Date & Time</span>
-                <span class="meta-val">${new Date(row.createdAt).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' })}</span>
+                <span class="meta-val">${istDateTime(row.createdAt)}</span>
               </div>
             </div>
           </div>
@@ -894,7 +1007,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
     const tableRowsHTML = rows.map((row) => `
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 12px 10px; font-size: 11px; font-weight: bold; color: #0f172a;">${new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+        <td style="padding: 12px 10px; font-size: 11px; font-weight: bold; color: #0f172a;">${istDate(row.createdAt)}</td>
         <td style="padding: 12px 10px; font-size: 11px;">
           <div style="font-weight: bold; color: #0f172a;">${row.name}</div>
           <div style="font-size: 9px; color: #64748b; font-weight: bold;">${row.email}</div>
@@ -1017,7 +1130,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           <div class="kpi-cards">
             <div class="kpi-card">
               <span class="kpi-label">Statement Date</span>
-              <span class="kpi-value">${new Date().toLocaleDateString('en-IN', { dateStyle: 'long' })}</span>
+              <span class="kpi-value">${istDate(new Date())}</span>
             </div>
             <div class="kpi-card">
               <span class="kpi-label">Total Transactions</span>
@@ -1692,7 +1805,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   function formatYearMonth(yearMonth: string) {
     const [year, month] = yearMonth.split('-')
     const d = new Date(Number(year), Number(month) - 1, 1)
-    return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    return istMonthYear(d)
   }
 
   // Utility to clean and normalize vendor names (merging duplicates like "VICKY ADVERTISER" and "Vicky Advertisers")
@@ -2018,7 +2131,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       )
     })
     if (duplicate) {
-      alerts.push(`Possible duplicate request detected (matches request by ${duplicate.name} for ₹${Number(duplicate.amount).toLocaleString('en-IN')} on ${new Date(duplicate.createdAt).toLocaleDateString('en-IN')})`)
+      alerts.push(`Possible duplicate request detected (matches request by ${duplicate.name} for ₹${Number(duplicate.amount).toLocaleString('en-IN')} on ${istDate(duplicate.createdAt)})`)
     }
     
     const vendorPayments = allRows.filter(other => {
@@ -2508,7 +2621,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   <span className="text-xs text-slate-400">From:</span>
                   <input
                     type="date"
-                    value={completedStartDate ? completedStartDate.toISOString().split('T')[0] : ''}
+                    value={istDayKey(completedStartDate)}
                     onChange={(e) => setCompletedStartDate(e.target.value ? new Date(e.target.value) : null)}
                     className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold"
                   />
@@ -2517,7 +2630,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   <span className="text-xs text-slate-400">To:</span>
                   <input
                     type="date"
-                    value={completedEndDate ? completedEndDate.toISOString().split('T')[0] : ''}
+                    value={istDayKey(completedEndDate)}
                     onChange={(e) => setCompletedEndDate(e.target.value ? new Date(e.target.value) : null)}
                     className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold"
                   />
@@ -2604,7 +2717,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           ₹{Number(row.amount || 0).toLocaleString('en-IN')}
                         </td>
                         <td className="px-4 py-3 font-semibold text-slate-600">
-                          {row.paymentCompletedAt ? new Date(row.paymentCompletedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date(row.updatedAt || row.createdAt).toLocaleDateString('en-IN')}
+                          {istDate(row.paymentCompletedAt || row.updatedAt || row.createdAt)}
                         </td>
                         <td className="px-4 py-3 font-mono text-[10px] text-slate-500">
                           {row.utrNumber ? <span className="font-bold text-slate-900">UTR: {row.utrNumber}</span> : row.invoiceNumber ? `Inv: ${row.invoiceNumber}` : '—'}
@@ -2766,7 +2879,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       <ChevronLeft className="w-4 h-4 text-slate-600" />
                     </button>
                     <span className="text-xs font-black text-slate-900 tracking-tight">
-                      {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      {istMonthYear(currentMonth)}
                     </span>
                     <button
                       type="button"
@@ -3374,10 +3487,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           <td className="py-3 px-3.5 whitespace-nowrap">
                             <div className="flex flex-col items-start gap-0.5">
                               <span className="text-slate-900 font-black text-xs block">
-                                {new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                {istDate(row.createdAt)}
                               </span>
                               <span className="text-slate-500 text-[10.5px] font-semibold">
-                                {new Date(row.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                {istTime(row.createdAt)}
                               </span>
                               {getSlaBadge(row.createdAt)}
                             </div>
@@ -3494,6 +3607,21 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               >
                                 <Printer className="w-3.5 h-3.5 text-slate-500" />
                               </button>
+                              {isDeveloper && (
+                                <button
+                                  type="button"
+                                  title="Delete payment order permanently (developer only)"
+                                  aria-label={`Delete payment order ${row.requestNo || row.name}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteOrder(row)
+                                  }}
+                                  disabled={deleteMutation.isPending}
+                                  className="h-7 w-7 rounded-lg border border-rose-200 hover:border-rose-400 bg-white hover:bg-rose-50 flex items-center justify-center transition-all shadow-sm disabled:opacity-40"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -3541,9 +3669,22 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     {/* Top Row: Requester Name, Email & Amount */}
                     <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
                       <div className="flex items-center gap-2.5">
-                        <span className={`inline-flex items-center justify-center h-7 w-7 rounded-full border text-[11px] font-black tabular-nums shrink-0 ${numberBadge}`}>
-                          {displaySeqNo}
-                        </span>
+                        {/*
+                          * The stable request number, exactly as the desktop table and the detail
+                          * drawer show it. This card was still rendering `displaySeqNo` — the
+                          * POSITIONAL index — so a request read as "3" on a phone and "KIA_0042" on
+                          * a laptop, and the number changed with sorting, filtering and paging.
+                          * The seq badge remains only as a fallback for a row with no request_no.
+                          */}
+                        {row.requestNo ? (
+                          <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 font-mono text-[11px] font-black tracking-wide text-indigo-900 shrink-0">
+                            {row.requestNo}
+                          </span>
+                        ) : (
+                          <span className={`inline-flex items-center justify-center h-7 w-7 rounded-full border text-[11px] font-black tabular-nums shrink-0 ${numberBadge}`}>
+                            {displaySeqNo}
+                          </span>
+                        )}
                         <div className="flex flex-col items-start gap-0.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-slate-950 font-black text-sm">{row.name}</span>
@@ -3557,7 +3698,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
                       <div className="text-right shrink-0">
                         <span className="text-base font-black text-slate-950 block font-mono">₹{Number(row.amount || 0).toLocaleString('en-IN')}</span>
-                        <span className="text-[10px] font-bold text-slate-400 block">{new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                        <span className="text-[10px] font-bold text-slate-400 block">{istDate(row.createdAt)}</span>
                       </div>
                     </div>
 
@@ -3720,8 +3861,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 pt-1">
                       <span>Submitted On</span>
                       <span className="text-slate-600 font-bold">
-                        {new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} at{' '}
-                        {new Date(row.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        {istDate(row.createdAt)} at{' '}
+                        {istTime(row.createdAt)}
                       </span>
                     </div>
                   </div>
@@ -4118,21 +4259,21 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               const getStageInfo = (key: string) => {
                 if (key === 'created') {
                   return {
-                    date: new Date(req.createdAt).toLocaleDateString('en-CA'),
+                    date: istDayKey(req.createdAt),
                     user: req.name || null
                   }
                 }
                 if (key === 'paid') {
                   if (req.paymentStatus === 'PAID' && req.paymentCompletedAt) {
                     return {
-                      date: new Date(req.paymentCompletedAt).toLocaleDateString('en-CA'),
+                      date: istDayKey(req.paymentCompletedAt),
                       user: req.paymentCompletedBy || 'Accounts'
                     }
                   }
                   if (req.accountApproval === 'APPROVED') {
                     const accEntry = (req.history || []).find((h: any) => h.roleKey === 'accounts' && h.action === 'APPROVED')
                     return {
-                      date: accEntry ? new Date(accEntry.timestamp).toLocaleDateString('en-CA') : (req.updatedAt ? new Date(req.updatedAt).toLocaleDateString('en-CA') : null),
+                      date: accEntry ? istDayKey(accEntry.timestamp) : (req.updatedAt ? istDayKey(req.updatedAt) : null),
                       user: accEntry?.user || 'Accounts'
                     }
                   }
@@ -4141,7 +4282,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 const entry = (req.history || []).find((h: any) => h.roleKey === key && (h.action === 'APPROVED' || h.action === 'APPROVE'))
                 if (entry) {
                   return {
-                    date: new Date(entry.timestamp).toLocaleDateString('en-CA'),
+                    date: istDayKey(entry.timestamp),
                     user: entry.user || null
                   }
                 }
@@ -4443,7 +4584,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {renderOverviewItem('Vendor Name', detailRow.vendorName || '—', User)}
                         {renderOverviewItem('Payment Type', detailRow.typeOfPayment || '—', CreditCard)}
                         {renderOverviewItem('Workflow Status', <span className="text-blue-700 font-bold">{pendingLabel}</span>, Clock)}
-                        {renderOverviewItem('Submitted On', new Date(detailRow.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), Calendar)}
+                        {renderOverviewItem('Submitted On', istDate(detailRow.createdAt), Calendar)}
                         {renderOverviewItem('GL Account', detailRow.glName ? `${detailRow.glName} (${detailRow.glCode})` : '—', Database)}
                         {renderOverviewItem('GST Details', detailRow.gst || '—', Percent)}
                         {renderOverviewItem('Reference / Invoice No.', detailRow.invoiceNumber || '—', FileText)}
@@ -4459,7 +4600,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {detailRow.paymentStatus === 'PAID' && renderOverviewItem('Payment Status', <span className="text-emerald-700 font-black">PAID</span>, CheckCircle2)}
                         {detailRow.paymentStatus === 'PAID' && renderOverviewItem('UTR / Txn ID', detailRow.utrNumber || '—', Key)}
                         {detailRow.paymentStatus === 'PAID' && detailRow.paymentProofUrl && renderOverviewItem('Payment Proof', <button type="button" onClick={() => setPreviewDocUrl(detailRow.paymentProofUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Proof</span></button>, FileText)}
-                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentCompletedAt && renderOverviewItem('Paid On / By', `${new Date(detailRow.paymentCompletedAt).toLocaleDateString('en-IN')} by ${detailRow.paymentCompletedBy || '—'}`, User)}
+                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentCompletedAt && renderOverviewItem('Paid On / By', `${istDate(detailRow.paymentCompletedAt)} by ${detailRow.paymentCompletedBy || '—'}`, User)}
                         {renderOverviewItem('Remarks (Submitter)', detailRow.remarks || '—', MessageSquare, 'col-span-1 sm:col-span-2 md:col-span-4 bg-amber-50/40 border-amber-100/80')}
                       </div>
                     </div>
@@ -4643,7 +4784,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                 <span className="text-xs font-black text-slate-800 block leading-tight">{evt.title}</span>
                                 <div className="text-xs font-semibold text-slate-500 leading-relaxed pr-2">{evt.description}</div>
                                 <span className="text-[9px] font-bold text-slate-400 block mt-1">
-                                  {evt.user} · {evt.timestamp.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}, {evt.timestamp.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                  {evt.user} · {istDate(evt.timestamp)}, {evt.timestamp.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               </div>
                             </div>
@@ -4692,7 +4833,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 <div className="p-4 sm:p-6 border-t border-slate-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4 w-full shrink-0">
                   <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-wider text-center sm:text-left">
                     <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>Created by {detailRow.name} on {new Date(detailRow.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    <span>Created by {detailRow.name} on {istDateTime(detailRow.createdAt)}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                     {isUserEligibleForPendingStage && !isApproved && !isRejected ? (
@@ -4899,7 +5040,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                       {(idx + 1).toString().padStart(2, '0')}
                                     </td>
                                     <td className="py-3 px-4 font-bold text-slate-900">
-                                      {new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                      {istDate(row.createdAt)}
                                     </td>
                                     <td className="py-3 px-4">
                                       <div className="flex flex-col">
@@ -5376,7 +5517,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                       {(idx + 1).toString().padStart(2, '0')}
                                     </td>
                                     <td className="py-3 px-4 font-bold text-slate-900">
-                                      {new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                      {istDate(row.createdAt)}
                                     </td>
                                     <td className="py-3 px-4 font-bold text-slate-800">
                                       {row.vendorName || '—'}

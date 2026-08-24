@@ -49,12 +49,12 @@ export function RequestFormDialog({
           onSubmit={(event) => { event.preventDefault(); onSubmit() }}
           className="flex max-h-[92dvh] flex-col"
         >
-          <DialogHeader className="space-y-2 border-b border-slate-100 bg-gradient-to-br from-slate-900 to-slate-700 p-6 text-white">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
+          <DialogHeader className="space-y-2 border-b border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 text-white">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-sky-400 border border-white/10">
               <Banknote className="h-5 w-5" />
             </span>
             <DialogTitle className="text-2xl font-black tracking-tight text-white">New Petty Cash Request</DialogTitle>
-            <DialogDescription className="text-sm font-semibold text-white/70">
+            <DialogDescription className="text-sm font-semibold text-slate-300">
               Request a fresh allocation or top-up for your branch.
             </DialogDescription>
           </DialogHeader>

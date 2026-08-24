@@ -46,7 +46,9 @@ export type PettyCashRequest = {
   requestedAmount?: string
   requested_amount?: string
   purpose: string
+  location?: string | null
   department?: string | null
+  requestForm?: Record<string, unknown> | null
   createdBy?: string
   created_by?: string
   createdAt?: string

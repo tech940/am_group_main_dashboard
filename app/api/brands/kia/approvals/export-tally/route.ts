@@ -5,6 +5,7 @@ import { eq, and, or } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { filterVisibleApprovals } from '@/lib/kia/approval-scope'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
 export async function GET(req: NextRequest) {
   try {
@@ -89,7 +90,13 @@ export async function GET(req: NextRequest) {
     ]
 
     const csvRows = rows.map(r => {
-      const dateStr = new Date(r.createdAt).toLocaleDateString('en-IN')
+      /*
+       * IST, explicitly. This runs on the SERVER, where there is no browser timezone to inherit —
+       * Node uses the host's, which is UTC on Vercel. A bare toLocaleDateString therefore stamped a
+       * Tally voucher with the UTC date, so every request created after 18:30 IST exported under the
+       * PREVIOUS day and landed in the wrong accounting period.
+       */
+      const dateStr = new Date(r.createdAt).toLocaleDateString('en-IN', { timeZone: INDIA_TIME_ZONE })
       const debitLedger = r.glName || 'Suspense GL'
       const debitCode = r.glCode || ''
       const creditLedger = r.vendorName || 'Sundry Creditors'

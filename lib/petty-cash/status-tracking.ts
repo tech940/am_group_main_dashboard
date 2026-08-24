@@ -57,6 +57,8 @@ const STAGE_INFO: Record<string, PettyCashStageInfo> = {
   accounts_pending: { stageLabel: 'Accounts', pillLabel: 'Waiting on Accounts', approver: 'Accounts', state: 'pending', tone: 'amber' },
   accounts_on_hold: { stageLabel: 'Accounts · On Hold', pillLabel: 'On hold — Accounts', approver: 'Accounts', state: 'pending', tone: 'sky' },
   approved: { stageLabel: 'Approved & Allocated', pillLabel: 'Approved & funded', approver: null, state: 'terminal', tone: 'emerald' },
+  active: { stageLabel: 'Active Float', pillLabel: 'Active Float', approver: null, state: 'terminal', tone: 'emerald' },
+  unallocated: { stageLabel: 'Unallocated', pillLabel: 'Unallocated', approver: null, state: 'draft', tone: 'slate' },
   rejected: { stageLabel: 'Rejected', pillLabel: 'Rejected', approver: null, state: 'terminal', tone: 'rose' },
   cancelled: { stageLabel: 'Cancelled', pillLabel: 'Cancelled', approver: null, state: 'terminal', tone: 'slate' },
   pending: { stageLabel: 'ED Approval', pillLabel: 'Waiting on ED', approver: 'ED', state: 'pending', tone: 'amber' },
