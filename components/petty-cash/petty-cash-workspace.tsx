@@ -26,6 +26,7 @@ import {
   X,
   LayoutGrid,
   List,
+  ArrowRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -1279,6 +1280,51 @@ export function PettyCashWorkspace() {
         {/* ── Tab Contents ── */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* ── HIGH PRIORITY ACTION ALERT: PENDING APPROVAL QUEUE BANNER ── */}
+            {canReviewQueue && pendingQueue.length > 0 && (
+              <div
+                onClick={() => setActiveTab('requests')}
+                className="relative overflow-hidden rounded-2xl border-2 border-amber-400/90 dark:border-amber-500/80 bg-gradient-to-r from-amber-50 via-amber-100/60 to-amber-50 dark:from-amber-950/70 dark:via-amber-900/40 dark:to-amber-950/60 p-4 sm:p-5 shadow-md shadow-amber-500/10 ring-4 ring-amber-400/15 transition-all hover:border-amber-500 hover:shadow-lg hover:shadow-amber-500/15 cursor-pointer group"
+              >
+                {/* Visual Glow Accent */}
+                <div className="absolute top-0 right-0 -mt-8 -mr-8 w-40 h-40 rounded-full bg-amber-400/20 blur-2xl pointer-events-none" />
+
+                <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start sm:items-center gap-3.5">
+                    <div className="relative flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-amber-500 text-white shadow-md shadow-amber-500/30 group-hover:scale-105 transition-transform">
+                      <ShieldCheck className="h-6 w-6" />
+                      <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-600 border-2 border-white dark:border-slate-900" />
+                      </span>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-200/80 dark:bg-amber-800 text-amber-900 dark:text-amber-100 border border-amber-300 dark:border-amber-700">
+                          Action Required
+                        </span>
+                        <h3 className="text-base font-black tracking-tight text-slate-950 dark:text-white">
+                          {pendingQueue.length} {pendingQueue.length === 1 ? 'Request' : 'Requests'} Waiting for Your Approval
+                        </h3>
+                      </div>
+                      <p className="mt-0.5 text-xs font-semibold text-amber-900/80 dark:text-amber-200/90 leading-relaxed">
+                        There {pendingQueue.length === 1 ? 'is 1 petty cash request' : `are ${pendingQueue.length} petty cash requests`} requiring your review and sign-off. Open the approvals queue to decide.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto flex-none">
+                    <span className="inline-flex items-center justify-center gap-1.5 h-10 px-5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-md shadow-amber-600/25 transition-all group-hover:shadow-amber-600/40">
+                      <span>Review Queue</span>
+                      <span className="bg-amber-700/80 px-1.5 py-0.2 rounded-md text-[10px] font-black">{pendingQueue.length}</span>
+                      <ArrowRight className="h-4 w-4 ml-0.5 transition-transform group-hover:translate-x-0.5" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {!canReviewQueue && myOpenRequests.length > 0 && (
               <SectionCard title="Your Pending Requests" subtitle="Requests you have raised that are still in review" icon={ClipboardList} iconTone="slate">
                 {renderRequestTable(myOpenRequests, false)}
@@ -1672,34 +1718,6 @@ export function PettyCashWorkspace() {
                   </div>
                 )}
               </SectionCard>
-            )}
-
-            {canReviewQueue && (
-              <div
-                onClick={() => setActiveTab('requests')}
-                className="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 text-left shadow-xs transition-all hover:border-slate-300 cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 ring-1 ring-inset ring-amber-200">
-                    <ShieldCheck className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">
-                      {pendingQueue.length === 0
-                        ? 'Nothing waiting on you'
-                        : `${pendingQueue.length} request${pendingQueue.length === 1 ? '' : 's'} waiting on you`}
-                    </span>
-                    <span className="block text-xs font-medium text-slate-500">
-                      {pendingQueue.length === 0 ? 'The approval queue is clear.' : 'Open the approvals queue to decide.'}
-                    </span>
-                  </div>
-                </div>
-                {pendingQueue.length > 0 && (
-                  <span className="inline-flex items-center justify-center h-9 px-4 rounded-xl bg-[var(--dashboard-action-bg)] text-white font-bold text-xs shadow-xs">
-                    Review Queue
-                  </span>
-                )}
-              </div>
             )}
           </div>
         )}

@@ -25,6 +25,17 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url)
+    /*
+     * Explicit user refresh — the freshness and summary routes already did this; the table route
+     * did not, so a Re-check left the row list on a 5-minute-old snapshot while the banner above it
+     * updated. The wipe happens INSIDE the reading request on purpose: getCachedData consults a
+     * per-PROCESS L1 before Redis, so a bust served by one lambda leaves another lambda's L1 intact.
+     */
+    if (url.searchParams.get('refresh') === 'true') {
+      const { invalidateCachePattern } = await import('@/lib/redis/cache-utils')
+      await invalidateCachePattern('kia:stock-report:*')
+    }
+
     const filters: Record<string, string[]> = {}
     for (const [key, value] of url.searchParams.entries()) {
       if (key.startsWith('filter_') && value) {

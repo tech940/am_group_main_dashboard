@@ -23,6 +23,19 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url)
+    /*
+     * Explicit user refresh — same contract as the summary and reports routes.
+     *
+     * The wipe MUST happen inside the request that then reads, not from a separate "bust" endpoint:
+     * getCachedData checks a per-PROCESS L1 cache before Redis, so on Vercel a bust that lands on
+     * one lambda leaves another lambda's L1 untouched and the next read still serves stale data.
+     * Wiping inline guarantees the payload this very response returns is freshly computed.
+     */
+    if (url.searchParams.get('refresh') === 'true') {
+      const { invalidateCachePattern } = await import('@/lib/redis/cache-utils')
+      await invalidateCachePattern('kia:sales-report:*')
+    }
+
     const data = await timer.time('freshness', () => getKiaSalesReportFreshness(url.searchParams.get('dealer_code')))
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data), timing.serverTiming)

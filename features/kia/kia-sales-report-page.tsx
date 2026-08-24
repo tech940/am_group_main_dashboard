@@ -1,7 +1,7 @@
 'use client'
 
 import type { ComponentProps, ReactNode } from 'react'
-import { startTransition, useDeferredValue, useEffect, useState, useMemo } from 'react'
+import { startTransition, useDeferredValue, useEffect, useRef, useState, useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -560,6 +560,22 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   const [retailSortField, setRetailSortField] = useState<string>('deliveryDate')
   const [retailSortDirection, setRetailSortDirection] = useState<'asc' | 'desc'>('desc')
 
+  /*
+   * Set for the duration of one Refresh click, read by every query's URL builder.
+   *
+   * The API routes already invalidate `kia:sales-report:*` when they see `refresh=true` — the
+   * Refresh button simply never sent it, so it re-read the same 5-minute-cached payload and
+   * "Refresh" did nothing visible until the TTL lapsed. That was the whole bug.
+   *
+   * A REF, not state, and deliberately NOT part of any queryKey: putting it in the key would
+   * fragment React Query's cache into refreshed/unrefreshed variants and make ordinary navigation
+   * bust the server cache too. Every query sends it on a refresh (not just one) because
+   * getCachedData consults a per-PROCESS L1 before Redis — on Vercel these three requests can land
+   * on different lambdas, and only the request that does its own wipe is guaranteed a fresh read.
+   */
+  const forceRefreshRef = useRef(false)
+  const refreshParam = () => (forceRefreshRef.current ? 'true' : null)
+
   const deferredReportSearch = useDeferredValue(reportSearch)
   const deferredTdSearch = useDeferredValue(tdSearch)
   const deferredLostSearch = useDeferredValue(lostSearch)
@@ -569,6 +585,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     queryKey: ['kia-sales-report-freshness', selectedDealerCode || 'all'],
     queryFn: () => fetchReportJson<SalesReportFreshnessPayload>(`/api/brands/kia/sales-report/freshness?${buildQueryString({
       dealer_code: selectedDealerCode,
+      refresh: refreshParam(),
     })}`, 'kia-sales-report-freshness', 25000),
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
@@ -589,6 +606,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
       year: effectiveSelectedYear,
       month: effectiveSelectedMonth !== null ? effectiveSelectedMonth + 1 : null,
       dealer_code: selectedDealerCode,
+      refresh: refreshParam(),
     })}`, 'kia-sales-report-summary', 25000),
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
@@ -628,6 +646,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
       direction: reportDirection,
       page: reportPage,
       pageSize: reportPageSize,
+      refresh: refreshParam(),
     })}`, 'kia-sales-report-reports', 25000),
     staleTime: 2 * 60 * 1000,
     gcTime: 20 * 60 * 1000,
@@ -908,9 +927,21 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
               </div>
               <div className="flex flex-col justify-end pt-4">
                 <Button type="button" className="h-9 rounded-xl border border-[color-mix(in_srgb,var(--dashboard-action-bg)_55%,transparent)] bg-[var(--dashboard-action-bg)] px-4 text-xs font-black text-[var(--dashboard-action-fg)] shadow-sm hover:bg-[var(--dashboard-action-hover)]" onClick={() => {
-                  void freshnessQuery.refetch()
-                  void summaryQuery.refetch()
-                  if (activeTab === 'reports') void reportQuery.refetch()
+                  /*
+                   * Raise the flag, refetch, lower it in `finally`. Each queryFn reads it
+                   * synchronously as refetch() starts, so all in-flight queries carry
+                   * refresh=true and each one wipes-then-reads in its own lambda.
+                   * The flag is lowered even if a request fails, so a timeout cannot leave
+                   * every later navigation silently busting the server cache.
+                   */
+                  forceRefreshRef.current = true
+                  void Promise.allSettled([
+                    freshnessQuery.refetch(),
+                    summaryQuery.refetch(),
+                    activeTab === 'reports' ? reportQuery.refetch() : Promise.resolve(),
+                  ]).finally(() => {
+                    forceRefreshRef.current = false
+                  })
                 }} disabled={headerLoading}>
                   {headerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Refresh

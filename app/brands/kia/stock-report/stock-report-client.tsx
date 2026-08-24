@@ -2,7 +2,7 @@
 
 /* eslint-disable react-hooks/set-state-in-effect -- pre-existing reset-on-dependency-change effects; consistent with sibling KIA client files. */
 
-import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { startTransition, useDeferredValue, useEffect, useMemo, useState, useRef} from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -294,9 +294,24 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
   const deferredSearch = useDeferredValue(search)
 
+  /*
+   * Raised for one Refresh click and read by all three query URL builders.
+   *
+   * handleRefresh used to bust via a SEPARATE fetch and then refetch. That is unreliable in
+   * production: getCachedData checks a per-PROCESS L1 before Redis, so on Vercel the bust can land
+   * on one lambda while the summary/table reads are served by another whose L1 still holds the old
+   * payload. Carrying the flag on the reads themselves makes each request wipe-then-read in its own
+   * process, which is the only version that is guaranteed fresh.
+   *
+   * A ref, and deliberately NOT in any queryKey — in the key it would fragment React Query's cache
+   * and make ordinary navigation bust the server cache on every page view.
+   */
+  const forceRefreshRef = useRef(false)
+  const refreshParam = () => (forceRefreshRef.current ? 'true' : null)
+
   const freshnessQuery = useQuery({
     queryKey: ['kia-stock-report-freshness', selectedDealer],
-    queryFn: () => fetchJson<KiaStockFreshnessPayload>(`/api/brands/kia/stock-report/freshness?${buildQueryString({ dealer_code: selectedDealer })}`, 'kia-stock-report-freshness'),
+    queryFn: () => fetchJson<KiaStockFreshnessPayload>(`/api/brands/kia/stock-report/freshness?${buildQueryString({ dealer_code: selectedDealer, refresh: refreshParam() })}`, 'kia-stock-report-freshness'),
     staleTime: 60_000,
   })
 
@@ -307,6 +322,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
     ],
     queryFn: () => fetchJson<KiaStockSummaryPayload>(`/api/brands/kia/stock-report/summary?${buildQueryString({
       dealer_code: selectedDealer,
+      refresh: refreshParam(),
     })}`, 'kia-stock-report-summary'),
     staleTime: 30_000,
   })
@@ -339,6 +355,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
         pageSize: 9999,
         sort: reportSort,
         direction: reportDirection,
+        refresh: refreshParam(),
         ...filterParams,
       })}`, 'kia-stock-report-reports')
     },
@@ -372,9 +389,11 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
+    // Raise the flag so every refetch below carries refresh=true and wipes in its own process.
+    // The separate bust fetch this replaces could be served by a different lambda than the reads.
+    forceRefreshRef.current = true
     try {
-      await fetch(`/api/brands/kia/stock-report/freshness?refresh=true&dealer_code=${selectedDealer}`)
-      await Promise.all([
+      await Promise.allSettled([
         freshnessQuery.refetch(),
         summaryQuery.refetch(),
         reportQuery.refetch(),
@@ -382,6 +401,8 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
     } catch (e) {
       console.error(e)
     } finally {
+      // Lowered even on failure, so a timeout cannot leave every later navigation busting the cache.
+      forceRefreshRef.current = false
       setIsRefreshing(false)
     }
   }
@@ -530,15 +551,28 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
     setNowMs(Date.now())
   }, [freshnessQuery.data?.sourceUpdatedAt])
 
-  // DMS import health — how stale is the last stock feed? Fresh ≤ 2 days, stale 2–7 days, critical > 7 days.
+  /*
+   * DMS import health — how stale is the last stock feed? Fresh ≤ 2 days, stale 2–7, critical > 7.
+   *
+   * ⚠️ `ageDays` alone is too coarse to be honest ON THE DAY OF an import. It floors to whole days,
+   * so a feed that last landed at 11:56 am still reported "0 days — imported today" with a green
+   * tick at 5 pm, five hours and twenty minutes later, while every sibling KIA feed had re-imported
+   * as recently as an hour before. A user who had just run an import read that green banner as
+   * confirmation and had no way to see the feed had not actually moved.
+   *
+   * `ageHours` is carried alongside so the banner can say "5 hours ago" within the first day. The
+   * LEVEL thresholds are unchanged — this makes the same state legible, it does not start crying
+   * wolf about a feed that is genuinely fine.
+   */
   const importHealth = useMemo(() => {
     const raw = freshnessQuery.data?.sourceUpdatedAt
-    if (!raw || !nowMs) return { level: 'unknown' as const, ageDays: null as number | null, when: null as string | null }
+    if (!raw || !nowMs) return { level: 'unknown' as const, ageDays: null as number | null, ageHours: null as number | null, when: null as string | null }
     const ts = new Date(raw).getTime()
-    if (Number.isNaN(ts)) return { level: 'unknown' as const, ageDays: null, when: null }
+    if (Number.isNaN(ts)) return { level: 'unknown' as const, ageDays: null, ageHours: null, when: null }
     const ageDays = Math.max(0, Math.floor((nowMs - ts) / 86_400_000))
+    const ageHours = Math.max(0, Math.floor((nowMs - ts) / 3_600_000))
     const level = ageDays <= 2 ? ('fresh' as const) : ageDays <= 7 ? ('stale' as const) : ('critical' as const)
-    return { level, ageDays, when: formatDateTime(raw) }
+    return { level, ageDays, ageHours, when: formatDateTime(raw) }
   }, [freshnessQuery.data?.sourceUpdatedAt, nowMs])
 
   return (
@@ -607,7 +641,10 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                   ? `DMS stock feed is ${importHealth.ageDays} days old`
                   : importHealth.level === 'fresh'
                     ? importHealth.ageDays === 0
-                      ? 'DMS stock feed is up to date (imported today)'
+                      // Within the first day, say the HOURS — "imported today" hid a 5-hour gap.
+                      ? (importHealth.ageHours ?? 0) < 1
+                        ? 'DMS stock feed is up to date (imported in the last hour)'
+                        : `DMS stock feed is up to date (imported ${importHealth.ageHours} hour${importHealth.ageHours === 1 ? '' : 's'} ago)`
                       : `DMS stock feed is up to date (${importHealth.ageDays} day${importHealth.ageDays === 1 ? '' : 's'} ago)`
                     : 'DMS stock feed timestamp unavailable'}
             </p>
