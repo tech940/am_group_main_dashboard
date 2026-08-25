@@ -56,6 +56,8 @@ export async function PATCH(request: Request, context: RouteContext<'/api/delega
         toEmail: task.assignedEmail,
         toName: task.assignedName,
         assignerName: appUser.fullName,
+        // Cc + Reply-To the delegator — see lib/delegation/emails.ts.
+        assignerEmail: appUser.email,
         title: task.title,
         description: task.description,
         dueAt: task.dueAt,
@@ -70,6 +72,8 @@ export async function PATCH(request: Request, context: RouteContext<'/api/delega
         toEmail: task.assignedEmail,
         toName: task.assignedName,
         assignerName: appUser.fullName,
+        // Cc + Reply-To the delegator — see lib/delegation/emails.ts.
+        assignerEmail: appUser.email,
         title: task.title,
         description: task.description,
         dueAt: task.dueAt,

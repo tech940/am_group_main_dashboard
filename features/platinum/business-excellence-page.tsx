@@ -2496,6 +2496,11 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                             <SheetContentSkeleton />
                           ) : (
                             <div className="space-y-4">
+                              <BusinessExecutiveDashboard
+                                dateFilter={appliedDateFilter}
+                                dealerCode={selectedDealerCode}
+                                onDealerChange={handleDealerChange}
+                              />
                               {/* Every dealer at once, on purpose — dealerCode is NOT passed. This is a
                                   comparison table: its whole value is seeing which branch is the outlier,
                                   which a single-row view cannot show. The branch selector above still
@@ -2504,11 +2509,6 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                 brand="platinum"
                                 startDate={resolveCurrentRange().startDate}
                                 endDate={resolveCurrentRange().endDate}
-                              />
-                              <BusinessExecutiveDashboard
-                                dateFilter={appliedDateFilter}
-                                dealerCode={selectedDealerCode}
-                                onDealerChange={handleDealerChange}
                               />
                             </div>
                           )

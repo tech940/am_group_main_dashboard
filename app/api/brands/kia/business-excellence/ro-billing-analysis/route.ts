@@ -1,5 +1,11 @@
 import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
+import {
+  periodBasisLabel,
+  resolveKiaComparisonWindow,
+  shiftMonths,
+  type KiaComparisonBasis,
+} from '@/lib/kia/business-excellence-comparison'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { getCachedData } from '@/lib/redis/cache-utils'
@@ -173,12 +179,31 @@ function getFinancialYearStart(date: Date) {
   return new Date(financialYearStart, 3, 1, 0, 0, 0, 0)
 }
 
+/**
+ * Comparison basis per period, for a branch with no last-year history (see
+ * lib/kia/business-excellence-comparison.ts).
+ *
+ * ⚠️ ONLY 'td' and 'mtd' fall back to last month. Shifting QTD or YTD back one month produces a
+ * window that OVERLAPS the current one — Apr–Aug 2026 against Mar–Jul 2026 shares four months — so
+ * the "comparison" would largely be the period comparing against itself. That is a worse answer
+ * than an empty one, because it looks plausible. Those two periods keep the last-year window,
+ * come back empty for such a branch, and are reported as having no basis rather than a fake number.
+ */
+function periodBasis(basis: KiaComparisonBasis, period: PeriodKey): KiaComparisonBasis {
+  if (basis === 'ly') return 'ly'
+  return period === 'td' || period === 'mtd' ? 'lm' : 'ly'
+}
+
 function buildPeriodWindows(
   startDate: Date,
   endDate: Date,
   comparisonRange: ComparisonRange = null,
   tdAnchorDate: Date | null = null,
+  basis: KiaComparisonBasis = 'ly',
 ): Record<PeriodKey, PeriodWindow> {
+  // One month back instead of one year, for the periods where that is meaningful.
+  const shift = (date: Date, period: PeriodKey) =>
+    periodBasis(basis, period) === 'lm' ? shiftMonths(date, -1) : sameDateLastYear(date)
   const cyEnd = endOfDay(endDate)
   const tdDate = startOfDay(tdAnchorDate || endDate)
   const cyTdStart = tdDate
@@ -200,26 +225,26 @@ function buildPeriodWindows(
     td: {
       cyStart: cyTdStart,
       cyEnd: endOfDay(tdDate),
-      lyStart: comparisonRange ? startOfDay(comparisonRange.endDate) : sameDateLastYear(cyTdStart),
-      lyEnd: comparisonRange ? endOfDay(comparisonRange.endDate) : sameDateLastYear(endOfDay(tdDate)),
+      lyStart: comparisonRange ? startOfDay(comparisonRange.endDate) : shift(cyTdStart, 'td'),
+      lyEnd: comparisonRange ? endOfDay(comparisonRange.endDate) : shift(endOfDay(tdDate), 'td'),
     },
     mtd: customPeriodWindow || {
       cyStart: startOfDay(cyMtdStart),
       cyEnd,
-      lyStart: sameDateLastYear(startOfDay(cyMtdStart)),
-      lyEnd: sameDateLastYear(cyEnd),
+      lyStart: shift(startOfDay(cyMtdStart), 'mtd'),
+      lyEnd: shift(cyEnd, 'mtd'),
     },
     qtd: {
       cyStart: startOfDay(cyQtdStart),
       cyEnd,
-      lyStart: sameDateLastYear(startOfDay(cyQtdStart)),
-      lyEnd: sameDateLastYear(cyEnd),
+      lyStart: shift(startOfDay(cyQtdStart), 'qtd'),
+      lyEnd: shift(cyEnd, 'qtd'),
     },
     ytd: {
       cyStart: startOfDay(cyYtdStart),
       cyEnd,
-      lyStart: sameDateLastYear(startOfDay(cyYtdStart)),
-      lyEnd: sameDateLastYear(cyEnd),
+      lyStart: shift(startOfDay(cyYtdStart), 'ytd'),
+      lyEnd: shift(cyEnd, 'ytd'),
     },
   }
 }
@@ -1502,7 +1527,27 @@ export async function GET(request: Request) {
 
     const analyze = async () => {
       const tdAnchorDate = await timer.time('td-anchor-date', () => resolveTdAnchorDate(endDate))
-      const windows = buildPeriodWindows(startDate, endDate, comparisonRange, tdAnchorDate)
+      /*
+       * Which period this dealer can honestly be compared against. A branch that did not exist last
+       * year (Udhampur opened Jan 2026) has an empty LY window, so TD and MTD compare against last
+       * month instead. A custom comparison range the user picked themselves always wins — they have
+       * stated the basis explicitly and we must not silently override it.
+       */
+      const comparisonBasis = comparisonRange
+        ? 'ly' as KiaComparisonBasis
+        : (await timer.time('comparison-basis', () => resolveKiaComparisonWindow({
+            startDate: toDateInputValue(startDate),
+            endDate: toDateInputValue(endDate),
+            dealerCode,
+          }))).basis
+      const windows = buildPeriodWindows(startDate, endDate, comparisonRange, tdAnchorDate, comparisonBasis)
+      /** Per-period captions, so the UI never prints a last-month number under an "LY" heading. */
+      const comparisonBasisByPeriod = {
+        td: periodBasisLabel(periodBasis(comparisonBasis, 'td')),
+        mtd: periodBasisLabel(periodBasis(comparisonBasis, 'mtd')),
+        qtd: periodBasisLabel(periodBasis(comparisonBasis, 'qtd')),
+        ytd: periodBasisLabel(periodBasis(comparisonBasis, 'ytd')),
+      }
       const sourceMetadata = await timer.time('source-metadata', () => fetchKiaBillingSourceMetadata(
         toDateInputValue(startDate),
         toDateInputValue(endDate),
@@ -1845,6 +1890,21 @@ export async function GET(request: Request) {
 
       return {
         ...baseResponse,
+        /*
+         * What each period is compared against, so captions can follow the numbers. 'LY' for
+         * everything normally; 'LM' on TD/MTD for a branch with no last-year history.
+         * The UI MUST read this rather than hardcoding "LY".
+         */
+        comparisonBasis: {
+          overall: comparisonBasis,
+          byPeriod: comparisonBasisByPeriod,
+          windows: {
+            td: { start: toDateInputValue(windows.td.lyStart), end: toDateInputValue(windows.td.lyEnd) },
+            mtd: { start: toDateInputValue(windows.mtd.lyStart), end: toDateInputValue(windows.mtd.lyEnd) },
+            qtd: { start: toDateInputValue(windows.qtd.lyStart), end: toDateInputValue(windows.qtd.lyEnd) },
+            ytd: { start: toDateInputValue(windows.ytd.lyStart), end: toDateInputValue(windows.ytd.lyEnd) },
+          },
+        },
         ...(view === 'table' ? { cancelledSummary: await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode)) } : {}),
         totals: calculateMetrics(filteredRows, analysisType, windows),
         selectedRangeValue: aggregateForRange(filteredRows, analysisType, startDate, endDate),

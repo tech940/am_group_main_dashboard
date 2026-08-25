@@ -55,7 +55,9 @@ import {
   Activity,
   CornerUpLeft,
   Printer,
-  Trash2
+  Trash2,
+  Layers,
+  PieChart
 } from 'lucide-react'
 import { KpiCard } from '@/components/ui/kpi-card'
 import { printPaymentOrder } from '@/lib/kia/print-payment-order'
@@ -121,6 +123,14 @@ function istDayKey(value: Date | string | null | undefined): string {
   const d = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleDateString('en-CA', { timeZone: IST })
+}
+
+/** "22 Aug" in IST — short display date */
+function istShortDate(value: Date | string | null | undefined): string {
+  if (!value) return ''
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-IN', { timeZone: IST, day: 'numeric', month: 'short' })
 }
 
 const LOCATION_OPTIONS = ['JAMMU', 'UDHAMPUR', 'BANIHAL']
@@ -310,8 +320,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return new Date(d.getFullYear(), d.getMonth(), 1)
   })
 
-  // Filter Scope: 'pending' (Pending My Approval), 'all' (All requests), 'sent_back' (Sent Back Orders), 'md_remarks' (MD Remarks), 'vendors' (Vendor Ledgers), or 'gl_categories' (GL Category Ledgers)
-  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'sent_back' | 'md_remarks' | 'vendors' | 'gl_categories'>('pending')
+  // Filter Scope: 'pending' (Pending My Approval), 'all' (All Active Requests), 'sent_back' (Sent Back Orders), 'md_remarks' (MD Remarks), 'rejected' (Rejected Orders), 'vendors' (Vendor Ledgers), or 'gl_categories' (GL Category Ledgers)
+  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'sent_back' | 'md_remarks' | 'rejected' | 'vendors' | 'gl_categories'>('pending')
 
   // Bulk selection & popup modal states
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([])
@@ -380,7 +390,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const [completedEndDate, setCompletedEndDate] = useState<Date | null>(null)
   const [completedSearch, setCompletedSearch] = useState('')
   const [completedDeptFilter, setCompletedDeptFilter] = useState('All')
+  const [completedLocationFilter, setCompletedLocationFilter] = useState('All')
   const [completedTypeFilter, setCompletedTypeFilter] = useState('All')
+  const [completedPage, setCompletedPage] = useState(1)
+  const [completedRowsPerPage, setCompletedRowsPerPage] = useState(25)
+  const [showSpendBreakdown, setShowSpendBreakdown] = useState(false)
 
   useEffect(() => {
     fetch('/api/brands/kia/gl-accounts')
@@ -1451,10 +1465,25 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       .reduce((sum, r) => sum + Number(r.amount || 0), 0)
   }, [data?.rows])
 
+  const isPaidOrder = useCallback((req: ApprovalRequest) => {
+    const pendingLabel = getPendingStageLabel(req)
+    return pendingLabel === 'Paid' || req.paymentStatus === 'PAID'
+  }, [])
+
+  const isSentBackOrder = useCallback((req: ApprovalRequest) => {
+    const pendingLabel = getPendingStageLabel(req)
+    return pendingLabel === 'Sent Back / Clarification' || req.emailSendStatus === 'SentBack'
+  }, [])
+
+  const isRejectedOrder = useCallback((req: ApprovalRequest) => {
+    const pendingLabel = getPendingStageLabel(req)
+    return pendingLabel.startsWith('Rejected')
+  }, [])
+
   const rejectedCount = useMemo(() => {
     if (!data?.rows) return 0
-    return data.rows.filter(r => getPendingStageLabel(r).startsWith('Rejected')).length
-  }, [data?.rows])
+    return data.rows.filter(isRejectedOrder).length
+  }, [data?.rows, isRejectedOrder])
 
   // Persistent master database row sequence map (so serial numbers stay fixed when items get approved/removed)
   const dbRowIndexMap = useMemo(() => {
@@ -1476,16 +1505,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return data.rows.filter(hasMdRemarks).length
   }, [data?.rows, hasMdRemarks])
 
-  const isPaidOrder = useCallback((req: ApprovalRequest) => {
-    const pendingLabel = getPendingStageLabel(req)
-    return pendingLabel === 'Paid' || req.paymentStatus === 'PAID'
-  }, [])
-
-  const isSentBackOrder = useCallback((req: ApprovalRequest) => {
-    const pendingLabel = getPendingStageLabel(req)
-    return pendingLabel === 'Sent Back / Clarification' || req.emailSendStatus === 'SentBack'
-  }, [])
-
   const sentBackCount = useMemo(() => {
     if (!data?.rows) return 0
     return data.rows.filter(isSentBackOrder).length
@@ -1493,40 +1512,30 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
   const activeRequestsCount = useMemo(() => {
     if (!data?.rows) return 0
-    return data.rows.filter(r => !isPaidOrder(r) && !isSentBackOrder(r)).length
-  }, [data?.rows, isPaidOrder, isSentBackOrder])
+    return data.rows.filter(r => !isPaidOrder(r) && !isSentBackOrder(r) && !isRejectedOrder(r)).length
+  }, [data?.rows, isPaidOrder, isSentBackOrder, isRejectedOrder])
 
   // Filter logic
   const filteredRows = useMemo(() => {
     if (!data?.rows) return []
     return data.rows.filter(row => {
-      // 1. Pending for me vs All vs Sent Back vs MD Remarks filter
-      //
-      // An explicit Workflow States selection OWNS the workflow-state axis, and overrides the two
-      // IMPLICIT narrowings of that same axis below. Leaving them stacked on top of an explicit
-      // choice silently zeroed the result:
-      //   - the 'all' tab drops Paid + Sent Back before the stage check ever runs — 85 of 106 rows —
-      //     so "Paid Cases" (74 real rows), "Completed" and "Sent Back / Clarification" (11 real
-      //     rows) each returned nothing;
-      //   - the default 'pending' tab keeps only rows awaiting THIS user, so every stage other than
-      //     the user's own returned nothing.
-      // Between them, the dropdown looked completely dead. The 'sent_back' and 'md_remarks' tabs are
-      // explicit destinations rather than implicit narrowings, so they still win.
-      //
-      // Safe to widen: row-level action buttons are gated independently by isUserAuthorizedForStage /
-      // getIsPendingForUser, and these rows are already readable on the 'all' tab — this grants
-      // visibility, never authority.
+      // 1. Pending for me vs All vs Sent Back vs MD Remarks vs Rejected filter
       const stageSelected = selectedStage !== 'All'
       if (filterScope === 'pending' && !stageSelected && !getIsPendingForUser(row)) {
         return false
       }
       if (filterScope === 'all' && !stageSelected) {
-        if (isPaidOrder(row) || isSentBackOrder(row)) {
+        if (isPaidOrder(row) || isSentBackOrder(row) || isRejectedOrder(row)) {
           return false
         }
       }
       if (filterScope === 'sent_back') {
         if (!isSentBackOrder(row)) {
+          return false
+        }
+      }
+      if (filterScope === 'rejected') {
+        if (!isRejectedOrder(row)) {
           return false
         }
       }
@@ -2000,7 +2009,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const completedPaymentsList = useMemo(() => {
     if (!data?.rows) return []
     return data.rows.filter((req) => {
-      const isCompleted = req.paymentStatus === 'PAID' || req.accountApproval === 'APPROVED' || req.managementApproval === 'APPROVED'
+      // Strictly ONLY completed and paid orders!
+      const isCompleted = isPaidOrder(req)
       if (!isCompleted) return false
 
       const dateToUse = req.paymentCompletedAt ? new Date(req.paymentCompletedAt) : new Date(req.updatedAt || req.createdAt)
@@ -2036,26 +2046,37 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         return false
       }
 
+      if (completedLocationFilter !== 'All' && (req.location || '').trim().toUpperCase() !== completedLocationFilter.trim().toUpperCase()) {
+        return false
+      }
+
       if (completedTypeFilter !== 'All' && (req.approvalType || '').trim().toUpperCase() !== completedTypeFilter.trim().toUpperCase()) {
         return false
       }
 
       if (completedSearch.trim()) {
         const q = completedSearch.trim().toLowerCase()
+        const cleanQ = q.replace(/[^a-z0-9]/g, '')
         const match =
+          (req.requestNo && req.requestNo.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanQ)) ||
           req.name.toLowerCase().includes(q) ||
+          req.email.toLowerCase().includes(q) ||
           (req.vendorName && req.vendorName.toLowerCase().includes(q)) ||
+          (req.dealerName && req.dealerName.toLowerCase().includes(q)) ||
+          (req.dealerCode && req.dealerCode.toLowerCase().includes(q)) ||
+          (req.location && req.location.toLowerCase().includes(q)) ||
           (req.department && req.department.toLowerCase().includes(q)) ||
           (req.approvalType && req.approvalType.toLowerCase().includes(q)) ||
           (req.invoiceNumber && req.invoiceNumber.toLowerCase().includes(q)) ||
           (req.utrNumber && req.utrNumber.toLowerCase().includes(q)) ||
+          (req.remarks && req.remarks.toLowerCase().includes(q)) ||
           req.amount.includes(q)
         if (!match) return false
       }
 
       return true
     }).sort((a, b) => new Date(b.paymentCompletedAt || b.updatedAt || b.createdAt).getTime() - new Date(a.paymentCompletedAt || a.updatedAt || a.createdAt).getTime())
-  }, [data?.rows, completedDatePreset, completedStartDate, completedEndDate, completedDeptFilter, completedTypeFilter, completedSearch])
+  }, [data?.rows, isPaidOrder, completedDatePreset, completedStartDate, completedEndDate, completedDeptFilter, completedLocationFilter, completedTypeFilter, completedSearch])
 
   const totalCompletedSpend = useMemo(() => {
     return completedPaymentsList.reduce((sum, r) => sum + Number(r.amount || 0), 0)
@@ -2065,6 +2086,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (completedPaymentsList.length === 0) return 0
     return totalCompletedSpend / completedPaymentsList.length
   }, [completedPaymentsList, totalCompletedSpend])
+
+  const paginatedCompletedRows = useMemo(() => {
+    const start = (completedPage - 1) * completedRowsPerPage
+    return completedPaymentsList.slice(start, start + completedRowsPerPage)
+  }, [completedPaymentsList, completedPage, completedRowsPerPage])
+
+  const totalCompletedPages = useMemo(() => {
+    return Math.ceil(completedPaymentsList.length / completedRowsPerPage) || 1
+  }, [completedPaymentsList.length, completedRowsPerPage])
 
   const spendByApprovalType = useMemo(() => {
     const map: Record<string, { type: string; total: number; count: number }> = {}
@@ -2467,6 +2497,27 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               )}
             </button>
             <button
+              onClick={() => {
+                setFilterScope('rejected')
+                setMainSubView('requests')
+              }}
+              className={`pb-2.5 relative transition-all flex-shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                mainSubView === 'requests' && filterScope === 'rejected' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
+              }`}
+            >
+              <span>Rejected Orders</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold shadow-2xs transition-all ${
+                rejectedCount > 0 
+                  ? 'bg-rose-600 text-white shadow-rose-500/30' 
+                  : 'bg-slate-200 text-slate-600'
+              }`}>
+                {rejectedCount}
+              </span>
+              {mainSubView === 'requests' && filterScope === 'rejected' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
+              )}
+            </button>
+            <button
               onClick={() => setMainSubView('completed_spend')}
               className={`pb-2.5 relative transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0 ${
                 mainSubView === 'completed_spend' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
@@ -2513,8 +2564,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
         {mainSubView === 'completed_spend' ? (
           <div className="space-y-6">
-            {/* Back Button Header Bar */}
-            <div className="flex items-center justify-between">
+            {/* Header: Back & Export Bar */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <Button
                 variant="outline"
                 onClick={() => setMainSubView('requests')}
@@ -2523,229 +2574,463 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 <ArrowLeft className="w-4 h-4 text-slate-600" />
                 <span>← Back to Active Workflow Requests</span>
               </Button>
-            </div>
-            {/* Completed Spend Dashboard Cards */}
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-3xl p-5 shadow-sm border text-white" style={{background: 'linear-gradient(135deg, var(--dashboard-primary) 0%, var(--dashboard-primary-dark) 100%)', borderColor: 'color-mix(in srgb, var(--dashboard-primary) 30%, transparent)'}}>
-                <span className="text-[10px] font-black uppercase tracking-wider block" style={{color: 'rgba(178,201,197,0.9)'}}>Total Approved &amp; Paid Spend</span>
-                <span className="text-2xl font-black text-white mt-1 block">₹{totalCompletedSpend.toLocaleString('en-IN')}</span>
-                <span className="text-[10px] font-semibold block mt-1" style={{color: 'rgba(178,201,197,0.8)'}}>Sum of completed payment orders</span>
-              </div>
-              <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Completed Transactions</span>
-                <span className="text-2xl font-black text-slate-900 mt-1 block">{completedPaymentsList.length}</span>
-                <span className="text-[10px] font-semibold text-slate-400 block mt-1">Approved & executed payments</span>
-              </div>
-              <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Average Payment Value</span>
-                <span className="text-2xl font-black text-indigo-600 mt-1 block">₹{Math.round(avgCompletedSpend).toLocaleString('en-IN')}</span>
-                <span className="text-[10px] font-semibold text-slate-400 block mt-1">Per transaction average</span>
-              </div>
-              <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Top Spend Category</span>
-                <span className="text-lg font-black text-slate-900 mt-1 block truncate">
-                  {spendByApprovalType[0]?.type || 'N/A'}
+              <div className="flex items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold font-sans">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Total Paid: <span className="font-black tabular-nums">₹{totalCompletedSpend.toLocaleString('en-IN')}</span> ({completedPaymentsList.length} Orders)
                 </span>
-                <span className="text-[10px] font-bold text-emerald-600 block mt-0.5">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const ids = completedPaymentsList.map(r => r.id)
+                    if (ids.length === 0) {
+                      toast({ title: 'No completed requests', description: 'There are no completed requests to export.', variant: 'error' })
+                      return
+                    }
+                    window.open(`/api/brands/kia/approvals/export-tally?ids=${ids.join(',')}`, '_blank')
+                  }}
+                  className="h-9 px-3.5 rounded-xl border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-extrabold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Export Paid CSV</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* 1. Executive Summary Cards (4 Cards) */}
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Approved &amp; Paid Spend</span>
+                  <div className="h-8 w-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                    <IndianRupee className="w-4 h-4" />
+                  </div>
+                </div>
+                <span className="text-2xl font-black text-emerald-700 mt-2 block tracking-tight font-sans tabular-nums">₹{totalCompletedSpend.toLocaleString('en-IN')}</span>
+                <span className="text-[11px] font-semibold text-slate-400 block mt-0.5">Sum of all completed payments</span>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Completed Transactions</span>
+                  <div className="h-8 w-8 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                </div>
+                <span className="text-2xl font-black text-slate-900 mt-2 block tracking-tight font-sans tabular-nums">{completedPaymentsList.length}</span>
+                <span className="text-[11px] font-semibold text-slate-400 block mt-0.5">Disbursed &amp; verified orders</span>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Average Payment Value</span>
+                  <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                </div>
+                <span className="text-2xl font-black text-indigo-600 mt-2 block tracking-tight font-sans tabular-nums">₹{Math.round(avgCompletedSpend).toLocaleString('en-IN')}</span>
+                <span className="text-[11px] font-semibold text-slate-400 block mt-0.5">Per transaction average</span>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Top Spend Category</span>
+                  <div className="h-8 w-8 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+                    <BarChart3 className="w-4 h-4" />
+                  </div>
+                </div>
+                <span className="text-lg font-black text-slate-900 mt-2 block truncate">{spendByApprovalType[0]?.type || 'N/A'}</span>
+                <span className="text-[11px] font-bold text-emerald-600 block mt-0.5 font-sans">
                   {spendByApprovalType[0] ? `₹${spendByApprovalType[0].total.toLocaleString('en-IN')} (${spendByApprovalType[0].count} orders)` : 'No transactions'}
                 </span>
               </div>
             </div>
 
-            {/* Toolbar: Filters & Date presets */}
-            <div className="bg-white rounded-3xl border border-slate-200/80 p-4 shadow-xs flex flex-col lg:flex-row items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mr-2">Date Presets:</span>
-                {[
-                  { id: 'this_month', label: 'This Month' },
-                  { id: 'today', label: 'Today' },
-                  { id: 'this_week', label: 'This Week' },
-                  { id: 'this_quarter', label: 'This Quarter' },
-                  { id: 'all', label: 'All Time' },
-                  { id: 'custom', label: 'Custom Range' },
-                ].map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => setCompletedDatePreset(preset.id as any)}
-                    className={cn(
-                      'px-3 py-1.5 rounded-xl text-xs font-black transition-all',
-                      completedDatePreset === preset.id
-                        ? 'bg-[var(--dashboard-action-bg)] text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    )}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
-                <div className="relative flex-1 sm:w-[220px]">
-                  <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    value={completedSearch}
-                    onChange={(e) => setCompletedSearch(e.target.value)}
-                    placeholder="Search completed payments..."
-                    className="pl-9 h-9 text-xs rounded-xl border-slate-200"
-                  />
-                </div>
-                <select
-                  value={completedTypeFilter}
-                  onChange={(e) => setCompletedTypeFilter(e.target.value)}
-                  className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700"
-                >
-                  <option value="All">All Payment Types</option>
-                  {completedApprovalTypes.map((t) => (
-                    <option key={t} value={t}>{t}</option>
+            {/* 2. Toolbar: Filters & Date presets */}
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-4 space-y-3">
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                {/* Date presets */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mr-1.5">Date Presets:</span>
+                  {[
+                    { id: 'this_month', label: 'This Month' },
+                    { id: 'today', label: 'Today' },
+                    { id: 'this_week', label: 'This Week' },
+                    { id: 'this_quarter', label: 'This Quarter' },
+                    { id: 'all', label: 'All Time' },
+                    { id: 'custom', label: 'Custom Range' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        setCompletedDatePreset(preset.id as any)
+                        setCompletedPage(1)
+                      }}
+                      className={cn(
+                        'px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer',
+                        completedDatePreset === preset.id
+                          ? 'bg-[var(--dashboard-action-bg)] text-white shadow-2xs font-extrabold'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      )}
+                    >
+                      {preset.label}
+                    </button>
                   ))}
-                </select>
-                <select
-                  value={completedDeptFilter}
-                  onChange={(e) => setCompletedDeptFilter(e.target.value)}
-                  className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700"
-                >
-                  <option value="All">All Departments</option>
-                  {uniqueDepartments.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Custom Date Pickers */}
-            {completedDatePreset === 'custom' && (
-              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 flex flex-wrap items-center gap-4">
-                <span className="text-xs font-bold text-slate-700">Custom Date Range:</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">From:</span>
-                  <input
-                    type="date"
-                    value={istDayKey(completedStartDate)}
-                    onChange={(e) => setCompletedStartDate(e.target.value ? new Date(e.target.value) : null)}
-                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold"
-                  />
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">To:</span>
-                  <input
-                    type="date"
-                    value={istDayKey(completedEndDate)}
-                    onChange={(e) => setCompletedEndDate(e.target.value ? new Date(e.target.value) : null)}
-                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold"
-                  />
-                </div>
-                {(completedStartDate || completedEndDate) && (
-                  <button
-                    type="button"
-                    onClick={() => { setCompletedStartDate(null); setCompletedEndDate(null); }}
-                    className="text-xs font-bold text-rose-600 hover:underline"
-                  >
-                    Clear dates
-                  </button>
-                )}
-              </div>
-            )}
 
-            {/* Spend Breakdown by Category Cards */}
-            <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs space-y-3">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Spend Breakdown by Payment Type</span>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {spendByApprovalType.map((item) => (
-                  <div key={item.type} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-black text-slate-900">{item.type}</p>
-                      <p className="text-[10px] font-bold text-slate-400">{item.count} approved order{item.count !== 1 ? 's' : ''}</p>
-                    </div>
-                    <p className="text-sm font-black text-emerald-600 font-mono">₹{item.total.toLocaleString('en-IN')}</p>
+                {/* Search & dropdown filters */}
+                <div className="flex flex-wrap items-center gap-2 justify-end">
+                  <div className="relative flex-1 sm:w-[240px]">
+                    <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      value={completedSearch}
+                      onChange={(e) => {
+                        setCompletedSearch(e.target.value)
+                        setCompletedPage(1)
+                      }}
+                      placeholder="Search by ID, Requester, Vendor, UTR..."
+                      className="pl-9 h-9 text-xs rounded-xl border-slate-200"
+                    />
                   </div>
-                ))}
+                  <select
+                    value={completedTypeFilter}
+                    onChange={(e) => {
+                      setCompletedTypeFilter(e.target.value)
+                      setCompletedPage(1)
+                    }}
+                    className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer"
+                  >
+                    <option value="All">All Payment Types</option>
+                    {completedApprovalTypes.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={completedDeptFilter}
+                    onChange={(e) => {
+                      setCompletedDeptFilter(e.target.value)
+                      setCompletedPage(1)
+                    }}
+                    className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer"
+                  >
+                    <option value="All">All Departments</option>
+                    {uniqueDepartments.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={completedLocationFilter}
+                    onChange={(e) => {
+                      setCompletedLocationFilter(e.target.value)
+                      setCompletedPage(1)
+                    }}
+                    className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer"
+                  >
+                    <option value="All">All Branches</option>
+                    {uniqueLocations.map((loc) => (
+                      <option key={loc} value={loc}>{loc}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setShowSpendBreakdown(prev => !prev)}
+                    className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all"
+                  >
+                    <PieChart className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Categories ({spendByApprovalType.length})</span>
+                    <ChevronDown className={cn("w-3.5 h-3.5 text-slate-400 transition-transform", showSpendBreakdown && "rotate-180")} />
+                  </button>
+                </div>
               </div>
+
+              {/* Custom Date Pickers */}
+              {completedDatePreset === 'custom' && (
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex flex-wrap items-center gap-4">
+                  <span className="text-xs font-bold text-slate-700">Custom Date Range:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">From:</span>
+                    <input
+                      type="date"
+                      value={istDayKey(completedStartDate)}
+                      onChange={(e) => {
+                        setCompletedStartDate(e.target.value ? new Date(e.target.value) : null)
+                        setCompletedPage(1)
+                      }}
+                      className="h-8 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">To:</span>
+                    <input
+                      type="date"
+                      value={istDayKey(completedEndDate)}
+                      onChange={(e) => {
+                        setCompletedEndDate(e.target.value ? new Date(e.target.value) : null)
+                        setCompletedPage(1)
+                      }}
+                      className="h-8 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold"
+                    />
+                  </div>
+                  {(completedStartDate || completedEndDate) && (
+                    <button
+                      type="button"
+                      onClick={() => { setCompletedStartDate(null); setCompletedEndDate(null); setCompletedPage(1); }}
+                      className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
+                    >
+                      Clear dates
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Collapsible Spend Breakdown */}
+              {showSpendBreakdown && (
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+                    {spendByApprovalType.map((item) => (
+                      <div key={item.type} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 flex items-center justify-between">
+                        <div className="min-w-0 pr-2">
+                          <p className="text-xs font-bold text-slate-900 truncate">{item.type}</p>
+                          <p className="text-[10px] font-semibold text-slate-400">{item.count} order{item.count !== 1 ? 's' : ''}</p>
+                        </div>
+                        <p className="text-xs font-black text-emerald-700 font-sans tabular-nums whitespace-nowrap">₹{item.total.toLocaleString('en-IN')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Completed Payments Table */}
-            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="p-4 text-white flex items-center justify-between" style={{ background: 'linear-gradient(135deg, var(--dashboard-primary) 0%, var(--dashboard-primary-dark) 100%)' }}>
-                <div>
-                  <h3 className="text-sm font-black tracking-tight">Completed &amp; Approved Vendor Payments</h3>
-                  <p className="text-[10px] font-semibold text-teal-100/90">Showing {completedPaymentsList.length} approved orders</p>
-                </div>
-                <span className="text-xs font-mono font-black text-white bg-white/15 px-3 py-1 rounded-full border border-white/20">
-                  Total Spend: ₹{totalCompletedSpend.toLocaleString('en-IN')}
-                </span>
-              </div>
+            {/* 3. Completed Payments Table */}
+            <div className="bg-white rounded-[2rem] border border-slate-100 shadow-[0_20px_50px_rgba(15,23,42,0.04)] overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-[11px]">
-                  <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
-                    <tr>
-                      <th scope="col" className="px-4 py-3">Vendor / Beneficiary</th>
-                      <th scope="col" className="px-4 py-3">Payment Type</th>
-                      <th scope="col" className="px-4 py-3">Department</th>
-                      <th scope="col" className="px-4 py-3 text-right">Amount (₹)</th>
-                      <th scope="col" className="px-4 py-3">Payment Date</th>
-                      <th scope="col" className="px-4 py-3">UTR / Invoice</th>
-                      <th scope="col" className="px-4 py-3">Status</th>
+                <table className="w-full text-left border-collapse min-w-[1000px]">
+                  <thead>
+                    <tr className="bg-[#004e5a] text-white border-b border-[#003c46] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
+                      <th scope="col" className="py-3 px-3.5 w-10 text-center">#</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Request No.</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Requester</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Department</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Dealer Name</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Vendor &amp; Purpose</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Amount (₹)</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Branch</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Paid Date</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">UTR / Txn Ref</th>
+                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Status</th>
+                      <th scope="col" className="py-3 px-3.5 text-right text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {completedPaymentsList.map((row) => (
-                      <tr
-                        key={row.id}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Open request from ${row.name}`}
-                        className="hover:bg-slate-50/80 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-teal-600 transition-colors cursor-pointer"
-                        onClick={() => setDetailRow(row)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            setDetailRow(row)
-                          }
-                        }}
-                      >
-                        <td className="px-4 py-3 font-black text-slate-900">
-                          {row.vendorName || row.name}
-                          <span className="block text-[10px] font-semibold text-slate-400">{row.email}</span>
-                        </td>
-                        <td className="px-4 py-3 font-bold text-slate-700">
-                          <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[10px] font-bold">
-                            {row.approvalType || 'General'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-slate-600">{row.department || '—'}</td>
-                        <td className="px-4 py-3 text-right font-mono font-black text-emerald-700 text-xs">
-                          ₹{Number(row.amount || 0).toLocaleString('en-IN')}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-slate-600">
-                          {istDate(row.paymentCompletedAt || row.updatedAt || row.createdAt)}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-[10px] text-slate-500">
-                          {row.utrNumber ? <span className="font-bold text-slate-900">UTR: {row.utrNumber}</span> : row.invoiceNumber ? `Inv: ${row.invoiceNumber}` : '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            ✓ PAID
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                  <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+                    {paginatedCompletedRows.map((row, idx) => {
+                      const displaySeqNo = (completedPage - 1) * completedRowsPerPage + idx + 1
+                      const numberBadge = getNumberBadgeClass(displaySeqNo)
+                      const paymentDate = row.paymentCompletedAt || row.updatedAt || row.createdAt
+
+                      return (
+                        <tr
+                          key={row.id}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open completed request from ${row.name} for ₹${Number(row.amount || 0).toLocaleString('en-IN')}`}
+                          onClick={() => setDetailRow(row)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              setDetailRow(row)
+                            }
+                          }}
+                          className="odd:bg-white even:bg-slate-50/80 hover:bg-teal-50/80 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-teal-600 transition-colors cursor-pointer"
+                        >
+                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center justify-center h-6 w-6 rounded-full border text-[10px] font-black tabular-nums ${numberBadge}`}>
+                              {displaySeqNo}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            {row.requestNo ? (
+                              <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50/90 px-2.5 py-1 font-sans text-xs font-bold tracking-wide text-indigo-900 shadow-2xs">
+                                {row.requestNo}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-medium">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <div className="flex flex-col gap-0.5 items-start">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-slate-950 font-black text-xs">{row.name}</span>
+                                <span className={`inline-block border px-1.5 py-0.2 rounded text-[8.5px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
+                                  {row.brand || '—'}
+                                </span>
+                              </div>
+                              <span className="text-slate-500 font-semibold text-[10.5px]">{row.email}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <span className={`inline-block border px-2.5 py-1 rounded-full text-[9px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs ${getDeptBadgeClass(row.department || '')}`}>
+                              {row.department || '—'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap max-w-[160px]" title={row.dealerName || '—'}>
+                            <span className="inline-flex items-center max-w-full truncate rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-black text-slate-900 shadow-2xs">
+                              {row.dealerName || '—'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3.5 text-xs text-slate-800 max-w-[220px]" title={row.vendorName || row.remarks || '—'}>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-black text-slate-900 truncate">{row.vendorName || row.name}</span>
+                              <span className="text-[10.5px] font-semibold text-slate-500 truncate">{row.approvalType || row.remarks || 'General Payment'}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <span className={`inline-flex items-center rounded-lg px-2.5 py-1 font-black text-xs sm:text-sm font-sans tracking-tight tabular-nums border shadow-2xs ${getAmountBandClass(Number(row.amount || 0))}`}>
+                              ₹{Number(row.amount || 0).toLocaleString('en-IN')}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <div className="flex flex-col items-start gap-0.5">
+                              <span className="text-xs font-black leading-tight text-slate-900">
+                                {row.location || '—'}
+                              </span>
+                              {row.dealerCode ? (
+                                <span className="inline-block rounded bg-slate-100 border border-slate-200 px-1.5 py-0.2 text-[10px] font-sans font-bold text-slate-600">
+                                  {row.dealerCode}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <div className="flex flex-col items-start gap-0.5">
+                              <span className="text-slate-900 font-black text-xs block">
+                                {istDate(paymentDate)}
+                              </span>
+                              <span className="text-slate-500 text-[10.5px] font-semibold">
+                                {istTime(paymentDate)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap max-w-[160px]">
+                            {row.utrNumber ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold font-sans tabular-nums" title={`UTR: ${row.utrNumber}`}>
+                                UTR: {row.utrNumber}
+                              </span>
+                            ) : row.invoiceNumber ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold" title={`Invoice: ${row.invoiceNumber}`}>
+                                Inv: {row.invoiceNumber}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-medium">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <span data-status="paid" className="bg-emerald-100 text-emerald-900 border border-emerald-300 approval-status-pill inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9.5px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
+                              <Check className="w-3 h-3 text-emerald-700" />
+                              PAID
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                            <div className="inline-flex items-center gap-1 justify-end">
+                              <button
+                                type="button"
+                                title="Print payment order voucher"
+                                onClick={() => printPaymentOrder(row)}
+                                className="h-7 w-7 rounded-lg border border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 flex items-center justify-center transition-all shadow-2xs cursor-pointer"
+                              >
+                                <Printer className="w-3.5 h-3.5 text-slate-600" />
+                              </button>
+                              <button
+                                type="button"
+                                title="View payment request details"
+                                onClick={() => setDetailRow(row)}
+                                className="h-7 w-7 rounded-lg border border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 flex items-center justify-center transition-all shadow-2xs cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-slate-600" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                     {completedPaymentsList.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-slate-400 font-semibold">
-                          No completed vendor payments found for the selected date range and filters.
+                        <td colSpan={12} className="px-4 py-12 text-center text-slate-400 font-semibold space-y-2">
+                          <FileSpreadsheet className="w-8 h-8 mx-auto text-slate-300" />
+                          <p className="text-sm font-bold text-slate-700">No completed payments found</p>
+                          <p className="text-xs text-slate-400">There are no completed &amp; paid vendor payments matching the selected filters.</p>
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
+
+              {/* Pagination Footer */}
+              {completedPaymentsList.length > 0 && (
+                <div className="bg-slate-50/80 px-4 py-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-slate-600 font-semibold">
+                    <span>
+                      Showing <span className="font-black text-slate-900 font-sans">{(completedPage - 1) * completedRowsPerPage + 1}</span> to <span className="font-black text-slate-900 font-sans">{Math.min(completedPage * completedRowsPerPage, completedPaymentsList.length)}</span> of <span className="font-black text-slate-900 font-sans">{completedPaymentsList.length}</span> completed orders
+                    </span>
+                    <span className="text-slate-300">|</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500">Rows per page:</span>
+                      <select
+                        value={completedRowsPerPage}
+                        onChange={(e) => {
+                          setCompletedRowsPerPage(Number(e.target.value))
+                          setCompletedPage(1)
+                        }}
+                        className="h-7 px-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 cursor-pointer"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={completedPage <= 1}
+                      onClick={() => setCompletedPage(p => Math.max(1, p - 1))}
+                      className="h-8 px-3 rounded-lg border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold disabled:opacity-40 cursor-pointer shadow-2xs"
+                    >
+                      Previous
+                    </Button>
+                    <span className="px-2.5 font-bold text-slate-700">
+                      Page {completedPage} of {totalCompletedPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={completedPage >= totalCompletedPages}
+                      onClick={() => setCompletedPage(p => Math.min(totalCompletedPages, p + 1))}
+                      className="h-8 px-3 rounded-lg border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold disabled:opacity-40 cursor-pointer shadow-2xs"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : (
           <React.Fragment>
         {/* 1. TOP METRICS STRIP */}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="hidden sm:block">
+          <div 
+            onClick={() => {
+              setFilterScope('all')
+              setMainSubView('requests')
+            }}
+            className="hidden sm:block cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99]"
+            title="View All Active Requests"
+          >
             <KpiCard
               title="TOTAL REQUESTS"
               value={totalCount}
@@ -2757,7 +3042,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               trend={{ value: '+18%', isPositive: true, label: 'vs last month' }}
             />
           </div>
-          <div>
+          <div
+            onClick={() => {
+              setFilterScope('pending')
+              setMainSubView('requests')
+            }}
+            className="cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99]"
+            title="View Pending Approvals"
+          >
             <KpiCard
               title="PENDING APPROVALS"
               value={pendingForMeCount}
@@ -2769,7 +3061,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               trend={{ value: '+12%', isPositive: true, label: 'vs last month' }}
             />
           </div>
-          <div className="hidden sm:block">
+          <div
+            onClick={() => setMainSubView('completed_spend')}
+            className="hidden sm:block cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99]"
+            title="View Completed & Paid Orders"
+          >
             <KpiCard
               title="APPROVED VOLUME"
               value={`₹${approvedVolume.toLocaleString('en-IN')}`}
@@ -2781,7 +3077,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               trend={{ value: '+24%', isPositive: true, label: 'vs last month' }}
             />
           </div>
-          <div className="hidden sm:block">
+          <div
+            onClick={() => {
+              setFilterScope('rejected')
+              setMainSubView('requests')
+            }}
+            className="hidden sm:block cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99]"
+            title="View Rejected Orders"
+          >
             <KpiCard
               title="REJECTED"
               value={rejectedCount}
@@ -4240,64 +4543,65 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
             const renderNewWorkflowStepper = (req: ApprovalRequest) => {
               const isService = isServiceCategory(req.department, req.approvalType)
-              const firstStageLabel = isService ? 'VP Approval' : 'ED / GSM Approval'
-              // HR sits between ED/VP and EA, and ONLY for payroll-type requests
-              // (salary / PF / ESI / incentives / uniforms / training + bonus & gratuity).
-              // Without this the detail stepper jumped ED -> EA while the status bar read
-              // "Pending HR", so a request looked stalled at a stage the timeline never showed.
+              const firstStageLabel = isService ? 'VP Approval' : 'ED / GSM'
               const requiresHrStage = isHrApprovalRequired(req.approvalType)
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
                 { key: 'sales_manager', label: firstStageLabel, status: req.vpApproval },
-                ...(requiresHrStage ? [{ key: 'hr', label: 'HR Approval', status: req.hrApproval }] : []),
+                ...(requiresHrStage ? [{ key: 'hr', label: 'HR', status: req.hrApproval }] : []),
                 { key: 'ea', label: 'EA Review', status: req.eaApproval },
                 { key: 'md', label: 'MD Approval', status: req.managementApproval },
-                { key: 'accounts', label: 'Accounts Processing', status: req.accountApproval },
+                { key: 'accounts', label: 'Accounts', status: req.accountApproval },
                 { key: 'paid', label: 'Paid', status: (req.paymentStatus === 'PAID' || req.accountApproval === 'APPROVED') ? 'APPROVED' : null },
               ]
 
               const getStageInfo = (key: string) => {
                 if (key === 'created') {
-                  return {
-                    date: istDayKey(req.createdAt),
-                    user: req.name || null
-                  }
+                  return { date: istShortDate(req.createdAt), time: istTime(req.createdAt), user: req.name || null }
                 }
                 if (key === 'paid') {
                   if (req.paymentStatus === 'PAID' && req.paymentCompletedAt) {
-                    return {
-                      date: istDayKey(req.paymentCompletedAt),
-                      user: req.paymentCompletedBy || 'Accounts'
-                    }
+                    return { date: istShortDate(req.paymentCompletedAt), time: istTime(req.paymentCompletedAt), user: req.paymentCompletedBy || 'Accounts' }
                   }
                   if (req.accountApproval === 'APPROVED') {
-                    const accEntry = (req.history || []).find((h: any) => h.roleKey === 'accounts' && h.action === 'APPROVED')
-                    return {
-                      date: accEntry ? istDayKey(accEntry.timestamp) : (req.updatedAt ? istDayKey(req.updatedAt) : null),
-                      user: accEntry?.user || 'Accounts'
-                    }
+                    const accEntry = (req.history || []).find((h: any) => (h.roleKey === 'accounts' || h.role?.toLowerCase()?.includes('account')) && (h.action === 'APPROVED' || h.action === 'APPROVE' || h.action === 'PAID'))
+                    const ts = accEntry?.timestamp || req.updatedAt
+                    return { date: istShortDate(ts), time: istTime(ts), user: accEntry?.user || 'Accounts' }
                   }
-                  return { date: null, user: null }
+                  return { date: null, time: null, user: null }
                 }
-                const entry = (req.history || []).find((h: any) => h.roleKey === key && (h.action === 'APPROVED' || h.action === 'APPROVE'))
-                if (entry) {
-                  return {
-                    date: istDayKey(entry.timestamp),
-                    user: entry.user || null
-                  }
-                }
-                if (key === 'sales_manager' && req.vpApproval === 'APPROVED') return { date: 'Approved', user: null }
-                if (key === 'hr' && req.hrApproval === 'APPROVED') return { date: 'Approved', user: null }
-                if (key === 'ea' && req.eaApproval === 'APPROVED') return { date: 'Approved', user: null }
-                if (key === 'md' && req.managementApproval === 'APPROVED') return { date: 'Approved', user: null }
-                if (key === 'accounts' && req.accountApproval === 'APPROVED') return { date: 'Approved', user: null }
 
-                return { date: null, user: null }
+                const entry = (req.history || []).find((h: any) => (h.roleKey === key || h.role?.toLowerCase()?.includes(key)) && (h.action === 'APPROVED' || h.action === 'APPROVE'))
+                if (entry) {
+                  return { date: istShortDate(entry.timestamp), time: istTime(entry.timestamp), user: entry.user || null }
+                }
+                if (key === 'sales_manager' && req.vpApproval === 'APPROVED') {
+                  const smEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('vp') || h.role?.toLowerCase()?.includes('ed') || h.role?.toLowerCase()?.includes('gsm') || h.roleKey === 'sales_manager') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
+                  return { date: istShortDate(smEntry?.timestamp || req.updatedAt), time: istTime(smEntry?.timestamp || req.updatedAt), user: smEntry?.user || 'Sales Mgr' }
+                }
+                if (key === 'hr' && req.hrApproval === 'APPROVED') {
+                  const hrEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('hr') || h.roleKey === 'hr') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
+                  return { date: istShortDate(hrEntry?.timestamp || req.updatedAt), time: istTime(hrEntry?.timestamp || req.updatedAt), user: hrEntry?.user || 'HR Team' }
+                }
+                if (key === 'ea' && req.eaApproval === 'APPROVED') {
+                  const eaEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('ea') || h.roleKey === 'ea') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
+                  return { date: istShortDate(eaEntry?.timestamp || req.updatedAt), time: istTime(eaEntry?.timestamp || req.updatedAt), user: eaEntry?.user || 'EA Team' }
+                }
+                if (key === 'md' && req.managementApproval === 'APPROVED') {
+                  const mdEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('md') || h.role?.toLowerCase()?.includes('management') || h.roleKey === 'md') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
+                  return { date: istShortDate(mdEntry?.timestamp || req.updatedAt), time: istTime(mdEntry?.timestamp || req.updatedAt), user: mdEntry?.user || 'Management' }
+                }
+                if (key === 'accounts' && req.accountApproval === 'APPROVED') {
+                  const accEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('account') || h.roleKey === 'accounts') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
+                  return { date: istShortDate(accEntry?.timestamp || req.updatedAt), time: istTime(accEntry?.timestamp || req.updatedAt), user: accEntry?.user || 'Accounts' }
+                }
+
+                return { date: null, time: null, user: null }
               }
 
               return (
-                <div className="bg-white border border-slate-100 rounded-3xl p-4 sm:p-6 shadow-sm overflow-hidden">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between w-full relative pb-1 gap-6 sm:gap-0">
+                <div className="bg-white border border-slate-200/80 rounded-2xl px-3.5 py-2 sm:px-4 sm:py-2.5 shadow-2xs overflow-hidden">
+                  <div className="flex items-center justify-between gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar py-0.5">
                     {stages.map((stg, i) => {
                       const isApproved = stg.status === 'APPROVED'
                       const isRejected = stg.status === 'NOT APPROVED'
@@ -4311,69 +4615,64 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       else if (pendingLabel === 'Pending Payment' && stg.key === 'paid') isActive = true
 
                       let circleColor = 'bg-slate-100 text-slate-400 border-slate-200'
-                      let textColor = 'text-slate-400 font-semibold'
+                      let textColor = 'text-slate-500 font-semibold'
 
                       if (isApproved) {
-                        circleColor = 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20'
-                        textColor = 'text-indigo-700 font-black'
+                        circleColor = 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        textColor = 'text-blue-700 font-bold'
                       } else if (isRejected) {
-                        circleColor = 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/20'
-                        textColor = 'text-rose-700 font-black'
+                        circleColor = 'bg-rose-500 text-white border-rose-500 shadow-xs'
+                        textColor = 'text-rose-700 font-bold'
                       } else if (isHeld) {
-                        circleColor = 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20'
-                        textColor = 'text-amber-700 font-black'
+                        circleColor = 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                        textColor = 'text-amber-700 font-bold'
                       } else if (isActive) {
-                        circleColor = 'bg-indigo-500 text-white border-indigo-500 ring-4 ring-indigo-100 shadow-md shadow-indigo-500/20'
-                        textColor = 'text-indigo-600 font-black'
+                        circleColor = 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-100 shadow-xs'
+                        textColor = 'text-blue-700 font-black'
                       }
 
                       const stageInfo = getStageInfo(stg.key)
 
                       return (
-                        <div key={stg.key} className="flex-1 flex flex-row sm:flex-col items-center relative z-10 gap-3 sm:gap-0">
-                           {i < stages.length - 1 && (
-                            <div 
-                              className={cn(
-                                "absolute transition-colors duration-300",
-                                // Mobile vertical line:
-                                "left-3 top-[24px] w-0.5 h-[24px] sm:left-auto",
-                                // Desktop horizontal line:
-                                "sm:top-4 sm:left-[50%] sm:w-[100%] sm:h-0.5",
-                                stages[i].status === 'APPROVED' ? 'bg-indigo-500' : 'bg-slate-200'
-                              )}
-                              style={{ zIndex: 1 }}
-                            />
-                          )}
-                          
-                          <div 
-                            className={cn("h-6 w-6 sm:h-8 sm:w-8 rounded-full border border-slate-200 flex items-center justify-center text-[10px] sm:text-xs font-black transition-all shrink-0 relative", circleColor)}
-                            style={{ zIndex: 2 }}
-                          >
+                        <div key={stg.key} className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                          <div className={cn("h-5 w-5 rounded-full border flex items-center justify-center text-[10px] font-black shrink-0 transition-all", circleColor)}>
                             {isApproved ? '✓' : isRejected ? '✗' : isHeld ? '‖' : i + 1}
                           </div>
                           
-                          <div className="flex flex-col sm:items-center">
-                            <span className={cn("text-[9px] sm:text-[10px] uppercase tracking-wider text-left sm:text-center block", textColor)}>
-                              {stg.label}
-                            </span>
-
-                            {stageInfo.date ? (
-                              <div className="flex flex-col sm:items-center mt-0.5">
-                                <span className="text-[8px] sm:text-[9px] text-slate-500 font-bold text-left sm:text-center block">
-                                  {stageInfo.date}
+                          <div className="flex flex-col text-left justify-center min-w-[75px]">
+                            <div className="flex items-center gap-1">
+                              <span className={cn("text-[10px] uppercase font-bold tracking-tight leading-tight", textColor)}>
+                                {stg.label}
+                              </span>
+                              {stageInfo.date && (
+                                <span className="text-[8px] sm:text-[9px] font-semibold text-slate-500 font-sans tabular-nums whitespace-nowrap">
+                                  ({stageInfo.date})
                                 </span>
-                                {stageInfo.user && (
-                                  <span className="text-[8px] sm:text-[9px] text-indigo-950 font-black text-left sm:text-center block truncate max-w-[100px]" title={stageInfo.user}>
-                                    by {stageInfo.user}
+                              )}
+                            </div>
+
+                            {stageInfo.user ? (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className="text-[9px] sm:text-[10px] font-medium text-slate-700 leading-none truncate max-w-[100px]" title={`${stageInfo.user} · ${stageInfo.date || ''} ${stageInfo.time || ''}`}>
+                                  {stageInfo.user}
+                                </span>
+                                {stageInfo.time && (
+                                  <span className="text-[8px] text-slate-400 font-normal leading-none whitespace-nowrap hidden sm:inline">
+                                    {stageInfo.time}
                                   </span>
                                 )}
                               </div>
                             ) : (
-                              <span className="text-[8px] sm:text-[9px] text-slate-300 font-medium mt-0.5 text-left sm:text-center block">
-                                —
-                              </span>
+                              <span className="text-[9px] text-slate-300 font-medium leading-none mt-0.5">—</span>
                             )}
                           </div>
+
+                          {i < stages.length - 1 && (
+                            <div className={cn(
+                              "w-2 sm:w-4 h-[1.5px] shrink-0 mx-0.5",
+                              isApproved ? "bg-blue-500" : "bg-slate-200"
+                            )} />
+                          )}
                         </div>
                       )
                     })}
@@ -4382,456 +4681,478 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               )
             }
 
+            const billList = getBillUrls(detailRow)
+            const allDocs = [
+              ...billList.map((url, i) => ({
+                label: billList.length > 1 ? `Bill ${i + 1}` : 'Bill / Invoice',
+                url,
+                type: 'bill'
+              })),
+              { label: 'Support Document', url: detailRow.uploadDocUrl, type: 'support' },
+              { label: 'Accounts Invoice', url: detailRow.invoiceDocUrl, type: 'invoice' },
+              { label: 'Payment Proof', url: detailRow.paymentProofUrl, type: 'proof' },
+            ].filter((d) => Boolean(d.url))
+
             return (
               <>
-                {/* Dialog Header */}
-                <DialogHeader className="p-4 sm:p-7 pb-3 sm:pb-4 bg-white border-b border-slate-200/80 flex flex-col gap-2 shrink-0 sticky top-0 z-30 shadow-2xs relative">
-                  {/* Explicit Sticky Close Cross Button for Mobile & Desktop */}
+                {/* ── COMPACT DIALOG HEADER ── */}
+                <DialogHeader className="px-4 py-3 sm:px-6 sm:py-3.5 bg-white border-b border-slate-200/80 flex flex-col gap-1.5 shrink-0 sticky top-0 z-30 shadow-2xs relative">
+                  {/* Sticky Close Button */}
                   <button
                     type="button"
                     onClick={() => setDetailRow(null)}
-                    className="absolute right-3 top-3.5 sm:right-6 sm:top-6 z-40 flex h-8 w-8 sm:h-9 sm:w-9 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-2xs border border-slate-200/80"
+                    className="absolute right-3 top-3 sm:right-5 sm:top-3.5 z-40 flex h-8 w-8 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-2xs border border-slate-200/80"
                     aria-label="Close modal"
                     title="Close"
                   >
                     <X className="h-4 w-4 stroke-[2.5]" />
                   </button>
 
-                  <div className="flex flex-wrap items-center gap-1.5 pr-10 sm:pr-14">
-                    <Badge className="bg-slate-900 text-white hover:bg-slate-900 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.location}</Badge>
-                    <Badge className="bg-slate-100 hover:bg-slate-100 border border-slate-200 text-slate-800 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.department}</Badge>
-                    <Badge className="bg-blue-50 hover:bg-blue-50 border border-blue-100 text-blue-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
-                  </div>
-                  
-                  <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4 mt-1 pr-8 sm:pr-12">
-                    <div>
-                      <DialogTitle className="text-xl sm:text-2xl font-black tracking-tight text-slate-950">
-                        Vendor Payment Request Details
-                      </DialogTitle>
-                      <DialogDescription className="text-[11px] sm:text-xs text-slate-400 font-semibold mt-1">
-                        Payment request identification and approval timeline tracking.
-                      </DialogDescription>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pr-10 sm:pr-12">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className="bg-slate-900 text-white hover:bg-slate-900 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{detailRow.location}</Badge>
+                      <Badge className="bg-slate-100 hover:bg-slate-100 border border-slate-200 text-slate-800 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{detailRow.department}</Badge>
+                      <Badge className="bg-blue-50 hover:bg-blue-50 border border-blue-100 text-blue-700 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
+                      
+                      <div className="flex items-center gap-1.5 pl-1">
+                        <DialogTitle className="text-sm sm:text-base font-black tracking-tight text-slate-950">
+                          Payment Details
+                        </DialogTitle>
+                        <DialogDescription className="sr-only">
+                          Vendor payment request details, attached invoices, and workflow timeline tracking.
+                        </DialogDescription>
+                        {detailRow.requestNo && (
+                          <span className="text-xs font-bold text-slate-500 font-sans tabular-nums">· {detailRow.requestNo}</span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                      {detailRow.requestNo ? (
-                        <div className="text-left sm:text-right mr-1 sm:mr-3">
-                          <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">Request No.</span>
-                          <span className="font-mono text-base sm:text-lg font-black tracking-tight text-slate-900 tabular-nums">{detailRow.requestNo}</span>
-                        </div>
-                      ) : null}
-                      <div className="text-left sm:text-right mr-1 sm:mr-3">
-                        <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">Request Amount</span>
-                        <span className="text-xl sm:text-2xl font-black text-slate-900 font-sans tracking-tight">₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}</span>
+                      <div className="flex items-baseline gap-1 mr-1">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">Total:</span>
+                        <span className="text-lg sm:text-xl font-black text-slate-900 font-sans tabular-nums">
+                          ₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}
+                        </span>
                       </div>
 
-                      {/* Print: A4 voucher via the system print dialog (any printer the OS knows) */}
+                      {/* Top Action Buttons */}
                       <Button
                         onClick={() => printPaymentOrder(detailRow)}
                         variant="outline"
-                        className="h-9 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 px-3.5 cursor-pointer transition-all border bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-xs"
+                        size="sm"
+                        className="h-8 rounded-xl text-xs font-bold flex items-center gap-1.5 px-3 cursor-pointer border bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs"
                       >
-                        <Printer className="w-3.5 h-3.5" /> Print
+                        <Printer className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Print</span>
                       </Button>
 
-                      {/* Top Action Buttons: Show Remarks & Export Voucher */}
                       <Button
                         onClick={() => setShowTimeline(!showTimeline)}
+                        size="sm"
                         className={cn(
-                          "h-9 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 px-3.5 cursor-pointer transition-all border",
+                          "h-8 rounded-xl text-xs font-bold flex items-center gap-1.5 px-3 cursor-pointer border shadow-2xs",
                           showTimeline
                             ? "bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200"
-                            : "bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-xs"
+                            : "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
                         )}
                         variant="outline"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
-                        <span>{showTimeline ? 'Hide Remarks' : `Show Remarks (${remarksCount})`}</span>
+                        <span>{showTimeline ? 'Hide' : `Remarks (${remarksCount})`}</span>
                       </Button>
                       
                       <Button
                         onClick={() => handlePrintVoucher(detailRow, pendingLabel)}
-                        className="h-9 rounded-xl text-xs font-black border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 px-3.5 cursor-pointer"
+                        size="sm"
+                        className="h-8 rounded-xl text-xs font-bold border-slate-200 hover:bg-slate-50 flex items-center gap-1.5 px-3 cursor-pointer shadow-2xs"
                         variant="outline"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Export</span>
+                        <span className="hidden sm:inline">Export</span>
                       </Button>
                     </div>
                   </div>
                 </DialogHeader>
 
-                {/* Dialog Body */}
-                <div className={cn(
-                  "flex-1 overflow-y-auto p-4 sm:p-8 gap-6 sm:gap-8 transition-all duration-300 min-h-0",
-                  showTimeline ? "grid grid-cols-1 lg:grid-cols-3" : "grid grid-cols-1"
-                )}>
-                  {/* Left Column - Details */}
+                {/* ── DIALOG BODY (ZERO-SCROLL DESKTOP GRID) ── */}
+                <div className="flex-1 overflow-y-auto lg:overflow-hidden p-3.5 sm:p-5 flex flex-col gap-3 min-h-0 bg-slate-50/50">
+                  {/* Stepper Ribbon */}
+                  {renderNewWorkflowStepper(detailRow)}
+
+                  {/* Split Content on Desktop */}
                   <div className={cn(
-                    "space-y-6 lg:overflow-y-auto pr-2 lg:max-h-[calc(95vh-15rem)] transition-all",
-                    showTimeline ? "lg:col-span-2" : "lg:col-span-1"
+                    "flex-1 min-h-0 grid gap-3.5",
+                    showTimeline 
+                      ? "grid-cols-1 lg:grid-cols-12" 
+                      : "grid-cols-1 lg:grid-cols-12"
                   )}>
-                    {/* Stepper Card */}
-                    {renderNewWorkflowStepper(detailRow)}
-
-                    {/* Prominent MD / Management Remarks Box */}
-                    {(() => {
-                      const mdRemarks = getMdRemarksList(detailRow)
-                      if (mdRemarks.length === 0) return null
-
-                      return (
-                        <div className="bg-rose-50 border-2 border-rose-200 rounded-3xl p-5 space-y-3 shadow-sm animate-in fade-in duration-200">
-                          <div className="flex items-center gap-2 text-rose-900 text-xs font-black uppercase tracking-wider">
-                            <MessageSquare className="w-4 h-4 text-rose-600 animate-pulse" />
-                            <span>MD / Management Remarks ({mdRemarks.length})</span>
+                    {/* Left Column (Metadata & Remarks) */}
+                    <div className={cn(
+                      "flex flex-col gap-3 h-full overflow-y-auto pr-0.5",
+                      showTimeline ? "lg:col-span-7" : "lg:col-span-7 xl:col-span-7"
+                    )}>
+                      {/* ── SUBMITTER REMARKS (PROMINENT AT TOP) ── */}
+                      {detailRow.remarks && (
+                        <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl p-3.5 space-y-1.5 shadow-2xs shrink-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 text-amber-900 text-xs font-bold uppercase tracking-wider">
+                              <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Submitter Remarks & Justification</span>
+                            </div>
+                            <span className="text-[10px] font-semibold text-amber-800/80">
+                              {detailRow.name} · {istDate(detailRow.createdAt)}
+                            </span>
                           </div>
-                          <div className="space-y-2">
-                            {mdRemarks.map((item, i) => (
-                              <div key={i} className="bg-white p-4 rounded-2xl border border-rose-100 space-y-1 shadow-2xs">
-                                <div className="flex items-center justify-between text-[11px]">
-                                  <span className="font-black text-slate-900">{item.user} ({item.role})</span>
-                                  {item.date && <span className="font-bold text-slate-400">{item.date}</span>}
-                                </div>
-                                <p className="text-xs font-bold text-rose-950 italic leading-relaxed whitespace-pre-wrap">
-                                  "{item.remark}"
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                    {/* Risk Warning Box */}
-                    {(() => {
-                      const alerts = getAnomalyAlerts(detailRow, data?.rows || [])
-                      if (alerts.length === 0) return null
-                      return (
-                        <div className="bg-rose-50 border border-rose-200/80 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
-                          <div className="flex items-center gap-2 text-rose-800 text-xs font-black uppercase tracking-wider">
-                            <AlertTriangle className="w-4 h-4 text-rose-600" aria-hidden="true" />
-                            <span>System Risk Alert ({alerts.length})</span>
-                          </div>
-                          <ul className="list-disc list-inside text-xs font-semibold text-rose-700 space-y-1.5 pl-1.5">
-                            {alerts.map((alert, idx) => (
-                              <li key={idx} className="leading-relaxed">{alert}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )
-                    })()}
-
-                    {/* Budget Warning Box */}
-                    {(() => {
-                      if (!detailRow.glAccountId) return null
-                      const now = new Date()
-                      const currentMonthRows = (data?.rows || []).filter((r: any) => {
-                        if (!r.glAccountId || r.glAccountId !== detailRow.glAccountId) return false
-                        const rowDate = new Date(r.createdAt)
-                        return rowDate.getMonth() === now.getMonth() && rowDate.getFullYear() === now.getFullYear()
-                      })
-                      const approvedSpend = currentMonthRows
-                        .filter((r: any) => r.managementApproval === 'APPROVED' || getPendingStageLabel(r) === 'Paid' || getPendingStageLabel(r) === 'Pending Payment')
-                        .reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0)
-
-                      const monthlyBudget = 1000000
-                      const requestAmount = Number(detailRow.amount || 0)
-                      const isExceedingBudget = (approvedSpend + requestAmount) > monthlyBudget
-
-                      if (!isExceedingBudget) return null
-
-                      return (
-                        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
-                          <div className="flex items-center gap-2 text-amber-800 text-xs font-black uppercase tracking-wider">
-                            <AlertTriangle className="w-4 h-4 text-amber-600" aria-hidden="true" />
-                            <span>Budget Alert</span>
-                          </div>
-                          <p className="text-xs font-semibold text-amber-700 leading-relaxed">
-                            ⚠ This payment exceeds the approved monthly budget of ₹{monthlyBudget.toLocaleString('en-IN')}. (Current Month Spend: ₹{approvedSpend.toLocaleString('en-IN')}, Current Request: ₹{requestAmount.toLocaleString('en-IN')}).
+                          <p className="text-xs font-medium text-slate-800 leading-relaxed whitespace-pre-wrap bg-white p-2.5 rounded-xl border border-amber-100/90 shadow-2xs">
+                            “{detailRow.remarks}”
                           </p>
                         </div>
-                      )
-                    })()}
+                      )}
 
-                    {detailRow.emailSendStatus === 'SentBack' && detailRow.sendBackReason && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
-                        <div className="flex items-center gap-2 text-amber-800 text-xs font-black uppercase tracking-wider">
-                          <AlertTriangle className="w-4 h-4 text-amber-600" />
-                          <span>Clarification Required</span>
-                        </div>
-                        <p className="text-xs font-semibold text-slate-700 leading-relaxed">
-                          This request was sent back to you with the following remarks:
-                        </p>
-                        <p className="text-sm font-bold text-amber-900 bg-white/70 p-3 rounded-2xl border border-amber-100 whitespace-pre-wrap">
-                          {detailRow.sendBackReason}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Request Overview Card */}
-                    <div className="bg-white border border-slate-100 rounded-3xl p-6 space-y-4 shadow-sm">
-                      <div className="flex items-center gap-2 text-slate-800">
-                        <ClipboardList className="w-4 h-4 text-slate-700" />
-                        <span className="text-xs font-black uppercase tracking-wider">Request Overview</span>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                        {renderOverviewItem('Requester', detailRow.name, User)}
-                        {renderOverviewItem('Email', detailRow.email, Mail)}
-                        {renderOverviewItem('Brand', <span className="uppercase font-black text-slate-900">{detailRow.brand || '—'}</span>, Store)}
-                        {renderOverviewItem('Dealer Name', detailRow.dealerName || '—', Building2)}
-                        {renderOverviewItem('Dealer Code', detailRow.dealerCode || '—', Key)}
-                        {renderOverviewItem('Vendor Name', detailRow.vendorName || '—', User)}
-                        {renderOverviewItem('Payment Type', detailRow.typeOfPayment || '—', CreditCard)}
-                        {renderOverviewItem('Workflow Status', <span className="text-blue-700 font-bold">{pendingLabel}</span>, Clock)}
-                        {renderOverviewItem('Submitted On', istDate(detailRow.createdAt), Calendar)}
-                        {renderOverviewItem('GL Account', detailRow.glName ? `${detailRow.glName} (${detailRow.glCode})` : '—', Database)}
-                        {renderOverviewItem('GST Details', detailRow.gst || '—', Percent)}
-                        {renderOverviewItem('Reference / Invoice No.', detailRow.invoiceNumber || '—', FileText)}
-                        {getBillUrls(detailRow).map((billUrl, billIndex, all) => renderOverviewItem(
-                          all.length > 1 ? `Bill ${billIndex + 1} of ${all.length}` : 'Bill',
-                          <button key={billUrl} type="button" onClick={() => setPreviewDocUrl(billUrl)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Bill {billIndex + 1}</span></button>,
-                          FileText,
-                          undefined,
-                          `bill-${billIndex}-${billUrl}`
-                        ))}
-                        {detailRow.uploadDocUrl && renderOverviewItem('Support Document', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadDocUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Support Doc</span></button>, FileText)}
-                        {detailRow.invoiceDocUrl && renderOverviewItem('Uploaded Invoice', <button type="button" onClick={() => setPreviewDocUrl(detailRow.invoiceDocUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-sm hover:shadow-emerald-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Invoice</span></button>, FileText)}
-                        {detailRow.paymentStatus === 'PAID' && renderOverviewItem('Payment Status', <span className="text-emerald-700 font-black">PAID</span>, CheckCircle2)}
-                        {detailRow.paymentStatus === 'PAID' && renderOverviewItem('UTR / Txn ID', detailRow.utrNumber || '—', Key)}
-                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentProofUrl && renderOverviewItem('Payment Proof', <button type="button" onClick={() => setPreviewDocUrl(detailRow.paymentProofUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Proof</span></button>, FileText)}
-                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentCompletedAt && renderOverviewItem('Paid On / By', `${istDate(detailRow.paymentCompletedAt)} by ${detailRow.paymentCompletedBy || '—'}`, User)}
-                        {renderOverviewItem('Remarks (Submitter)', detailRow.remarks || '—', MessageSquare, 'col-span-1 sm:col-span-2 md:col-span-4 bg-amber-50/40 border-amber-100/80')}
-                      </div>
-                    </div>
-
-                    {/* Prominent Attached Bill & Documents Card Section */}
-                    {(() => {
-                      const billList = getBillUrls(detailRow)
-                      const docs = [
-                        // Every bill the submitter attached, however many that is.
-                        ...billList.map((url, i) => ({
-                          label: billList.length > 1 ? `Bill ${i + 1} of ${billList.length}` : 'Bill / Invoice',
-                          url,
-                        })),
-                        { label: 'Support Document', url: detailRow.uploadDocUrl },
-                        { label: 'Accounts Invoice', url: detailRow.invoiceDocUrl },
-                        { label: 'Payment Proof', url: detailRow.paymentProofUrl },
-                      ].filter((d) => Boolean(d.url))
-
-                      if (docs.length === 0) return null
-
-                      return (
-                        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-sm">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-slate-900">
-                              <FileText className="w-4.5 h-4.5 text-slate-800" />
-                              <span className="text-xs font-black uppercase tracking-wider">Attached Bill & Documents ({docs.length})</span>
+                      {/* ── UNIFIED 2-COLUMN OVERVIEW CARD ── */}
+                      <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                          {/* Column A: Payment Details */}
+                          <div className="space-y-2 pb-2 sm:pb-0 sm:border-r sm:border-slate-100 sm:pr-4">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block pb-1 border-b border-slate-100">
+                              Transaction Info
+                            </span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">Vendor Name</span>
+                              <span className="font-semibold text-slate-800 text-right truncate max-w-[170px]" title={detailRow.vendorName || '—'}>{detailRow.vendorName || '—'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">Payment Type</span>
+                              <span className="font-semibold text-slate-800 text-right">{detailRow.typeOfPayment || '—'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">Invoice / Ref</span>
+                              <span className="font-semibold text-slate-800 text-right">{detailRow.invoiceNumber || '—'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">GST Details</span>
+                              <span className="font-semibold text-slate-800 text-right">{detailRow.gst || '—'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">GL Account</span>
+                              <span className="font-semibold text-slate-800 text-right text-[11px] truncate max-w-[170px]" title={detailRow.glName ? `${detailRow.glName} (${detailRow.glCode})` : '—'}>
+                                {detailRow.glName ? `${detailRow.glName} (${detailRow.glCode})` : '—'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                              <span className="text-slate-500 font-medium">Workflow</span>
+                              <span className="text-blue-700 font-bold text-xs">{pendingLabel}</span>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {docs.map((doc, idx) => {
-                              const url = doc.url!
-                              const isImage = /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(url) || !url.toLowerCase().endsWith('.pdf')
-                              return (
-                                <div key={idx} className="border border-slate-200 bg-slate-50/60 hover:bg-slate-50 rounded-2xl p-3.5 space-y-3 transition-all flex flex-col justify-between">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-xs font-black uppercase tracking-wider text-slate-800 truncate">{doc.label}</span>
-                                    <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">{isImage ? 'Image' : 'File'}</span>
-                                  </div>
+                          {/* Column B: Dealership & Requester */}
+                          <div className="space-y-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block pb-1 border-b border-slate-100">
+                              Dealership & Requester
+                            </span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">Requester</span>
+                              <span className="font-semibold text-slate-800 text-right">{detailRow.name}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">Email</span>
+                              <span className="font-medium text-slate-700 text-right text-[11px] truncate max-w-[170px]">{detailRow.email}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">Dealer Name</span>
+                              <span className="font-semibold text-slate-800 text-right truncate max-w-[170px]">{detailRow.dealerName || '—'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">Dealer Code</span>
+                              <span className="font-semibold text-slate-800 text-right">{detailRow.dealerCode || '—'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 font-medium">Brand</span>
+                              <span className="font-bold text-slate-900 uppercase text-right">{detailRow.brand || '—'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                              <span className="text-slate-500 font-medium">Submitted</span>
+                              <span className="font-semibold text-slate-800 text-right">{istDate(detailRow.createdAt)}</span>
+                            </div>
+                          </div>
+                        </div>
 
-                                  {isImage ? (
-                                    <div 
-                                      onClick={() => setPreviewDocUrl(url)}
-                                      className="relative h-44 w-full rounded-xl overflow-hidden bg-slate-900/5 border border-slate-200 cursor-pointer group flex items-center justify-center"
-                                    >
-                                      {/* Lazy + intrinsic size: a request with five bills otherwise
-                                          fetches five full-size images the instant the drawer opens,
-                                          each one shifting the grid as it lands. The width/height are
-                                          the container's own 176px box, so the slot is reserved
-                                          before the bytes arrive. */}
-                                      <img 
-                                        src={url} 
-                                        alt={doc.label} 
-                                        loading="lazy"
-                                        decoding="async"
-                                        width={352}
-                                        height={176}
-                                        className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
-                                      />
-                                      <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-xs font-bold">
-                                        <Eye className="w-4 h-4" />
-                                        <span>Click to Expand Bill</span>
+                        {/* If Paid: UTR info banner */}
+                        {detailRow.paymentStatus === 'PAID' && (
+                          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-100">
+                            <span className="text-emerald-800 font-bold">Paid via UTR: {detailRow.utrNumber || '—'}</span>
+                            {detailRow.paymentCompletedAt && (
+                              <span className="text-emerald-700 text-[11px]">
+                                {istDate(detailRow.paymentCompletedAt)} by {detailRow.paymentCompletedBy || '—'}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Warnings / Alerts (if any) */}
+                      {(() => {
+                        const mdRemarks = getMdRemarksList(detailRow)
+                        const alerts = getAnomalyAlerts(detailRow, data?.rows || [])
+                        if (mdRemarks.length === 0 && alerts.length === 0 && !(detailRow.emailSendStatus === 'SentBack' && detailRow.sendBackReason)) return null
+
+                        return (
+                          <div className="space-y-2 shrink-0">
+                            {mdRemarks.length > 0 && (
+                              <div className="bg-rose-50/80 border border-rose-200 rounded-2xl p-3 space-y-1.5 shadow-2xs">
+                                <div className="flex items-center gap-1.5 text-rose-900 text-[11px] font-bold uppercase tracking-wider">
+                                  <MessageSquare className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
+                                  <span>MD Remarks ({mdRemarks.length})</span>
+                                </div>
+                                <div className="space-y-1">
+                                  {mdRemarks.map((item, i) => (
+                                    <div key={i} className="bg-white p-2.5 rounded-xl border border-rose-100 text-xs">
+                                      <span className="font-bold text-slate-900">{item.user}: </span>
+                                      <span className="text-rose-950 font-medium italic">"{item.remark}"</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {alerts.length > 0 && (
+                              <div className="bg-rose-50 border border-rose-200/80 rounded-2xl p-2.5 space-y-1 shadow-2xs text-xs">
+                                <div className="flex items-center gap-1.5 text-rose-800 font-bold uppercase tracking-wider text-[10px]">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                                  <span>Risk Alert ({alerts.length})</span>
+                                </div>
+                                <ul className="list-disc list-inside font-medium text-rose-700 pl-1 text-[11px]">
+                                  {alerts.map((alert, idx) => (
+                                    <li key={idx}>{alert}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {detailRow.emailSendStatus === 'SentBack' && detailRow.sendBackReason && (
+                              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-2.5 space-y-1 shadow-2xs text-xs">
+                                <div className="flex items-center gap-1.5 text-amber-800 font-bold uppercase tracking-wider text-[10px]">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>Clarification Remarks</span>
+                                </div>
+                                <p className="text-amber-900 font-semibold bg-white p-2 rounded-lg border border-amber-100 text-[11px] whitespace-pre-wrap">
+                                  {detailRow.sendBackReason}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
+                    </div>
+
+                    {/* Right Column: Attached Documents or Activity Timeline */}
+                    {!showTimeline ? (
+                      <div className="flex flex-col gap-3 h-full overflow-y-auto pl-0.5 lg:col-span-5">
+                        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex flex-col gap-3 h-full">
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                            <div className="flex items-center gap-1.5 text-slate-800 text-xs font-bold uppercase tracking-wider">
+                              <FileText className="w-4 h-4 text-slate-600" />
+                              <span>Attached Documents ({allDocs.length})</span>
+                            </div>
+                            <span className="text-[10px] font-semibold text-slate-400">Click to preview</span>
+                          </div>
+
+                          {allDocs.length === 0 ? (
+                            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400 text-xs font-medium">
+                              <FileText className="w-8 h-8 text-slate-300 mb-1" />
+                              <span>No documents attached</span>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 gap-2.5 overflow-y-auto pr-1">
+                              {allDocs.map((doc, idx) => {
+                                const url = doc.url!
+                                const isImage = /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(url) || !url.toLowerCase().endsWith('.pdf')
+                                return (
+                                  <div key={idx} className="border border-slate-200/90 bg-slate-50/60 hover:bg-slate-50 rounded-xl p-2.5 transition-all flex flex-col gap-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-xs font-bold text-slate-800 truncate">{doc.label}</span>
+                                      <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">{isImage ? 'Image' : 'PDF'}</span>
+                                    </div>
+
+                                    {isImage ? (
+                                      <div 
+                                        onClick={() => setPreviewDocUrl(url)}
+                                        className="relative h-28 sm:h-32 w-full rounded-lg overflow-hidden bg-slate-900/5 border border-slate-200 cursor-pointer group flex items-center justify-center"
+                                      >
+                                        <img 
+                                          src={url} 
+                                          alt={doc.label} 
+                                          loading="lazy"
+                                          decoding="async"
+                                          className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+                                        />
+                                        <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-bold">
+                                          <Eye className="w-3.5 h-3.5" />
+                                          <span>Click to Expand</span>
+                                        </div>
                                       </div>
+                                    ) : (
+                                      <div 
+                                        onClick={() => setPreviewDocUrl(url)}
+                                        className="h-20 w-full rounded-lg bg-slate-100 border border-slate-200 cursor-pointer group flex flex-col items-center justify-center p-2 gap-1 hover:bg-slate-200/70 transition-colors"
+                                      >
+                                        <FileText className="w-6 h-6 text-slate-600 group-hover:scale-110 transition-transform" />
+                                        <span className="text-[11px] font-bold text-slate-700 truncate">{doc.label}</span>
+                                      </div>
+                                    )}
+
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewDocUrl(url)}
+                                        className="flex-1 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                        <span>View Document</span>
+                                      </button>
+                                      <a
+                                        href={url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs font-bold bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1 transition-colors"
+                                        title="Open in new tab"
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                      </a>
                                     </div>
-                                  ) : (
-                                    <div 
-                                      onClick={() => setPreviewDocUrl(url)}
-                                      className="h-36 w-full rounded-xl bg-slate-100 border border-slate-200 cursor-pointer group flex flex-col items-center justify-center p-4 gap-2 hover:bg-slate-200/70 transition-colors"
-                                    >
-                                      <FileText className="w-8 h-8 text-slate-600 group-hover:scale-110 transition-transform" />
-                                      <span className="text-xs font-bold text-slate-700 text-center line-clamp-1">{doc.label}</span>
-                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      /* Right Column - Activity Timeline Panel */
+                      <div className="bg-white border border-slate-200/90 rounded-2xl flex flex-col overflow-hidden shadow-2xs w-full lg:col-span-5 h-full animate-in slide-in-from-right duration-200">
+                        {/* Panel Tabs */}
+                        <div className="flex border-b border-slate-100 shrink-0 bg-slate-50/40">
+                          <button
+                            onClick={() => setActiveTab('timeline')}
+                            className={cn(
+                              "flex-1 py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer",
+                              activeTab === 'timeline' ? "border-blue-600 text-blue-700 bg-white" : "border-transparent text-slate-400 hover:text-slate-600"
+                            )}
+                          >
+                            <Activity className="w-3.5 h-3.5" />
+                            <span>Timeline</span>
+                          </button>
+                          <button
+                            onClick={() => setActiveTab('remarks')}
+                            className={cn(
+                              "flex-1 py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer",
+                              activeTab === 'remarks' ? "border-blue-600 text-blue-700 bg-white" : "border-transparent text-slate-400 hover:text-slate-600"
+                            )}
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Remarks</span>
+                            <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.2 rounded-full shrink-0">
+                              {remarksCount}
+                            </span>
+                          </button>
+                        </div>
+
+                        {/* Timeline List */}
+                        <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
+                          {displayedEvents.length === 0 ? (
+                            <p className="text-center text-xs text-slate-400 font-medium py-6">No events to display.</p>
+                          ) : (
+                            displayedEvents.map((evt, idx) => {
+                              let IconComponent = MessageSquare
+                              let iconBgColor = 'bg-slate-50 text-slate-500 border-slate-100'
+                              
+                              if (evt.iconType === 'phone') {
+                                IconComponent = Phone
+                                iconBgColor = 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                              } else if (evt.iconType === 'create') {
+                                IconComponent = FileText
+                                iconBgColor = 'bg-blue-50 text-blue-600 border-blue-100'
+                              } else if (evt.iconType === 'clip') {
+                                IconComponent = Paperclip
+                                iconBgColor = 'bg-blue-50 text-blue-600 border-blue-100'
+                              } else if (evt.iconType === 'remark') {
+                                IconComponent = MessageSquare
+                                iconBgColor = 'bg-amber-50 text-amber-600 border-amber-100'
+                              } else if (evt.iconType === 'approve') {
+                                IconComponent = Check
+                                iconBgColor = 'bg-emerald-500 text-white border-emerald-500 shadow-xs'
+                              } else if (evt.iconType === 'reject') {
+                                IconComponent = X
+                                iconBgColor = 'bg-rose-500 text-white border-rose-500 shadow-xs'
+                              } else if (evt.iconType === 'hold') {
+                                IconComponent = Clock
+                                iconBgColor = 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                              } else if (evt.iconType === 'gl') {
+                                IconComponent = RefreshCw
+                                iconBgColor = 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                              }
+
+                              return (
+                                <div key={evt.id} className="flex gap-2.5 relative">
+                                  {idx < displayedEvents.length - 1 && (
+                                    <div className="absolute top-6 left-3 w-0.5 h-[calc(100%+0.75rem)] bg-slate-100" />
                                   )}
 
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewDocUrl(url)}
-                                      className="flex-1 text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 rounded-xl py-2.5 px-3 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
-                                    >
-                                      <Eye className="w-3.5 h-3.5" />
-                                      <span>View Bill</span>
-                                    </button>
-                                    <a
-                                      href={url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-xs font-bold bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl py-2.5 px-3 flex items-center justify-center gap-1 transition-colors"
-                                      title="Open in new tab"
-                                    >
-                                      <ExternalLink className="w-3.5 h-3.5" />
-                                    </a>
+                                  <div className={cn("h-6 w-6 rounded-full border flex items-center justify-center shrink-0 z-10", iconBgColor)}>
+                                    <IconComponent className="w-3 h-3" />
+                                  </div>
+
+                                  <div className="space-y-0.5 text-xs">
+                                    <span className="font-bold text-slate-800 block leading-tight">{evt.title}</span>
+                                    <div className="font-medium text-slate-600 leading-relaxed text-[11px]">{evt.description}</div>
+                                    <span className="text-[9px] font-semibold text-slate-400 block">
+                                      {evt.user} · {istDate(evt.timestamp)}
+                                    </span>
                                   </div>
                                 </div>
                               )
-                            })}
+                            })
+                          )}
+                        </div>
+
+                        {/* Timeline Text Area Footer */}
+                        <div className="p-3 border-t border-slate-100 bg-slate-50/40 space-y-2 shrink-0">
+                          <textarea
+                            placeholder="Add a remark..."
+                            value={remarkText}
+                            maxLength={500}
+                            onChange={e => setRemarkText(e.target.value)}
+                            className="w-full min-h-[60px] p-2.5 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                          />
+                          <div className="flex justify-between items-center">
+                            <span className="text-[9px] font-medium text-slate-400">
+                              {remarkText.length} / 500
+                            </span>
+                            <Button
+                              size="sm"
+                              disabled={!remarkText.trim() || addRemarkPending}
+                              onClick={handleAddRemark}
+                              className="h-7 rounded-lg bg-blue-600 hover:bg-blue-700 text-[10px] font-bold flex items-center gap-1.5 px-2.5 cursor-pointer"
+                            >
+                              {addRemarkPending ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <>
+                                  <Send className="w-3 h-3" />
+                                  <span>Send Remark</span>
+                                </>
+                              )}
+                            </Button>
                           </div>
                         </div>
-                      )
-                    })()}
-
-
-                  </div>
-
-                  {/* Right Column - Activity Panel */}
-                  {showTimeline && (
-                    <div className="bg-white border border-slate-100 rounded-3xl flex flex-col overflow-hidden lg:max-h-[calc(95vh-12rem)] shadow-sm animate-in slide-in-from-right duration-300 w-full">
-                    {/* Panel Tabs */}
-                    <div className="flex border-b border-slate-100 shrink-0 bg-slate-50/20">
-                      <button
-                        onClick={() => setActiveTab('timeline')}
-                        className={cn(
-                          "flex-1 py-4 px-6 text-xs font-black flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer",
-                          activeTab === 'timeline' ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-400 hover:text-slate-600"
-                        )}
-                      >
-                        <Activity className="w-4 h-4" />
-                        <span>Activity Timeline</span>
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('remarks')}
-                        className={cn(
-                          "flex-1 py-4 px-6 text-xs font-black flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer",
-                          activeTab === 'remarks' ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-400 hover:text-slate-600"
-                        )}
-                      >
-                        <MessageSquare className="w-4 h-4" />
-                        <span>Remarks</span>
-                        <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-1.5 py-0.5 rounded-full shrink-0">
-                          {remarksCount}
-                        </span>
-                      </button>
-                    </div>
-
-                    {/* Timeline List */}
-                    <div className="flex-1 lg:overflow-y-auto p-6 space-y-6 lg:max-h-[calc(95vh-26rem)]">
-                      {displayedEvents.length === 0 ? (
-                        <p className="text-center text-xs text-slate-400 font-semibold py-8">No events to display.</p>
-                      ) : (
-                        displayedEvents.map((evt, idx) => {
-                          let IconComponent = MessageSquare
-                          let iconBgColor = 'bg-slate-50 text-slate-500 border-slate-100'
-                          
-                          if (evt.iconType === 'phone') {
-                            IconComponent = Phone
-                            iconBgColor = 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                          } else if (evt.iconType === 'create') {
-                            IconComponent = FileText
-                            iconBgColor = 'bg-indigo-50 text-indigo-600 border-indigo-100'
-                          } else if (evt.iconType === 'clip') {
-                            IconComponent = Paperclip
-                            iconBgColor = 'bg-blue-50 text-blue-600 border-blue-100'
-                          } else if (evt.iconType === 'remark') {
-                            IconComponent = MessageSquare
-                            iconBgColor = 'bg-amber-50 text-amber-600 border-amber-100'
-                          } else if (evt.iconType === 'approve') {
-                            IconComponent = Check
-                            iconBgColor = 'bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-500/10'
-                          } else if (evt.iconType === 'reject') {
-                            IconComponent = X
-                            iconBgColor = 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/10'
-                          } else if (evt.iconType === 'hold') {
-                            IconComponent = Clock
-                            iconBgColor = 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/10'
-                          } else if (evt.iconType === 'gl') {
-                            IconComponent = RefreshCw
-                            iconBgColor = 'bg-indigo-50 text-indigo-600 border-indigo-100'
-                          }
-
-                          return (
-                            <div key={evt.id} className="flex gap-4 relative">
-                              {idx < displayedEvents.length - 1 && (
-                                <div className="absolute top-8 left-4 w-0.5 h-[calc(100%+1.5rem)] bg-slate-100" />
-                              )}
-
-                              <div className={cn("h-8 w-8 rounded-full border flex items-center justify-center shrink-0 z-10", iconBgColor)}>
-                                <IconComponent className="w-3.5 h-3.5" />
-                              </div>
-
-                              <div className="space-y-1">
-                                <span className="text-xs font-black text-slate-800 block leading-tight">{evt.title}</span>
-                                <div className="text-xs font-semibold text-slate-500 leading-relaxed pr-2">{evt.description}</div>
-                                <span className="text-[9px] font-bold text-slate-400 block mt-1">
-                                  {evt.user} · {istDate(evt.timestamp)}, {evt.timestamp.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </div>
-                            </div>
-                          )
-                        })
-                      )}
-                    </div>
-
-                    {/* Timeline Text Area Footer */}
-                    <div className="p-4 border-t border-slate-100 bg-slate-50/30 space-y-3 shrink-0">
-                      <div className="relative">
-                        <textarea
-                          placeholder="Add a remark..."
-                          value={remarkText}
-                          maxLength={500}
-                          onChange={e => setRemarkText(e.target.value)}
-                          className="w-full min-h-[80px] p-3 text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-950 pr-4"
-                        />
-                        <div className="flex justify-between items-center mt-2">
-                          <span className="text-[9px] font-bold text-slate-400">
-                            {remarkText.length} / 500
-                          </span>
-                          <Button
-                            size="sm"
-                            disabled={!remarkText.trim() || addRemarkPending}
-                            onClick={handleAddRemark}
-                            className="h-8 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-[10px] font-black flex items-center gap-1.5 px-3 cursor-pointer"
-                          >
-                            {addRemarkPending ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <>
-                                <Send className="w-3 h-3" />
-                                <span>Add Remark</span>
-                              </>
-                            )}
-                          </Button>
-                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
-                  )}
                 </div>
 
                 {/* Dialog Footer */}
-                <div className="p-4 sm:p-6 border-t border-slate-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4 w-full shrink-0">
-                  <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-wider text-center sm:text-left">
+                <div className="px-4 py-2.5 sm:px-6 sm:py-3 border-t border-slate-200/90 bg-white flex flex-col sm:flex-row justify-between items-center gap-2.5 w-full shrink-0">
+                  <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center sm:text-left">
                     <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span>Created by {detailRow.name} on {istDateTime(detailRow.createdAt)}</span>
                   </div>
@@ -4849,14 +5170,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               remarks: remarkText || ''
                             })
                           }}
-                          className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+                          className="text-white text-xs font-bold rounded-xl h-9 px-4 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
                           style={{ backgroundColor: 'var(--dashboard-action-bg)', color: '#ffffff' }}
                         >
                           {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <>
-                              <Check className="w-4 h-4" />
+                              <Check className="w-3.5 h-3.5" />
                               <span>{pendingStageKey === 'payment_done' ? 'Record Payment' : 'Approve & Forward'}</span>
                             </>
                           )}
@@ -4869,10 +5190,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             setActionStage(pendingStageKey!)
                             setActionDecision('SEND_BACK')
                           }}
-                          className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                          className="text-white text-xs font-bold rounded-xl h-9 px-3.5 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
                           style={{ backgroundColor: 'var(--dashboard-warning-text)', color: '#ffffff' }}
                         >
-                          <CornerUpLeft className="w-4 h-4" />
+                          <CornerUpLeft className="w-3.5 h-3.5" />
                           <span>Send Back</span>
                         </button>
 
@@ -4883,11 +5204,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             setActionStage(pendingStageKey!)
                             setActionDecision('REJECT')
                           }}
-                          className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                          className="text-white text-xs font-bold rounded-xl h-9 px-3.5 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
                           style={{ backgroundColor: 'var(--dashboard-danger)', color: '#ffffff' }}
                         >
-                          <X className="w-4 h-4" />
-                          <span>Reject Request</span>
+                          <X className="w-3.5 h-3.5" />
+                          <span>Reject</span>
                         </button>
 
                         <button
@@ -4897,27 +5218,24 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             setActionStage(pendingStageKey!)
                             setActionDecision('HOLD')
                           }}
-                          /* Hold is a NEUTRAL action — there is no semantic dashboard token for it
-                             (only primary / warning / danger exist), so it uses the Tailwind palette
-                             directly rather than a var() pointing at a token that does not exist. */
-                          className="bg-slate-600 hover:bg-slate-700 text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                          className="bg-slate-600 hover:bg-slate-700 text-white text-xs font-bold rounded-xl h-9 px-3.5 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
                         >
-                          <Clock className="w-4 h-4" />
-                          <span>Hold Request</span>
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>Hold</span>
                         </button>
                       </>
                     ) : (
-                      <span className="text-xs font-extrabold text-slate-500 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200">
+                      <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
                         Status: {pendingLabel}
                       </span>
                     )}
                     <button
                       type="button"
                       onClick={() => setDetailRow(null)}
-                      className="text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs font-black rounded-xl h-10 px-4 flex items-center justify-center gap-1.5 cursor-pointer transition-all border border-slate-200 shrink-0"
+                      className="text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs font-bold rounded-xl h-9 px-3.5 flex items-center justify-center gap-1.5 cursor-pointer transition-all border border-slate-200 shrink-0"
                     >
-                      <X className="w-4 h-4" />
-                      <span>Close Popup</span>
+                      <X className="w-3.5 h-3.5" />
+                      <span>Close</span>
                     </button>
                   </div>
                 </div>

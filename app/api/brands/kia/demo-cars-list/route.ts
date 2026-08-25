@@ -21,7 +21,16 @@ type DemoCarsFilters = {
   location: 'all' | 'jammu' | 'udhampur'
   search: string
   status: 'all' | 'sold' | 'not_sold'
+  sort: DemoCarsSort
 }
+
+/**
+ * How the list is ordered. Default is value high→low.
+ *
+ * 'age' preserves the pre-2026-08-25 ordering (oldest stock first) so nothing was lost when the
+ * value sort became the default.
+ */
+type DemoCarsSort = 'value_desc' | 'value_asc' | 'age'
 
 type DisplayColumn = {
   key: string
@@ -61,12 +70,19 @@ function normalizeStatus(value: string | null): DemoCarsFilters['status'] {
   return 'all'
 }
 
+function normalizeSort(value: string | null): DemoCarsSort {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'value_asc' || normalized === 'age') return normalized
+  return 'value_desc'
+}
+
 function getFilters(searchParams: URLSearchParams): DemoCarsFilters {
   return {
     page: positiveInteger(searchParams.get('page'), 1),
     location: normalizeLocation(searchParams.get('location')),
     search: String(searchParams.get('search') || '').trim(),
     status: normalizeStatus(searchParams.get('status')),
+    sort: normalizeSort(searchParams.get('sort')),
   }
 }
 
@@ -217,6 +233,32 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
   const whereSql = filteredWhere(filters, columns)
   const offset = (filters.page - 1) * PAGE_SIZE
   const amountColumn = firstExistingColumn(columns, ['kin_invoice_amount', 'total_invoice_value'])
+
+  /*
+   * ── Ordering ─────────────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ The amount column is TEXT in the DMS feed, not numeric. Ordering it as text is lexical, so
+   * '996201.34' sorts above '6083164.52' — measured on live data, a text sort tops out at ~9.9L
+   * while the real maximum is ~60.8L, i.e. the most valuable demo cars disappear from the top of a
+   * "highest value first" list. Hence the strip-and-cast.
+   *
+   * regexp_replace tolerates future dirty input (commas, a currency symbol); NULLIF turns an empty
+   * result into NULL so blanks land last in both directions rather than sorting as zero. Today the
+   * feed is clean apart from one blank row — this is guarding the shape, not a current mess.
+   *
+   * ⚠️ This expression MUST be identical in the `paged` CTE and in the jsonb_agg below. They are two
+   * separate ORDER BYs over the same rows: if they drift, the page is selected by one order and
+   * rendered in another, so rows appear to jump between pages.
+   */
+  const amountSortExpr = amountColumn
+    ? sql`NULLIF(regexp_replace(COALESCE(${sql.raw(`"${amountColumn}"`)}, ''), '[^0-9.]', '', 'g'), '')::numeric`
+    : sql`NULL::numeric`
+
+  const orderBySql = filters.sort === 'age'
+    ? sql`age DESC NULLS LAST, location ASC, model ASC, variant ASC, vin_no ASC`
+    : filters.sort === 'value_asc'
+      ? sql`amount_sort ASC NULLS LAST, age DESC NULLS LAST, vin_no ASC`
+      : sql`amount_sort DESC NULLS LAST, age DESC NULLS LAST, vin_no ASC`
   const registrationColumn = firstExistingColumn(columns, REGISTRATION_COLUMN_CANDIDATES)
   const colorSql = hasColumn(columns, 'color') || hasColumn(columns, 'exterior_color_name')
     ? sql`COALESCE(${nullableTextExpression(columns, 'color')}, ${nullableTextExpression(columns, 'exterior_color_name')}, '-')`
@@ -236,6 +278,8 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
         ${textExpression(columns, 'transporter_name')} AS transporter_name,
         ${dateExpression(columns, 'kin_invoice_date')} AS kin_invoice_date,
         ${amountColumn ? textExpression(columns, amountColumn) : sql`'-'::text`} AS amount,
+        -- Numeric twin of the amount column, used only for ordering; never sent to the client.
+        ${amountSortExpr} AS amount_sort,
         ${dateExpression(columns, 'retail_date')} AS retail_date,
         CASE
           WHEN ${dateExpression(columns, 'retail_date')} IS NULL THEN NULL::int
@@ -284,7 +328,7 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
     paged AS (
       SELECT *
       FROM filtered
-      ORDER BY age DESC NULLS LAST, location ASC, model ASC, variant ASC, vin_no ASC
+      ORDER BY ${orderBySql}
       ${exportAll ? sql`` : sql`LIMIT ${PAGE_SIZE} OFFSET ${offset}`}
     ),
     counts AS (
@@ -330,7 +374,7 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
         'remarks', remarks,
         'detailsUpdatedBy', details_updated_by,
         'detailsUpdatedAt', details_updated_at
-      ) ORDER BY age DESC NULLS LAST, location ASC, model ASC, variant ASC, vin_no ASC) FROM paged), '[]'::jsonb) AS rows,
+      ) ORDER BY ${orderBySql}) FROM paged), '[]'::jsonb) AS rows,
       (SELECT total_rows FROM filtered_count) AS total_rows,
       (SELECT source_updated_at FROM source_freshness) AS source_updated_at,
       (SELECT jsonb_build_object(

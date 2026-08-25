@@ -24,10 +24,42 @@ const fmtDate = (v?: string | null) =>
 // best-effort by the API route (never inside the write path, and a mail failure must not fail the
 // task) — a fire-and-forget send would be unreliable on Vercel, where the instance freezes after the
 // response.
+/**
+ * Work out who is on a task email — extracted so it can be TESTED WITHOUT SENDING.
+ *
+ * ⚠️ Verify recipient logic through THIS function, never by calling sendTaskAssignedEmail with
+ * sample data. `sendEmail` is a real SMTP send: an ES module export cannot be monkey-patched at
+ * runtime (the binding is read-only, the assignment silently no-ops), so a "mock" in a scratch
+ * script mails actual people. That mistake has already been made once against live addresses.
+ *
+ * Returns the Cc list and the Reply-To to use. Both matter and neither is sufficient alone:
+ * Cc gives the delegator a copy of what was sent, Reply-To makes the assignee's reply reach them
+ * instead of the tech@ mailbox these messages are sent from.
+ */
+export function buildTaskEmailRecipients(input: {
+  toEmail: string
+  assignerEmail?: string | null
+  cc?: string[]
+}): { assignerEmail: string; cc: string[] } {
+  const to = String(input.toEmail || '').trim().toLowerCase()
+  const assignerEmail = String(input.assignerEmail || '').trim()
+  const list = (input.cc ?? []).map((e) => String(e || '').trim()).filter(Boolean)
+  if (assignerEmail) list.push(assignerEmail)
+  // Never Cc the recipient back to themselves — a self-delegated task would otherwise arrive twice.
+  const cc = Array.from(new Set(list.map((e) => e.toLowerCase()))).filter((e) => e !== to)
+  return { assignerEmail, cc }
+}
+
 export async function sendTaskAssignedEmail(input: {
   toEmail: string | null | undefined
   toName: string | null | undefined
   assignerName: string
+  /**
+   * The delegator's own address. When present they are CC'd and set as Reply-To — see the note in
+   * the body of this function. Optional so existing callers keep compiling, but every caller that
+   * knows who delegated SHOULD pass it.
+   */
+  assignerEmail?: string | null
   title: string
   description?: string | null
   dueAt?: string | Date | null
@@ -39,7 +71,29 @@ export async function sendTaskAssignedEmail(input: {
 }): Promise<boolean> {
   const to = String(input.toEmail || '').trim()
   if (!to) return false
-  const cc = (input.cc ?? []).map((e) => String(e || '').trim()).filter(Boolean)
+
+  /*
+   * ── Keep the delegator in the conversation ───────────────────────────────────────────────────
+   *
+   * These mails leave as tech@amgroupind.com. The delegator was on neither the To nor the Cc line,
+   * so when the assignee replied "done" it reached a mailbox nobody in the conversation reads, and
+   * the person who asked for the work never heard back. The body even told people to "inform the
+   * concerned EA" out of band — because replying could not possibly work.
+   *
+   * Cc puts the delegator on the thread; replyTo makes the assignee's Reply reach them instead of
+   * the sending mailbox. BOTH are needed: Cc alone still sends the reply to tech@, and replyTo alone
+   * leaves the delegator without a copy of what was actually sent.
+   */
+  const { assignerEmail, cc } = buildTaskEmailRecipients({
+    toEmail: to,
+    assignerEmail: input.assignerEmail,
+    cc: input.cc,
+  })
+  const replyLine = assignerEmail
+    ? `<p style="margin:0 0 8px;"><strong>Reply to this email</strong> once the task is done — your reply goes straight to ${escapeHtml(input.assignerName)}, who is copied here.</p>
+       <p style="margin:0;">Need more time? Reply before the due date with the reason and a revised completion date.</p>`
+    : `<p style="margin:0 0 8px;">Please complete the task by the due date and inform the concerned EA once it is completed.</p>
+       <p style="margin:0;">If you require additional time, please contact the concerned EA before the due date, explain the reason for the delay, and provide a revised completion date. The EA will update the task accordingly.</p>`
   const due = input.dueAt ? (input.dueAt instanceof Date ? input.dueAt.toISOString() : input.dueAt) : null
   const tasksUrl = getTasksUrl()
 
@@ -67,8 +121,7 @@ export async function sendTaskAssignedEmail(input: {
     ` : ''}
 
     <div style="margin-top:20px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;font-size:13px;color:#334155;line-height:1.6;">
-      <p style="margin:0 0 8px;">Please complete the task by the due date and inform the concerned EA once it is completed.</p>
-      <p style="margin:0;">If you require additional time, please contact the concerned EA before the due date, explain the reason for the delay, and provide a revised completion date. The EA will update the task accordingly.</p>
+      ${replyLine}
     </div>
   `
   try {
@@ -88,6 +141,7 @@ export async function sendTaskAssignedEmail(input: {
     await sendEmail({
       to,
       ...(cc.length ? { cc } : {}),
+      ...(assignerEmail ? { replyTo: assignerEmail } : {}),
       subject,
       html: emailLayout({ heading, eyebrow: 'AM Group · Tasks', preheader: input.title, bodyHtml }),
     })

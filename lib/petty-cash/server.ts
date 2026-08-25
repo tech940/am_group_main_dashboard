@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } 
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import type { AppUser } from '@/lib/auth/app-user'
-import { hasAllBranchAccess, isBranchValue } from '@/lib/branches'
+import { getBranchLabel, hasAllBranchAccess, isBranchValue } from '@/lib/branches'
 import { db } from '@/lib/db'
 import {
   pettyCashAllocations,
@@ -23,6 +23,7 @@ import {
   canCreatePettyCashExpense,
   canCreatePettyCashRequest,
   canManagePettyCashBranch,
+  pettyCashRequestedBranchScope,
   canReadPettyCashExpense,
   canReadPettyCashRequest,
   canUsePettyCashAllocation,
@@ -290,10 +291,11 @@ export async function listPettyCashRequests(appUser: AppUser, input: z.input<typ
     filters.push(eq(pettyCashRequests.status, query.status))
   }
 
-  if (query.branchId && query.branchId !== 'all') {
-    if (!isBranchValue(query.branchId)) throw new Error('Invalid branch')
-    if (!canViewPettyCashBranch(appUser, query.branchId)) throw new Error('Forbidden branch')
-    filters.push(eq(pettyCashRequests.branchId, query.branchId))
+  // Honours an explicit branch, else falls back to this login's own assignment (server-derived
+  // default — see pettyCashRequestedBranchScope). Undefined means "no narrowing".
+  {
+    const scope = pettyCashRequestedBranchScope(appUser, pettyCashRequests.branchId, query.branchId)
+    if (scope) filters.push(scope)
   }
 
   if (query.search) {
@@ -368,10 +370,9 @@ export async function getPettyCashApprovalQueue(appUser: AppUser, opts?: { searc
 
   const filters = [getPettyCashRequestVisibilityFilter(appUser), inArray(pettyCashRequests.status, statuses)]
 
-  if (opts?.branchId && opts.branchId !== 'all') {
-    if (!isBranchValue(opts.branchId)) throw new Error('Invalid branch')
-    if (!canViewPettyCashBranch(appUser, opts.branchId)) throw new Error('Forbidden branch')
-    filters.push(eq(pettyCashRequests.branchId, opts.branchId))
+  {
+    const scope = pettyCashRequestedBranchScope(appUser, pettyCashRequests.branchId, opts?.branchId)
+    if (scope) filters.push(scope)
   }
 
   const search = (opts?.search || '').trim()
@@ -511,10 +512,9 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
     filters.push(eq(pettyCashExpenses.status, query.status))
   }
 
-  if (query.branchId && query.branchId !== 'all') {
-    if (!isBranchValue(query.branchId)) throw new Error('Invalid branch')
-    if (!canViewPettyCashBranch(appUser, query.branchId)) throw new Error('Forbidden branch')
-    filters.push(eq(pettyCashExpenses.branchId, query.branchId))
+  {
+    const scope = pettyCashRequestedBranchScope(appUser, pettyCashExpenses.branchId, query.branchId)
+    if (scope) filters.push(scope)
   }
 
   if (query.search) {
@@ -1638,3 +1638,345 @@ export async function deletePettyCashExpense(appUser: AppUser, expenseId: string
   })
   return { ok: true }
 }
+
+export type MonthlyExpenseMatrixRow = {
+  id: string
+  branchId: string
+  branchLabel: string
+  location: string
+  department: 'Sales' | 'Service' | string
+  months: Record<string, number>
+  totalAmount: number
+  selectedMonthAmount: number
+}
+
+export type MonthlyExpenseLocationGroup = {
+  location: string
+  salesAmount: number
+  serviceAmount: number
+  totalAmount: number
+  months: Record<string, { sales: number; service: number; total: number }>
+}
+
+export type MonthlyExpenseBrandGroup = {
+  branchId: string
+  branchLabel: string
+  salesAmount: number
+  serviceAmount: number
+  totalAmount: number
+  locations: MonthlyExpenseLocationGroup[]
+}
+
+export type PettyCashExpenseSummaryResponse = {
+  availableMonths: Array<{ key: string; label: string }>
+  selectedMonth: string
+  brands: MonthlyExpenseBrandGroup[]
+  matrix: MonthlyExpenseMatrixRow[]
+  metrics: {
+    totalSpend: number
+    salesSpend: number
+    serviceSpend: number
+    salesPercent: number
+    servicePercent: number
+    totalEntriesCount: number
+    topLocation: { location: string; branchLabel: string; amount: number } | null
+    topBrand: { branchId: string; branchLabel: string; amount: number } | null
+    monthlyTrends: Array<{ month: string; label: string; sales: number; service: number; total: number }>
+  }
+}
+
+function formatMonthLabel(monthKey: string): string {
+  if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return monthKey || '—'
+  const [yearStr, monthStr] = monthKey.split('-')
+  const year = Number(yearStr)
+  const month = Number(monthStr)
+  const date = new Date(year, month - 1, 1)
+  return new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' }).format(date)
+}
+
+function normalizeDepartmentName(dept?: string | null): 'Sales' | 'Service' {
+  const d = String(dept || '').trim().toLowerCase()
+  if (d.includes('service')) return 'Service'
+  return 'Sales'
+}
+
+export async function getPettyCashExpenseSummary(
+  appUser: AppUser,
+  options?: { branchId?: string | null; month?: string | null },
+): Promise<PettyCashExpenseSummaryResponse> {
+  const requestedBranch = options?.branchId && options.branchId !== 'all' ? options.branchId : null
+  if (requestedBranch) {
+    if (!isBranchValue(requestedBranch)) throw new Error('Invalid branch')
+    if (!canViewPettyCashBranch(appUser, requestedBranch)) throw new Error('Forbidden branch')
+  }
+
+  const filters = [
+    eq(pettyCashExpenses.status, 'approved'),
+    isNull(pettyCashExpenses.deletedAt),
+    getPettyCashExpenseVisibilityFilter(appUser),
+  ]
+
+  if (requestedBranch) {
+    filters.push(eq(pettyCashExpenses.branchId, requestedBranch))
+  }
+
+  const rawRows = await db
+    .select({
+      branchId: pettyCashExpenses.branchId,
+      location: sql<string>`COALESCE(NULLIF(TRIM(${pettyCashExpenses.expenseForm} ->> 'location'), ''), NULLIF(TRIM(${pettyCashRequests.requestForm} ->> 'location'), ''), 'Main Location')`,
+      department: sql<string>`COALESCE(NULLIF(TRIM(${pettyCashRequests.department}), ''), NULLIF(TRIM(${pettyCashExpenses.department}), ''), 'Sales')`,
+      month: sql<string>`TO_CHAR(${pettyCashExpenses.expenseDate}, 'YYYY-MM')`,
+      totalAmount: sql<string>`COALESCE(SUM(${pettyCashExpenses.amount}), 0)::text`,
+      expenseCount: sql<number>`COUNT(*)::int`,
+    })
+    .from(pettyCashExpenses)
+    .leftJoin(pettyCashAllocations, eq(pettyCashAllocations.id, pettyCashExpenses.allocationId))
+    .leftJoin(pettyCashRequests, eq(pettyCashRequests.id, pettyCashAllocations.requestId))
+    .where(and(...filters))
+    .groupBy(
+      pettyCashExpenses.branchId,
+      sql`COALESCE(NULLIF(TRIM(${pettyCashExpenses.expenseForm} ->> 'location'), ''), NULLIF(TRIM(${pettyCashRequests.requestForm} ->> 'location'), ''), 'Main Location')`,
+      sql`COALESCE(NULLIF(TRIM(${pettyCashRequests.department}), ''), NULLIF(TRIM(${pettyCashExpenses.department}), ''), 'Sales')`,
+      sql`TO_CHAR(${pettyCashExpenses.expenseDate}, 'YYYY-MM')`
+    )
+    .orderBy(
+      sql`TO_CHAR(${pettyCashExpenses.expenseDate}, 'YYYY-MM') DESC`,
+      pettyCashExpenses.branchId
+    )
+
+  // 1. Gather all unique months present in the data (sorted newest first)
+  const monthKeysSet = new Set<string>()
+  for (const r of rawRows) {
+    if (r.month) monthKeysSet.add(r.month)
+  }
+  const sortedMonthKeys = Array.from(monthKeysSet).sort((a, b) => b.localeCompare(a))
+
+  const availableMonths = sortedMonthKeys.map((k) => ({
+    key: k,
+    label: formatMonthLabel(k),
+  }))
+
+  const selectedMonth = options?.month && (options.month === 'all' || monthKeysSet.has(options.month))
+    ? options.month
+    : (sortedMonthKeys[0] || 'all')
+
+  // 2. Build hierarchical grouped structures: Brand -> Location -> Department / Months
+  const brandMap = new Map<string, {
+    branchId: string
+    branchLabel: string
+    locationMap: Map<string, {
+      location: string
+      salesAmount: number
+      serviceAmount: number
+      totalAmount: number
+      months: Map<string, { sales: number; service: number; total: number }>
+    }>
+    salesAmount: number
+    serviceAmount: number
+    totalAmount: number
+  }>()
+
+  // Matrix map for rows: `${branchId}::${location}::${department}`
+  const matrixMap = new Map<string, {
+    id: string
+    branchId: string
+    branchLabel: string
+    location: string
+    department: 'Sales' | 'Service'
+    months: Record<string, number>
+    totalAmount: number
+    selectedMonthAmount: number
+  }>()
+
+  let overallTotal = 0
+  let overallSales = 0
+  let overallService = 0
+  let overallEntries = 0
+  const locationSpendMap = new Map<string, { location: string; branchLabel: string; amount: number }>()
+  const brandSpendMap = new Map<string, { branchId: string; branchLabel: string; amount: number }>()
+  const monthlyTrendMap = new Map<string, { sales: number; service: number; total: number }>()
+
+  for (const k of sortedMonthKeys) {
+    monthlyTrendMap.set(k, { sales: 0, service: 0, total: 0 })
+  }
+
+  for (const row of rawRows) {
+    const branch = row.branchId || 'other'
+    const branchLabel = getBranchLabel(branch)
+    const loc = row.location || 'Main Location'
+    const dept = normalizeDepartmentName(row.department)
+    const month = row.month
+    const amount = parseMoney(row.totalAmount)
+    const count = Number(row.expenseCount) || 0
+
+    // Monthly trends (all months tracking)
+    if (month && monthlyTrendMap.has(month)) {
+      const mTrend = monthlyTrendMap.get(month)!
+      if (dept === 'Sales') mTrend.sales += amount
+      else mTrend.service += amount
+      mTrend.total += amount
+    }
+
+    // Check if this row is included in the active period (selectedMonth === 'all' or month === selectedMonth)
+    const isInSelectedMonth = selectedMonth === 'all' || month === selectedMonth
+
+    if (isInSelectedMonth) {
+      overallTotal += amount
+      if (dept === 'Sales') overallSales += amount
+      else overallService += amount
+      overallEntries += count
+
+      // Location spend rollup for top location metric
+      const locKey = `${branch}::${loc}`
+      const existingLoc = locationSpendMap.get(locKey) || { location: loc, branchLabel, amount: 0 }
+      existingLoc.amount += amount
+      locationSpendMap.set(locKey, existingLoc)
+
+      // Brand spend rollup
+      const existingBrand = brandSpendMap.get(branch) || { branchId: branch, branchLabel, amount: 0 }
+      existingBrand.amount += amount
+      brandSpendMap.set(branch, existingBrand)
+    }
+
+    // Populate brandMap
+    let bEntry = brandMap.get(branch)
+    if (!bEntry) {
+      bEntry = {
+        branchId: branch,
+        branchLabel,
+        locationMap: new Map(),
+        salesAmount: 0,
+        serviceAmount: 0,
+        totalAmount: 0,
+      }
+      brandMap.set(branch, bEntry)
+    }
+
+    let lEntry = bEntry.locationMap.get(loc)
+    if (!lEntry) {
+      lEntry = {
+        location: loc,
+        salesAmount: 0,
+        serviceAmount: 0,
+        totalAmount: 0,
+        months: new Map(),
+      }
+      bEntry.locationMap.set(loc, lEntry)
+    }
+
+    if (isInSelectedMonth) {
+      if (dept === 'Sales') {
+        bEntry.salesAmount += amount
+        lEntry.salesAmount += amount
+      } else {
+        bEntry.serviceAmount += amount
+        lEntry.serviceAmount += amount
+      }
+      bEntry.totalAmount += amount
+      lEntry.totalAmount += amount
+    }
+
+    // Location month breakdown
+    if (month) {
+      let mEntry = lEntry.months.get(month)
+      if (!mEntry) {
+        mEntry = { sales: 0, service: 0, total: 0 }
+        lEntry.months.set(month, mEntry)
+      }
+      if (dept === 'Sales') mEntry.sales += amount
+      else mEntry.service += amount
+      mEntry.total += amount
+    }
+
+    // Populate matrixMap
+    const matrixKey = `${branch}::${loc}::${dept}`
+    let matRow = matrixMap.get(matrixKey)
+    if (!matRow) {
+      matRow = {
+        id: matrixKey,
+        branchId: branch,
+        branchLabel,
+        location: loc,
+        department: dept,
+        months: {},
+        totalAmount: 0,
+        selectedMonthAmount: 0,
+      }
+      matrixMap.set(matrixKey, matRow)
+    }
+
+    if (month) {
+      matRow.months[month] = (matRow.months[month] || 0) + amount
+    }
+    matRow.totalAmount += amount
+    if (isInSelectedMonth) {
+      matRow.selectedMonthAmount += amount
+    }
+  }
+
+  // Convert Brand hierarchy to sorted array
+  const brands: MonthlyExpenseBrandGroup[] = Array.from(brandMap.values()).map((b) => ({
+    branchId: b.branchId,
+    branchLabel: b.branchLabel,
+    salesAmount: b.salesAmount,
+    serviceAmount: b.serviceAmount,
+    totalAmount: b.totalAmount,
+    locations: Array.from(b.locationMap.values()).map((l) => {
+      const monthsObj: Record<string, { sales: number; service: number; total: number }> = {}
+      for (const [mKey, mVal] of l.months.entries()) {
+        monthsObj[mKey] = mVal
+      }
+      return {
+        location: l.location,
+        salesAmount: l.salesAmount,
+        serviceAmount: l.serviceAmount,
+        totalAmount: l.totalAmount,
+        months: monthsObj,
+      }
+    }).sort((a, b) => b.totalAmount - a.totalAmount || a.location.localeCompare(b.location)),
+  })).sort((a, b) => b.totalAmount - a.totalAmount || a.branchLabel.localeCompare(b.branchLabel))
+
+  // Sort Matrix rows
+  const matrix: MonthlyExpenseMatrixRow[] = Array.from(matrixMap.values()).sort((a, b) => {
+    if (a.branchLabel !== b.branchLabel) return a.branchLabel.localeCompare(b.branchLabel)
+    if (a.location !== b.location) return a.location.localeCompare(b.location)
+    return a.department.localeCompare(b.department)
+  })
+
+  // Top Location & Brand
+  const topLocation = Array.from(locationSpendMap.values()).sort((a, b) => b.amount - a.amount)[0] || null
+  const topBrand = Array.from(brandSpendMap.values()).sort((a, b) => b.amount - a.amount)[0] || null
+
+  const salesPercent = overallTotal > 0 ? Math.round((overallSales / overallTotal) * 100) : 0
+  const servicePercent = overallTotal > 0 ? Math.round((overallService / overallTotal) * 100) : 0
+
+  const monthlyTrends = sortedMonthKeys.slice(0, 12).map((k) => {
+    const t = monthlyTrendMap.get(k) || { sales: 0, service: 0, total: 0 }
+    return {
+      month: k,
+      label: formatMonthLabel(k),
+      sales: t.sales,
+      service: t.service,
+      total: t.total,
+    }
+  }).reverse()
+
+  return {
+    availableMonths,
+    selectedMonth,
+    brands,
+    matrix,
+    metrics: {
+      totalSpend: overallTotal,
+      salesSpend: overallSales,
+      serviceSpend: overallService,
+      salesPercent,
+      servicePercent,
+      totalEntriesCount: overallEntries,
+      topLocation,
+      topBrand,
+      monthlyTrends,
+    },
+  }
+}
+

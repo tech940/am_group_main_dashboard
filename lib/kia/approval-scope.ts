@@ -5,6 +5,7 @@ import { canAccessBrand } from '@/lib/auth/brand-access'
 import { parseUserDealers } from '@/lib/dealers/registry'
 import { approvalBranchTokens } from '@/lib/kia/approval-branches'
 import { isSuperAdminRole } from '@/lib/auth/roles'
+import { resolveBranchScope } from '@/lib/auth/default-branch-scope'
 import { hasAllBranchAccess, type BranchValue } from '@/lib/branches'
 
 /**
@@ -137,6 +138,42 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
   if (!allowed.size) return false
 
   return allowed.has(code.toUpperCase()) || allowed.has(location.toUpperCase())
+}
+
+/**
+ * Narrow an already-permitted set to the login's OWN brands, when they have not asked otherwise.
+ *
+ * ── PERMISSION vs DEFAULT ─────────────────────────────────────────────────────────────────────
+ * canSeeAllApprovals / isApprovalVisibleTo answer "may this person see this row" and must not
+ * change — they are the boundary. This answers the different question "which rows do they get when
+ * they simply open the page". Only the all-branch viewers (MD, developer, brand='all') have a gap
+ * between the two: an MD pinned to KIA is PERMITTED to see every brand, and was therefore also
+ * LANDING on every brand — every dealership's vendor names and amounts on first paint.
+ *
+ * ⚠️ Deliberately keys on BRAND, not on the dealer pin. isApprovalVisibleTo gates a second axis,
+ * `users.dealers`, and fails closed on an empty pin (`if (!allowed.size) return false`). Applying
+ * that axis to an MD would show them ZERO rows unless somebody had also pinned them to a dealer —
+ * turning a display default into an outage. Brand is the axis the requirement names.
+ *
+ * ⚠️ A row with no brand counts as 'kia' — the same fallback isApprovalVisibleTo uses — or the
+ * legacy rows written before the brand column existed would vanish from the KIA MD's default view.
+ *
+ * Never rejects: an unrecognised request falls back to the default rather than emptying the screen.
+ */
+export function applyApprovalBrandDefault<T extends ApprovalScopeRow>(
+  appUser: AppUser | null,
+  rows: T[],
+  requestedBrand?: string | null,
+): T[] {
+  if (!appUser) return rows
+  // Everyone else is already narrowed by isApprovalVisibleTo; narrowing again could only hide rows
+  // they legitimately hold.
+  if (!canSeeAllApprovals(appUser)) return rows
+
+  const scope = resolveBranchScope(appUser.brand, requestedBrand)
+  if (scope === 'all') return rows
+  const wanted = new Set(scope)
+  return rows.filter((row) => wanted.has(String(row.brand || 'kia').toLowerCase()))
 }
 
 /** Filter a page of requests down to the ones `appUser` may see. */

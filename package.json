@@ -81,6 +81,8 @@
     "verify:restricted-analytics": "tsx scripts/verify-restricted-analytics.mjs",
     "verify:md-targets": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-md-targets.ts",
     "verify:bank-sanctions": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-bank-sanctions.ts",
+    "verify:md-branch-default": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-md-branch-default.ts",
+    "verify:delegation-email": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-delegation-email.ts",
     "verify:md-targets-actuals": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-md-targets-actuals.ts",
     "verify:callyzer-alerts": "tsx scripts/verify-callyzer-alerts.mjs",
     "verify:allocation-history": "tsx scripts/verify-allocation-history.ts",

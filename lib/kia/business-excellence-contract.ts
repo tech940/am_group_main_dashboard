@@ -10,7 +10,7 @@ import {
   type KiaDealerCode,
 } from '@/lib/kia/dealer-branch'
 
-export const KIA_BUSINESS_EXCELLENCE_CACHE_VERSION = 'v42'
+export const KIA_BUSINESS_EXCELLENCE_CACHE_VERSION = 'v43'
 export const KIA_BUSINESS_EXCELLENCE_HOLIDAYS_KEY = 'kiaBusinessExcellenceHolidays'
 
 const DEFAULT_KIA_HOLIDAYS = ['2026-06-05']

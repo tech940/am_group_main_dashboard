@@ -49,6 +49,15 @@ export type SendEmailOptions = {
   text?: string
   cc?: string | string[]
   bcc?: string | string[]
+  /**
+   * Where a REPLY should go, when that is not the sending mailbox.
+   *
+   * Transactional mail here goes out as tech@amgroupind.com, so hitting Reply reaches a mailbox
+   * nobody in the conversation reads. Setting this points the reply at the human who caused the
+   * mail — the person delegating a task, for instance — so the recipient's "Done" actually lands
+   * somewhere useful.
+   */
+  replyTo?: string | string[]
   attachments?: EmailAttachment[]
 }
 
@@ -146,6 +155,8 @@ export async function sendEmail(options: SendEmailOptions) {
     to: options.to,
     cc: options.cc,
     bcc: options.bcc,
+    // Omitted entirely when unset, so existing senders keep replying to the from-address.
+    ...(options.replyTo ? { replyTo: options.replyTo } : {}),
     subject: options.subject,
     text: options.text,
     html: options.html,

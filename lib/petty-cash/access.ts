@@ -2,9 +2,10 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { PgColumn } from 'drizzle-orm/pg-core'
 import type { AppUser } from '@/lib/auth/app-user'
-import { hasAllBranchAccess } from '@/lib/branches'
+import { hasAllBranchAccess, isBranchValue } from '@/lib/branches'
 import { pettyCashAllocations, pettyCashExpenses, pettyCashRequests } from '@/lib/db/schema'
 import { isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
+import { defaultBranchScopeFor } from '@/lib/auth/default-branch-scope'
 import { getPettyCashUserBrands, isPettyCashAllBranchRole, isPettyCashOwnSubmissionsOnlyRole } from './constants'
 
 type PettyCashRole = AppUser['role']
@@ -118,6 +119,48 @@ export function canManagePettyCashBranch(appUser: AppUser, branchId: string | nu
   if (!branchId) return false
   if (hasPettyCashAllBranchAccess(appUser) || hasAllBranchAccess(appUser.brand)) return true
   return brandsOf(appUser).includes(branchId)
+}
+
+/**
+ * The branch predicate for a request, honouring the caller's choice OR falling back to the login's
+ * own assignment.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────────────────────────
+ * The visibility filters above are the PERMISSION boundary — an all-branch role passes them
+ * unrestricted, which is correct: an MD may look at any branch. But "may look at any" was silently
+ * doing duty as "lands on all", so an MD pinned to KIA opened on group-wide numbers unless the
+ * browser happened to send ?branchId=. This supplies the missing DEFAULT, server-side.
+ *
+ * Returns `undefined` for "no narrowing" (an explicit 'all', or a login with no meaningful default).
+ *
+ * ⚠️ Still not a boundary: an explicitly requested branch is validated with canViewPettyCashBranch
+ * and rejected if not permitted, but the FALLBACK is never rejected — it is only a starting view.
+ */
+export function pettyCashRequestedBranchScope<T extends PgColumn>(
+  appUser: AppUser,
+  column: T,
+  branchId: string | null | undefined,
+): SQL<unknown> | undefined {
+  const asked = String(branchId || '').trim().toLowerCase()
+
+  // An explicit choice wins, and must be one this login may actually view.
+  if (asked && asked !== 'all') {
+    const picked = asked.split(',').map((v) => v.trim()).filter(Boolean)
+    for (const value of picked) {
+      if (!isBranchValue(value)) throw new Error('Invalid branch')
+      if (!canViewPettyCashBranch(appUser, value)) throw new Error('Forbidden branch')
+    }
+    return picked.length === 1 ? eq(column, picked[0]) : inArray(column, picked)
+  }
+  // Explicit 'all' means the user deliberately widened — no narrowing.
+  if (asked === 'all') return undefined
+
+  // Nothing asked: fall back to this login's own branches.
+  const scope = defaultBranchScopeFor(appUser.brand)
+  if (scope === 'all') return undefined
+  const usable = scope.filter((value) => isBranchValue(value))
+  if (!usable.length) return undefined
+  return usable.length === 1 ? eq(column, usable[0]) : inArray(column, usable)
 }
 
 export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unknown> {

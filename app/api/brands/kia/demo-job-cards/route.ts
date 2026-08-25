@@ -57,8 +57,16 @@ function getFilters(searchParams: URLSearchParams): DemoFilters {
   }
 }
 
+/**
+ * ⚠️ BUMP THE VERSION SEGMENT WHENEVER THE PAYLOAD SHAPE CHANGES.
+ *
+ * The key hashes only the FILTERS, so a cached entry written by an older build is still a valid key
+ * for the new one — it just lacks the new field. v6 -> v7 on 2026-08-25 when `color` was added to
+ * rows and alerts; without the bump the page kept rendering colour-less cached payloads for the
+ * TTL (30 min) and the stale twin for over two hours after the deploy.
+ */
 function createCacheKey(filters: DemoFilters, hasRemarksTable: boolean) {
-  return `kia:demo-job-cards:v6:${createHash('sha1')
+  return `kia:demo-job-cards:v7:${createHash('sha1')
     .update(JSON.stringify({ filters, hasRemarksTable }))
     .digest('hex')}`
 }
@@ -191,6 +199,25 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
       FROM raw
       ORDER BY vehicle_key, last_bill_date DESC NULLS LAST, id DESC
     ),
+    /*
+     * Exterior colour, which the job-card feed does NOT carry: kia_demo_job_cards has no colour
+     * column at all, so it is looked up from the demo stock list by VIN.
+     *
+     * DISTINCT ON because that table holds one row per upload, not per vehicle; without it a VIN
+     * with several uploads would multiply the job-card rows it joins to and inflate every count on
+     * the page. Newest upload wins, matching how the demo-cars list itself picks a row.
+     *
+     * The color column is used rather than exterior_color_name: both carry the same human-readable
+     * value on these vehicles, but color is populated on all 1027 rows and exterior_color_name on 1026.
+     */
+    vehicle_colour AS (
+      SELECT DISTINCT ON (UPPER(BTRIM(vin_no)))
+        UPPER(BTRIM(vin_no)) AS vin_key,
+        NULLIF(BTRIM(color), '') AS color
+      FROM kia_demo_car_list
+      WHERE COALESCE(BTRIM(vin_no), '') <> ''
+      ORDER BY UPPER(BTRIM(vin_no)), uploaded_at DESC NULLS LAST
+    ),
     latest_remarks AS (${latestRemarksCte(hasRemarksTable)}),
     remark_counts AS (${remarkCountsCte(hasRemarksTable)}),
     enriched AS (
@@ -225,10 +252,13 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
         latest_remarks.created_by_name AS latest_remark_by,
         latest_remarks.created_at AS latest_remark_at,
         latest_remarks.updated_at AS latest_remark_updated_at,
-        COALESCE(remark_counts.remark_count, 0)::int AS remark_count
+        COALESCE(remark_counts.remark_count, 0)::int AS remark_count,
+        vehicle_colour.color AS color
       FROM latest_vehicle
       LEFT JOIN latest_remarks ON latest_remarks.vin = latest_vehicle.vehicle_key
       LEFT JOIN remark_counts ON remark_counts.vin = latest_vehicle.vehicle_key
+      -- LEFT so a vehicle missing from the stock list still appears, just without a colour.
+      LEFT JOIN vehicle_colour ON vehicle_colour.vin_key = UPPER(BTRIM(latest_vehicle.vehicle_key))
     ),
     filtered AS (
       SELECT *
@@ -271,6 +301,7 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
         'registrationNumber', registration_number,
         'vin', vin,
         'model', model,
+        'color', color,
         'mileage', mileage,
         'customerName', customer_name,
         'lastRoNumber', last_ro_number,
@@ -293,6 +324,7 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
         'registrationNumber', registration_number,
         'vin', vin,
         'model', model,
+        'color', color,
         'mileage', mileage,
         'customerName', customer_name,
         'lastBillDate', last_bill_date,

@@ -67,6 +67,8 @@ export async function POST(request: Request) {
       toEmail: task.assignedEmail,
       toName: task.assignedName,
       assignerName: appUser.fullName,
+      // Puts the delegator on Cc and Reply-To so the assignee's reply reaches them, not tech@.
+      assignerEmail: appUser.email,
       title: task.title,
       description: task.description,
       dueAt: task.dueAt,

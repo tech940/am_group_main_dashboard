@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { and, count, desc, eq, gte, isNull, lt, ne, or, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { isAllBranchScope, resolveBranchScope } from '@/lib/auth/default-branch-scope'
 import { db } from '@/lib/db'
 import { serializeUtcTimestampFields, getIndiaDatePart } from '@/lib/date-time'
 import { purchaseOrders } from '@/lib/db/schema'
@@ -319,25 +320,31 @@ export async function GET(request: NextRequest) {
       filters.push(eq(purchaseOrders.currentStage, stage))
     }
 
-    if (
-      (appUser.role === 'md' || appUser.role === 'ea')
-      && !branchFilter
-      && approvalFilter !== 'all'
-      && isBranchValue(appUser.brand)
-    ) {
-      filters.push(or(eq(purchaseOrders.brand, appUser.brand), isNull(purchaseOrders.brand))!)
+    /*
+     * ── Branch scope: ONE decision, derived server-side ──────────────────────────────────────
+     *
+     * Replaces two clauses that between them produced three bugs:
+     *   - the MD/EA default only fired when the client sent NO branchFilter, and the page always
+     *     sends one, so it was dead code and the real default came from the browser;
+     *   - `isBranchValue(branchFilter)` rejects a comma list, so an MD assigned 'kia,hyundai' got
+     *     HTTP 400 and (the page swallows it) an empty table with no message;
+     *   - the two paths disagreed about brand-less orders — the default included them, the explicit
+     *     filter did not, so a KIA MD silently lost every PO with no brand set.
+     *
+     * resolveBranchScope handles "the caller asked for something" vs "use their default", and
+     * comma lists in both. Brand-less rows are ALWAYS included: they predate the brand column and
+     * belong to no dealership, so dropping them hides real orders from everyone.
+     */
+    const branchScope = resolveBranchScope(appUser.brand, branchFilter)
+
+    if (branchFilter && branchFilter !== 'all'
+      && appUser.role !== 'md' && appUser.role !== 'ea' && appUser.role !== 'admin'
+      && appUser.role !== 'developer' && appUser.role !== 'purchase_manager') {
+      return NextResponse.json({ error: 'Forbidden branch filter' }, { status: 403 })
     }
 
-    if (branchFilter && branchFilter !== 'all') {
-      if (!isBranchValue(branchFilter)) {
-        return NextResponse.json({ error: 'Invalid branch filter' }, { status: 400 })
-      }
-
-      if (appUser.role !== 'md' && appUser.role !== 'ea' && appUser.role !== 'admin' && appUser.role !== 'developer' && appUser.role !== 'purchase_manager') {
-        return NextResponse.json({ error: 'Forbidden branch filter' }, { status: 403 })
-      }
-
-      filters.push(eq(purchaseOrders.brand, branchFilter))
+    if (!isAllBranchScope(branchScope)) {
+      filters.push(or(inArray(purchaseOrders.brand, branchScope), isNull(purchaseOrders.brand))!)
     }
 
     if (view === 'table') {

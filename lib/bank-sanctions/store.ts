@@ -1,9 +1,10 @@
 import 'server-only'
 
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { bankSanctionHistory, bankSanctionLimits } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
+import { BANK_SANCTION_BRANDS, bankSanctionBrandsFor, canSeeBankSanctionRow, canViewAllBankSanctionBranches } from '@/lib/auth/bank-sanctions-access'
 
 /**
  * Reads and writes the bank sanction register. The ONLY module that touches these tables.
@@ -18,6 +19,15 @@ import type { AppUser } from '@/lib/auth/app-user'
 
 /** Thrown for payloads the UI should never produce — surfaced as a 400 with the message intact. */
 export class BankSanctionValidationError extends Error {}
+
+/**
+ * Thrown when the caller may open the section but not touch THIS facility's branch.
+ *
+ * A subclass, so every existing `instanceof BankSanctionValidationError` catch still works and the
+ * message still reaches the user — but routes can test for it first and answer 403 rather than 400.
+ * A scoping refusal is not a malformed payload, and it should not read like one in the logs.
+ */
+export class BankSanctionBranchError extends BankSanctionValidationError {}
 
 /**
  * The sheet's duplicate identity: the LAST number in the name ("CC A/c 4501" ≡ "OD 4501" — the
@@ -55,6 +65,8 @@ export type BankSanctionRecord = {
   documentUrl1: string | null
   documentUrl2: string | null
   alertEmail: string | null
+  /** Owning brand. NULL = group-level (MD & Developer only) — see lib/auth/bank-sanctions-access.ts. */
+  branchCode: string | null
   expiryStatus: ExpiryStatus
   updatedAt: string | null
 }
@@ -63,7 +75,7 @@ export type BankSanctionInput = Partial<Record<
   | 'loanType' | 'location' | 'creditLimit' | 'instalment' | 'roiPct' | 'interestAmount'
   | 'outstandingAmount' | 'dateOfSanction' | 'installmentDueOn' | 'installmentPaidOn'
   | 'expiryDate' | 'guarantor' | 'collateral' | 'primarySecurity' | 'corporateGuarantee'
-  | 'documentUrl1' | 'documentUrl2' | 'alertEmail',
+  | 'documentUrl1' | 'documentUrl2' | 'alertEmail' | 'branchCode',
   unknown
 >>
 
@@ -128,6 +140,7 @@ function toRecord(row: typeof bankSanctionLimits.$inferSelect, now: Date): BankS
     documentUrl1: row.documentUrl1,
     documentUrl2: row.documentUrl2,
     alertEmail: row.alertEmail,
+    branchCode: row.branchCode,
     expiryStatus: expiryStatusOf(expiryDate, now),
     updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
   }
@@ -139,7 +152,47 @@ function toRecord(row: typeof bankSanctionLimits.$inferSelect, now: Date): BankS
  * statement), and this session's purchase-orders incident proved what happens when a server page
  * and a client filter describe different lists. One query, the client filters the full truth.
  */
-export async function listBankSanctions(): Promise<BankSanctionRecord[]> {
+/**
+ * The WHERE clause that decides which facilities a login may read.
+ *
+ * ⚠️ THE single enforcement point. The client mirrors this for labels, but the client is not a gate;
+ * every read path (list, history, alerts) must go through this or a login could reach another
+ * dealership's bank position by id.
+ *
+ * Three arms, and the NULL case is separate on purpose:
+ *   - MD / Developer      -> undefined (no predicate): everything, group-level included
+ *   - assignment 'all'    -> branch_code IS NOT NULL: every BRAND, but never the group's own rows
+ *   - a brand list        -> branch_code IN (...): exactly their brands
+ *   - nothing resolvable  -> `= ''`, which matches no row. Fails CLOSED rather than falling through
+ *                            to "no predicate", which is the shape that turns a scoping bug into a
+ *                            full disclosure.
+ */
+function bankSanctionVisibility(appUser: Pick<AppUser, 'role' | 'brand'>) {
+  if (canViewAllBankSanctionBranches(appUser.role)) return undefined
+  const brands = bankSanctionBrandsFor(appUser.brand)
+  if (brands === 'all-brands') return isNotNull(bankSanctionLimits.branchCode)
+  if (brands.length === 0) return eq(bankSanctionLimits.branchCode, '')
+  if (brands.length === 1) return eq(bankSanctionLimits.branchCode, brands[0])
+  return inArray(bankSanctionLimits.branchCode, brands)
+}
+
+/**
+ * The register this login may see, in one read.
+ *
+ * Still not paginated or server-filtered beyond the brand scope — see the note on the transport
+ * cost and the paginate-then-client-filter trap. What changed in 0046 is that "the whole register"
+ * now means "the whole register YOU may read".
+ */
+export async function listBankSanctions(appUser: Pick<AppUser, 'role' | 'brand'>): Promise<BankSanctionRecord[]> {
+  const now = new Date()
+  const where = bankSanctionVisibility(appUser)
+  const query = db.select().from(bankSanctionLimits)
+  const rows = await (where ? query.where(where) : query).orderBy(desc(bankSanctionLimits.updatedAt))
+  return rows.map((row) => toRecord(row, now))
+}
+
+/** Every facility, ignoring who is asking. Server-internal only — the expiry digest is not a user. */
+export async function listAllBankSanctionsForAlerts(): Promise<BankSanctionRecord[]> {
   const now = new Date()
   const rows = await db.select().from(bankSanctionLimits).orderBy(desc(bankSanctionLimits.updatedAt))
   return rows.map((row) => toRecord(row, now))
@@ -171,6 +224,23 @@ function cleanDate(value: unknown, label: string): string | null {
   const text = String(value ?? '').trim()
   if (!text) return null
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new BankSanctionValidationError(`${label} must be a YYYY-MM-DD date`)
+  return text
+}
+
+/**
+ * The owning brand, or NULL for group-level.
+ *
+ * Accepts '' / 'group' / null as "group-level" so the UI can offer it as an explicit choice rather
+ * than the user having to leave a field mysteriously blank. Anything not in the canonical brand list
+ * is REJECTED rather than silently stored — a typo'd code would otherwise create a facility no brand
+ * user can see and no one notices is missing.
+ */
+function cleanBranchCode(value: unknown): string | null {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (!text || text === 'group' || text === 'group-level') return null
+  if (!(BANK_SANCTION_BRANDS as readonly string[]).includes(text)) {
+    throw new BankSanctionValidationError(`Unknown branch "${text}". Pick one of: ${BANK_SANCTION_BRANDS.join(', ')} — or leave it as Group-level.`)
+  }
   return text
 }
 
@@ -206,6 +276,7 @@ function buildValues(input: BankSanctionInput) {
     documentUrl1: cleanText(input.documentUrl1),
     documentUrl2: cleanText(input.documentUrl2),
     alertEmail: cleanEmail(input.alertEmail),
+    branchCode: cleanBranchCode(input.branchCode),
   }
 }
 
@@ -227,8 +298,25 @@ function historySnapshot(values: Record<string, unknown>) {
   return values
 }
 
+/**
+ * May this login act on a facility carrying `branchCode`?
+ *
+ * Used on BOTH sides of an edit: the row as it stands, and the row as it would become. Checking only
+ * the former lets a scoped user move a facility OUT of their brand (or into group-level) and lose
+ * sight of it; checking only the latter lets them claim someone else's facility. Both, or neither.
+ */
+function assertBankSanctionBranchAllowed(appUser: AppUser, branchCode: string | null, what: string) {
+  if (canSeeBankSanctionRow(appUser.role, appUser.brand, branchCode)) return
+  throw new BankSanctionBranchError(
+    branchCode
+      ? `${what} belongs to another branch (${branchCode}) and is outside your access.`
+      : `${what} is a group-level facility — only the MD and Developer can act on it.`,
+  )
+}
+
 export async function createBankSanction(appUser: AppUser, input: BankSanctionInput): Promise<BankSanctionRecord> {
   const values = buildValues(input)
+  assertBankSanctionBranchAllowed(appUser, values.branchCode, 'That branch')
 
   const duplicate = await findDuplicateLoanType(values.loanType)
   if (duplicate) {
@@ -260,6 +348,17 @@ export async function createBankSanction(appUser: AppUser, input: BankSanctionIn
 
 export async function updateBankSanction(appUser: AppUser, id: string, input: BankSanctionInput): Promise<BankSanctionRecord> {
   const values = buildValues(input)
+
+  // The row as it stands...
+  const [existing] = await db
+    .select({ branchCode: bankSanctionLimits.branchCode })
+    .from(bankSanctionLimits)
+    .where(eq(bankSanctionLimits.id, id))
+    .limit(1)
+  if (!existing) throw new BankSanctionValidationError('Record not found')
+  assertBankSanctionBranchAllowed(appUser, existing.branchCode, 'This facility')
+  // ...and as it would become, so an edit cannot push it out of your own view.
+  assertBankSanctionBranchAllowed(appUser, values.branchCode, 'That branch')
 
   const duplicate = await findDuplicateLoanType(values.loanType, id)
   if (duplicate) {
@@ -297,6 +396,7 @@ export async function deleteBankSanction(appUser: AppUser, id: string): Promise<
   return db.transaction(async (tx) => {
     const [row] = await tx.select().from(bankSanctionLimits).where(eq(bankSanctionLimits.id, id)).limit(1)
     if (!row) throw new BankSanctionValidationError('Record not found')
+    assertBankSanctionBranchAllowed(appUser, row.branchCode, 'This facility')
 
     await tx.insert(bankSanctionHistory).values({
       recordId: row.id,
@@ -342,7 +442,21 @@ export type BankSanctionHistoryEntry = {
   createdAt: string
 }
 
-export async function getBankSanctionHistory(recordId: string): Promise<BankSanctionHistoryEntry[]> {
+/**
+ * ⚠️ Takes the caller. A by-id history read must obey the SAME scope as the list, or a scoped login
+ * that cannot see a facility could still read its full change history — limits, outstandings,
+ * guarantors and all — by guessing the id.
+ */
+export async function getBankSanctionHistory(appUser: AppUser, recordId: string): Promise<BankSanctionHistoryEntry[]> {
+  const [record] = await db
+    .select({ branchCode: bankSanctionLimits.branchCode })
+    .from(bankSanctionLimits)
+    .where(eq(bankSanctionLimits.id, recordId))
+    .limit(1)
+  // A deleted facility leaves history behind with record_id nulled, so an unmatched id is simply
+  // empty rather than an error — but a MATCHED one must pass the scope check.
+  if (record) assertBankSanctionBranchAllowed(appUser, record.branchCode, 'This facility')
+
   const rows = await db
     .select()
     .from(bankSanctionHistory)

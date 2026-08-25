@@ -2,7 +2,7 @@ import 'server-only'
 
 import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout } from '@/lib/email/templates/layout'
-import { listBankSanctions, type BankSanctionRecord } from './store'
+import { listAllBankSanctionsForAlerts, type BankSanctionRecord } from './store'
 
 /**
  * The 15-day expiry digest — the port of the Apps Script's sendExpirySoonOrExpireEmailsNow().
@@ -58,7 +58,10 @@ function digestHtml(recipient: string, rows: BankSanctionRecord[]): string {
 }
 
 export async function runBankSanctionExpiryAlerts(): Promise<{ recipients: number; rows: number }> {
-  const records = await listBankSanctions()
+  // Deliberately the UNSCOPED read: the digest runs as a cron with no logged-in user, and each
+  // recipient still only receives the rows carrying THEIR alert_email, so brand scoping would only
+  // drop mails nobody else would send.
+  const records = await listAllBankSanctionsForAlerts()
   const due = records.filter((row) => row.expiryStatus && row.alertEmail)
 
   const grouped = new Map<string, BankSanctionRecord[]>()

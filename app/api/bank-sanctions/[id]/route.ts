@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireBankSanctionsApiAccess } from '@/lib/bank-sanctions/api-guard'
 import {
+  BankSanctionBranchError,
   BankSanctionValidationError,
   deleteBankSanction,
   updateBankSanction,
@@ -21,6 +22,11 @@ export async function PATCH(
     const record = await updateBankSanction(gate.appUser, id, body)
     return NextResponse.json({ record })
   } catch (error) {
+    // Branch denial first: it is a subclass, so the generic catch below would otherwise swallow it
+    // and report a scoping refusal as a malformed payload.
+    if (error instanceof BankSanctionBranchError) {
+      return NextResponse.json({ error: error.message }, { status: 403 })
+    }
     if (error instanceof BankSanctionValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
@@ -47,6 +53,11 @@ export async function DELETE(
     console.warn('[bank-sanctions] record deleted by %s: %s', gate.appUser.email, result.loanType)
     return NextResponse.json(result)
   } catch (error) {
+    // Branch denial first: it is a subclass, so the generic catch below would otherwise swallow it
+    // and report a scoping refusal as a malformed payload.
+    if (error instanceof BankSanctionBranchError) {
+      return NextResponse.json({ error: error.message }, { status: 403 })
+    }
     if (error instanceof BankSanctionValidationError) {
       return NextResponse.json({ error: error.message }, { status: 404 })
     }

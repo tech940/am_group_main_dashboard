@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { approvalRequestNumbersReady } from '@/lib/approvals/request-number'
-import { filterVisibleApprovals } from '@/lib/kia/approval-scope'
+import { applyApprovalBrandDefault, filterVisibleApprovals } from '@/lib/kia/approval-scope'
 import { canAccessBrand } from '@/lib/auth/brand-access'
 import { canAccessDealer } from '@/lib/auth/dealer-scope'
 import { isSuperAdminRole, hasGlobalAccessRole } from '@/lib/auth/roles'
@@ -86,7 +86,20 @@ export async function GET(request: NextRequest) {
 
     // Branch + dealer scope. The rule lives in lib/kia/approval-scope.ts so the action, remark,
     // bulk-action and export routes enforce exactly the same thing this list shows.
-    const rows = filterVisibleApprovals(appUser, rawRows)
+    const permitted = filterVisibleApprovals(appUser, rawRows)
+
+    /*
+     * ...then the DEFAULT, which is a different question from permission.
+     *
+     * An MD is permitted to see every brand and was therefore also landing on every brand. This
+     * narrows an all-branch viewer to their own assignment unless `?brand=` says otherwise, so the
+     * switcher still reaches everything. Applied AFTER the permission filter, never instead of it.
+     */
+    const rows = applyApprovalBrandDefault(
+      appUser,
+      permitted,
+      new URL(request.url).searchParams.get('brand'),
+    )
 
     console.log('Payment Approvals list fetched rows:', rows.length, 'out of', rawRows.length)
 

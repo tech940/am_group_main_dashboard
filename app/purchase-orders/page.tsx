@@ -563,7 +563,22 @@ function PurchaseOrdersPageContent() {
   const [isSwitchingView, setIsSwitchingView] = useState(false)
   const [showPOTableView, setShowPOTableView] = useState(false)
   const [workflowStageFilter, setWorkflowStageFilter] = useState<WorkflowStageFilter>('all')
-  const [approvalBranchFilter, setApprovalBranchFilter] = useState<string>('all')
+  /**
+   * Sentinel meaning "no explicit branch chosen — use my assignment".
+   * A real value would collide with a brand code; this cannot.
+   */
+  const MY_BRANCHES = '__mine__'
+  const [approvalBranchFilter, setApprovalBranchFilter] = useState<string>(MY_BRANCHES)
+  const [userBrand, setUserBrand] = useState<string>('')
+  const myBranchesLabel = useMemo(() => {
+    const labels = String(userBrand || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) => BRANCH_OPTIONS.find((option) => option.value === value)?.label || value)
+    if (!labels.length || String(userBrand).trim().toLowerCase() === 'all') return 'My Branches'
+    return `My Branches · ${labels.join(', ')}`
+  }, [userBrand])
   const [approvalViewReady, setApprovalViewReady] = useState(false)
   const [approvalFilterCounts, setApprovalFilterCounts] = useState<ApprovalFilterCounts>(EMPTY_APPROVAL_FILTER_COUNTS)
   const [purchaseOrderListMode, setPurchaseOrderListMode] = useState<PurchaseOrderListMode>('today')
@@ -699,7 +714,16 @@ function PurchaseOrdersPageContent() {
       }
       setUserRole(data.role || '')
       if (data.role === 'md' || data.role === 'ea') {
-        setApprovalBranchFilter(data.brand || 'all')
+        /*
+         * Seed with MY_BRANCHES, not the raw `users.brand`.
+         *
+         * A multi-brand assignment ('kia,hyundai') matches no SelectItem, so the control rendered
+         * its "All Branches" placeholder while holding a value the server used to reject with a 400
+         * — an empty table and no message. The sentinel sends nothing, and the server applies the
+         * login's own default, which now understands comma lists.
+         */
+        setApprovalBranchFilter(MY_BRANCHES)
+        setUserBrand(data.brand || '')
       }
     } catch (error) {
       console.error('Error fetching user role:', error)
@@ -724,7 +748,9 @@ function PurchaseOrdersPageContent() {
       if (isApprovalRole(userRole)) {
         params.set('approvalFilter', approvalFilter)
         if (userRole === 'md' || userRole === 'ea') {
-          params.set('branchFilter', approvalBranchFilter)
+          // MY_BRANCHES means "no explicit choice" — omit the param so the server applies the
+          // login's own default rather than the client dictating one.
+          if (approvalBranchFilter !== MY_BRANCHES) params.set('branchFilter', approvalBranchFilter)
         }
       }
 
@@ -2385,6 +2411,10 @@ function PurchaseOrdersPageContent() {
                           <SelectValue placeholder="All Branches" />
                         </SelectTrigger>
                         <SelectContent className="z-[100] rounded-xl border-slate-100 bg-white shadow-2xl">
+                          {/* The default: the branches this login is actually assigned. */}
+                          <SelectItem value={MY_BRANCHES} className="text-xs font-bold">
+                            {myBranchesLabel}
+                          </SelectItem>
                           <SelectItem value="all" className="text-xs font-bold">All Branches</SelectItem>
                           {BRANCH_OPTIONS.map((branch) => (
                             <SelectItem key={branch.value} value={branch.value} className="text-xs font-bold">

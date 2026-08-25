@@ -32,6 +32,8 @@ type DemoVehicleRow = {
   registrationNumber: string
   vin: string
   model: string
+  /** Exterior colour, joined from the demo stock list by VIN — null when that VIN isn't in it. */
+  color: string | null
   mileage: number | string | null
   customerName: string
   lastRoNumber: string
@@ -605,7 +607,15 @@ export function DemoJobCardsPage() {
   const { data, error, isLoading, isFetching, refetch } = useQuery<DemoPayload>({
     queryKey: ['demo-job-cards', queryString],
     queryFn: async () => {
-      const response = await fetch(`/api/brands/kia/demo-job-cards?${queryString}`)
+      /*
+       * no-store: components/providers/query-provider.tsx monkey-patches window.fetch with a
+       * 30-MINUTE session cache for same-origin GET /api/**, and this path is not on its exclusion
+       * list. That cache is keyed on the URL only, so after a deploy that changes the payload SHAPE
+       * the browser keeps replaying the OLD json — which is exactly why a newly added field appeared
+       * to be missing even though the server was returning it. React Query's own staleTime still
+       * applies on top; this only opts out of the browser-level replay.
+       */
+      const response = await fetch(`/api/brands/kia/demo-job-cards?${queryString}`, { cache: 'no-store' })
       logApiTimings(response, 'demo-job-cards')
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(payload?.error || 'Failed to load Demo Job Cards')
@@ -771,6 +781,17 @@ export function DemoJobCardsPage() {
                           <span className="opacity-60">Model</span>
                           <span className="text-right">{item.model}</span>
                         </div>
+                        {/*
+                          * Rendered only when known. An em dash on a card this dense reads as a
+                          * missing value the viewer should chase; the colour simply isn't in the
+                          * stock feed for every VIN, and that is not the reader's problem.
+                          */}
+                        {item.color && (
+                          <div className="flex justify-between gap-3">
+                            <span className="opacity-60">Colour</span>
+                            <span className="text-right">{item.color}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between gap-3">
                           <span className="opacity-60">Mileage</span>
                           <span>{numberFormat(item.mileage)}</span>

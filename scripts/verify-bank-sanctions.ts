@@ -10,7 +10,7 @@
  * and `hr`, which are family:'super' in the tier model and would receive any permission key.
  */
 import { ALL_SECTIONS, ALLOWED_SIDEBAR_HREFS, canUserAccessSection } from '../lib/navigation/sections'
-import { BANK_SANCTIONS_HREFS, BANK_SANCTIONS_ROLES, canViewBankSanctions } from '../lib/auth/bank-sanctions-access'
+import { BANK_SANCTIONS_HREFS, BANK_SANCTIONS_ROLES, BANK_SANCTION_BRANDS, bankSanctionBrandsFor, canSeeBankSanctionRow, canViewAllBankSanctionBranches, canViewBankSanctions } from '../lib/auth/bank-sanctions-access'
 import { loanTypeKey } from '../lib/bank-sanctions/store'
 
 const ALL_ROLES = [
@@ -66,6 +66,71 @@ assert("'CC A/c 4501' ≡ 'OD 4501' (last number is the identity)", loanTypeKey(
 assert("'Loan 12 of 4501' keys on 4501, not 12", loanTypeKey('Loan 12 of 4501') === '4501')
 assert("numberless names key on lower-cased text", loanTypeKey('  Gold Loan ') === 'gold loan')
 assert("different numbers stay distinct", loanTypeKey('CC 4501') !== loanTypeKey('CC 4502'))
+
+
+console.log(`
+6. Brand scoping — who may see WHICH facility (migration 0046)`)
+{
+  /*
+   * Section access says whether you may open /bank-sanctions. This is the separate question of
+   * which rows you get once inside. Regressions here leak one dealership's bank position to another.
+   */
+  const see = canSeeBankSanctionRow
+  assert('MD sees a KIA facility', see('md', 'platinum', 'kia'))
+  assert('MD sees a GROUP-LEVEL facility', see('md', 'platinum', null))
+  assert('Developer sees a group-level facility', see('developer', 'kia', null))
+  assert("MD's own brand assignment is irrelevant", see('md', 'honda', 'tata') && see('md', null, 'mg'))
+
+  assert('KIA accounts sees kia', see('accounts', 'kia', 'kia'))
+  assert('KIA accounts does NOT see honda', !see('accounts', 'kia', 'honda'))
+  assert('KIA accounts does NOT see platinum', !see('accounts', 'kia', 'platinum'))
+  assert('KIA EA does NOT see group-level', !see('ea', 'kia', null))
+  assert('a two-brand login sees both of its brands',
+    see('accounts', 'kia,platinum', 'kia') && see('accounts', 'kia,platinum', 'platinum'))
+  assert('a two-brand login still sees nothing else', !see('accounts', 'kia,platinum', 'tata'))
+
+  // The 'all' rule is the subtle one and the whole reason the NULL case is handled separately.
+  assert("assignment 'all' sees every BRAND", see('ea', 'all', 'kia') && see('ea', 'all', 'honda'))
+  assert("assignment 'all' does NOT see group-level (MD/Developer only)", !see('ea', 'all', null))
+  assert("'all' is not a role escalation", !canViewAllBankSanctionBranches('ea'))
+
+  assert('an unassigned login sees nothing', !see('accounts', '', 'kia') && !see('accounts', null, 'kia'))
+  assert('junk in users.brand fails CLOSED', !see('accounts', 'not-a-brand', 'kia'))
+  assert('brand list resolution', JSON.stringify(bankSanctionBrandsFor('kia,honda')) === '["kia","honda"]')
+  assert("'all' resolves to the sentinel, not a brand list", bankSanctionBrandsFor('all') === 'all-brands')
+  assert('every seeded branch code is a known brand',
+    ['kia', 'honda', 'tata', 'bajaj', 'mg', 'ktm', 'triumph', 'platinum']
+      .every((b) => (BANK_SANCTION_BRANDS as readonly string[]).includes(b)))
+}
+
+
+console.log(`
+7. Process Coordinator (PC) — opens the section, sees only its own branches`)
+{
+  const see = canSeeBankSanctionRow
+  assert('PC may open the section', canViewBankSanctions('process_coordinator'))
+  assert('PC is NOT an all-branch role', !canViewAllBankSanctionBranches('process_coordinator'))
+  assert('a KIA PC sees kia', see('process_coordinator', 'kia', 'kia'))
+  assert('a KIA PC does NOT see honda', !see('process_coordinator', 'kia', 'honda'))
+  assert('a KIA PC does NOT see group-level', !see('process_coordinator', 'kia', null))
+  // The user's explicit requirement: a PC holding several branches sees all of them.
+  assert('a multi-branch PC sees every branch it holds',
+    see('process_coordinator', 'kia,platinum,honda', 'kia')
+    && see('process_coordinator', 'kia,platinum,honda', 'platinum')
+    && see('process_coordinator', 'kia,platinum,honda', 'honda'))
+  assert('a multi-branch PC still sees nothing beyond them',
+    !see('process_coordinator', 'kia,platinum', 'tata') && !see('process_coordinator', 'kia,platinum', null))
+  assert('an unassigned PC sees nothing', !see('process_coordinator', '', 'kia'))
+
+  /*
+   * ⚠️ The regression this guards: process_coordinator IS in GLOBAL_ACCESS_ROLE_VALUES, so wiring
+   * hasGlobalAccessRole into this section would silently hand PC (and ea/eba/ed/edp/hr/ceo) the
+   * whole register including group-level borrowing.
+   */
+  for (const role of ['ea', 'eba', 'ed', 'edp', 'hr', 'ceo', 'process_coordinator']) {
+    assert(`global-access role '${role}' still cannot see group-level rows`, !see(role, 'all', null))
+  }
+}
 
 console.log(failures === 0 ? '\n=== ALL CHECKS PASSED ===\n' : `\n=== ${failures} FAILURE(S) ===\n`)
 process.exit(failures === 0 ? 0 : 1)

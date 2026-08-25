@@ -492,6 +492,7 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
   const [busy, setBusy] = useState<null | 'play' | 'download'>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingPlay, setPendingPlay] = useState(false)
+  const [speed, setSpeed] = useState<number>(1)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const heldRef = useRef<{ url: string; expiresAt: number } | null>(null)
 
@@ -512,8 +513,17 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
   useEffect(() => {
     if (!pendingPlay || !signedUrl) return
     setPendingPlay(false)
-    audioRef.current?.play().catch(() => {})
-  }, [pendingPlay, signedUrl])
+    if (audioRef.current) {
+      audioRef.current.playbackRate = speed
+      audioRef.current.play().catch(() => {})
+    }
+  }, [pendingPlay, signedUrl, speed])
+
+  function cycleSpeed() {
+    const nextSpeed = speed === 1 ? 1.25 : speed === 1.25 ? 1.5 : speed === 1.5 ? 2 : 1
+    setSpeed(nextSpeed)
+    if (audioRef.current) audioRef.current.playbackRate = nextSpeed
+  }
 
   async function handlePlay() {
     setError(null)
@@ -564,17 +574,27 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
     <div className="flex flex-col items-center gap-1">
       <div className="flex items-center justify-center gap-2">
         {signedUrl ? (
-          <audio
-            ref={audioRef}
-            controls
-            src={signedUrl}
-            className="h-8 max-w-[220px] rounded-lg"
-            onError={() => {
-              heldRef.current = null
-              setSignedUrl(null)
-              setError('This playback link expired. Press play to load it again.')
-            }}
-          />
+          <div className="flex items-center gap-1.5">
+            <audio
+              ref={audioRef}
+              controls
+              src={signedUrl}
+              className="h-8 max-w-[200px] rounded-lg"
+              onError={() => {
+                heldRef.current = null
+                setSignedUrl(null)
+                setError('This playback link expired. Press play to load it again.')
+              }}
+            />
+            <button
+              type="button"
+              onClick={cycleSpeed}
+              className="px-1.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-[10px] font-black text-slate-700 tabular-nums border border-slate-200"
+              title="Change audio playback speed"
+            >
+              {speed}x
+            </button>
+          </div>
         ) : (
           <Button
             type="button"
@@ -620,6 +640,7 @@ function CompactAudioPlayer({ row }: { row: RecordingRow }) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [speed, setSpeed] = useState<number>(1)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const heldRef = useRef<{ url: string; expiresAt: number } | null>(null)
 
@@ -637,6 +658,13 @@ function CompactAudioPlayer({ row }: { row: RecordingRow }) {
     return heldRef.current.url
   }
 
+  function cycleSpeed(e: React.MouseEvent) {
+    e.stopPropagation()
+    const nextSpeed = speed === 1 ? 1.25 : speed === 1.25 ? 1.5 : speed === 1.5 ? 2 : 1
+    setSpeed(nextSpeed)
+    if (audioRef.current) audioRef.current.playbackRate = nextSpeed
+  }
+
   async function togglePlay() {
     if (isPlaying) {
       audioRef.current?.pause()
@@ -649,8 +677,11 @@ function CompactAudioPlayer({ row }: { row: RecordingRow }) {
       const url = await ensureSignedUrl()
       setSignedUrl(url)
       setTimeout(() => {
-        audioRef.current?.play()
-        setIsPlaying(true)
+        if (audioRef.current) {
+          audioRef.current.playbackRate = speed
+          audioRef.current.play()
+          setIsPlaying(true)
+        }
       }, 50)
     } catch (err) {
       console.error(err)
@@ -716,9 +747,21 @@ function CompactAudioPlayer({ row }: { row: RecordingRow }) {
         </p>
       </div>
 
-      <div className="text-right shrink-0">
-        <p className="text-[11px] font-medium text-slate-400">{formatTimeOnly(row.recordedAt)}</p>
-        <p className="text-xs font-bold text-slate-700">{formatSecondsMmSs(row.durationSeconds)}</p>
+      <div className="text-right shrink-0 flex items-center gap-2">
+        {isPlaying && (
+          <button
+            type="button"
+            onClick={cycleSpeed}
+            className="px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-[10px] font-black text-slate-700 tabular-nums border border-slate-200"
+            title="Cycle playback speed"
+          >
+            {speed}x
+          </button>
+        )}
+        <div>
+          <p className="text-[11px] font-medium text-slate-400">{formatTimeOnly(row.recordedAt)}</p>
+          <p className="text-xs font-bold text-slate-700">{formatSecondsMmSs(row.durationSeconds)}</p>
+        </div>
       </div>
 
       <button
@@ -732,6 +775,33 @@ function CompactAudioPlayer({ row }: { row: RecordingRow }) {
       </button>
     </div>
   )
+}
+
+function downloadCsv(filename: string, rows: Record<string, any>[]) {
+  if (!rows || rows.length === 0) return
+  const headers = Object.keys(rows[0])
+  const csvContent = [
+    headers.join(','),
+    ...rows.map((row) =>
+      headers
+        .map((header) => {
+          const val = row[header] ?? ''
+          return typeof val === 'string' && (val.includes(',') || val.includes('\n'))
+            ? `"${val.replace(/"/g, '""')}"`
+            : val
+        })
+        .join(',')
+    ),
+  ].join('\n')
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.setAttribute('href', url)
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 function MiniSparkline({
@@ -915,13 +985,24 @@ export function AmGroupCallAnalysis() {
   const summary = d?.summary
 
   const totalCalls = summary?.totalCalls || 0
-  const connectedCalls = summary?.totalConnected || 0
-  const missedCalls = summary?.missedIncoming || 0
+  const incomingCalls = summary?.incomingAttempts || 0
+  const outgoingCalls = summary?.outgoingAttempts || 0
+  const connectedIncoming = summary?.connectedIncoming || 0
+  const connectedOutgoing = summary?.connectedOutgoing || 0
+  const missedIncoming = summary?.missedIncoming || 0
+  const missedOutgoing = summary?.missedOutgoing || 0
+  const totalConnected = summary?.totalConnected || (connectedIncoming + connectedOutgoing)
+  const totalUnanswered = summary?.totalUnanswered || (missedIncoming + missedOutgoing)
+  const otherUnanswered = Math.max(0, (summary?.totalUnanswered || 0) - missedIncoming - missedOutgoing + (summary?.unclassified || 0))
   const totalTalkSeconds = summary?.totalDurationSeconds || 0
   const avgTalkSeconds = summary?.avgDurationSeconds || 0
 
-  const connectRate = summary?.connectRate || (totalCalls > 0 ? (connectedCalls / totalCalls) * 100 : 0)
-  const missedRate = totalCalls > 0 ? ((missedCalls / totalCalls) * 100) : 0
+  const connectRate = summary?.connectRate || (totalCalls > 0 ? (totalConnected / totalCalls) * 100 : 0)
+  const missedRate = totalCalls > 0 ? ((totalUnanswered / totalCalls) * 100) : 0
+  const incomingConnectRate = incomingCalls > 0 ? (connectedIncoming / incomingCalls) * 100 : 0
+  const incomingMissedRate = incomingCalls > 0 ? (missedIncoming / incomingCalls) * 100 : 0
+  const outgoingAnswerRate = outgoingCalls > 0 ? (connectedOutgoing / outgoingCalls) * 100 : 0
+  const outgoingUnansweredRate = outgoingCalls > 0 ? (missedOutgoing / outgoingCalls) * 100 : 0
 
   const outcomeCounts = useMemo(() => {
     const connIn = summary?.connectedIncoming || 0
@@ -939,6 +1020,8 @@ export function AmGroupCallAnalysis() {
       { name: 'Other / Unanswered', value: other, pct: (other / total) * 100, color: '#94A3B8' },
     ]
   }, [summary])
+
+  const [activityViewMode, setActivityViewMode] = useState<'total' | 'split'>('total')
 
   const activityChartData = useMemo(() => {
     if (activityGranularity === 'hour' && d?.hourlyTrend && d.hourlyTrend.length > 0) {
@@ -958,16 +1041,23 @@ export function AmGroupCallAnalysis() {
       }))
     }
     return [
-      { label: '12 AM', calls: 0 },
-      { label: '4 AM', calls: 0 },
-      { label: '8 AM', calls: 45 },
-      { label: '12 PM', calls: 140 },
-      { label: '2 PM', calls: 162 },
-      { label: '4 PM', calls: 130 },
-      { label: '8 PM', calls: 65 },
-      { label: '12 AM', calls: 10 },
+      { label: '12 AM', calls: 0, connected: 0, missed: 0 },
+      { label: '4 AM', calls: 0, connected: 0, missed: 0 },
+      { label: '8 AM', calls: 45, connected: 30, missed: 15 },
+      { label: '12 PM', calls: 140, connected: 90, missed: 50 },
+      { label: '2 PM', calls: 162, connected: 110, missed: 52 },
+      { label: '4 PM', calls: 130, connected: 85, missed: 45 },
+      { label: '8 PM', calls: 65, connected: 40, missed: 25 },
+      { label: '12 AM', calls: 10, connected: 6, missed: 4 },
     ]
   }, [activityGranularity, d])
+
+  const peakActivity = useMemo(() => {
+    if (!activityChartData || activityChartData.length === 0) return null
+    const valid = activityChartData.filter((a) => a.calls > 0)
+    if (valid.length === 0) return null
+    return [...valid].sort((a, b) => b.calls - a.calls)[0]
+  }, [activityChartData])
 
   const topCres = useMemo(() => {
     return [...(d?.crePerformance || [])]
@@ -977,6 +1067,10 @@ export function AmGroupCallAnalysis() {
 
   const lowConnectCres = useMemo(() => {
     return (d?.crePerformance || []).filter((c) => c.calls_this_month > 0 && c.connect_rate < 70).length
+  }, [d])
+
+  const zeroCallsCres = useMemo(() => {
+    return (d?.crePerformance || []).filter((c) => (c.calls_this_month || 0) === 0).length
   }, [d])
 
   return (
@@ -1154,90 +1248,129 @@ export function AmGroupCallAnalysis() {
         </Card>
       )}
 
-      {/* 3. TOP 4 METRIC KPI CARDS */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* 3. TOP 6 DETAILED METRIC KPI CARDS */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {/* Card 1: Total Calls */}
-        <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-                <PhoneCall className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">TOTAL CALLS</p>
-                <h3 className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
-                  {totalCalls.toLocaleString('en-IN')}
-                </h3>
+        <Card className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition-shadow hover:shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">TOTAL CALLS</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <PhoneCall className="h-4 w-4" />
               </div>
             </div>
-            <MiniSparkline data={d?.sparklines?.callsSeries || []} color="#10B981" gradientId="sparkCalls" />
+            <h3 className="mt-2 text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums">
+              {totalCalls.toLocaleString('en-IN')}
+            </h3>
           </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-emerald-600">
-            <ArrowUpRight className="h-3.5 w-3.5" />
-            <span>46% vs yesterday</span>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-500 font-sans tabular-nums">
+            <span>Out: {outgoingCalls.toLocaleString('en-IN')}</span>
+            <span>In: {incomingCalls.toLocaleString('en-IN')}</span>
           </div>
         </Card>
 
-        {/* Card 2: Connected Calls */}
-        <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-                <PhoneIncoming className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">CONNECTED CALLS</p>
-                <h3 className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
-                  {connectedCalls.toLocaleString('en-IN')}
-                </h3>
+        {/* Card 2: Incoming Calls */}
+        <Card className="rounded-2xl border border-sky-200/80 bg-white p-4 shadow-xs transition-shadow hover:shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-sky-600">INCOMING CALLS</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+                <PhoneIncoming className="h-4 w-4" />
               </div>
             </div>
-            <MiniSparkline data={d?.sparklines?.recordingsSeries || []} color="#10B981" gradientId="sparkConnected" />
+            <h3 className="mt-2 text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums">
+              {incomingCalls.toLocaleString('en-IN')}
+            </h3>
           </div>
-          <div className="mt-3 text-xs font-bold text-slate-500">
-            <span>{connectRate.toFixed(1)}% connection rate</span>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold font-sans tabular-nums">
+            <span className="text-emerald-700">✓ {connectedIncoming} ({incomingConnectRate.toFixed(0)}%)</span>
+            <span className="text-rose-700">✕ {missedIncoming} ({incomingMissedRate.toFixed(0)}%)</span>
           </div>
         </Card>
 
-        {/* Card 3: Missed Calls */}
-        <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-500">
-                <PhoneMissed className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">MISSED CALLS</p>
-                <h3 className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
-                  {missedCalls.toLocaleString('en-IN')}
-                </h3>
+        {/* Card 3: Outgoing Calls */}
+        <Card className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition-shadow hover:shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-teal-700">OUTGOING CALLS</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+                <PhoneOutgoing className="h-4 w-4" />
               </div>
             </div>
-            <MiniSparkline data={d?.sparklines?.missedIncomingSeries || []} color="#EF4444" gradientId="sparkMissed" />
+            <h3 className="mt-2 text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums">
+              {outgoingCalls.toLocaleString('en-IN')}
+            </h3>
           </div>
-          <div className="mt-3 text-xs font-bold text-rose-500">
-            <span>{missedRate.toFixed(1)}% of total calls</span>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold font-sans tabular-nums">
+            <span className="text-teal-800">✓ {connectedOutgoing} ({outgoingAnswerRate.toFixed(0)}%)</span>
+            <span className="text-amber-700">✕ {missedOutgoing} ({outgoingUnansweredRate.toFixed(0)}%)</span>
           </div>
         </Card>
 
-        {/* Card 4: Total Talk Time */}
-        <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 text-sky-500">
-                <Clock className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">TOTAL TALK TIME</p>
-                <h3 className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
-                  {formatDurationHms(totalTalkSeconds)}
-                </h3>
+        {/* Card 4: Connected Calls */}
+        <Card className="rounded-2xl border border-emerald-200/80 bg-white p-4 shadow-xs transition-shadow hover:shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">TOTAL CONNECTED</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                <CheckCircle2 className="h-4 w-4" />
               </div>
             </div>
-            <MiniSparkline data={d?.sparklines?.durationSeries || []} color="#0EA5E9" gradientId="sparkDuration" />
+            <div className="mt-2 flex items-baseline gap-1.5">
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums">
+                {totalConnected.toLocaleString('en-IN')}
+              </h3>
+              <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200 font-sans tabular-nums">
+                {connectRate.toFixed(1)}%
+              </span>
+            </div>
           </div>
-          <div className="mt-3 text-xs font-bold text-slate-500">
-            <span>Avg {dur(avgTalkSeconds)} per call</span>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-500 font-sans tabular-nums">
+            <span>In: {connectedIncoming}</span>
+            <span>Out: {connectedOutgoing}</span>
+          </div>
+        </Card>
+
+        {/* Card 5: Missed & Unanswered */}
+        <Card className="rounded-2xl border border-rose-200/80 bg-white p-4 shadow-xs transition-shadow hover:shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-rose-700">UNANSWERED / MISSED</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                <PhoneMissed className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-2 flex items-baseline gap-1.5">
+              <h3 className="text-2xl font-black text-rose-700 tracking-tight font-sans tabular-nums">
+                {totalUnanswered.toLocaleString('en-IN')}
+              </h3>
+              <span className="text-xs font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-200 font-sans tabular-nums">
+                {missedRate.toFixed(1)}%
+              </span>
+            </div>
+          </div>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-500 font-sans tabular-nums">
+            <span className="text-rose-600">Missed In: {missedIncoming}</span>
+            <span className="text-amber-600">Unans Out: {missedOutgoing}</span>
+          </div>
+        </Card>
+
+        {/* Card 6: Total Talk Time */}
+        <Card className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition-shadow hover:shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">TOTAL TALK TIME</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-50 text-cyan-600">
+                <Clock className="h-4 w-4" />
+              </div>
+            </div>
+            <h3 className="mt-2 text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums">
+              {formatDurationHms(totalTalkSeconds)}
+            </h3>
+          </div>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-500 font-sans tabular-nums">
+            <span>Avg {dur(avgTalkSeconds)}/call</span>
+            <span>{summary?.agentCount || 0} CREs</span>
           </div>
         </Card>
       </div>
@@ -1348,124 +1481,314 @@ export function AmGroupCallAnalysis() {
           {/* Middle Row: Call Activity & Call Outcomes */}
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
             {/* Left: Call Activity Area Chart */}
-            <Card className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs lg:col-span-7">
-              <div className="flex items-center justify-between pb-4">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-black text-slate-900">
-                    {preset === 'today' ? 'Call Activity Today' : 'Call Activity'}
-                  </h4>
-                  <span title="Hourly and daily distribution of call volume">
-                    <Info className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600 cursor-pointer" />
-                  </span>
+            <Card className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs lg:col-span-7 flex flex-col justify-between">
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-black text-slate-900">
+                      {preset === 'today' ? 'Call Activity Today' : 'Call Activity'}
+                    </h4>
+                    {peakActivity && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-black text-amber-700 border border-amber-200 font-sans tabular-nums">
+                        🔥 Peak: {peakActivity.label} ({peakActivity.calls} calls)
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {/* View mode toggle: Total vs Split */}
+                    <div className="flex items-center rounded-xl bg-slate-100 p-0.5 border border-slate-200/60 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setActivityViewMode('total')}
+                        className={cn(
+                          'px-2.5 py-1 rounded-lg transition-all',
+                          activityViewMode === 'total' ? 'bg-white text-slate-900 shadow-2xs font-black' : 'text-slate-500 hover:text-slate-800'
+                        )}
+                      >
+                        Total
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActivityViewMode('split')}
+                        className={cn(
+                          'px-2.5 py-1 rounded-lg transition-all',
+                          activityViewMode === 'split' ? 'bg-white text-slate-900 shadow-2xs font-black' : 'text-slate-500 hover:text-slate-800'
+                        )}
+                      >
+                        Conn vs Missed
+                      </button>
+                    </div>
+
+                    <Select
+                      value={activityGranularity}
+                      onValueChange={(val: 'hour' | 'day') => setActivityGranularity(val)}
+                    >
+                      <SelectTrigger className="h-7 w-[95px] rounded-lg border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700 shadow-none">
+                        <SelectValue placeholder="Granularity" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl text-xs">
+                        <SelectItem value="hour">By Hour</SelectItem>
+                        <SelectItem value="day">By Day</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
-                <Select
-                  value={activityGranularity}
-                  onValueChange={(val: 'hour' | 'day') => setActivityGranularity(val)}
-                >
-                  <SelectTrigger className="h-7 w-[95px] rounded-lg border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700 shadow-none">
-                    <SelectValue placeholder="Granularity" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl text-xs">
-                    <SelectItem value="hour">By Hour</SelectItem>
-                    <SelectItem value="day">By Day</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="h-[260px] w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={activityChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="activityGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#0D9488" stopOpacity={0.25} />
-                        <stop offset="100%" stopColor="#0D9488" stopOpacity={0.0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                    <XAxis
-                      dataKey="label"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 10, fontWeight: 700, fill: '#94A3B8' }}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 10, fontWeight: 700, fill: '#94A3B8' }}
-                    />
-                    <Tooltip content={<CustomActivityTooltip />} />
-                    <Area
-                      type="monotone"
-                      dataKey="calls"
-                      stroke="#0D9488"
-                      strokeWidth={2.5}
-                      fill="url(#activityGradient)"
-                      dot={{ r: 3, fill: '#0D9488', strokeWidth: 2, stroke: '#FFFFFF' }}
-                      activeDot={{ r: 5, fill: '#093339', stroke: '#FFFFFF', strokeWidth: 2 }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <div className="h-[275px] w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={activityChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="activityGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#0D9488" stopOpacity={0.25} />
+                          <stop offset="100%" stopColor="#0D9488" stopOpacity={0.0} />
+                        </linearGradient>
+                        <linearGradient id="connGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#10B981" stopOpacity={0.25} />
+                          <stop offset="100%" stopColor="#10B981" stopOpacity={0.0} />
+                        </linearGradient>
+                        <linearGradient id="missGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#EF4444" stopOpacity={0.25} />
+                          <stop offset="100%" stopColor="#EF4444" stopOpacity={0.0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                      <XAxis
+                        dataKey="label"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 10, fontWeight: 700, fill: '#94A3B8' }}
+                      />
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 10, fontWeight: 700, fill: '#94A3B8' }}
+                      />
+                      <Tooltip content={<CustomActivityTooltip />} />
+                      {activityViewMode === 'total' ? (
+                        <Area
+                          type="monotone"
+                          dataKey="calls"
+                          name="Total Calls"
+                          stroke="#0D9488"
+                          strokeWidth={2.5}
+                          fill="url(#activityGradient)"
+                          dot={{ r: 3, fill: '#0D9488', strokeWidth: 2, stroke: '#FFFFFF' }}
+                          activeDot={{ r: 5, fill: '#093339', stroke: '#FFFFFF', strokeWidth: 2 }}
+                        />
+                      ) : (
+                        <>
+                          <Area
+                            type="monotone"
+                            dataKey="connected"
+                            name="Connected"
+                            stroke="#10B981"
+                            strokeWidth={2.5}
+                            fill="url(#connGradient)"
+                            dot={{ r: 3, fill: '#10B981', strokeWidth: 2, stroke: '#FFFFFF' }}
+                            activeDot={{ r: 5, fill: '#065F46', stroke: '#FFFFFF', strokeWidth: 2 }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="missed"
+                            name="Missed"
+                            stroke="#EF4444"
+                            strokeWidth={2.5}
+                            fill="url(#missGradient)"
+                            dot={{ r: 3, fill: '#EF4444', strokeWidth: 2, stroke: '#FFFFFF' }}
+                            activeDot={{ r: 5, fill: '#991B1B', stroke: '#FFFFFF', strokeWidth: 2 }}
+                          />
+                        </>
+                      )}
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </Card>
 
             {/* Right: Call Outcomes Donut & Breakdown */}
             <Card className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs lg:col-span-5 flex flex-col justify-between">
-              <div className="flex items-center gap-2 pb-2">
-                <h4 className="text-sm font-black text-slate-900">Call Outcomes</h4>
-                <span title="Proportion of calls connected vs missed vs unanswered">
-                  <Info className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600 cursor-pointer" />
-                </span>
-              </div>
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-black text-slate-900">Call Outcomes</h4>
+                    <span title="Proportion of calls connected vs missed vs unanswered">
+                      <Info className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600 cursor-pointer" />
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-black text-slate-900 bg-slate-100 border border-slate-200/80 px-2.5 py-1 rounded-xl font-sans tabular-nums">
+                      Total: {totalCalls.toLocaleString('en-IN')} Calls
+                    </span>
+                  </div>
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-12 items-center gap-4 py-2">
-                {/* Left breakdown progress bars */}
-                <div className="sm:col-span-7 space-y-3.5">
-                  {outcomeCounts.map((item) => (
-                    <div key={item.name} className="space-y-1">
+                <div className="grid grid-cols-1 sm:grid-cols-12 items-center gap-4 py-3">
+                  {/* Left breakdown progress bars */}
+                  <div className="sm:col-span-7 space-y-3">
+                    {/* Item 1: Connected Incoming */}
+                    <div className="space-y-1">
                       <div className="flex items-center justify-between text-xs font-bold">
                         <div className="flex items-center gap-2">
-                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                          <span className="text-slate-700 text-[11px] truncate" title={item.name}>{item.name}</span>
+                          <span className="h-2 w-2 rounded-full shrink-0 bg-[#10B981]" />
+                          <span className="text-slate-700 text-[11px] font-bold">Connected Incoming</span>
                         </div>
                         <div className="flex items-center gap-2 text-[11px] tabular-nums font-black">
-                          <span className="text-slate-900">{item.value.toLocaleString('en-IN')}</span>
-                          <span className="text-slate-400">{item.pct.toFixed(1)}%</span>
+                          <span className="text-slate-900">{connectedIncoming.toLocaleString('en-IN')}</span>
+                          <span className="text-slate-400">{totalCalls > 0 ? ((connectedIncoming / totalCalls) * 100).toFixed(1) : '0.0'}%</span>
                         </div>
                       </div>
                       <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                         <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${Math.min(100, Math.max(item.pct, item.value > 0 ? 3 : 0))}%`, backgroundColor: item.color }}
+                          className="h-full rounded-full transition-all duration-500 bg-[#10B981]"
+                          style={{ width: `${totalCalls > 0 ? Math.min(100, Math.max((connectedIncoming / totalCalls) * 100, connectedIncoming > 0 ? 3 : 0)) : 0}%` }}
                         />
                       </div>
                     </div>
-                  ))}
+
+                    {/* Item 2: Connected Outgoing */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0 bg-[#093339]" />
+                          <span className="text-slate-700 text-[11px] font-bold">Connected Outgoing</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] tabular-nums font-black">
+                          <span className="text-slate-900">{connectedOutgoing.toLocaleString('en-IN')}</span>
+                          <span className="text-slate-400">{totalCalls > 0 ? ((connectedOutgoing / totalCalls) * 100).toFixed(1) : '0.0'}%</span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 bg-[#093339]"
+                          style={{ width: `${totalCalls > 0 ? Math.min(100, Math.max((connectedOutgoing / totalCalls) * 100, connectedOutgoing > 0 ? 3 : 0)) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Item 3: Missed Incoming */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0 bg-[#EF4444]" />
+                          <span className="text-slate-700 text-[11px] font-bold">Missed Incoming</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] tabular-nums font-black">
+                          <span className="text-slate-900">{missedIncoming.toLocaleString('en-IN')}</span>
+                          <span className="text-slate-400">{totalCalls > 0 ? ((missedIncoming / totalCalls) * 100).toFixed(1) : '0.0'}%</span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 bg-[#EF4444]"
+                          style={{ width: `${totalCalls > 0 ? Math.min(100, Math.max((missedIncoming / totalCalls) * 100, missedIncoming > 0 ? 3 : 0)) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Item 4: Not Answered Outgoing */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0 bg-[#F59E0B]" />
+                          <span className="text-slate-700 text-[11px] font-bold">Not Answered Outgoing</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] tabular-nums font-black">
+                          <span className="text-slate-900">{missedOutgoing.toLocaleString('en-IN')}</span>
+                          <span className="text-slate-400">{totalCalls > 0 ? ((missedOutgoing / totalCalls) * 100).toFixed(1) : '0.0'}%</span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 bg-[#F59E0B]"
+                          style={{ width: `${totalCalls > 0 ? Math.min(100, Math.max((missedOutgoing / totalCalls) * 100, missedOutgoing > 0 ? 3 : 0)) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Item 5: Other / Unanswered */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0 bg-[#94A3B8]" />
+                          <span className="text-slate-700 text-[11px] font-bold">Other / Unanswered</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] tabular-nums font-black">
+                          <span className="text-slate-900">{otherUnanswered.toLocaleString('en-IN')}</span>
+                          <span className="text-slate-400">{totalCalls > 0 ? ((otherUnanswered / totalCalls) * 100).toFixed(1) : '0.0'}%</span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 bg-[#94A3B8]"
+                          style={{ width: `${totalCalls > 0 ? Math.min(100, Math.max((otherUnanswered / totalCalls) * 100, otherUnanswered > 0 ? 3 : 0)) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Donut PieChart with center total */}
+                  <div className="sm:col-span-5 h-[190px] flex items-center justify-center relative">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={outcomeCounts.filter((o) => o.value > 0)}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={48}
+                          outerRadius={72}
+                          paddingAngle={3}
+                          dataKey="value"
+                        >
+                          {outcomeCounts.filter((o) => o.value > 0).map((entry, idx) => (
+                            <Cell key={`cell-${idx}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{ borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }}
+                          formatter={(value: any) => [`${value} calls`, 'Volume']}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {/* Donut Center Count */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+                      <span className="text-lg font-black text-slate-900 font-sans tabular-nums leading-none">
+                        {totalCalls.toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
+                        Calls
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Right Donut PieChart */}
-                <div className="sm:col-span-5 h-[180px] flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={outcomeCounts}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={45}
-                        outerRadius={68}
-                        paddingAngle={3}
-                        dataKey="value"
-                      >
-                        {outcomeCounts.map((entry, idx) => (
-                          <Cell key={`cell-${idx}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{ borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }}
-                        formatter={(value: any) => [`${value} calls`, 'Volume']}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                {/* Sub-summary strip: Total Incoming vs Total Outgoing stream summary */}
+                <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-center text-xs">
+                  <div className="rounded-xl bg-sky-50/60 p-2 border border-sky-100/80">
+                    <p className="text-[10px] font-black uppercase text-sky-800 tracking-wider">Total Incoming</p>
+                    <p className="text-sm font-black text-sky-950 font-sans tabular-nums mt-0.5">
+                      {incomingCalls.toLocaleString('en-IN')}
+                      <span className="text-[10px] font-bold text-sky-700 ml-1">
+                        ({totalCalls > 0 ? ((incomingCalls / totalCalls) * 100).toFixed(1) : 0}%)
+                      </span>
+                    </p>
+                    <p className="text-[10px] font-bold text-emerald-700 mt-0.5">
+                      {connectedIncoming} conn · {missedIncoming} missed
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-teal-50/60 p-2 border border-teal-100/80">
+                    <p className="text-[10px] font-black uppercase text-teal-800 tracking-wider">Total Outgoing</p>
+                    <p className="text-sm font-black text-teal-950 font-sans tabular-nums mt-0.5">
+                      {outgoingCalls.toLocaleString('en-IN')}
+                      <span className="text-[10px] font-bold text-teal-700 ml-1">
+                        ({totalCalls > 0 ? ((outgoingCalls / totalCalls) * 100).toFixed(1) : 0}%)
+                      </span>
+                    </p>
+                    <p className="text-[10px] font-bold text-teal-800 mt-0.5">
+                      {connectedOutgoing} conn · {missedOutgoing} unans
+                    </p>
+                  </div>
                 </div>
               </div>
             </Card>
@@ -1488,8 +1811,8 @@ export function AmGroupCallAnalysis() {
                         <TriangleAlert className="h-4 w-4" />
                       </div>
                       <div>
-                        <p className="text-xs font-black text-slate-900">{missedCalls} missed incoming calls</p>
-                        <p className="text-[11px] font-medium text-slate-500">
+                        <p className="text-xs font-black text-slate-900 font-sans tabular-nums">{missedIncoming.toLocaleString('en-IN')} missed incoming calls</p>
+                        <p className="text-[11px] font-medium text-slate-500 font-sans tabular-nums">
                           From {summary?.missedIncomingRecovery?.totalUniqueCallers || 36} unique numbers
                         </p>
                       </div>
@@ -1532,6 +1855,25 @@ export function AmGroupCallAnalysis() {
                     </div>
                     <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-slate-900 transition-colors" />
                   </div>
+
+                  {/* Alert 4: Inactive CREs */}
+                  {zeroCallsCres > 0 && (
+                    <div
+                      onClick={() => { setSubTab('cre_performance'); setPage(1) }}
+                      className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5 hover:border-slate-200 hover:bg-slate-100/60 transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-50 text-purple-600 shrink-0">
+                          <PhoneOff className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black text-slate-900 font-sans tabular-nums">{zeroCallsCres} CREs with 0 calls logged</p>
+                          <p className="text-[11px] font-medium text-slate-500">Check agent handset connectivity</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-slate-900 transition-colors" />
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>
@@ -1670,6 +2012,27 @@ export function AmGroupCallAnalysis() {
                 Detailed call volume, connected calls, missed incoming, and unanswered outgoing calls grouped by dealership branch.
               </p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const rows = (d?.branchPerformance || []).map((b) => ({
+                  'Branch': b.name,
+                  'Total Calls': b.calls,
+                  'Connected Outgoing': b.connectedOutgoing,
+                  'Connected Incoming': b.connectedIncoming,
+                  'Missed Incoming': b.missedIncoming,
+                  'Not Answered Outgoing': b.missedOutgoing,
+                  'Unanswered Rate (%)': b.unansweredRate,
+                  'Total Talk Time': b.durationLabel,
+                }))
+                downloadCsv(`am-group-branch-performance-${new Date().toISOString().slice(0, 10)}.csv`, rows)
+              }}
+              className="h-8 rounded-xl px-3 text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50"
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5 text-slate-500" />
+              Export CSV
+            </Button>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-left text-xs call-analysis-clean-table">
@@ -1735,6 +2098,29 @@ export function AmGroupCallAnalysis() {
                 Attempts = all outgoing calls made. Answered = calls where customer picked up.
               </p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const rows = (d?.crePerformance || []).map((c) => ({
+                  'CRE Agent': c.cre_name,
+                  'Phone': c.cre_phone || '',
+                  'Shared Desk Phone': c.cre_alt_phone || '',
+                  'Branch': c.branch_name,
+                  'Total Attempts': c.calls_this_month,
+                  'Connected Calls': c.connected_calls,
+                  'Unanswered Calls': (c.calls_this_month || 0) - (c.connected_calls || 0),
+                  'Connect Rate (%)': c.connect_rate,
+                  'Avg Duration': dur(c.avg_duration_seconds || 0),
+                  'Total Talk Time': dur(c.total_talk_time_seconds || 0),
+                }))
+                downloadCsv(`am-group-cre-scorecard-${new Date().toISOString().slice(0, 10)}.csv`, rows)
+              }}
+              className="h-8 rounded-xl px-3 text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50"
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5 text-slate-500" />
+              Export CSV
+            </Button>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-left text-xs call-analysis-clean-table">

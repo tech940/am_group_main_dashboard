@@ -84,6 +84,15 @@ type DemoCarsPayload = {
 
 const DASHBOARD_STALE_TIME_MS = 30 * 60 * 1000
 
+type DemoCarsSort = 'value_desc' | 'value_asc' | 'age'
+
+/** 'age' is the pre-2026-08-25 ordering, kept so the old default is still reachable. */
+const SORT_OPTIONS: { value: DemoCarsSort; label: string }[] = [
+  { value: 'value_desc', label: 'Value: High to Low' },
+  { value: 'value_asc', label: 'Value: Low to High' },
+  { value: 'age', label: 'Stock age: Oldest first' },
+]
+
 function buildQueryString(params: Record<string, string | number>) {
   const searchParams = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
@@ -386,6 +395,14 @@ function VehicleDetailsModal({
 export function DemoCarsListPage() {
   const [location, setLocation] = useState<DemoCarsLocation>('all')
   const [status, setStatus] = useState<'all' | 'sold' | 'not_sold'>('all')
+  /*
+   * Sort order. Highest value first by default.
+   *
+   * ⚠️ Server-side, always. The list is paginated at 10 rows, so sorting the fetched page in the
+   * client would only reorder those 10 and the "most valuable" car could sit on page 9 —
+   * the paginate-then-sort trap. `sort` is a query param and the ordering happens in SQL.
+   */
+  const [sort, setSort] = useState<DemoCarsSort>('value_desc')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [selectedRow, setSelectedRow] = useState<DemoCarRow | null>(null)
@@ -395,7 +412,8 @@ export function DemoCarsListPage() {
     status,
     search,
     page,
-  }), [location, status, page, search])
+    sort,
+  }), [location, status, page, search, sort])
 
   const { data, error, isLoading, isFetching, refetch } = useQuery<DemoCarsPayload>({
     queryKey: ['demo-cars-list', queryString],
@@ -429,10 +447,18 @@ export function DemoCarsListPage() {
     setPage(1)
   }
 
+  // Re-sorting reshuffles the whole list, so staying on page 5 would land the user somewhere
+  // arbitrary in the new order.
+  const handleSortChange = (nextSort: DemoCarsSort) => {
+    setSort(nextSort)
+    setPage(1)
+  }
+
   // Export the FULL filtered list (all rows, not just the current page) as a CSV download. The
   // route returns an attachment, so a same-origin anchor click with cookies is enough.
   const handleExport = () => {
-    const exportQuery = buildQueryString({ location, status, search, format: 'csv' })
+    // Include the sort so the downloaded CSV is in the order the user is looking at.
+    const exportQuery = buildQueryString({ location, status, search, sort, format: 'csv' })
     const anchor = document.createElement('a')
     anchor.href = `/api/brands/kia/demo-cars-list?${exportQuery}`
     anchor.rel = 'noopener'
@@ -568,6 +594,30 @@ export function DemoCarsListPage() {
                       )}
                     </button>
                   ))}
+                </div>
+
+                {/*
+                  * Sort control. A <select> rather than another pill row: three mutually exclusive
+                  * options that name an ORDER, where pills would read as additive filters like the
+                  * two rows above them.
+                  */}
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="demo-cars-sort"
+                    className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500"
+                  >
+                    Sort
+                  </label>
+                  <select
+                    id="demo-cars-sort"
+                    value={sort}
+                    onChange={(event) => handleSortChange(event.target.value as DemoCarsSort)}
+                    className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black uppercase tracking-widest text-slate-700 shadow-sm transition hover:border-[var(--dashboard-primary-border)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)]"
+                  >
+                    {SORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

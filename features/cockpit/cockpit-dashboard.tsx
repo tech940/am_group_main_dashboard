@@ -85,7 +85,7 @@ export function CockpitDashboard() {
   return (
     <div className="space-y-6">
       {/* Context ribbon */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-xs">
         <div className="flex items-center gap-2">
           <Gauge className="h-5 w-5 text-[var(--dashboard-action-bg)]" />
           <div>
@@ -93,15 +93,14 @@ export function CockpitDashboard() {
             <p className="text-[11px] font-semibold text-slate-500">All figures compared to the same period last year where available.</p>
           </div>
         </div>
-        {/* One pill per feed. A single group-wide "as of" used to show the NEWEST of the three, so a
-            current feed masked a two-day-stale one and nothing on the page revealed the gap. */}
+        {/* One pill per feed */}
         <div className="flex flex-wrap items-center gap-1.5">
           {freshness.brands.map((f) => {
             const through = f.coverageThrough ? formatDay(f.coverageThrough) : null
             return (
-              <div key={f.brand} className="flex items-center gap-1.5 rounded-xl bg-slate-50 px-3 py-1.5" title={f.lastUploadedAt ? `Last upload ${formatAsOf(f.lastUploadedAt)}` : 'Never uploaded'}>
+              <div key={f.brand} className="flex items-center gap-1.5 rounded-xl bg-slate-50 px-3 py-1.5 border border-slate-100" title={f.lastUploadedAt ? `Last upload ${formatAsOf(f.lastUploadedAt)}` : 'Never uploaded'}>
                 <Clock className="h-3.5 w-3.5 text-slate-500" />
-                <span className="text-[11px] font-bold text-slate-500">
+                <span className="text-[11px] font-bold text-slate-600">
                   {f.brandLabel.replace(/^AM /, '')} {through ? `through ${through}` : 'no data'}
                 </span>
                 <span className="sr-only">
@@ -113,13 +112,76 @@ export function CockpitDashboard() {
         </div>
       </div>
 
-      {/* Group KPI strip */}
+      {/* 1. Vehicle sales — ON TOP */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Car className="h-4 w-4 text-[var(--dashboard-action-bg)]" />
+          <h2 className="text-xs font-black uppercase tracking-wider text-slate-700">Vehicle Sales Performance · Month to Date</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {sales.brands.map((b) => (
+            <Card key={`sales-${b.brand}`} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all hover:shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-[var(--dashboard-action-bg)]" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">{b.label} Sales{b.monthLabel ? ` · ${b.monthLabel}` : ''}</h3>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <MiniStat label="Bookings" value={formatInt(b.bookings)} sub={`target ${formatInt(b.bookingTarget)} · ${formatPct(b.bookingAchievement)}`} />
+                <MiniStat label="Deliveries" value={formatInt(b.deliveries)} sub={`target ${formatInt(b.deliveryTarget)} · ${formatPct(b.deliveryAchievement)}`} />
+                <MiniStat label="Conversion" value={formatPct(b.conversion)} sub="bookings → deliveries" />
+                <MiniStat label="Consultants" value={formatInt(b.consultants)} sub="active this month" />
+              </div>
+              {b.targetBasis === 'auto' && (
+                <p className="mt-3 text-[10px] font-semibold text-slate-400">Targets auto-set: last month + 10% (no target configured for this month)</p>
+              )}
+            </Card>
+          ))}
+          {sales.brands.length === 0 && (
+            <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs col-span-full"><p className="text-sm font-semibold text-slate-500">No vehicle sales feed is connected yet.</p></Card>
+          )}
+        </div>
+      </div>
+
+      {/* 2. Vehicle stock — ON TOP */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Package className="h-4 w-4 text-[var(--dashboard-action-bg)]" />
+          <h2 className="text-xs font-black uppercase tracking-wider text-slate-700">Vehicle Stock &amp; Inventory Health</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {stock.brands.map((b) => (
+            <Card key={`stock-${b.brand}`} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all hover:shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-emerald-600" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">{b.label} Stock</h3>
+                </div>
+              </div>
+              {b.available ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <MiniStat label="Available" value={formatInt(b.availableStock)} sub="unsold units" />
+                  <MiniStat label="Stock Value" value={formatCurrency(b.stockValue)} sub="approx. invoice" />
+                  <MiniStat label="Avg Age" value={`${formatInt(b.avgStockAge)}d`} sub="current stock" />
+                </div>
+              ) : (
+                <p className="text-xs font-semibold italic text-slate-400 py-2">Stock figures could not be read for this brand — not shown as zero.</p>
+              )}
+            </Card>
+          ))}
+          {stock.brands.length === 0 && (
+            <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs col-span-full"><p className="text-sm font-semibold text-slate-500">No vehicle stock feed is connected yet.</p></Card>
+          )}
+        </div>
+      </div>
+
+      {/* 3. Group KPI strip */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <BigKpi
           icon={<Wrench className="h-5 w-5" />}
           label="Group Service Revenue"
           value={formatCurrency(service.totals.revenue)}
-          // The headline number is the one an exec quotes, so it must carry its own caveat.
           sub={service.totals.excluded.length > 0
             ? `${formatInt(service.totals.roCount)} ROs · excludes ${service.totals.excluded.join(', ')}`
             : `${formatInt(service.totals.roCount)} ROs · labour + parts`}
@@ -130,17 +192,17 @@ export function CockpitDashboard() {
         <BigKpi icon={<Wallet className="h-5 w-5" />} label="Approved Petty-Cash Spend" value={formatCurrency(cash.totals.spendAmount)} sub={`funding ${formatCurrency(cash.totals.fundingAmount)} · cumulative`} tone="from-teal-800 to-teal-700" />
       </div>
 
-      {/* Service revenue by brand */}
-      <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      {/* 4. Service revenue by brand */}
+      <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">Service revenue by brand · MTD vs last year</h2>
           <span className="text-[11px] font-semibold text-slate-500">labour + parts, deduped ROs</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-              <caption className="sr-only">Group service revenue by brand, month to date, compared with the same period last year.</caption>
+            <caption className="sr-only">Group service revenue by brand, month to date, compared with the same period last year.</caption>
             <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600">
+              <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600 bg-slate-50/60">
                 <th scope="col" className="px-5 py-2.5 text-left">Brand</th>
                 <th scope="col" className="px-5 py-2.5 text-right">Revenue</th>
                 <th scope="col" className="px-5 py-2.5 text-right">Labour</th>
@@ -151,11 +213,9 @@ export function CockpitDashboard() {
             </thead>
             <tbody>
               {service.brands.map((b) => (
-                <tr key={b.brand} className="border-b border-slate-50 last:border-0">
+                <tr key={b.brand} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/40 transition-colors">
                   <td className="px-5 py-3 text-left font-black text-slate-800">
                     {b.brandLabel}
-                    {/* A lagging feed is compared like-for-like against last year, so say which days
-                        these figures actually cover — otherwise the row looks like a full-month number. */}
                     {b.lagging && b.coverageThrough && (
                       <span className="ml-2 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700" title={`This feed has bills only to ${formatDay(b.coverageThrough)}. Revenue and the vs-LY comparison both cover 1–${formatDay(b.coverageThrough)} of each year.`}>
                         through {formatDay(b.coverageThrough)}
@@ -167,22 +227,20 @@ export function CockpitDashboard() {
                   </td>
                   {b.status === 'ok' ? (
                     <>
-                      <td className="px-5 py-3 text-right font-black text-slate-900">{formatCurrency(b.revenue)}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-slate-600">{formatCurrency(b.labour)}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-slate-600">{formatCurrency(b.parts)}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-slate-600">{formatInt(b.roCount)}</td>
+                      <td className="px-5 py-3 text-right font-black text-slate-900 font-sans tabular-nums">{formatCurrency(b.revenue)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-slate-600 font-sans tabular-nums">{formatCurrency(b.labour)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-slate-600 font-sans tabular-nums">{formatCurrency(b.parts)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-slate-600 font-sans tabular-nums">{formatInt(b.roCount)}</td>
                       <td className="px-5 py-3 text-right"><GrowthBadge pct={b.growthPct} /></td>
                     </>
                   ) : (
-                    // Never a ₹0 here. "unavailable" means we could not read the feed — saying ₹0.00
-                    // is what made the group total under-report by half without anyone noticing.
                     <td className={`px-5 py-3 text-right text-xs font-semibold italic ${b.status === 'unavailable' ? 'text-rose-700' : 'text-slate-500'}`} colSpan={5}>
                       {b.status === 'unavailable' ? 'Data unavailable — not counted in the group total' : 'No bills this month'}
                     </td>
                   )}
                 </tr>
               ))}
-              <tr className="border-t-2 border-slate-200 bg-slate-50">
+              <tr className="border-t-2 border-slate-200 bg-slate-50/80">
                 <td className="px-5 py-3 text-left font-black text-slate-900">
                   Group total
                   {service.totals.excluded.length > 0 && (
@@ -191,10 +249,10 @@ export function CockpitDashboard() {
                     </span>
                   )}
                 </td>
-                <td className="px-5 py-3 text-right font-black text-slate-900">{formatCurrency(service.totals.revenue)}</td>
-                <td className="px-5 py-3 text-right font-bold text-slate-700">{formatCurrency(service.totals.labour)}</td>
-                <td className="px-5 py-3 text-right font-bold text-slate-700">{formatCurrency(service.totals.parts)}</td>
-                <td className="px-5 py-3 text-right font-bold text-slate-700">{formatInt(service.totals.roCount)}</td>
+                <td className="px-5 py-3 text-right font-black text-slate-900 font-sans tabular-nums">{formatCurrency(service.totals.revenue)}</td>
+                <td className="px-5 py-3 text-right font-bold text-slate-700 font-sans tabular-nums">{formatCurrency(service.totals.labour)}</td>
+                <td className="px-5 py-3 text-right font-bold text-slate-700 font-sans tabular-nums">{formatCurrency(service.totals.parts)}</td>
+                <td className="px-5 py-3 text-right font-bold text-slate-700 font-sans tabular-nums">{formatInt(service.totals.roCount)}</td>
                 <td className="px-5 py-3 text-right"><GrowthBadge pct={service.totals.growthPct} /></td>
               </tr>
             </tbody>
@@ -203,17 +261,17 @@ export function CockpitDashboard() {
         <p className="border-t border-slate-100 px-5 py-2 text-[10px] font-semibold italic text-slate-500">MG and the two-wheeler brands have no service feed and are omitted (not shown as zero).</p>
       </Card>
 
-      {/* Cash oversight by brand */}
-      <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      {/* 5. Cash oversight by brand */}
+      <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">Approved cash by branch · cumulative</h2>
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500"><Banknote className="h-3.5 w-3.5" />approved POs + petty cash</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-              <caption className="sr-only">Approved purchase orders and petty cash by branch, cumulative to date.</caption>
+            <caption className="sr-only">Approved purchase orders and petty cash by branch, cumulative to date.</caption>
             <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600">
+              <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600 bg-slate-50/60">
                 <th scope="col" className="px-5 py-2.5 text-left">Branch</th>
                 <th scope="col" className="px-5 py-2.5 text-right">Approved POs</th>
                 <th scope="col" className="px-5 py-2.5 text-right">PO value</th>
@@ -225,21 +283,21 @@ export function CockpitDashboard() {
               {cash.brands.length === 0 ? (
                 <tr><td className="px-5 py-8 text-center text-sm font-semibold text-slate-500" colSpan={5}>No approved cash activity.</td></tr>
               ) : cash.brands.map((b) => (
-                <tr key={b.brand} className="border-b border-slate-50 last:border-0">
+                <tr key={b.brand} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/40 transition-colors">
                   <td className="px-5 py-3 text-left font-black text-slate-800">{b.brandLabel}</td>
-                  <td className="px-5 py-3 text-right font-semibold text-slate-600">{formatInt(b.poCount)}</td>
-                  <td className="px-5 py-3 text-right font-black text-slate-900">{formatCurrency(b.poAmount)}</td>
-                  <td className="px-5 py-3 text-right font-semibold text-slate-600">{formatCurrency(b.fundingAmount)}</td>
-                  <td className="px-5 py-3 text-right font-semibold text-slate-600">{formatCurrency(b.spendAmount)}</td>
+                  <td className="px-5 py-3 text-right font-semibold text-slate-600 font-sans tabular-nums">{formatInt(b.poCount)}</td>
+                  <td className="px-5 py-3 text-right font-black text-slate-900 font-sans tabular-nums">{formatCurrency(b.poAmount)}</td>
+                  <td className="px-5 py-3 text-right font-semibold text-slate-600 font-sans tabular-nums">{formatCurrency(b.fundingAmount)}</td>
+                  <td className="px-5 py-3 text-right font-semibold text-slate-600 font-sans tabular-nums">{formatCurrency(b.spendAmount)}</td>
                 </tr>
               ))}
               {cash.brands.length > 0 && (
-                <tr className="border-t-2 border-slate-200 bg-slate-50">
+                <tr className="border-t-2 border-slate-200 bg-slate-50/80">
                   <td className="px-5 py-3 text-left font-black text-slate-900">Group total</td>
-                  <td className="px-5 py-3 text-right font-bold text-slate-700">{formatInt(cash.totals.poCount)}</td>
-                  <td className="px-5 py-3 text-right font-black text-slate-900">{formatCurrency(cash.totals.poAmount)}</td>
-                  <td className="px-5 py-3 text-right font-bold text-slate-700">{formatCurrency(cash.totals.fundingAmount)}</td>
-                  <td className="px-5 py-3 text-right font-bold text-slate-700">{formatCurrency(cash.totals.spendAmount)}</td>
+                  <td className="px-5 py-3 text-right font-bold text-slate-700 font-sans tabular-nums">{formatInt(cash.totals.poCount)}</td>
+                  <td className="px-5 py-3 text-right font-black text-slate-900 font-sans tabular-nums">{formatCurrency(cash.totals.poAmount)}</td>
+                  <td className="px-5 py-3 text-right font-bold text-slate-700 font-sans tabular-nums">{formatCurrency(cash.totals.fundingAmount)}</td>
+                  <td className="px-5 py-3 text-right font-bold text-slate-700 font-sans tabular-nums">{formatCurrency(cash.totals.spendAmount)}</td>
                 </tr>
               )}
             </tbody>
@@ -247,50 +305,6 @@ export function CockpitDashboard() {
         </div>
         <p className="border-t border-slate-100 px-5 py-2 text-[10px] font-semibold italic text-slate-500">Cumulative approved to date (POs by MD-approval, petty cash by approval). Group total excludes any unassigned-branch rows. Full detail in the CA section.</p>
       </Card>
-
-      {/* Vehicle sales — one card per brand with a live feed (KIA only today) */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {sales.brands.map((b) => (
-          <Card key={`sales-${b.brand}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2"><Car className="h-4 w-4 text-[var(--dashboard-action-bg)]" /><h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">{b.label} Sales{b.monthLabel ? ` · ${b.monthLabel}` : ''}</h2></div>
-            <div className="grid grid-cols-2 gap-4">
-              <MiniStat label="Bookings" value={formatInt(b.bookings)} sub={`target ${formatInt(b.bookingTarget)} · ${formatPct(b.bookingAchievement)}`} />
-              <MiniStat label="Deliveries" value={formatInt(b.deliveries)} sub={`target ${formatInt(b.deliveryTarget)} · ${formatPct(b.deliveryAchievement)}`} />
-              <MiniStat label="Conversion" value={formatPct(b.conversion)} sub="bookings → deliveries" />
-              <MiniStat label="Consultants" value={formatInt(b.consultants)} sub="active this month" />
-            </div>
-            {b.targetBasis === 'auto' && (
-              <p className="mt-3 text-[10px] font-semibold text-slate-500">Targets auto-set: last month + 10% (no target configured for this month)</p>
-            )}
-          </Card>
-        ))}
-        {sales.brands.length === 0 && (
-          <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2"><p className="text-sm font-semibold text-slate-500">No vehicle sales feed is connected yet.</p></Card>
-        )}
-      </div>
-
-      {/* Vehicle stock. The loader has always fetched this (and paid for the query) but the section was
-          never rendered, so the payload's stock figures went straight in the bin — hence the unused
-          `stock`/`Package` lint warnings that predate this change. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {stock.brands.map((b) => (
-          <Card key={`stock-${b.brand}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2"><Package className="h-4 w-4 text-[var(--dashboard-action-bg)]" /><h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">{b.label} Stock</h2></div>
-            {b.available ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <MiniStat label="Available" value={formatInt(b.availableStock)} sub="unsold units" />
-                <MiniStat label="Stock Value" value={formatCurrency(b.stockValue)} sub="approx. invoice" />
-                <MiniStat label="Avg Age" value={`${formatInt(b.avgStockAge)}d`} sub="current stock" />
-              </div>
-            ) : (
-              <p className="text-sm font-semibold italic text-slate-500">Stock figures could not be read for this brand — not shown as zero.</p>
-            )}
-          </Card>
-        ))}
-        {stock.brands.length === 0 && (
-          <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2"><p className="text-sm font-semibold text-slate-500">No vehicle stock feed is connected yet.</p></Card>
-        )}
-      </div>
     </div>
   )
 }
@@ -315,8 +329,8 @@ function BigKpi({ icon, label, value, sub, growth, tone }: { icon: React.ReactNo
 function MiniStat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <div>
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">{label}</p>
-      <p className="mt-1 text-2xl font-black tracking-tight text-slate-900">{value}</p>
+      <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-black tracking-tight text-slate-900 font-sans tabular-nums">{value}</p>
       <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{sub}</p>
     </div>
   )

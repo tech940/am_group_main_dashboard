@@ -41,6 +41,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { toast } from '@/hooks/use-toast'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 import { cn } from '@/lib/utils'
+import { BANK_SANCTION_BRANDS } from '@/lib/auth/bank-sanctions-access'
+import { getBranchLabel } from '@/lib/branches'
 
 type ExpiryStatus = 'old_expired' | 'current_month' | null
 
@@ -64,6 +66,8 @@ type SanctionRecord = {
   documentUrl1: string | null
   documentUrl2: string | null
   alertEmail: string | null
+  /** Owning brand; '' = group-level (MD & Developer only). */
+  branchCode: string | null
   expiryStatus: ExpiryStatus
   updatedAt: string | null
 }
@@ -107,6 +111,7 @@ const EMPTY_DRAFT = {
   documentUrl1: '',
   documentUrl2: '',
   alertEmail: '',
+  branchCode: '',
 }
 type Draft = typeof EMPTY_DRAFT
 
@@ -130,6 +135,7 @@ function draftFrom(record: SanctionRecord): Draft {
     documentUrl1: record.documentUrl1 || '',
     documentUrl2: record.documentUrl2 || '',
     alertEmail: record.alertEmail || '',
+    branchCode: record.branchCode || '',
   }
 }
 
@@ -1805,6 +1811,26 @@ export function BankSanctionsWorkspace() {
                     placeholder="accounts@jammuautomart.com"
                     className="rounded-xl font-medium text-xs"
                   />
+                </div>
+                {/*
+                  * Branch decides WHO CAN SEE this facility, so it is a first-class field rather
+                  * than something only a migration can set. Group-level keeps it to MD & Developer.
+                  */}
+                <div>
+                  <label htmlFor="bs-branch" className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1">
+                    Branch <span className="font-normal text-slate-400">· controls who can see it</span>
+                  </label>
+                  <select
+                    id="bs-branch"
+                    value={draft.branchCode}
+                    onChange={(e) => setField('branchCode', e.target.value)}
+                    className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)]"
+                  >
+                    <option value="">Group-level — MD &amp; Developer only</option>
+                    {BANK_SANCTION_BRANDS.map((brand) => (
+                      <option key={brand} value={brand}>{getBranchLabel(brand)}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>

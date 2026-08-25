@@ -1043,6 +1043,15 @@ export const bankSanctionLimits = pgTable('bank_sanction_limits', {
   documentUrl1: text('document_url_1'),
   documentUrl2: text('document_url_2'),
   alertEmail: text('alert_email'),
+  /**
+   * Brand that owns this facility — the scoping key (migration 0046).
+   *
+   * ⚠️ NULL is MEANINGFUL and restrictive: it marks group/holding-company borrowing, visible to MD
+   * and Developer ONLY — not to a brand user and not even to a login assigned 'all'. It is NOT
+   * "unclassified, show to everyone". `location` cannot substitute: it is a free-text entity name
+   * ("SMAM AUTO", "Platinum Auto") that does not reliably name a brand.
+   */
+  branchCode: text('branch_code'),
   createdBy: uuid('created_by').references(() => users.id),
   updatedBy: uuid('updated_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1050,6 +1059,7 @@ export const bankSanctionLimits = pgTable('bank_sanction_limits', {
 }, (table) => ({
   bankSanctionLocationIdx: index('bank_sanction_limits_location_idx').on(table.location),
   bankSanctionExpiryIdx: index('bank_sanction_limits_expiry_idx').on(table.expiryDate),
+  bankSanctionBranchIdx: index('bank_sanction_limits_branch_code_idx').on(table.branchCode),
 }))
 
 /**

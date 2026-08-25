@@ -27,6 +27,8 @@ import {
   LayoutGrid,
   List,
   ArrowRight,
+  Calendar,
+  Briefcase,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -41,6 +43,7 @@ import { ExpenseFormDialog } from './pc-expense-form'
 import { PettyCashDetailDialog, type DetailTarget } from './pc-detail-dialog'
 import { AllocationSpendDialog } from './pc-allocation-spend-dialog'
 import { MdApprovalAmountDialog } from './pc-md-approval-dialog'
+import { PettyCashMonthlyBreakdown } from './pc-monthly-breakdown'
 import {
   BalanceMeter,
   EmptyState,
@@ -74,7 +77,7 @@ import {
   type RequestFormState,
 } from './types'
 
-type TabKey = 'overview' | 'requests' | 'allocations' | 'history'
+type TabKey = 'overview' | 'requests' | 'allocations' | 'breakdown' | 'history'
 type HistoryView = 'expenses' | 'ledger'
 type WorkflowDialogState = { request: PettyCashRequest; action: 'approve' | 'reject' | 'hold' } | null
 
@@ -216,6 +219,8 @@ export function PettyCashWorkspace() {
    * also makes refreshAfterMutation carry the selected brand for free, so a save never silently
    * snaps the dashboard back to all-branch numbers under an unchanged chip.
    */
+  /** "use my assignment" — the loaders send NO branchId for this, so the server applies its default. */
+  const MY_BRANCHES = '__mine__'
   const [brandView, setBrandView] = useState<string>('')
   const brandViewRef = useRef<string>('')
 
@@ -246,7 +251,7 @@ export function PettyCashWorkspace() {
       const params = new URLSearchParams()
       if (allocationId) params.set('allocationId', allocationId)
       const brand = brandViewRef.current
-      if (brand && brand !== 'all') params.set('branchId', brand)
+      if (brand && brand !== 'all' && brand !== MY_BRANCHES) params.set('branchId', brand)
       const query = params.size ? `?${params.toString()}` : ''
       const data = await fetchJson<{ ledger: PettyCashLedgerEntry[] }>(`/api/petty-cash/reports${query}`, 'ledger')
       setLedger(data.ledger || [])
@@ -262,7 +267,7 @@ export function PettyCashWorkspace() {
     try {
       const params = new URLSearchParams({ status })
       const brand = brandViewRef.current
-      if (brand && brand !== 'all') params.set('branchId', brand)
+      if (brand && brand !== 'all' && brand !== MY_BRANCHES) params.set('branchId', brand)
       const data = await fetchJson<{ allocations: PettyCashAllocationRow[] }>(
         `/api/petty-cash/allocations?${params.toString()}`,
         'allocations',
@@ -281,7 +286,10 @@ export function PettyCashWorkspace() {
     try {
       // An explicit option wins; otherwise the all-branch viewer's current selection applies. A
       // concrete-brand user's ref stays '', so nothing changes for them.
-      const viewBrand = options?.branchId ?? (brandViewRef.current && brandViewRef.current !== 'all' ? brandViewRef.current : null)
+      const viewBrand = options?.branchId
+        ?? (brandViewRef.current && brandViewRef.current !== 'all' && brandViewRef.current !== MY_BRANCHES
+          ? brandViewRef.current
+          : null)
       const query = viewBrand ? `?branchId=${encodeURIComponent(viewBrand)}` : ''
       const dashboard = await fetchJson<DashboardPayload>(`/api/petty-cash${query}`, 'petty cash dashboard')
       setPayload(dashboard)
@@ -419,25 +427,30 @@ export function PettyCashWorkspace() {
    */
   const viewedBranchId = isAllBranchViewer && brandView && brandView !== 'all' ? brandView : currentBranchId
   const brandViewOptions = useMemo(() => getPettyCashConfiguredBranches(), [])
+  /** Names the branches this login is actually assigned, so the default chip is not a mystery. */
+  const myBranchesLabel = useMemo(() => {
+    const labels = getPettyCashUserBrands(currentBranchId).map((brand) => getBranchLabel(brand))
+    return labels.length ? `My Branches · ${labels.join(', ')}` : 'My Branches'
+  }, [currentBranchId])
 
   useEffect(() => {
-    // First payload decides the default view, once: the user's own admin-panel assignment when it
-    // is a petty-cash brand, otherwise All Branches ('all' and non-petty brands have no single home).
-    if (!isAllBranchViewer || brandView || !currentBranchId) return
-    const fallback = isPettyCashConfiguredForBranch(currentBranchId) ? currentBranchId : 'all'
-    brandViewRef.current = fallback
-    setBrandView(fallback)
     /*
-     * The mount fetch ran BEFORE the role was known, so it was unscoped. Landing on a concrete
-     * default without refetching would show all-branch numbers under a single-brand chip — the
-     * dishonest-chip failure this feature exists to avoid — so scope the data to match, quietly
-     * (preserveData: no loading flash; one extra round trip, first load only, MD-shaped users only).
+     * Settle the chip to match what the SERVER already returned — no refetch.
+     *
+     * The server now derives the default itself from users.brand (pettyCashRequestedBranchScope), so
+     * the very first payload is already scoped to this login's branches. The client's only job is to
+     * label it. This replaced a version that computed its own fallback and fired a SECOND request:
+     * that one both cost a round trip and got multi-brand wrong — 'kia,hyundai' is not a single
+     * petty-cash brand, so it fell through to All Branches and an MD pinned to two branches landed
+     * on group-wide numbers.
+     *
+     * MY_BRANCHES means "whatever my assignment says"; the loaders send no branchId for it, which is
+     * exactly what makes the server apply the default.
      */
-    if (fallback !== 'all') {
-      void loadDashboard({ preserveData: true })
-      void loadAllocations(allocationStatusFilter)
-    }
-  }, [isAllBranchViewer, brandView, currentBranchId, loadDashboard, loadAllocations, allocationStatusFilter])
+    if (!isAllBranchViewer || brandView || !currentBranchId) return
+    brandViewRef.current = MY_BRANCHES
+    setBrandView(MY_BRANCHES)
+  }, [isAllBranchViewer, brandView, currentBranchId])
   const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'eba', 'developer', 'manager', 'general_manager'].includes(userRole)
 
   const seededLocationOptions = useMemo(
@@ -900,6 +913,7 @@ export function PettyCashWorkspace() {
       count: canReviewQueue ? pendingQueue.length : myOpenRequests.length,
     },
     ...(canReviewQueue ? [{ key: 'allocations' as const, label: 'Branch Floats', icon: Banknote, count: activeFloatCount }] : []),
+    { key: 'breakdown', label: 'Monthly Summary', icon: Calendar },
     { key: 'history', label: 'History', icon: ReceiptText },
   ]
 
@@ -940,9 +954,11 @@ export function PettyCashWorkspace() {
               */}
             {isAllBranchViewer && brandView && (
               <div className="flex items-center gap-1 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-1" role="group" aria-label="Branch view">
-                {[...brandViewOptions, 'all'].map((option) => {
+                {[MY_BRANCHES, ...brandViewOptions, 'all'].map((option) => {
                   const active = brandView === option
-                  const label = option === 'all' ? 'All Branches' : getBranchLabel(option)
+                  const label = option === MY_BRANCHES
+                    ? myBranchesLabel
+                    : option === 'all' ? 'All Branches' : getBranchLabel(option)
                   return (
                     <button
                       key={option}
@@ -1933,6 +1949,13 @@ export function PettyCashWorkspace() {
               ]}
             />
           </SectionCard>
+        )}
+
+        {activeTab === 'breakdown' && (
+          <PettyCashMonthlyBreakdown
+            initialBranchId={brandView || currentBranchId}
+            isAllBranchViewer={isAllBranchViewer}
+          />
         )}
 
         {/* Dialogs - ORIGINAL UNMODIFIED FORMS */}
