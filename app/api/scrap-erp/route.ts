@@ -78,7 +78,7 @@ function mapDbRowToTransaction(row: Record<string, unknown>): ScrapTransaction {
     groupId: row.group_id ? String(row.group_id) : undefined,
     groupName: row.group_name ? String(row.group_name) : 'JAM',
     locationId: String(row.location_id || ''),
-    locationName: normalizeScrapLocationName(String(row.location_name || '')),
+    locationName: normalizeScrapLocationName(String(row.location_name || ''), String(row.group_name || '')),
     departmentId: String(row.department_id || ''),
     departmentName: String(row.department_name || ''),
     scrapTypeId: String(row.scrap_type_id || ''),
@@ -214,7 +214,7 @@ export async function POST(request: Request) {
     const soldDate = body.soldDate || new Date().toISOString().split('T')[0]
     const timestamp = body.timestamp || new Date().toISOString()
     const groupName = body.groupName || 'JAM'
-    const locationName = normalizeScrapLocationName(body.locationName || 'Dealership Location')
+    const locationName = normalizeScrapLocationName(body.locationName || 'Dealership Location', groupName)
     const departmentName = body.departmentName || 'SERVICE'
     const scrapTypeName = body.scrapTypeName || 'PLASTIC'
     const unit = body.unit || 'Kg'

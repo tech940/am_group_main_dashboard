@@ -125,8 +125,8 @@ function canActOnStage(role: string, stage: ApprovalStage | null) {
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
 
   if (stage === 'ed_approval') return r === 'ed'
-  if (stage === 'ea_approval') return r === 'ea' || r === 'md' || r === 'eba'
-  if (stage === 'md_approval') return r === 'md' || r === 'eba'
+  if (stage === 'ea_approval') return r === 'ea' || r === 'eba'
+  if (stage === 'md_approval') return r === 'md'
   if (stage === 'accounts') return isAccounts
   return false
 }
@@ -231,10 +231,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
     e.stopPropagation() // prevent opening detail modal
     if (!stage) return
 
-    const r = String(role).trim().toLowerCase()
-    const targetStage = (stage === 'ea_approval' && (r === 'md' || r === 'eba')) ? 'md_approval' : stage
-
-    if (action === 'approve' && targetStage === 'md_approval') {
+    if (action === 'approve' && stage === 'md_approval') {
       const targetReq = requests.find((req) => req.id === requestId)
       if (targetReq) {
         setMdApprovalDialog(targetReq as unknown as PettyCashRequest)
@@ -251,7 +248,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
     // For other roles approving, execute immediately
     setSubmittingId(requestId)
     try {
-      const body: Record<string, unknown> = { action, stage: targetStage }
+      const body: Record<string, unknown> = { action, stage }
       const res = await fetch(`/api/petty-cash/requests/${encodeURIComponent(requestId)}/workflow`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -271,7 +268,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
     } finally {
       setSubmittingId(null)
     }
-  }, [load])
+  }, [load, requests])
 
   const submitDirectAction = async () => {
     if (!directActionPending) return
@@ -285,9 +282,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
 
     setSubmittingId(requestId)
     try {
-      const r = String(role).trim().toLowerCase()
-      const targetStage = (stage === 'ea_approval' && (r === 'md' || r === 'eba')) ? 'md_approval' : stage
-      const body: Record<string, unknown> = { action, stage: targetStage, remarks: directRemarks.trim() }
+      const body: Record<string, unknown> = { action, stage, remarks: directRemarks.trim() }
       const res = await fetch(`/api/petty-cash/requests/${encodeURIComponent(requestId)}/workflow`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -340,10 +335,8 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
     }
     setSubmitting(action)
     try {
-      const r = String(role).trim().toLowerCase()
-      const targetStage = (activeStage === 'ea_approval' && (r === 'md' || r === 'eba')) ? 'md_approval' : activeStage
-      const body: Record<string, unknown> = { action, stage: targetStage, remarks: remarks.trim() || undefined }
-      if (action === 'approve' && (activeStage === 'accounts' || targetStage === 'md_approval') && approvedAmount) {
+      const body: Record<string, unknown> = { action, stage: activeStage, remarks: remarks.trim() || undefined }
+      if (action === 'approve' && (activeStage === 'accounts' || activeStage === 'md_approval') && approvedAmount) {
         body.allocatedAmount = Number(approvedAmount)
       }
       const res = await fetch(`/api/petty-cash/requests/${encodeURIComponent(selectedId)}/workflow`, {

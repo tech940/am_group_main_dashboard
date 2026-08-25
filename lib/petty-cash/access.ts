@@ -105,9 +105,9 @@ export function canApprovePettyCashStage(role: PettyCashRole | null | undefined,
     case 'ed_approval':
       return r === 'ed'
     case 'ea_approval':
-      return r === 'ea'
+      return r === 'ea' || r === 'eba'
     case 'md_approval':
-      return r === 'md' || r === 'eba'
+      return r === 'md'
     case 'accounts':
       return isAccounts
     default:
@@ -144,7 +144,7 @@ export function pettyCashRequestedBranchScope<T extends PgColumn>(
   const asked = String(branchId || '').trim().toLowerCase()
 
   // An explicit choice wins, and must be one this login may actually view.
-  if (asked && asked !== 'all') {
+  if (asked && asked !== 'all' && asked !== '__mine__') {
     const picked = asked.split(',').map((v) => v.trim()).filter(Boolean)
     for (const value of picked) {
       if (!isBranchValue(value)) throw new Error('Invalid branch')

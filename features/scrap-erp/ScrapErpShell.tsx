@@ -153,11 +153,11 @@ export function ScrapErpShell() {
 
       // Location Filter
       if (filters.locations.length > 0) {
-        const normLoc = normalizeScrapLocationName(t.locationName)
+        const normLoc = normalizeScrapLocationName(t.locationName, t.groupName)
         if (
           !filters.locations.includes(t.locationId) &&
           !filters.locations.includes(t.locationName) &&
-          !filters.locations.some((fl) => normalizeScrapLocationName(fl) === normLoc)
+          !filters.locations.some((fl) => normalizeScrapLocationName(fl, t.groupName) === normLoc)
         )
           return false
       }

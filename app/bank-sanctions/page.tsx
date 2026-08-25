@@ -1,6 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canViewBankSanctions } from '@/lib/auth/bank-sanctions-access'
+import { isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
 import { MainLayout } from '@/components/layout/main-layout'
 import { BankSanctionsWorkspace } from '@/features/bank-sanctions/bank-sanctions-page'
 
@@ -24,7 +25,7 @@ export default async function BankSanctionsPage() {
     redirect('/auth/login')
   }
 
-  if (!canViewBankSanctions(appUser.role)) {
+  if (!canViewBankSanctions(appUser.role) && !(await isPermissionExplicitlyAllowed(appUser, 'bank_sanctions.view'))) {
     forbidden()
   }
 

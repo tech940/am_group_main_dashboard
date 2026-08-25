@@ -139,8 +139,8 @@ function canApproveStageOnClient(role: string, stage: ApprovalStage): boolean {
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
   switch (stage) {
     case 'ed_approval': return r === 'ed'
-    case 'ea_approval': return r === 'ea'
-    case 'md_approval': return r === 'md' || r === 'eba'
+    case 'ea_approval': return r === 'ea' || r === 'eba'
+    case 'md_approval': return r === 'md'
     case 'accounts': return isAccounts
     default: return false
   }
@@ -148,7 +148,7 @@ function canApproveStageOnClient(role: string, stage: ApprovalStage): boolean {
 
 function canActOnRequest(role: string, request: PettyCashRequest) {
   if (!PENDING_STATUSES.includes(request.status)) return false
-  return canApproveStageOnClient(role, stageForRequest(request, role))
+  return canApproveStageOnClient(role, stageForRequest(request))
 }
 
 function nextOwnerAfterApproval(stage: ApprovalStage): string {
@@ -161,15 +161,10 @@ function nextOwnerAfterApproval(stage: ApprovalStage): string {
   }
 }
 
-function stageForRequest(request: PettyCashRequest, role?: string): ApprovalStage {
+function stageForRequest(request: PettyCashRequest): ApprovalStage {
   const status = request.status
-  const r = String(role || '').trim().toLowerCase()
-  const isMdOrDev = r === 'md' || r === 'eba' || r === 'developer' || r === 'admin'
   if (status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold') return 'ed_approval'
-  if (status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved') {
-    if (isMdOrDev) return 'md_approval'
-    return 'ea_approval'
-  }
+  if (status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved') return 'ea_approval'
   if (status === 'md_pending' || status === 'md_on_hold') return 'md_approval'
   return 'accounts'
 }
@@ -1953,7 +1948,7 @@ export function PettyCashWorkspace() {
 
         {activeTab === 'breakdown' && (
           <PettyCashMonthlyBreakdown
-            initialBranchId={brandView || currentBranchId}
+            initialBranchId={brandView && brandView !== MY_BRANCHES && brandView !== 'all' ? brandView : 'all'}
             isAllBranchViewer={isAllBranchViewer}
           />
         )}
@@ -1991,7 +1986,7 @@ export function PettyCashWorkspace() {
           onOpenChange={(open) => { if (!open) setWorkflowDialog(null) }}
           title={workflowDialog?.action === 'approve' ? 'Approve Request' : workflowDialog?.action === 'reject' ? 'Reject Request' : 'Hold Request'}
           description={workflowDialog?.action === 'approve'
-            ? `Approve ${formatCurrency(requestedAmount(workflowDialog.request))} for ${requestedByName(workflowDialog.request)}. This moves it to ${nextOwnerAfterApproval(stageForRequest(workflowDialog.request, userRole))}. Remarks are optional.`
+            ? `Approve ${formatCurrency(requestedAmount(workflowDialog.request))} for ${requestedByName(workflowDialog.request)}. This moves it to ${nextOwnerAfterApproval(stageForRequest(workflowDialog.request))}. Remarks are optional.`
             : workflowDialog?.action === 'reject' ? 'Add a reason for rejecting this petty cash request.' : 'Add a note explaining why this request is on hold.'}
           actionLabel={workflowDialog?.action === 'approve' ? 'Approve' : workflowDialog?.action === 'reject' ? 'Reject' : 'Hold'}
           actionVariant={workflowDialog?.action === 'reject' ? 'destructive' : 'default'}
@@ -2001,7 +1996,7 @@ export function PettyCashWorkspace() {
             if (!workflowDialog) return
             const { request, action } = workflowDialog
             setWorkflowDialog(null)
-            await applyRequestWorkflow(request.id, stageForRequest(request, userRole), action, remarks)
+            await applyRequestWorkflow(request.id, stageForRequest(request), action, remarks)
           }}
         />
         <MdApprovalAmountDialog
@@ -2011,9 +2006,7 @@ export function PettyCashWorkspace() {
           loading={submitting}
           onConfirm={async ({ remarks, approvedAmount }) => {
             if (!mdApprovalDialog) return
-            const currentStage = stageForRequest(mdApprovalDialog, userRole)
-            const targetStage = currentStage === 'md_approval' ? 'md_approval' : 'md_approval'
-            await applyRequestWorkflow(mdApprovalDialog.id, targetStage, 'approve', remarks, approvedAmount)
+            await applyRequestWorkflow(mdApprovalDialog.id, 'md_approval', 'approve', remarks, approvedAmount)
             setMdApprovalDialog(null)
           }}
         />
@@ -2130,13 +2123,12 @@ export function PettyCashWorkspace() {
 
                 {withActions && canActOnRequest(userRole, request) && (
                   <>
-                    {/* Approve Button (Soft Emerald) - Opens MD Amount Modal for MD/EBA */}
+                    {/* Approve Button (Soft Emerald) - Opens MD Amount Modal for MD stage */}
                     <button
                       type="button"
                       onClick={() => {
-                        const stage = stageForRequest(request, userRole)
-                        const isMd = userRole === 'md' || userRole === 'eba' || stage === 'md_approval'
-                        if (isMd) {
+                        const stage = stageForRequest(request)
+                        if (stage === 'md_approval') {
                           setMdApprovalDialog(request)
                         } else {
                           setWorkflowDialog({ request, action: 'approve' })

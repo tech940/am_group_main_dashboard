@@ -37,7 +37,7 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
   const locationMatrix = useMemo(() => {
     const map: Record<string, { weight: number; revenue: number; received: number; due: number; count: number }> = {}
     transactions.forEach((t) => {
-      const loc = normalizeScrapLocationName(t.locationName) || 'Unknown Location'
+      const loc = normalizeScrapLocationName(t.locationName, t.groupName) || 'Unknown Location'
       if (!map[loc]) map[loc] = { weight: 0, revenue: 0, received: 0, due: 0, count: 0 }
       map[loc].weight += Number(t.weightQty || 0)
       map[loc].revenue += Number(t.calculatedTotal || 0)
@@ -61,7 +61,7 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
       const monthLabel = getMonthYearLabel(dateVal)
       monthsSet.add(monthLabel)
 
-      const loc = normalizeScrapLocationName(t.locationName) || 'Unknown Location'
+      const loc = normalizeScrapLocationName(t.locationName, t.groupName) || 'Unknown Location'
       if (!locMap[loc]) {
         locMap[loc] = { _totalRevenue: 0, _totalWeight: 0, _count: 0 }
       }

@@ -30,10 +30,14 @@ export const BANK_SANCTIONS_ROLES = ['ea', 'md', 'accounts', 'developer', 'proce
 
 export const BANK_SANCTIONS_HREFS = ['/bank-sanctions'] as const
 
-export function canViewBankSanctions(role?: string | null): boolean {
-  return (BANK_SANCTIONS_ROLES as readonly string[]).includes(
-    String(role || '').toLowerCase().trim(),
-  )
+export function canViewBankSanctions(
+  role?: string | null,
+  permissionMap?: Record<string, boolean> | null
+): boolean {
+  const r = String(role || '').toLowerCase().trim()
+  if ((BANK_SANCTIONS_ROLES as readonly string[]).includes(r)) return true
+  if (permissionMap && permissionMap['bank_sanctions.view'] === true) return true
+  return false
 }
 
 /** True when this href is the Bank Sanctions section (or a path beneath it). */

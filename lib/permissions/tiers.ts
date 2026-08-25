@@ -131,6 +131,7 @@ export const DEFAULT_SECTION_MIN_TIER: Tier = TIER.EMPLOYEE
 export const SECTION_MIN_TIER: Partial<Record<string, Tier>> = {
   cockpit: TIER.LEADERSHIP,
   ca: TIER.SUPER_ADMIN,
+  bank_sanctions: TIER.SUPER_ADMIN,
   'kia.sales_report': TIER.LEADERSHIP,
   'kia.stock_report': TIER.LEADERSHIP,
   'kia.sales_performance': TIER.MANAGER,

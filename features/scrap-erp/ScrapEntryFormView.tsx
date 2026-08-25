@@ -14,6 +14,7 @@ import {
   ScrapAttachment,
   ScrapGroup,
   ScrapFormAttachment,
+  normalizeScrapLocationName,
 } from '@/lib/scrap-erp/types'
 import { getCompanyShareConfig } from '@/lib/scrap-erp/distribution'
 import {
@@ -193,19 +194,29 @@ export function ScrapEntryFormView({
     if (initialData) {
       const cleanStr = (s?: string | null) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
-      // 1. Dealership Location (Match location first so we can also infer brand group if needed)
+      // 1. Dealership Location (Match location with canonical normalization)
       const rawLocName = String(initialData.locationName || '').trim()
+      const rawGrpName = String(initialData.groupName || '').trim()
       const rawLocId = String(initialData.locationId || '').trim()
+      const normalizedName = normalizeScrapLocationName(rawLocName, rawGrpName)
+      const cNormName = cleanStr(normalizedName)
       const cLocName = cleanStr(rawLocName)
 
       let matchedLoc: ScrapLocation | undefined = undefined
 
-      // A. Direct normalized name or code match
-      if (cLocName) {
+      // A. Direct normalized canonical name match
+      if (normalizedName) {
+        matchedLoc = locations.find(
+          (l) => l.name.toUpperCase() === normalizedName.toUpperCase() || cleanStr(l.name) === cNormName
+        )
+      }
+
+      // B. Direct raw name or code match
+      if (!matchedLoc && cLocName) {
         matchedLoc = locations.find((l) => cleanStr(l.name) === cLocName || (l.code && cleanStr(l.code) === cLocName))
       }
 
-      // B. Substring matching in either direction
+      // C. Substring matching in either direction
       if (!matchedLoc && cLocName) {
         matchedLoc = locations.find((l) => {
           const cl = cleanStr(l.name)
@@ -213,7 +224,7 @@ export function ScrapEntryFormView({
         })
       }
 
-      // C. Key brand + locality token matching (e.g. "gangyal", "rehari", "channi", "narwal", "kathua", "paloura", etc.)
+      // D. Key brand + locality token matching
       if (!matchedLoc && cLocName) {
         const localities = [
           'channirama', 'channi', 'rehari', 'talabtillo', 'gangyal', 'paloura', 'rajouri',
@@ -235,7 +246,7 @@ export function ScrapEntryFormView({
         }
       }
 
-      // D. Fallback to unique location ID if provided
+      // E. Fallback to unique location ID if provided
       if (!matchedLoc && rawLocId && rawLocId !== 'loc-1') {
         matchedLoc = locations.find((l) => l.id.toLowerCase() === rawLocId.toLowerCase())
       }
@@ -252,7 +263,6 @@ export function ScrapEntryFormView({
       }
 
       // 2. Group / Company
-      const rawGrpName = String(initialData.groupName || '').trim()
       const rawGrpId = String(initialData.groupId || '').trim()
       const cGrpName = cleanStr(rawGrpName)
 
@@ -877,6 +887,64 @@ export function ScrapEntryFormView({
     } catch (err) {}
   }
 
+  // Smartly group & order locations based on selected Group
+  const groupedLocations = useMemo(() => {
+    const currentGroupObj = groups.find((g) => g.id === selectedGroupId)
+    const currentGroupName = (currentGroupObj?.name || customGroup || '').toUpperCase()
+
+    const isMatchingGroup = (loc: ScrapLocation) => {
+      const lName = loc.name.toUpperCase()
+      const lCode = (loc.code || '').toUpperCase()
+      if (!currentGroupName || selectedGroupId === 'OTHER') return false
+      if (currentGroupName.includes('BAJAJ')) return lName.includes('BAJAJ') || lCode.startsWith('BJJ')
+      if (currentGroupName.includes('KTM')) return lName.includes('KTM') || lCode.startsWith('KTM')
+      if (currentGroupName.includes('DIAMOND') || currentGroupName.includes('HONDA')) return lName.includes('HONDA') || lCode.startsWith('HND')
+      if (currentGroupName.includes('KIA')) return lName.includes('KIA') || lCode.startsWith('KIA')
+      if (currentGroupName.includes('MG')) return lName.includes('MG') || lCode.startsWith('MG')
+      if (currentGroupName.includes('TATA') || currentGroupName.includes('SMAM')) return lName.includes('TATA') || lCode.startsWith('TATA')
+      if (currentGroupName.includes('PLATINUM')) return lName.includes('PLATINUM') || lCode.startsWith('PLT')
+      if (currentGroupName.includes('JAM') || currentGroupName.includes('HYUNDAI')) return (lName.includes('JAMMU') || lName.includes('AUTO SQUARE') || lCode.startsWith('JAM') || lCode.startsWith('HYN')) && !lName.includes('PLATINUM')
+      return false
+    }
+
+    const primary = locations.filter(isMatchingGroup)
+    const secondary = locations.filter((l) => !isMatchingGroup(l))
+
+    return { primary, secondary, currentGroupName }
+  }, [locations, groups, selectedGroupId, customGroup])
+
+  const handleLocationChange = (val: string) => {
+    if (val === 'OTHER') {
+      setSelectedLocationId('OTHER')
+    } else {
+      setSelectedLocationId(val)
+      setCustomLocation('')
+      const loc = locations.find((l) => l.id === val)
+      if (loc) {
+        // Auto-align group if currently default or unset
+        const lName = loc.name.toUpperCase()
+        const lCode = (loc.code || '').toUpperCase()
+        let targetGroupKeyword = ''
+        if (lName.includes('BAJAJ') || lCode.startsWith('BJJ')) targetGroupKeyword = 'BAJAJ'
+        else if (lName.includes('KTM') || lCode.startsWith('KTM')) targetGroupKeyword = 'KTM'
+        else if (lName.includes('HONDA') || lCode.startsWith('HND')) targetGroupKeyword = 'DIAMOND'
+        else if (lName.includes('KIA') || lCode.startsWith('KIA')) targetGroupKeyword = 'KIA'
+        else if (lName.includes('MG') || lCode.startsWith('MG')) targetGroupKeyword = 'MG'
+        else if (lName.includes('TATA') || lCode.startsWith('TATA')) targetGroupKeyword = 'TATA'
+        else if (lName.includes('PLATINUM') || lCode.startsWith('PLT')) targetGroupKeyword = 'PLATINUM'
+        else if (lName.includes('JAMMU') || lName.includes('AUTO SQUARE') || lCode.startsWith('JAM') || lCode.startsWith('HYN')) targetGroupKeyword = 'JAM'
+
+        if (targetGroupKeyword) {
+          const matchedGrp = groups.find((g) => g.name.toUpperCase().includes(targetGroupKeyword) || g.id.toUpperCase().includes(targetGroupKeyword))
+          if (matchedGrp) {
+            setSelectedGroupId(matchedGrp.id)
+            setCustomGroup('')
+          }
+        }
+      }
+    }
+  }
+
   // Clear form to start fresh
   const handleResetForm = () => {
     setActiveDraftId(null)
@@ -920,7 +988,8 @@ export function ScrapEntryFormView({
     const effectiveHoObj = handoverUsers.find((h) => h.id === selectedHandoverUserId || h.name === selectedHandoverUserId)
 
     const effectiveGroupName = effectiveGroupObj?.name || (selectedGroupId !== 'OTHER' && selectedGroupId ? selectedGroupId : customGroup) || 'JAM'
-    const effectiveLocationName = effectiveLocObj?.name || (selectedLocationId !== 'OTHER' && selectedLocationId ? selectedLocationId : customLocation) || 'Dealership Location'
+    const rawEffectiveLocationName = effectiveLocObj?.name || (selectedLocationId !== 'OTHER' && selectedLocationId ? selectedLocationId : customLocation) || 'Dealership Location'
+    const effectiveLocationName = normalizeScrapLocationName(rawEffectiveLocationName, effectiveGroupName)
     const effectiveDepartmentName = effectiveDeptObj?.name || (selectedDeptId !== 'OTHER' && selectedDeptId ? selectedDeptId : customDept) || 'SERVICE'
     const effectiveTypeName = effectiveTypeObj?.name || (selectedTypeId !== 'OTHER' && selectedTypeId ? selectedTypeId : customScrapType) || 'PLASTIC'
     const effectivePmName = effectivePmObj?.name || (selectedPaymentModeId !== 'OTHER' && selectedPaymentModeId ? selectedPaymentModeId : customPaymentMode) || 'CASH'
@@ -1149,23 +1218,34 @@ export function ScrapEntryFormView({
                 <Label className="text-xs font-black text-slate-800 dark:text-slate-200">Dealership Location</Label>
                 <select
                   value={locations.some((l) => l.id === selectedLocationId) ? selectedLocationId : (selectedLocationId ? 'OTHER' : '')}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    if (val === 'OTHER') {
-                      setSelectedLocationId('OTHER')
-                    } else {
-                      setSelectedLocationId(val)
-                      setCustomLocation('')
-                    }
-                  }}
+                  onChange={(e) => handleLocationChange(e.target.value)}
                   className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                 >
                   <option value="">Select Location...</option>
-                  {locations.map((loc) => (
-                    <option key={loc.id} value={loc.id}>
-                      {loc.name}
-                    </option>
-                  ))}
+                  {groupedLocations.primary.length > 0 ? (
+                    <>
+                      <optgroup label={`⭐ ${groupedLocations.currentGroupName} Dealerships`}>
+                        {groupedLocations.primary.map((loc) => (
+                          <option key={loc.id} value={loc.id}>
+                            {loc.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="── All Other Dealership Locations ──">
+                        {groupedLocations.secondary.map((loc) => (
+                          <option key={loc.id} value={loc.id}>
+                            {loc.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </>
+                  ) : (
+                    locations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name}
+                      </option>
+                    ))
+                  )}
                   <option value="OTHER">+ Enter Location Manually...</option>
                 </select>
                 {(!locations.some((l) => l.id === selectedLocationId) || selectedLocationId === 'OTHER') && (

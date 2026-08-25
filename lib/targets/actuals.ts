@@ -14,6 +14,9 @@ import {
   platinumRoBillingRoKeySql,
 } from '@/lib/platinum/business-excellence-calculations'
 import { activeBillStatusSql, serviceCategoryExpression } from '@/lib/kia/service-dashboard-metrics'
+// Each brand's OWN work_type CASE. Never share one across brands — see the notes on each export.
+import { categorySql as hyundaiCategorySql } from '@/lib/hyundai/workshop-summary'
+import { serviceCategorySql as platinumCategorySql } from '@/lib/platinum/workshop-summary'
 import { getBrandDealers } from '@/lib/dealers/registry'
 import { type TargetBrand } from './constants'
 
@@ -58,6 +61,14 @@ export type ActualCell = {
   salesRevenue: number
   serviceRoCount: number
   serviceRevenue: number
+  /**
+   * Workshop labour, `labour_amt` ONLY — parts deliberately excluded, so these are NOT a slice of
+   * serviceRevenue (labour + parts). mechLabour + bodyshopLabour === labourTotal to the rupee:
+   * every one of the three is filtered to the same four canonical work_type buckets.
+   */
+  mechLabour: number
+  bodyshopLabour: number
+  labourTotal: number
 }
 
 /**
@@ -84,7 +95,10 @@ export function actualsKey(dealerCode: string, year: number, month: number): str
 }
 
 function emptyCell(): ActualCell {
-  return { salesUnits: 0, salesRevenue: 0, serviceRoCount: 0, serviceRevenue: 0 }
+  return {
+    salesUnits: 0, salesRevenue: 0, serviceRoCount: 0, serviceRevenue: 0,
+    mechLabour: 0, bodyshopLabour: 0, labourTotal: 0,
+  }
 }
 
 function num(value: unknown): number {
@@ -247,7 +261,19 @@ async function fetchKiaService(startDate: string, endDate: string) {
       EXTRACT(MONTH FROM report_date)::int AS mo,
       dealer,
       COUNT(*)::int                                     AS ro_count,
-      COALESCE(SUM(labour_amt + part_amt), 0)::float8   AS revenue
+      COALESCE(SUM(labour_amt + part_amt), 0)::float8   AS revenue,
+      -- Labour only. The outer WHERE below already restricts to the four canonical categories, so a
+      -- bare SUM is exhaustive here and mech + bodyshop reconciles to labour_total by construction.
+      COALESCE(SUM(labour_amt), 0)::float8              AS labour_total,
+      -- POSITIVE list, never a <> 'Accidental Repair' negation: it would be correct HERE (the outer
+      -- WHERE constrains the categories) but wrong in fetchBrandService, and the two must read as
+      -- the same rule. Backticks are banned in these comments -- they close the template literal.
+      COALESCE(SUM(labour_amt) FILTER (
+        WHERE service_category IN ('Free Service', 'Paid Service', 'Running Repair')
+      ), 0)::float8                                     AS mech_labour,
+      COALESCE(SUM(labour_amt) FILTER (
+        WHERE service_category = 'Accidental Repair'
+      ), 0)::float8                                     AS bodyshop_labour
     FROM ranked
     WHERE row_rank = 1
       -- ⚠️ Load-bearing, and verified against the reader: getKiaWorkshopSummary builds total.roCount
@@ -268,11 +294,13 @@ async function fetchBrandService(brand: 'hyundai' | 'platinum', startDate: strin
   const dealerSql = brand === 'hyundai'
     ? hyundaiSourceDealerSql(sql.raw('source_dealer_code'), [sql.raw('dealer_code')])
     : platinumSourceDealerSql(sql.raw('source_dealer_code'), [sql.raw('dealer_code')])
+  const categoryExpr = brand === 'hyundai' ? hyundaiCategorySql('work_type') : platinumCategorySql('work_type')
 
   return db.execute(sql`
     WITH raw AS (
       SELECT
         ${roKey} AS jc_key,
+        ${categoryExpr}                 AS service_category,
         COALESCE(labour_amt, 0)::float8 AS labour_amt,
         COALESCE(part_amt, 0)::float8   AS part_amt,
         bill_date::date                 AS report_date,
@@ -296,7 +324,21 @@ async function fetchBrandService(brand: 'hyundai' | 'platinum', startDate: strin
       EXTRACT(MONTH FROM report_date)::int AS mo,
       dealer,
       COUNT(*)::int                                   AS ro_count,
-      COALESCE(SUM(labour_amt + part_amt), 0)::float8 AS revenue
+      COALESCE(SUM(labour_amt + part_amt), 0)::float8 AS revenue,
+      -- ⚠️ Unlike fetchKiaService this query has NO canonical category filter in its outer WHERE,
+      -- and it must NOT gain one: adding it would lower ro_count and revenue, which already ship.
+      -- So every labour aggregate carries the canonical list INSIDE its own FILTER. A bare
+      -- SUM(labour_amt) here would swallow 'Others' (Outreach Camp, RF Mechanical, Mid Term Check
+      -- Up) and break the mech + bodyshop = total identity.
+      COALESCE(SUM(labour_amt) FILTER (
+        WHERE service_category IN ('Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair')
+      ), 0)::float8                                   AS labour_total,
+      COALESCE(SUM(labour_amt) FILTER (
+        WHERE service_category IN ('Free Service', 'Paid Service', 'Running Repair')
+      ), 0)::float8                                   AS mech_labour,
+      COALESCE(SUM(labour_amt) FILTER (
+        WHERE service_category = 'Accidental Repair'
+      ), 0)::float8                                   AS bodyshop_labour
     FROM ranked
     WHERE row_rank = 1
     GROUP BY 1, 2, 3
@@ -416,6 +458,9 @@ export async function getBrandActuals(brand: TargetBrand, year: number, month: n
       const cell = upsertCell(cells, actualsKey(dealer, num(row.yr), num(row.mo)))
       cell.serviceRoCount += num(row.ro_count)
       cell.serviceRevenue += num(row.revenue)
+      cell.mechLabour += num(row.mech_labour)
+      cell.bodyshopLabour += num(row.bodyshop_labour)
+      cell.labourTotal += num(row.labour_total)
     }
   }
 

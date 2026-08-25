@@ -25,34 +25,109 @@ export function isTargetBrand(value: unknown): value is TargetBrand {
 }
 
 /**
- * The two things the MD can set: a vehicle count and a job count.
+ * What the MD can set: two counts, and three workshop LABOUR values.
  *
- * ⚠️ Revenue targets were deliberately REMOVED. Per-unit price is not something the dealership can
- * predict — an RO's value depends on what the vehicle turns out to need, and a month's sales revenue
- * moves with model mix and discounting. Setting a rupee target against that produces a number that
- * is missed or beaten for reasons nobody controls, which teaches everyone to ignore it.
+ * ⚠️ TOTAL-REVENUE targets are still deliberately EXCLUDED, and that original decision stands. Per-
+ * unit price is not something the dealership can predict — an RO's total value depends on what the
+ * vehicle turns out to need, and a month's sales revenue moves with model mix and discounting.
+ * Setting a rupee target against that produces a number that is missed or beaten for reasons nobody
+ * controls, which teaches everyone to ignore it. So `salesRevenue` and `serviceRevenue` stay
+ * context-only: read and shown beside the count, never scored.
  *
- * Counts are forecastable, so counts are what gets a target. Revenue is still READ and displayed
- * beside the count as context — it just is not something anyone is scored against.
+ * LABOUR is the deliberate exception (migration 0047), and it is a different kind of number rather
+ * than a change of mind. Labour value is hours sold at a published rate: the workshop controls bay
+ * capacity, technician headcount and the menu price, so a service manager can genuinely commit to
+ * it. PARTS value cannot be committed to — it is whatever the vehicle needed — which is exactly why
+ * the three labour targets are `labour_amt` ONLY and never include `part_amt`.
  *
- * The md_branch_targets columns sales_revenue / service_revenue are left in place (nullable, unused)
- * rather than dropped: re-adding a column later is a migration, and keeping them costs nothing.
+ * ⚠️ Consequence worth stating plainly: a labour target is NOT a slice of `serviceRevenue`
+ * (labour + parts). The two must never be presented as summing.
  */
-export const TARGET_METRICS = ['salesUnits', 'serviceRoCount'] as const
+export const TARGET_METRICS = [
+  'salesUnits',
+  'serviceRoCount',
+  'serviceMechLabour',
+  'serviceBodyshopLabour',
+  'serviceLabourTotal',
+] as const
 export type TargetMetric = typeof TARGET_METRICS[number]
 
 /** Revenue is shown as context beside its count, never as a target. */
 export const CONTEXT_METRICS = ['salesRevenue', 'serviceRevenue'] as const
 export type ContextMetric = typeof CONTEXT_METRICS[number]
 
-/** Which context figures are money — drives the ₹ formatting. */
-export const CURRENCY_METRICS: ReadonlySet<string> = new Set<string>(['salesRevenue', 'serviceRevenue'])
+/** Which figures are money — drives the ₹ formatting AND the wider input mask on the grid. */
+export const CURRENCY_METRICS: ReadonlySet<string> = new Set<string>([
+  'salesRevenue',
+  'serviceRevenue',
+  'serviceMechLabour',
+  'serviceBodyshopLabour',
+  'serviceLabourTotal',
+])
 
-/** The revenue figure that sits beside each settable count. */
+/** The revenue figure that sits beside each settable metric as unscored context. */
 export const CONTEXT_FOR_METRIC: Record<TargetMetric, ContextMetric> = {
   salesUnits: 'salesRevenue',
   serviceRoCount: 'serviceRevenue',
+  serviceMechLabour: 'serviceRevenue',
+  serviceBodyshopLabour: 'serviceRevenue',
+  serviceLabourTotal: 'serviceRevenue',
 }
+
+/**
+ * One row per metric, replacing the `metric === 'salesUnits' ? … : …` ternaries that used to decide
+ * this at six separate sites.
+ *
+ * ⚠️ Those ternaries were not merely untidy — they were a live trap. Each one still COMPILES against
+ * a widened union while silently routing every new metric into the else-branch, so adding a metric
+ * produced wrong numbers with no type error and no runtime error. Route every per-metric decision
+ * through this table; `scripts/verify-md-targets.ts` asserts it stays exhaustive, because a
+ * `Record<TargetMetric, …>` is a compile-time guarantee only and tsx/esbuild strips types unchecked.
+ */
+export type MetricSpec = {
+  /** Which half of the grid it belongs to, and therefore which actuals fetch backs it. */
+  family: 'sales' | 'service'
+  kind: 'count' | 'money'
+  /** Key on TargetRow / TargetEntryInput (lib/targets/store.ts) — equal to the metric key. */
+  targetField: TargetMetric
+  /** Key on ActualCell (lib/targets/actuals.ts). Deliberately NOT the same names. */
+  actualField: 'salesUnits' | 'serviceRoCount' | 'mechLabour' | 'bodyshopLabour' | 'labourTotal'
+  contextField: ContextMetric
+}
+
+export const METRIC_SPEC: Record<TargetMetric, MetricSpec> = {
+  salesUnits: {
+    family: 'sales', kind: 'count',
+    targetField: 'salesUnits', actualField: 'salesUnits', contextField: 'salesRevenue',
+  },
+  serviceRoCount: {
+    family: 'service', kind: 'count',
+    targetField: 'serviceRoCount', actualField: 'serviceRoCount', contextField: 'serviceRevenue',
+  },
+  serviceMechLabour: {
+    family: 'service', kind: 'money',
+    targetField: 'serviceMechLabour', actualField: 'mechLabour', contextField: 'serviceRevenue',
+  },
+  serviceBodyshopLabour: {
+    family: 'service', kind: 'money',
+    targetField: 'serviceBodyshopLabour', actualField: 'bodyshopLabour', contextField: 'serviceRevenue',
+  },
+  serviceLabourTotal: {
+    family: 'service', kind: 'money',
+    targetField: 'serviceLabourTotal', actualField: 'labourTotal', contextField: 'serviceRevenue',
+  },
+}
+
+/**
+ * The three labour metrics, in display order.
+ *
+ * ⚠️ In the ACTUALS, mech + bodyshop === total to the rupee (both sides are filtered to the same
+ * four canonical work_type buckets). In the TARGETS they need not: the MD sets the total
+ * independently and may deliberately commit to more than the two parts. The grid warns on a
+ * mismatch rather than blocking it — a refused save would be the tool arguing with the person
+ * setting the goal.
+ */
+export const LABOUR_METRICS = ['serviceMechLabour', 'serviceBodyshopLabour', 'serviceLabourTotal'] as const
 
 /**
  * Per-brand capability. This is NOT a preference — it records what each DMS feed can actually

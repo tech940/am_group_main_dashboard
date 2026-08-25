@@ -81,9 +81,14 @@ const SCRAP_AGING_CONFIG = [
   { key: 'OTHER', label: 'OTHER', threshold: 45, aliases: [] },
 ]
 
-/** The text the buckets are named after: the ITEM, falling back to the type if none was recorded. */
+/**
+ * The text the buckets are named after: COMBINES both scrapTypeName and description
+ * so neither the registered category nor the custom item name is missed!
+ */
 function agingItemText(t: ScrapTransaction): string {
-  return String(t.description || t.scrapTypeName || '').toUpperCase()
+  const st = String(t.scrapTypeName || '')
+  const d = String(t.description || '')
+  return `${st} ${d}`.toUpperCase().trim()
 }
 
 /**
@@ -150,7 +155,7 @@ export function ScrapExecutiveDashboardView({
         (t) => (t.groupName || '').trim().toLowerCase() === companyInput.trim().toLowerCase()
       )
     }
-    const names = list.map((t) => normalizeScrapLocationName(t.locationName || '')).filter(Boolean)
+    const names = list.map((t) => normalizeScrapLocationName(t.locationName || '', t.groupName)).filter(Boolean)
     return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b))
   }, [transactions, companyInput])
 
@@ -259,7 +264,7 @@ export function ScrapExecutiveDashboardView({
 
     // Location filtering
     if (appliedLocation && appliedLocation !== 'all') {
-      list = list.filter((t) => normalizeScrapLocationName(t.locationName || '').trim().toLowerCase() === appliedLocation.trim().toLowerCase())
+      list = list.filter((t) => normalizeScrapLocationName(t.locationName || '', t.groupName).trim().toLowerCase() === appliedLocation.trim().toLowerCase())
     }
 
     return [...list].sort((a, b) => {
@@ -301,7 +306,7 @@ export function ScrapExecutiveDashboardView({
       else online += amt
 
       // Location Breakdown
-      const locName = normalizeScrapLocationName(t.locationName) || 'Other Location'
+      const locName = normalizeScrapLocationName(t.locationName, t.groupName) || 'Other Location'
       if (!locMap[locName]) locMap[locName] = { amount: 0, weight: 0, count: 0 }
       locMap[locName].amount += amt
       locMap[locName].weight += wt
@@ -378,12 +383,38 @@ export function ScrapExecutiveDashboardView({
   const maxGroupAmount = Math.max(...metrics.topGroups.map((g) => g.amount), 1)
   const maxTypeAmount = Math.max(...metrics.topTypes.map((t) => t.amount), 1)
 
-  // ── USED OIL BARREL SALES ANALYTICS COMPUTATION ──
+  const [oilMonthViewMode, setOilMonthViewMode] = useState<'rolling4' | 'all'>('rolling4')
+
+  // Helper to generate the rolling 4 months [T-3, T-2, T-1, T] based on current date
+  const rolling4Months = useMemo(() => {
+    const today = new Date()
+    const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    const months: Array<{ ym: string; label: string; fullLabel: string; isCurrent: boolean }> = []
+
+    for (let i = 3; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const label = d.toLocaleString('en-IN', { month: 'long' }).toUpperCase()
+      const fullLabel = d.toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+      months.push({
+        ym,
+        label,
+        fullLabel,
+        isCurrent: ym === currentYm,
+      })
+    }
+    return months
+  }, [])
+
+  // ── USED OIL BARREL SALES ANALYTICS COMPUTATION (ROLLING 4 MONTHS OR ALL) ──
   const oilAnalytics = useMemo(() => {
     const oilTxns = activeTxns.filter((t) => {
-      const typeUpper = (t.scrapTypeName || '').toUpperCase()
-      return typeUpper.includes('USED OIL') || typeUpper.includes('OIL')
+      const text = `${t.scrapTypeName || ''} ${t.description || ''}`.toUpperCase()
+      return text.includes('USED OIL') || text.includes('OIL')
     })
+
+    const today = new Date()
+    const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
 
     const companyMonthMap: Record<
       string,
@@ -396,116 +427,116 @@ export function ScrapExecutiveDashboardView({
       if (!d) return
       const dt = new Date(d)
       if (isNaN(dt.getTime())) return
-      const monthLabel = dt.toLocaleString('en-IN', { month: 'long', year: 'numeric' })
-      const monthShort = dt.toLocaleString('en-IN', { month: 'short' })
+      
+      const ym = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
 
-      // Used oil is recorded in BARRELS, not litres — the register's quantities are 1..10 and the
-      // implied price is ~Rs 10,269 per unit, which is a barrel rate. The old code divided by 200
-      // and clamped with Math.max(1, ...), so every row collapsed to exactly 1 and the "barrels"
-      // figure degenerated into a transaction count: 85 shown against a true 176 (-52%).
-      //
-      // The clamp+round also ran PER ROW before summing, so even with genuine litre data three
-      // 300L sales (4.5 barrels) would have reported 6. Quantity is now taken as recorded.
       const barrelQty = Number(t.weightQty || 0)
 
       if (!companyMonthMap[company]) companyMonthMap[company] = {}
-      if (!companyMonthMap[company][monthLabel]) {
-        companyMonthMap[company][monthLabel] = { barrels: 0, revenue: 0, txns: [] }
+      if (!companyMonthMap[company][ym]) {
+        companyMonthMap[company][ym] = { barrels: 0, revenue: 0, txns: [] }
       }
       if (!companyMonthMap[company]['ALL']) {
         companyMonthMap[company]['ALL'] = { barrels: 0, revenue: 0, txns: [] }
       }
-      if (!companyMonthMap[company][monthShort]) {
-        companyMonthMap[company][monthShort] = { barrels: 0, revenue: 0, txns: [] }
-      }
 
-      companyMonthMap[company][monthLabel].barrels += barrelQty
-      companyMonthMap[company][monthLabel].revenue += Number(t.amountReceived || 0)
-      companyMonthMap[company][monthLabel].txns.push(t)
+      companyMonthMap[company][ym].barrels += barrelQty
+      companyMonthMap[company][ym].revenue += Number(t.amountReceived || 0)
+      companyMonthMap[company][ym].txns.push(t)
 
       companyMonthMap[company]['ALL'].barrels += barrelQty
       companyMonthMap[company]['ALL'].revenue += Number(t.amountReceived || 0)
       companyMonthMap[company]['ALL'].txns.push(t)
-
-      companyMonthMap[company][monthShort].barrels += barrelQty
-      companyMonthMap[company][monthShort].revenue += Number(t.amountReceived || 0)
-      companyMonthMap[company][monthShort].txns.push(t)
     })
+
+    let sortedMonths: Array<{ ym: string; label: string; fullLabel: string; isCurrent: boolean }> = []
+
+    if (oilMonthViewMode === 'rolling4') {
+      sortedMonths = rolling4Months
+    } else {
+      const allMonthsMap = new Map<string, { ym: string; label: string; fullLabel: string; isCurrent: boolean }>()
+      oilTxns.forEach((t) => {
+        const d = t.soldDate || t.timestamp || t.createdAt
+        if (!d) return
+        const dt = new Date(d)
+        if (isNaN(dt.getTime())) return
+        const ym = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+        const label = dt.toLocaleString('en-IN', { month: 'long' }).toUpperCase()
+        const fullLabel = dt.toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+        if (!allMonthsMap.has(ym)) {
+          allMonthsMap.set(ym, { ym, label, fullLabel, isCurrent: ym === currentYm })
+        }
+      })
+      rolling4Months.forEach((m) => {
+        if (!allMonthsMap.has(m.ym)) allMonthsMap.set(m.ym, m)
+      })
+      sortedMonths = Array.from(allMonthsMap.values()).sort((a, b) => a.ym.localeCompare(b.ym))
+    }
 
     return {
       oilTxns,
+      sortedMonths,
       companyMonthMap,
     }
-  }, [activeTxns])
+  }, [activeTxns, oilMonthViewMode, rolling4Months])
 
   // Available Company List for Oil Barrels (from overview date-filtered activeTxns)
   const companyOilList = useMemo(() => {
     return Object.entries(oilAnalytics.companyMonthMap)
       .map(([company, monthData]) => {
         const allObj = monthData['ALL'] || { barrels: 0, revenue: 0, txns: [] }
-        const aprilObj = monthData['April 2026'] || monthData['Apr'] || { barrels: 0, txns: [] }
-        const mayObj = monthData['May 2026'] || monthData['May'] || { barrels: 0, txns: [] }
-        const juneObj = monthData['June 2026'] || monthData['Jun'] || { barrels: 0, txns: [] }
-        const julyObj = monthData['July 2026'] || monthData['Jul'] || { barrels: 0, txns: [] }
+        const monthBreakdown: Record<string, { barrels: number; revenue: number; txns: ScrapTransaction[] }> = {}
+        let computedTotal = 0
 
-        const aprilBarrels = aprilObj.barrels
-        const mayBarrels = mayObj.barrels
-        const juneBarrels = juneObj.barrels
-        const julyBarrels = julyObj.barrels
-
-        const totalBarrels = allObj.barrels || (aprilBarrels + mayBarrels + juneBarrels + julyBarrels)
+        oilAnalytics.sortedMonths.forEach((m) => {
+          const d = monthData[m.ym] || { barrels: 0, revenue: 0, txns: [] }
+          monthBreakdown[m.ym] = d
+          computedTotal += d.barrels
+        })
 
         return {
           company,
           selectedBarrels: allObj.barrels,
           revenue: allObj.revenue,
+          totalBarrels: computedTotal || allObj.barrels,
+          monthBreakdown,
           txns: allObj.txns,
-          aprilBarrels,
-          mayBarrels,
-          juneBarrels,
-          julyBarrels,
-          totalBarrels,
-          aprilTxns: aprilObj.txns,
-          mayTxns: mayObj.txns,
-          juneTxns: juneObj.txns,
-          julyTxns: julyObj.txns,
           allTxns: allObj.txns,
         }
       })
       .sort((a, b) => b.totalBarrels - a.totalBarrels)
-  }, [oilAnalytics.companyMonthMap])
+  }, [oilAnalytics])
 
   const maxOilBarrels = Math.max(...companyOilList.map((c) => c.selectedBarrels), 1)
 
   const oilMatrixTotals = useMemo(() => {
-    return companyOilList.reduce(
-      (acc, row) => {
-        acc.april += row.aprilBarrels
-        acc.may += row.mayBarrels
-        acc.june += row.juneBarrels
-        acc.july += row.julyBarrels
-        acc.total += row.totalBarrels
-        acc.aprilTxns.push(...row.aprilTxns)
-        acc.mayTxns.push(...row.mayTxns)
-        acc.juneTxns.push(...row.juneTxns)
-        acc.julyTxns.push(...row.julyTxns)
-        acc.allTxns.push(...row.allTxns)
-        return acc
-      },
-      {
-        april: 0,
-        may: 0,
-        june: 0,
-        july: 0,
-        total: 0,
-        aprilTxns: [] as ScrapTransaction[],
-        mayTxns: [] as ScrapTransaction[],
-        juneTxns: [] as ScrapTransaction[],
-        julyTxns: [] as ScrapTransaction[],
-        allTxns: [] as ScrapTransaction[],
-      }
-    )
-  }, [companyOilList])
+    const monthTotals: Record<string, { barrels: number; revenue: number; txns: ScrapTransaction[] }> = {}
+    let grandTotalBarrels = 0
+    const allTxns: ScrapTransaction[] = []
+
+    oilAnalytics.sortedMonths.forEach((m) => {
+      monthTotals[m.ym] = { barrels: 0, revenue: 0, txns: [] }
+    })
+
+    companyOilList.forEach((row) => {
+      grandTotalBarrels += row.totalBarrels
+      allTxns.push(...row.allTxns)
+      oilAnalytics.sortedMonths.forEach((m) => {
+        const d = row.monthBreakdown[m.ym]
+        if (d) {
+          monthTotals[m.ym].barrels += d.barrels
+          monthTotals[m.ym].revenue += d.revenue
+          monthTotals[m.ym].txns.push(...d.txns)
+        }
+      })
+    })
+
+    return {
+      monthTotals,
+      grandTotalBarrels,
+      allTxns,
+    }
+  }, [companyOilList, oilAnalytics.sortedMonths])
 
   const [agingCompanyFilter, setAgingCompanyFilter] = useState<string>('all')
 
@@ -529,14 +560,14 @@ export function ScrapExecutiveDashboardView({
     }
 
     const locNames = Array.from(
-      new Set(sourceTxns.map((t) => normalizeScrapLocationName(t.locationName)).filter(Boolean))
+      new Set(sourceTxns.map((t) => normalizeScrapLocationName(t.locationName, t.groupName)).filter(Boolean))
     ).sort()
 
     // One "today" for the whole matrix — it used to call new Date() inside every cell.
     const todayIso = toLocalIsoDate(new Date())
 
     const rows = locNames.map((locName) => {
-      const locTxns = sourceTxns.filter((t) => normalizeScrapLocationName(t.locationName) === locName)
+      const locTxns = sourceTxns.filter((t) => normalizeScrapLocationName(t.locationName, t.groupName) === locName)
 
       const cellData: Record<
         string,
@@ -1064,7 +1095,7 @@ export function ScrapExecutiveDashboardView({
           </CardHeader>
           <CardContent className="pt-4 pb-4 divide-y divide-slate-100 dark:divide-slate-800">
             {metrics.topLocations.slice(0, 7).map((loc) => {
-              const locTxns = activeTxns.filter((t) => normalizeScrapLocationName(t.locationName) === loc.name)
+              const locTxns = activeTxns.filter((t) => normalizeScrapLocationName(t.locationName, t.groupName) === loc.name)
               return (
                 <div
                   key={loc.name}
@@ -1156,36 +1187,79 @@ export function ScrapExecutiveDashboardView({
 
           {/* Used Oil Barrel Sales Matrix Table (Month-by-Month) */}
           <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-2xs">
-            <div className="bg-slate-900 text-white dark:bg-slate-800 px-4 py-3 border-b border-slate-800 dark:border-slate-700 flex items-center justify-between">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-100 flex items-center gap-2">
+            <div className="bg-slate-900 text-white dark:bg-slate-800 px-4 py-3 border-b border-slate-800 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-amber-400" />
-                Used Oil Barrel Sales Matrix (Month-by-Month)
-              </span>
-              <span className="text-[10px] font-bold text-slate-300">
-                Quantity in Barrels
-              </span>
+                <span className="text-xs font-black uppercase tracking-wider text-slate-100">
+                  Used Oil Barrel Sales Matrix (Month-by-Month)
+                </span>
+                <span className="hidden md:inline-block text-[10px] font-bold text-amber-400/90 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                  {oilMonthViewMode === 'rolling4' ? 'Rolling 4-Month Window (Current & Prior 3 Months)' : 'All Recorded Months'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                {/* View Mode Toggle */}
+                <div className="flex items-center bg-slate-800/90 dark:bg-slate-900/90 p-0.5 rounded-lg border border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setOilMonthViewMode('rolling4')}
+                    className={cn(
+                      'px-2.5 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer',
+                      oilMonthViewMode === 'rolling4'
+                        ? 'bg-amber-500 text-slate-950 shadow-xs'
+                        : 'text-slate-400 hover:text-slate-200'
+                    )}
+                  >
+                    Rolling 4 Months
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOilMonthViewMode('all')}
+                    className={cn(
+                      'px-2.5 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer',
+                      oilMonthViewMode === 'all'
+                        ? 'bg-amber-500 text-slate-950 shadow-xs'
+                        : 'text-slate-400 hover:text-slate-200'
+                    )}
+                  >
+                    All Months
+                  </button>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400 hidden sm:inline">
+                  Quantity in Barrels
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-900 text-white dark:bg-slate-800 border-b border-slate-800 dark:border-slate-700">
                   <tr>
-                    <th className="py-3 px-4 font-black uppercase text-[10px] tracking-wider text-slate-100 border-r border-slate-800 dark:border-slate-700 bg-slate-900 dark:bg-slate-800">
+                    <th className="py-3 px-4 font-black uppercase text-[10px] tracking-wider text-slate-100 border-r border-slate-800 dark:border-slate-700 bg-slate-900 dark:bg-slate-800 min-w-[190px]">
                       COMPANY / GROUP
                     </th>
-                    <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-slate-100">
-                      APRIL
-                    </th>
-                    <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-slate-100">
-                      MAY
-                    </th>
-                    <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-slate-100">
-                      JUNE
-                    </th>
-                    <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-slate-100">
-                      JULY
-                    </th>
-                    <th className="py-3 px-4 text-right font-black uppercase text-[10px] tracking-wider text-amber-400 bg-slate-800/80">
+                    {oilAnalytics.sortedMonths.map((m) => (
+                      <th
+                        key={m.ym}
+                        className={cn(
+                          'py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider whitespace-nowrap min-w-[120px] transition-colors',
+                          m.isCurrent
+                            ? 'text-amber-300 bg-amber-950/40 border-x border-amber-500/30'
+                            : 'text-slate-100'
+                        )}
+                      >
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span>{m.label}</span>
+                          {m.isCurrent && (
+                            <span className="text-[8px] font-black px-1.5 py-0.5 bg-amber-400 text-slate-950 rounded-xs uppercase tracking-tight shadow-2xs">
+                              Current
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                    ))}
+                    <th className="py-3 px-4 text-right font-black uppercase text-[10px] tracking-wider text-amber-400 bg-slate-800/80 min-w-[130px]">
                       TOTAL BARRELS
                     </th>
                   </tr>
@@ -1193,80 +1267,48 @@ export function ScrapExecutiveDashboardView({
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium">
                   {companyOilList.map((row) => (
                     <tr key={row.company} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-2.5 px-4 font-black text-slate-900 dark:text-slate-100 border-r border-slate-100 dark:border-slate-800">
+                      <td className="py-2.5 px-4 font-black text-slate-900 dark:text-slate-100 border-r border-slate-100 dark:border-slate-800 text-xs">
                         {row.company}
                       </td>
-                      <td
-                        onClick={() => {
-                          if (row.aprilBarrels > 0) {
-                            onDrilldown(`Used Oil Barrels: ${row.company} · April 2026`, row.aprilTxns)
-                          }
-                        }}
-                        className={cn('py-2.5 px-3 text-center font-extrabold', row.aprilBarrels > 0 ? 'cursor-pointer hover:bg-amber-50/60 dark:hover:bg-amber-950/40' : '')}
-                      >
-                        {row.aprilBarrels > 0 ? (
-                          <span className="inline-flex items-center rounded-md bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700 px-2.5 py-0.5 text-xs font-black shadow-2xs transition-transform hover:scale-105">
-                            {row.aprilBarrels} Barrels
-                          </span>
-                        ) : (
-                          <span className="text-slate-300 dark:text-slate-600">-</span>
-                        )}
-                      </td>
-                      <td
-                        onClick={() => {
-                          if (row.mayBarrels > 0) {
-                            onDrilldown(`Used Oil Barrels: ${row.company} · May 2026`, row.mayTxns)
-                          }
-                        }}
-                        className={cn('py-2.5 px-3 text-center font-extrabold', row.mayBarrels > 0 ? 'cursor-pointer hover:bg-amber-50/60 dark:hover:bg-amber-950/40' : '')}
-                      >
-                        {row.mayBarrels > 0 ? (
-                          <span className="inline-flex items-center rounded-md bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700 px-2.5 py-0.5 text-xs font-black shadow-2xs transition-transform hover:scale-105">
-                            {row.mayBarrels} Barrels
-                          </span>
-                        ) : (
-                          <span className="text-slate-300 dark:text-slate-600">-</span>
-                        )}
-                      </td>
-                      <td
-                        onClick={() => {
-                          if (row.juneBarrels > 0) {
-                            onDrilldown(`Used Oil Barrels: ${row.company} · June 2026`, row.juneTxns)
-                          }
-                        }}
-                        className={cn('py-2.5 px-3 text-center font-extrabold', row.juneBarrels > 0 ? 'cursor-pointer hover:bg-amber-50/60 dark:hover:bg-amber-950/40' : '')}
-                      >
-                        {row.juneBarrels > 0 ? (
-                          <span className="inline-flex items-center rounded-md bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700 px-2.5 py-0.5 text-xs font-black shadow-2xs transition-transform hover:scale-105">
-                            {row.juneBarrels} Barrels
-                          </span>
-                        ) : (
-                          <span className="text-slate-300 dark:text-slate-600">-</span>
-                        )}
-                      </td>
-                      <td
-                        onClick={() => {
-                          if (row.julyBarrels > 0) {
-                            onDrilldown(`Used Oil Barrels: ${row.company} · July 2026`, row.julyTxns)
-                          }
-                        }}
-                        className={cn('py-2.5 px-3 text-center font-extrabold', row.julyBarrels > 0 ? 'cursor-pointer hover:bg-amber-50/60 dark:hover:bg-amber-950/40' : '')}
-                      >
-                        {row.julyBarrels > 0 ? (
-                          <span className="inline-flex items-center rounded-md bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700 px-2.5 py-0.5 text-xs font-black shadow-2xs transition-transform hover:scale-105">
-                            {row.julyBarrels} Barrels
-                          </span>
-                        ) : (
-                          <span className="text-slate-300 dark:text-slate-600">-</span>
-                        )}
-                      </td>
+                      {oilAnalytics.sortedMonths.map((m) => {
+                        const cell = row.monthBreakdown[m.ym]
+                        const barrels = cell?.barrels || 0
+                        return (
+                          <td
+                            key={m.ym}
+                            onClick={() => {
+                              if (barrels > 0 && cell) {
+                                onDrilldown(`Used Oil Barrels: ${row.company} · ${m.fullLabel}`, cell.txns)
+                              }
+                            }}
+                            className={cn(
+                              'py-2.5 px-3 text-center font-extrabold transition-colors',
+                              m.isCurrent ? 'bg-amber-50/30 dark:bg-amber-950/15 border-x border-amber-200/40 dark:border-amber-900/30' : '',
+                              barrels > 0 ? 'cursor-pointer hover:bg-amber-50/60 dark:hover:bg-amber-950/40' : ''
+                            )}
+                          >
+                            {barrels > 0 ? (
+                              <span className={cn(
+                                'inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-black shadow-2xs transition-transform hover:scale-105',
+                                m.isCurrent
+                                  ? 'bg-amber-200 text-amber-950 dark:bg-amber-900 dark:text-amber-100 border border-amber-400 dark:border-amber-600 ring-1 ring-amber-400/30'
+                                  : 'bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                              )}>
+                                {barrels} Barrels
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 dark:text-slate-600">-</span>
+                            )}
+                          </td>
+                        )
+                      })}
                       <td
                         onClick={() => {
                           if (row.totalBarrels > 0) {
                             onDrilldown(`Used Oil Barrels: ${row.company} · All Months Total`, row.allTxns)
                           }
                         }}
-                        className="py-2.5 px-4 text-right font-black text-amber-700 dark:text-amber-400 bg-amber-50/20 dark:bg-amber-950/20 cursor-pointer hover:bg-amber-100/40 dark:hover:bg-amber-900/40 transition-colors"
+                        className="py-2.5 px-4 text-right font-black text-amber-700 dark:text-amber-400 bg-amber-50/20 dark:bg-amber-950/20 cursor-pointer hover:bg-amber-100/40 dark:hover:bg-amber-900/40 transition-colors text-xs"
                       >
                         {row.totalBarrels} Barrels
                       </td>
@@ -1278,35 +1320,29 @@ export function ScrapExecutiveDashboardView({
                     <td className="py-3 px-4 font-black uppercase text-xs tracking-wider text-amber-400 border-r border-slate-800 dark:border-slate-700 bg-slate-900 dark:bg-slate-800">
                       GRAND TOTAL
                     </td>
-                    <td
-                      onClick={() => onDrilldown('Grand Total · Used Oil (April 2026)', oilMatrixTotals.aprilTxns)}
-                      className="py-3 px-3 text-center text-xs font-black text-amber-300 cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      {oilMatrixTotals.april} Barrels
-                    </td>
-                    <td
-                      onClick={() => onDrilldown('Grand Total · Used Oil (May 2026)', oilMatrixTotals.mayTxns)}
-                      className="py-3 px-3 text-center text-xs font-black text-amber-300 cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      {oilMatrixTotals.may} Barrels
-                    </td>
-                    <td
-                      onClick={() => onDrilldown('Grand Total · Used Oil (June 2026)', oilMatrixTotals.juneTxns)}
-                      className="py-3 px-3 text-center text-xs font-black text-amber-300 cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      {oilMatrixTotals.june} Barrels
-                    </td>
-                    <td
-                      onClick={() => onDrilldown('Grand Total · Used Oil (July 2026)', oilMatrixTotals.julyTxns)}
-                      className="py-3 px-3 text-center text-xs font-black text-amber-300 cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      {oilMatrixTotals.july} Barrels
-                    </td>
+                    {oilAnalytics.sortedMonths.map((m) => {
+                      const totalCell = oilMatrixTotals.monthTotals[m.ym]
+                      const totalBarrels = totalCell?.barrels || 0
+                      return (
+                        <td
+                          key={m.ym}
+                          onClick={() => onDrilldown(`Grand Total · Used Oil (${m.fullLabel})`, totalCell?.txns || [])}
+                          className={cn(
+                            'py-3 px-3 text-center text-xs font-black cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors',
+                            m.isCurrent
+                              ? 'text-amber-200 bg-amber-950/50 border-x border-amber-500/40'
+                              : 'text-amber-300'
+                          )}
+                        >
+                          {totalBarrels > 0 ? `${totalBarrels} Barrels` : '-'}
+                        </td>
+                      )
+                    })}
                     <td
                       onClick={() => onDrilldown('Grand Total · Used Oil (All Months Total)', oilMatrixTotals.allTxns)}
                       className="py-3 px-4 text-right text-xs font-black text-amber-400 bg-slate-800/90 dark:bg-slate-800 cursor-pointer hover:bg-amber-950/80 transition-colors"
                     >
-                      {oilMatrixTotals.total} Barrels
+                      {oilMatrixTotals.grandTotalBarrels} Barrels
                     </td>
                   </tr>
                 </tfoot>

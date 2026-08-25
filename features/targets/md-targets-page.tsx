@@ -8,6 +8,7 @@ import { SectionCard, formatCurrency } from '@/components/petty-cash/pc-shared'
 import { toast } from '@/hooks/use-toast'
 import {
   BRAND_TARGET_CAPABILITIES,
+  METRIC_SPEC,
   TARGET_BRANDS,
   TARGET_METRICS,
   type TargetBrand,
@@ -15,7 +16,8 @@ import {
 } from '@/lib/targets/constants'
 
 /**
- * The MD's current-month targets: one row per branch, two settable counts, pace against elapsed time.
+ * The MD's current-month targets: one row per branch, five settable figures (two counts and three
+ * workshop labour values), pace against elapsed time.
  *
  * ── Why this shape ────────────────────────────────────────────────────────────────────────────
  * This replaced a 12-month x 4-metric grid that showed ONE branch at a time. Narrowing to the
@@ -67,16 +69,37 @@ type Payload = {
 
 const METRIC_LABELS: Record<TargetMetric, string> = {
   salesUnits: 'Sales',
-  serviceRoCount: 'Service',
+  serviceRoCount: 'RO',
+  serviceMechLabour: 'Mech labour',
+  serviceBodyshopLabour: 'Bodyshop labour',
+  serviceLabourTotal: 'Labour',
 }
 
 const METRIC_UNITS: Record<TargetMetric, string> = {
   salesUnits: 'vehicles delivered',
   serviceRoCount: 'jobs billed',
+  serviceMechLabour: 'labour value, mechanical work',
+  serviceBodyshopLabour: 'labour value, accidental repair',
+  serviceLabourTotal: 'labour value, all work',
 }
 
-/** Digits only — the house input mask. */
-const maskNumeric = (value: string) => value.replace(/\D/g, '').slice(0, 7)
+/** Is this metric money rather than a count? Drives formatting, the input width and the mask. */
+const isMoney = (metric: TargetMetric) => METRIC_SPEC[metric].kind === 'money'
+
+/**
+ * Digits only — the house input mask.
+ *
+ * ⚠️ The cap is metric-aware and that is load-bearing. A flat 7 digits caps every target at
+ * 9,999,999, i.e. under Rs1 Cr — fine for a vehicle count, useless for a month of labour at a branch
+ * billing several crore. Because the field is controlled, an over-long entry simply never lands and
+ * there is NO error to see: the keystroke is silently swallowed. Money gets 10 digits (Rs999 Cr).
+ */
+const maskNumeric = (value: string, metric: TargetMetric) =>
+  value.replace(/\D/g, '').slice(0, isMoney(metric) ? 10 : 7)
+
+/** Targets are whole rupees — the grid never shows paise. */
+const formatTargetValue = (metric: TargetMetric, value: number) =>
+  (isMoney(metric) ? formatCurrency(value) : value.toLocaleString('en-IN'))
 
 const cellKey = (code: string, metric: TargetMetric) => `${code}|${metric}`
 
@@ -131,7 +154,7 @@ export function MdTargetsWorkspace() {
   )
 
   const setCell = useCallback((row: BranchRow, metric: TargetMetric, raw: string) => {
-    const next = maskNumeric(raw)
+    const next = maskNumeric(raw, metric)
     const key = cellKey(row.code, metric)
     const original = originalOf(row, metric)
     setEdits((prev) => {
@@ -177,7 +200,11 @@ export function MdTargetsWorkspace() {
           month: payload.period.month,
           salesUnits: resolve('salesUnits'),
           serviceRoCount: resolve('serviceRoCount'),
-          // Revenue is context only and is never set from this screen.
+          serviceMechLabour: resolve('serviceMechLabour'),
+          serviceBodyshopLabour: resolve('serviceBodyshopLabour'),
+          serviceLabourTotal: resolve('serviceLabourTotal'),
+          // Total revenue stays context only and is never set from this screen. Labour above IS
+          // settable — it is hours sold at a published rate, not a mix-dependent total.
           salesRevenue: null,
           serviceRevenue: null,
         }
@@ -313,7 +340,7 @@ export function MdTargetsWorkspace() {
                 ? `${METRIC_UNITS[metric]} · ${payload.capability.serviceRoBasis}`
                 : METRIC_UNITS[metric]}
               icon={Target}
-              iconTone={metric === 'salesUnits' ? 'blue' : 'violet'}
+              iconTone={METRIC_SPEC[metric].family === 'sales' ? 'blue' : 'violet'}
             >
               <div className="overflow-x-auto p-5">
                 {/* Hand-rolled table: md-targets-grid opts out of the global !important thead paint. */}
@@ -335,7 +362,7 @@ export function MdTargetsWorkspace() {
                       * genuinely is per branch.
                       */}
                     {payload.rows
-                      .filter((row) => !(metric === 'salesUnits' && payload.capability.salesGrain === 'brand' && !row.isBrandLevel))
+                      .filter((row) => !(METRIC_SPEC[metric].family === 'sales' && payload.capability.salesGrain === 'brand' && !row.isBrandLevel))
                       .map((row) => {
                       const cell = row.metrics[metric]
                       const settable = row.settable[metric] && payload.canSaveTargets
@@ -362,23 +389,25 @@ export function MdTargetsWorkspace() {
                                 placeholder="—"
                                 aria-label={`${METRIC_LABELS[metric]} target for ${row.label}`}
                                 className={[
-                                  'ml-auto h-10 w-24 rounded-xl text-right tabular-nums',
+                                  'ml-auto h-10 rounded-xl text-right tabular-nums',
+                                  // Rs-scale figures need the room; w-24 truncated them mid-number.
+                                  isMoney(metric) ? 'w-36' : 'w-24',
                                   dirty ? 'border-l-4 border-l-indigo-500 bg-indigo-50' : '',
                                 ].join(' ')}
                               />
                             ) : (
                               <span className="text-sm font-semibold tabular-nums text-slate-400">
-                                {cell.target === null ? '—' : cell.target.toLocaleString('en-IN')}
+                                {cell.target === null ? '—' : formatTargetValue(metric, cell.target)}
                               </span>
                             )}
                           </td>
                           <td className="border-b border-slate-100 px-2 py-2.5 text-right">
                             <span className="text-base font-black tabular-nums text-slate-900">
-                              {cell.status === 'unavailable' ? '—' : (cell.actual ?? 0).toLocaleString('en-IN')}
+                              {cell.status === 'unavailable' ? '—' : formatTargetValue(metric, cell.actual ?? 0)}
                             </span>
                             {cell.expectedToDate !== null && (
                               <span className="block text-[11px] font-semibold tabular-nums text-slate-400">
-                                {cell.expectedToDate.toLocaleString('en-IN')} due by today
+                                {formatTargetValue(metric, cell.expectedToDate)} due by today
                               </span>
                             )}
                           </td>

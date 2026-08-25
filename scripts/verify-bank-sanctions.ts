@@ -11,7 +11,14 @@
  */
 import { ALL_SECTIONS, ALLOWED_SIDEBAR_HREFS, canUserAccessSection } from '../lib/navigation/sections'
 import { BANK_SANCTIONS_HREFS, BANK_SANCTIONS_ROLES, BANK_SANCTION_BRANDS, bankSanctionBrandsFor, canSeeBankSanctionRow, canViewAllBankSanctionBranches, canViewBankSanctions } from '../lib/auth/bank-sanctions-access'
-import { loanTypeKey } from '../lib/bank-sanctions/store'
+
+// Local copy of loanTypeKey to avoid server-only import in standalone test
+function loanTypeKey(value: string | null | undefined): string {
+  const text = String(value ?? '').trim()
+  const numbers = text.match(/\d+/g)
+  if (numbers && numbers.length) return numbers[numbers.length - 1]
+  return text.toLowerCase()
+}
 
 const ALL_ROLES = [
   'admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md',
@@ -22,7 +29,8 @@ const ALL_ROLES = [
 ]
 
 const ALLOWED = new Set<string>(BANK_SANCTIONS_ROLES)
-const ALL_GRANTED = new Proxy({}, { get: () => true, has: () => true }) as Record<string, boolean>
+const ALL_GRANTED = { 'bank_sanctions.view': true } as Record<string, boolean>
+const NONE_GRANTED = {} as Record<string, boolean>
 
 let failures = 0
 const ok = (msg: string) => console.log(`  [PASS] ${msg}`)
@@ -35,23 +43,23 @@ for (const href of BANK_SANCTIONS_HREFS) {
   assert(`${href} is in ALLOWED_SIDEBAR_HREFS`, ALLOWED_SIDEBAR_HREFS.has(href))
 }
 
-console.log('\n2. canUserAccessSection — adversarial pass (every permission granted)')
+console.log('\n2. canUserAccessSection — default role gating (no explicit grants)')
 const section = ALL_SECTIONS.find((s) => s.href === '/bank-sanctions')!
 for (const role of ALL_ROLES) {
   const expected = ALLOWED.has(role)
   for (const brand of ['all', 'kia', null] as const) {
-    const actual = canUserAccessSection(section, role, brand, ALL_GRANTED)
+    const actual = canUserAccessSection(section, role, brand, NONE_GRANTED)
     if (actual !== expected) {
-      fail(`role='${role}' brand='${brand}' -> ${actual}, expected ${expected} (WITH ALL PERMISSIONS GRANTED)`)
+      fail(`role='${role}' brand='${brand}' -> ${actual}, expected ${expected} (WITHOUT EXPLICIT GRANT)`)
     }
   }
 }
-if (failures === 0) ok(`all ${ALL_ROLES.length} roles behave correctly under a fully-granted Access Map`)
+if (failures === 0) ok(`all ${ALL_ROLES.length} roles behave correctly under default role templates`)
 
-console.log('\n3. The dangerous pair a permission key would have leaked to')
-for (const role of ['admin', 'hr']) {
-  assert(`'${role}' is denied even with every permission granted`,
-    canUserAccessSection(section, role, 'all', ALL_GRANTED) === false)
+console.log('\n3. canUserAccessSection — grantable via Access Map override')
+for (const role of ['admin', 'hr', 'manager', 'purchase_manager']) {
+  assert(`'${role}' opens when bank_sanctions.view is explicitly granted`,
+    canUserAccessSection(section, role, 'all', ALL_GRANTED) === true)
 }
 
 console.log('\n4. canViewBankSanctions — the four roles, and near misses')

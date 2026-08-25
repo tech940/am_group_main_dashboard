@@ -975,8 +975,15 @@ export const kiaSalesTargets = pgTable('kia_sales_targets', {
 }))
 
 /**
- * MD-set monthly targets per brand + branch — sales units, sales revenue, service RO count,
- * service revenue. Backs the MD-only /targets section. Migration 0043.
+ * MD-set monthly targets per brand + branch — sales units, service RO count, and the three workshop
+ * labour targets (mech / bodyshop / total). Backs the MD-only /targets section. Migrations 0043 and
+ * 0047.
+ *
+ * ⚠️ The three labour columns are labour_amt ONLY and exclude parts, so they are NOT a subdivision
+ * of `serviceRevenue` (which is labour + parts). Never present them as summing into it. Labour is
+ * the one money figure that IS scored, because it is hours sold at a published rate — see the
+ * reasoning in lib/db/migrations/0047_add_md_target_labour_metrics.sql. `salesRevenue` and
+ * `serviceRevenue` remain context-only: read and displayed, never a target.
  *
  * A different GRAIN from kiaSalesTargets above, not a superset of it: that table is per-CONSULTANT
  * and KIA-only and stays as the individual leaderboard's source. This one is per-BRANCH, per-brand,
@@ -1003,6 +1010,10 @@ export const mdBranchTargets = pgTable('md_branch_targets', {
   salesRevenue: decimal('sales_revenue', { precision: 14, scale: 2 }),
   serviceRoCount: integer('service_ro_count'),
   serviceRevenue: decimal('service_revenue', { precision: 14, scale: 2 }),
+  // Migration 0047. labour_amt only — parts deliberately excluded; see the block comment above.
+  serviceMechLabour: decimal('service_mech_labour', { precision: 14, scale: 2 }),
+  serviceBodyshopLabour: decimal('service_bodyshop_labour', { precision: 14, scale: 2 }),
+  serviceLabourTotal: decimal('service_labour_total', { precision: 14, scale: 2 }),
   note: text('note'),
   updatedBy: uuid('updated_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

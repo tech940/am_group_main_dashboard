@@ -670,7 +670,7 @@ export function canUserAccessSection(
   // no permission key, so without the return it would fall to the function's final `return true`
   // and become visible to every role. See lib/auth/bank-sanctions-access.ts.
   if (isBankSanctionsHref(href)) {
-    return canViewBankSanctions(userRole)
+    return canViewBankSanctions(userRole, permissionMap)
   }
 
   // Call Analysis + Insurance Analysis — MD + Developer ONLY, and unwidenable.

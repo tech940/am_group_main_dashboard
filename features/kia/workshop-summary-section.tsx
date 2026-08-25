@@ -19,6 +19,20 @@ type WorkshopSummary = {
   lyAccidental: Split
   locations: Location[]
   trend: { day: string; cy: number; ly: number }[]
+  /**
+   * The MD's targets for this month and this scope, from /targets. NULL throughout when nothing is
+   * set, or when the targets table is not reachable — never 0, so an unset branch can render an
+   * em-dash rather than claiming 0% achieved.
+   */
+  targets: {
+    roCount: number | null
+    mechLabour: number | null
+    bodyshopLabour: number | null
+    labourTotal: number | null
+    branchesWithTarget: number
+    branchesInScope: number
+  } | null
+  targetPeriod: { year: number; month: number; daysInMonth: number; throughDay: number }
 }
 
 function formatCurrency(value: number) {
@@ -58,9 +72,26 @@ export function WorkshopSummarySection({ endDate, dealerCode }: { endDate?: stri
     return ((cy - ly) / ly) * 100
   }
 
+  /**
+   * Achievement against the MD's target, PRO-RATED to the day.
+   *
+   * The CY beside it is month-to-date, so comparing it with a whole-month target would report every
+   * workshop as far behind until the last day of the month. `throughDay / daysInMonth` is the same
+   * elapsed-time basis the /targets grid uses for its "due by today" figure, so the two screens
+   * agree. The full-month target is still what is DISPLAYED — that is the number the MD set.
+   */
+  const paceAgainstTarget = (cy: number, target: number | null) => {
+    if (target === null || target <= 0) return null
+    const { throughDay, daysInMonth } = d.targetPeriod
+    const expected = target * (daysInMonth > 0 ? throughDay / daysInMonth : 1)
+    if (expected <= 0) return null
+    return Math.round((cy / expected) * 100)
+  }
+
   // matrix cell rendering helper
-  const renderCell = (cy: number, ly: number, formatter: (v: number) => string) => {
+  const renderCell = (cy: number, ly: number, formatter: (v: number) => string, target: number | null = null) => {
     const growth = getGrowth(cy, ly)
+    const pace = paceAgainstTarget(cy, target)
     return (
       <div role="cell" className="text-right">
         <div className="text-[14px] font-black text-slate-900">{formatter(cy)}</div>
@@ -75,6 +106,23 @@ export function WorkshopSummarySection({ endDate, dealerCode }: { endDate?: stri
             </span>
           )}
         </div>
+        {/*
+          * Rendered only when a target actually exists. An em-dash row for every unset metric would
+          * add four empty lines to the matrix and teach the reader to ignore the third line.
+          */}
+        {target !== null && (
+          <div className="flex items-center justify-end gap-1.5 mt-0.5 text-[10px] font-semibold text-indigo-700">
+            <span>Target: {formatter(target)}</span>
+            {pace !== null && (
+              <span
+                className={cn('font-black', pace >= 100 ? 'text-emerald-600' : pace >= 90 ? 'text-amber-600' : 'text-rose-600')}
+                title={`Month-to-date billing is ${pace}% of the ${d.targetPeriod.throughDay}/${d.targetPeriod.daysInMonth} of the monthly target due by today. The figure shown is the FULL month target.`}
+              >
+                {pace}%
+              </span>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -87,16 +135,19 @@ export function WorkshopSummarySection({ endDate, dealerCode }: { endDate?: stri
       acc: { cy: d.accidental.billing, ly: d.lyAccidental.billing, formatter: formatCurrency }
     },
     {
+      // The MD's four workshop targets land here and in the row below, with no new rows needed:
+      // RO -> RO Count/Total, Mech labour -> Labour Revenue/Mechanical, Bodyshop labour ->
+      // Labour Revenue/Accidental, Labour -> Labour Revenue/Total.
       label: 'RO Count',
-      total: { cy: d.total.roCount, ly: d.lyTotal.roCount, formatter: (v: number) => formatInt(v) },
+      total: { cy: d.total.roCount, ly: d.lyTotal.roCount, formatter: (v: number) => formatInt(v), target: d.targets?.roCount ?? null },
       mech: { cy: d.mechanical.roCount, ly: d.lyMechanical.roCount, formatter: (v: number) => formatInt(v) },
       acc: { cy: d.accidental.roCount, ly: d.lyAccidental.roCount, formatter: (v: number) => formatInt(v) }
     },
     {
       label: 'Labour Revenue',
-      total: { cy: d.total.labour, ly: d.lyTotal.labour, formatter: formatCurrency },
-      mech: { cy: d.mechanical.labour, ly: d.lyMechanical.labour, formatter: formatCurrency },
-      acc: { cy: d.accidental.labour, ly: d.lyAccidental.labour, formatter: formatCurrency }
+      total: { cy: d.total.labour, ly: d.lyTotal.labour, formatter: formatCurrency, target: d.targets?.labourTotal ?? null },
+      mech: { cy: d.mechanical.labour, ly: d.lyMechanical.labour, formatter: formatCurrency, target: d.targets?.mechLabour ?? null },
+      acc: { cy: d.accidental.labour, ly: d.lyAccidental.labour, formatter: formatCurrency, target: d.targets?.bodyshopLabour ?? null }
     },
     {
       label: 'Parts Revenue',
@@ -136,8 +187,23 @@ export function WorkshopSummarySection({ endDate, dealerCode }: { endDate?: stri
         />
       </div>
 
+      {/*
+        * Partial-coverage warning for the All-Locations view.
+        *
+        * ⚠️ Summing the branches that DO have a target produces a group figure that looks complete
+        * and is not — the same class of quiet under-report as a failed read cached as Rs0. So when
+        * only some branches are set, say so rather than showing a bare number.
+        */}
+      {d.targets && d.targets.branchesWithTarget > 0
+        && d.targets.branchesWithTarget < d.targets.branchesInScope && (
+        <div role="note" className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 text-[11px] font-bold text-amber-900">
+          Targets are set for {d.targets.branchesWithTarget} of {d.targets.branchesInScope} branches,
+          so the group target below is the sum of those {d.targets.branchesWithTarget} only.
+        </div>
+      )}
+
       {/* Mechanical vs Accidental matrix */}
-      <div role="table" aria-label="Mechanical versus accidental workshop metrics, current year against last year" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div role="table" aria-label="Mechanical versus accidental workshop metrics, current year against last year, with the monthly target where one is set" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div role="row" className="grid grid-cols-4 border-b border-slate-100 bg-slate-50/70 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
           <span role="columnheader">Metric</span>
           <span role="columnheader" className="text-right">Total</span>
@@ -147,9 +213,10 @@ export function WorkshopSummarySection({ endDate, dealerCode }: { endDate?: stri
         {matrix.map((row) => (
           <div role="row" key={row.label} className="grid grid-cols-4 items-center border-b border-slate-50 px-5 py-3.5 last:border-0">
             <span role="rowheader" className="text-[13px] font-bold text-slate-700">{row.label}</span>
-            {renderCell(row.total.cy, row.total.ly, row.total.formatter)}
-            {renderCell(row.mech.cy, row.mech.ly, row.mech.formatter)}
-            {renderCell(row.acc.cy, row.acc.ly, row.acc.formatter)}
+            {/* Rows without a target simply pass undefined — renderCell then omits the third line. */}
+            {renderCell(row.total.cy, row.total.ly, row.total.formatter, 'target' in row.total ? row.total.target : null)}
+            {renderCell(row.mech.cy, row.mech.ly, row.mech.formatter, 'target' in row.mech ? row.mech.target : null)}
+            {renderCell(row.acc.cy, row.acc.ly, row.acc.formatter, 'target' in row.acc ? row.acc.target : null)}
           </div>
         ))}
       </div>

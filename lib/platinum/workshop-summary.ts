@@ -48,7 +48,14 @@ function numberValue(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function serviceCategorySql(column = 'work_type') {
+/**
+ * Platinum's work_type -> service category CASE. Exported so lib/targets/actuals.ts scores the MD's
+ * labour targets on the EXACT expression this page's own CY column uses.
+ *
+ * ⚠️ Do NOT merge with KIA's kiaServiceCategoryExpression. See the note on Hyundai's copy in
+ * lib/hyundai/workshop-summary.ts — arm order and the extra Paid arm are both load-bearing.
+ */
+export function serviceCategorySql(column = 'work_type') {
   const source = sql.raw(column)
   return sql`
     CASE

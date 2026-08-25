@@ -572,7 +572,7 @@ export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?:
 
   const filters = [getPettyCashAllocationVisibilityFilter(appUser)]
 
-  if (branchId && branchId !== 'all') {
+  if (branchId && branchId !== 'all' && branchId !== '__mine__') {
     if (!isBranchValue(branchId)) throw new Error('Invalid branch')
     if (!canViewPettyCashBranch(appUser, branchId)) throw new Error('Forbidden branch')
     filters.push(eq(pettyCashAllocations.branchId, branchId))
@@ -619,7 +619,7 @@ export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?:
 export async function getPettyCashLifetimeTotals(appUser: AppUser, branchId?: string | null) {
   const scope = (includeInactive: boolean) => {
     const filters = [getPettyCashAllocationVisibilityFilter(appUser, { includeInactive })]
-    if (branchId && branchId !== 'all') {
+    if (branchId && branchId !== 'all' && branchId !== '__mine__') {
       if (!isBranchValue(branchId)) throw new Error('Invalid branch')
       if (!canViewPettyCashBranch(appUser, branchId)) throw new Error('Forbidden branch')
       filters.push(eq(pettyCashAllocations.branchId, branchId))
@@ -661,7 +661,7 @@ export async function listPettyCashAllocations(
   const filters = [getPettyCashAllocationVisibilityFilter(appUser, { includeInactive })]
 
   const branchId = input?.branchId
-  if (branchId && branchId !== 'all') {
+  if (branchId && branchId !== 'all' && branchId !== '__mine__') {
     if (!isBranchValue(branchId)) throw new Error('Invalid branch')
     if (!canViewPettyCashBranch(appUser, branchId)) throw new Error('Forbidden branch')
     filters.push(eq(pettyCashAllocations.branchId, branchId))
@@ -1082,7 +1082,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
       newStatus = 'ea_rejected'
     }
   } else if (input.stage === 'md_approval') {
-    if (!['md_pending', 'md_on_hold', 'ea_pending', 'ea_on_hold', 'ed_approved'].includes(request.status)) throw new Error('Request is not awaiting MD approval')
+    if (!['md_pending', 'md_on_hold'].includes(request.status)) throw new Error('Request is not awaiting MD approval')
     if (input.action === 'approve') {
       const finalApprovedAmount = input.allocatedAmount ? parseMoney(input.allocatedAmount) : parseMoney(request.allocatedAmount || request.requestedAmount)
       if (finalApprovedAmount <= 0) throw new Error('Approved amount must be greater than zero')
@@ -1704,7 +1704,7 @@ export async function getPettyCashExpenseSummary(
   appUser: AppUser,
   options?: { branchId?: string | null; month?: string | null },
 ): Promise<PettyCashExpenseSummaryResponse> {
-  const requestedBranch = options?.branchId && options.branchId !== 'all' ? options.branchId : null
+  const requestedBranch = options?.branchId && options.branchId !== 'all' && options.branchId !== '__mine__' ? options.branchId : null
   if (requestedBranch) {
     if (!isBranchValue(requestedBranch)) throw new Error('Invalid branch')
     if (!canViewPettyCashBranch(appUser, requestedBranch)) throw new Error('Forbidden branch')

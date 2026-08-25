@@ -7,6 +7,7 @@ import { getBrandTargets, mdTargetsTableReady, targetKey } from './store'
 import {
   BRAND_TARGET_SENTINEL,
   CONTEXT_FOR_METRIC,
+  METRIC_SPEC,
   TARGET_METRICS,
   getBrandTargetCapability,
   salesIsBrandLevel,
@@ -151,8 +152,11 @@ export async function getTargetsPayload(input: {
     }
   }
 
+  // Routed through METRIC_SPEC, not `metric === 'salesUnits'`. The ternary form still COMPILES
+  // against a widened union while dropping every new metric into the else-branch, which is wrong
+  // numbers with no error anywhere — the exact failure that adding the labour metrics would have hit.
   const statusFor = (metric: TargetMetric): ActualsStatus =>
-    (metric === 'salesUnits' ? actuals.salesStatus : actuals.serviceStatus)
+    (METRIC_SPEC[metric].family === 'sales' ? actuals.salesStatus : actuals.serviceStatus)
 
   /**
    * Build one row.
@@ -164,12 +168,17 @@ export async function getTargetsPayload(input: {
     const salesScope = brandLevelSales ? BRAND_TARGET_SENTINEL : code
     const serviceScope = code
 
-    const scopeFor = (metric: TargetMetric) => (metric === 'salesUnits' ? salesScope : serviceScope)
+    const scopeFor = (metric: TargetMetric) =>
+      (METRIC_SPEC[metric].family === 'sales' ? salesScope : serviceScope)
     const settable: Record<TargetMetric, boolean> = {
       // Sales is settable on the brand row for brand-level brands, on the branch row otherwise.
       salesUnits: brandLevelSales ? isBrandLevel : !isBrandLevel,
-      // Service is always per branch, so never on the brand roll-up row.
+      // Service is always per branch, so never on the brand roll-up row. Every service metric
+      // follows the same rule — derived from the spec so a new one cannot be forgotten here.
       serviceRoCount: !isBrandLevel,
+      serviceMechLabour: !isBrandLevel,
+      serviceBodyshopLabour: !isBrandLevel,
+      serviceLabourTotal: !isBrandLevel,
     }
 
     const metrics = {} as Record<TargetMetric, MetricCell>
@@ -177,9 +186,10 @@ export async function getTargetsPayload(input: {
       const scope = scopeFor(metric)
       const t = targetByKey.get(targetKey(scope, year, month)) ?? null
       const a = actuals.cells.get(actualsKey(scope, year, month)) ?? null
-      const target = metric === 'salesUnits' ? t?.salesUnits ?? null : t?.serviceRoCount ?? null
-      const actualValue = metric === 'salesUnits' ? a?.salesUnits : a?.serviceRoCount
-      const context = metric === 'salesUnits' ? a?.salesRevenue : a?.serviceRevenue
+      const spec = METRIC_SPEC[metric]
+      const target = t?.[spec.targetField] ?? null
+      const actualValue = a?.[spec.actualField]
+      const context = a?.[spec.contextField]
       metrics[metric] = buildCell(metric, target, statusFor(metric), actualValue, context)
     }
     return { code, label, isBrandLevel, settable, metrics }
@@ -200,7 +210,7 @@ export async function getTargetsPayload(input: {
     const base = buildRow(BRAND_TARGET_SENTINEL, `${capability?.label ?? input.brand} — all branches`, true)
     const summed = {} as Record<TargetMetric, MetricCell>
     for (const metric of TARGET_METRICS) {
-      if (metric === 'salesUnits' && brandLevelSales) {
+      if (METRIC_SPEC[metric].family === 'sales' && brandLevelSales) {
         // Sales already IS a single brand-level figure for these brands — nothing to sum.
         summed[metric] = base.metrics[metric]
         continue

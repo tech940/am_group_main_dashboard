@@ -467,10 +467,8 @@ export function Sidebar() {
       external: true,
       active: Boolean(pathname?.startsWith('/targets')),
     })
-    // Bank Sanctions — EA / MD / Accounts / Developer only, via the hardcoded role constant. Not a
-    // permission key: admin and hr are family:'super' in the tier model and a key would leak to
-    // them. The page and every /api/bank-sanctions route enforce the identical predicate.
-    if (canViewBankSanctions(userRole)) commonNodes.push({
+    // Bank Sanctions — EA / MD / Accounts / Developer / PC default, or explicitly granted via Access Map.
+    if (canViewBankSanctions(userRole, permissionMap) || hasPermission('bank_sanctions.view')) commonNodes.push({
       key: '/bank-sanctions',
       label: 'Bank Sanctions',
       href: '/bank-sanctions',

@@ -17,17 +17,14 @@ function getDbUrl() {
 async function main() {
   const sql = postgres(getDbUrl(), { ssl: { rejectUnauthorized: false }, prepare: false })
   
-  const expenses = await sql`
-    SELECT e.id, e.expense_number, e.branch_id, e.department, e.amount, e.status, e.particulars, e.created_at, b.name as branch_name, b.code as branch_code
-    FROM petty_cash_expenses e
-    LEFT JOIN branches b ON b.id = e.branch_id
-    ORDER BY e.created_at DESC
-    LIMIT 20
+  const requests = await sql`
+    SELECT id, request_number, branch_id, status, current_stage, requested_amount,
+           ed_approved_by, ea_approved_by, md_approved_by, accounts_approved_by, created_at, updated_at
+    FROM petty_cash_requests
+    WHERE request_number IN ('PCR-20260825-2399', 'PCR-20260825-8054', 'PCR-20260822-0819', 'PCR-20260713-0336')
+    ORDER BY created_at DESC
   `
-  console.log('Expenses:', JSON.stringify(expenses, null, 2))
-
-  const branches = await sql`SELECT * FROM branches`
-  console.log('Branches:', JSON.stringify(branches, null, 2))
+  console.log('Final Status of 4 Requests:', JSON.stringify(requests, null, 2))
 
   await sql.end()
 }

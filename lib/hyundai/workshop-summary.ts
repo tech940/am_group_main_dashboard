@@ -51,7 +51,16 @@ function numberValue(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function categorySql(column: string) {
+/**
+ * Hyundai's work_type -> service category CASE. Exported so lib/targets/actuals.ts scores the MD's
+ * labour targets on the EXACT expression this page's own CY column uses.
+ *
+ * ⚠️ Do NOT merge with KIA's kiaServiceCategoryExpression or Platinum's copy. Hyundai and Platinum
+ * carry an extra Paid arm (`~* '^[0-9]+K$'`) that KIA does not, and KIA trims where these do not.
+ * ⚠️ Arm ORDER is load-bearing: '%running%' is tested before '%bodyshop%' is reachable, so the live
+ * value 'Running Repair BodyCare' lands in MECH on purpose. Reordering silently moves money.
+ */
+export function categorySql(column: string) {
   const source = sql.raw(column)
   return sql`
     CASE

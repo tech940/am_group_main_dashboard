@@ -11,6 +11,8 @@
 import 'dotenv/config'
 import { getBrandActuals, actualsKey } from '../lib/targets/actuals'
 import { getKiaWorkshopSummary } from '../lib/kia/workshop-summary'
+import { getHyundaiWorkshopSummary } from '../lib/hyundai/workshop-summary'
+import { getPlatinumWorkshopSummary } from '../lib/platinum/workshop-summary'
 import { fetchCanonicalHyundaiRoBillingMetrics } from '../lib/hyundai/business-excellence-metrics'
 import { fetchCanonicalRoBillingMetrics } from '../lib/platinum/business-excellence-metrics'
 import { getBrandDealers } from '../lib/dealers/registry'
@@ -50,6 +52,50 @@ async function main() {
   else fail(`KIA RO count ${kiaRo} vs reader ${ws.total.roCount}`)
   if (near(kiaRev, Number(ws.total.billing))) ok('KIA service revenue matches')
   else fail(`KIA service revenue ${kiaRev.toFixed(2)} vs reader ${Number(ws.total.billing).toFixed(2)}`)
+
+  // ---- The LABOUR split, per brand, against that brand's OWN workshop reader ----
+  //
+  // This is the load-bearing check for the MD's labour targets. The target is rendered on the BE
+  // Workshop Summary directly beside that reader's CY, so if these ever diverge the MD is scored
+  // against a number that is not the one on screen. Asserted for all three brands, not just KIA.
+  console.log('')
+  console.log('1b) Labour split vs each brand own Workshop Summary reader')
+  const labourReaders = {
+    kia: () => getKiaWorkshopSummary({ endDate: monthEnd }),
+    hyundai: () => getHyundaiWorkshopSummary({ endDate: monthEnd }),
+    platinum: () => getPlatinumWorkshopSummary({ endDate: monthEnd }),
+  } as const
+
+  for (const brand of ['kia', 'hyundai', 'platinum'] as const) {
+    const a = brand === 'kia' ? kia : await getBrandActuals(brand, year, month)
+    let mech = 0, bs = 0, tot = 0
+    for (const d of getBrandDealers(brand)) {
+      const c = a.cells.get(actualsKey(d.code, year, month))
+      mech += c?.mechLabour ?? 0
+      bs += c?.bodyshopLabour ?? 0
+      tot += c?.labourTotal ?? 0
+      // Per BRANCH, not just per brand: a brand-level match can hide two branches that are wrong in
+      // opposite directions.
+      if (c && !near((c.mechLabour ?? 0) + (c.bodyshopLabour ?? 0), c.labourTotal ?? 0)) {
+        fail(`${brand}/${d.code}: mech ${c.mechLabour} + bodyshop ${c.bodyshopLabour} != total ${c.labourTotal}`)
+      }
+    }
+    const r = await labourReaders[brand]()
+    console.log(`     ${brand}: labour Rs${tot.toFixed(0)} = mech Rs${mech.toFixed(0)} + bodyshop Rs${bs.toFixed(0)}`)
+
+    if (near(mech + bs, tot)) ok(`${brand}: mech + bodyshop reconciles to total labour`)
+    else fail(`${brand}: mech ${mech.toFixed(2)} + bodyshop ${bs.toFixed(2)} != total ${tot.toFixed(2)}`)
+
+    const checks: [string, number, number][] = [
+      ['total labour', tot, Number(r.total.labour)],
+      ['mech labour', mech, Number(r.mechanical.labour)],
+      ['bodyshop labour', bs, Number(r.accidental.labour)],
+    ]
+    for (const [label, ours, theirs] of checks) {
+      if (near(ours, theirs)) ok(`${brand}: ${label} matches the Workshop Summary reader`)
+      else fail(`${brand}: ${label} ${ours.toFixed(2)} vs reader ${theirs.toFixed(2)}`)
+    }
+  }
 
   // ---- Hyundai + Platinum service ----
   for (const brand of ['hyundai', 'platinum'] as const) {

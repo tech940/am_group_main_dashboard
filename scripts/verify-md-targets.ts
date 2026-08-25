@@ -21,7 +21,10 @@ import { ALL_SECTIONS, ALLOWED_SIDEBAR_HREFS, canUserAccessSection } from '../li
 import { MD_TARGETS_HREFS, MD_TARGETS_ROLES, canViewMdTargets } from '../lib/auth/md-targets-access'
 import { isSuperAdminRole } from '../lib/auth/roles'
 import { BRAND_DEALERS } from '../lib/dealers/registry'
-import { BRAND_TARGET_SENTINEL, TARGET_BRANDS, salesIsBrandLevel } from '../lib/targets/constants'
+import {
+  BRAND_TARGET_SENTINEL, CONTEXT_FOR_METRIC, CURRENCY_METRICS, LABOUR_METRICS, METRIC_SPEC,
+  TARGET_BRANDS, TARGET_METRICS, salesIsBrandLevel,
+} from '../lib/targets/constants'
 
 /** Every value of the user_role enum (lib/db/schema.ts). Kept explicit so a NEW role fails loudly. */
 const ALL_ROLES = [
@@ -117,6 +120,33 @@ for (const brand of TARGET_BRANDS) {
   assert(`${brand} has registered branches for its per-branch service targets`,
     (BRAND_DEALERS[brand]?.length ?? 0) > 0)
 }
+
+console.log('')
+console.log('8. Every metric is fully specified (the Records below are types only at runtime)')
+// WARNING: CONTEXT_FOR_METRIC and METRIC_SPEC are declared as Record<TargetMetric, ...>, which is a
+// COMPILE-time guarantee only. tsx/esbuild strips types without checking them, so a metric added to
+// TARGET_METRICS but forgotten in either table would ship and silently route through `undefined`.
+// These assertions are the runtime half of that contract.
+const ACTUAL_FIELDS = ['salesUnits', 'serviceRoCount', 'mechLabour', 'bodyshopLabour', 'labourTotal']
+for (const metric of TARGET_METRICS) {
+  const spec = METRIC_SPEC[metric]
+  assert(`${metric}: has a METRIC_SPEC entry`, Boolean(spec))
+  if (!spec) continue
+  // targetField must equal the metric key -- the store's column names are derived from it.
+  assert(`${metric}: targetField matches its own key`, spec.targetField === metric)
+  assert(`${metric}: actualField is a real ActualCell key`, ACTUAL_FIELDS.includes(spec.actualField))
+  assert(`${metric}: has a context metric`, Boolean(CONTEXT_FOR_METRIC[metric]))
+  // kind and CURRENCY_METRICS must agree, or the grid formats rupees as a bare count -- or worse,
+  // masks a rupee target to 7 digits and silently caps every labour target under Rs1 Cr.
+  assert(`${metric}: kind agrees with CURRENCY_METRICS`,
+    (spec.kind === 'money') === CURRENCY_METRICS.has(metric))
+}
+for (const metric of LABOUR_METRICS) {
+  assert(`${metric}: is a service-family money metric`,
+    METRIC_SPEC[metric].family === 'service' && METRIC_SPEC[metric].kind === 'money')
+}
+assert('every ActualCell metric field is claimed by exactly one metric',
+  new Set(TARGET_METRICS.map((m) => METRIC_SPEC[m].actualField)).size === TARGET_METRICS.length)
 
 console.log(failures === 0 ? '\n=== ALL CHECKS PASSED ===\n' : `\n=== ${failures} FAILURE(S) ===\n`)
 process.exit(failures === 0 ? 0 : 1)

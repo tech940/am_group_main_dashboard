@@ -44,11 +44,21 @@ export function PettyCashMonthlyBreakdown({ initialBranchId, isAllBranchViewer }
 
   // Filters
   const [selectedMonth, setSelectedMonth] = useState<string>('all')
-  const [selectedBranch, setSelectedBranch] = useState<string>(initialBranchId || 'all')
+  const [selectedBranch, setSelectedBranch] = useState<string>(() => {
+    return initialBranchId && initialBranchId !== '__mine__' ? initialBranchId : 'all'
+  })
   const [departmentFilter, setDepartmentFilter] = useState<'all' | 'Sales' | 'Service'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<'table' | 'matrix' | 'cards'>('table')
   const [expandedBrands, setExpandedBrands] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (initialBranchId && initialBranchId !== '__mine__') {
+      setSelectedBranch(initialBranchId)
+    } else {
+      setSelectedBranch('all')
+    }
+  }, [initialBranchId])
 
   const loadSummary = useCallback(async (monthParam?: string, branchParam?: string) => {
     setLoading(true)
@@ -56,7 +66,7 @@ export function PettyCashMonthlyBreakdown({ initialBranchId, isAllBranchViewer }
     try {
       const params = new URLSearchParams()
       const b = branchParam ?? selectedBranch
-      if (b && b !== 'all') params.set('branchId', b)
+      if (b && b !== 'all' && b !== '__mine__') params.set('branchId', b)
 
       const m = monthParam ?? selectedMonth
       if (m) params.set('month', m)

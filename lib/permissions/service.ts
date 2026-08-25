@@ -43,8 +43,8 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // role-template-only snapshot with every user override stripped — and getUserPermissionSnapshot
 // cached that degraded result for the full 75-minute TTL. Fixing the enum alone would have left
 // affected users locked out until their entry expired; bumping the version orphans every poisoned
-// key immediately, in every environment, with no Redis surgery.
-const PERMISSION_CACHE_VERSION = 'v25'
+// v26 registers bank_sanctions in PERMISSION_GROUPS and SECTION_ROUTES for Access Map control.
+const PERMISSION_CACHE_VERSION = 'v26'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

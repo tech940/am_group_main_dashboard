@@ -48,6 +48,8 @@ const EXCEPTIONS: Record<string, { reason: string; requireToken?: string }> = {
   ca: { reason: 'hardcoded role gate (CA/MD/Developer)', requireToken: 'isCaViewRole' },
   // Scrap ERP uses custom role & permission guard (MD/EA/Developer default).
   scrap_erp: { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canAccessScrapErp' },
+  // Bank Sanctions uses custom role & permission guard (EA/MD/Accounts/Developer/PC default).
+  bank_sanctions: { reason: 'custom role & permission gate (EA/MD/Accounts/Developer/PC default)', requireToken: 'canViewBankSanctions' },
   // Booking Payment History uses custom role & permission guard (MD/EA/Developer default).
   'kia.booking_payment_history': { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canViewBookingPaymentHistory' },
   // Insurance Analysis is gated via lib/auth/restricted-analytics.ts (MD, Developer, Assistant Manager).
@@ -123,6 +125,7 @@ const allCode = allPages + '\n' + allApi
 // section key -> the role-gate token that guards it
 const ROLE_GATED_GRANTABLE: Record<string, string> = {
   scrap_erp: 'canAccessScrapErp',
+  bank_sanctions: 'canViewBankSanctions',
   'kia.booking_payment_history': 'canViewBookingPaymentHistory',
   ca: 'isCaViewRole',
   am_finance: 'canAccessAmFinance',
