@@ -35,9 +35,20 @@ export const PETTY_CASH_EXPENSE_STATUSES = [
   'cancelled',
 ] as const
 
-export const PETTY_CASH_REQUEST_STAGES = ['draft', 'ed_approval', 'ea_approval', 'md_approval', 'accounts', 'allocated'] as const
-export const PETTY_CASH_EXPENSE_STAGES = ['ed_approval', 'ea_approval', 'md_approval', 'accounts', 'ledger'] as const
-export const PETTY_CASH_TOP_UP_THRESHOLD = 1000
+export const PETTY_CASH_KIA_TOP_UP_THRESHOLD = 1000
+export const PETTY_CASH_DEFAULT_TOP_UP_THRESHOLD = 10000
+export const PETTY_CASH_TOP_UP_THRESHOLD = PETTY_CASH_DEFAULT_TOP_UP_THRESHOLD
+
+/**
+ * Returns the minimum remaining balance required to unlock a new petty cash order / top-up request.
+ * - AM Kia: ₹1,000
+ * - All other branches (Hyundai, Platinum, MG, etc.): ₹10,000
+ */
+export function getPettyCashTopUpThreshold(branchId?: string | null): number {
+  if (!branchId) return PETTY_CASH_DEFAULT_TOP_UP_THRESHOLD
+  const normalized = branchId.trim().toLowerCase()
+  return normalized === 'kia' ? PETTY_CASH_KIA_TOP_UP_THRESHOLD : PETTY_CASH_DEFAULT_TOP_UP_THRESHOLD
+}
 
 export const PETTY_CASH_DEPARTMENT_OPTIONS = [
   'Sales',

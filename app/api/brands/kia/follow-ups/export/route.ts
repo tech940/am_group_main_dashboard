@@ -4,6 +4,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { requirePermission } from '@/lib/permissions/service'
 import { exportFollowups } from '@/lib/kia/lead-followups'
+import { INDIA_TIME_ZONE, getIndiaYmd } from '@/lib/date-time'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,19 +33,22 @@ const COLUMNS: { header: string; key: string; width: number }[] = [
   { header: 'Priority', key: 'priority', width: 10 },
   { header: 'Follow-up Status', key: 'status', width: 16 },
   { header: 'Booking Status', key: 'bookingStatus', width: 16 },
-  { header: 'Due Date', key: 'dueAt', width: 18 },
+  { header: 'Due Date (IST)', key: 'dueAt', width: 20 },
   { header: 'Outcome', key: 'outcome', width: 16 },
   { header: 'Not Interested Reason', key: 'notInterestedReason', width: 20 },
   { header: 'Remarks', key: 'notes', width: 40 },
   { header: 'Source', key: 'source', width: 12 },
-  { header: 'Completed At', key: 'completedAt', width: 18 },
-  { header: 'Created At', key: 'createdAt', width: 18 },
+  // "(IST)" in the header, because the workbook leaves the app: once it is on someone's desktop
+  // there is nothing left to tell them which zone the times are in.
+  { header: 'Completed At (IST)', key: 'completedAt', width: 20 },
+  { header: 'Created At (IST)', key: 'createdAt', width: 20 },
 ]
 
 const fmtDateTime = (d: Date | null) => {
   if (!d) return ''
-  // IST-local, human-readable (matches how the page shows dates).
-  return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
+  // IST, human-readable, matching how the page shows dates. The timeZone option is what makes this
+  // correct: 'en-IN' alone is only a language and would render in the server's zone, which is UTC.
+  return d.toLocaleString('en-IN', { timeZone: INDIA_TIME_ZONE, dateStyle: 'medium', timeStyle: 'short' })
 }
 
 export async function GET(request: Request) {
@@ -89,7 +93,9 @@ export async function GET(request: Request) {
     }
 
     const buffer = await wb.xlsx.writeBuffer()
-    const fileName = `booking-follow-ups-${new Date().toISOString().slice(0, 10)}.xlsx`
+    // The Indian working day, not the UTC one: an export taken at 01:00 IST used to be stamped with
+    // yesterday's date.
+    const fileName = `booking-follow-ups-${getIndiaYmd()}.xlsx`
     return new Response(buffer, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

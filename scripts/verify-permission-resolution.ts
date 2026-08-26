@@ -54,9 +54,32 @@ console.log('\nScenario 4 — Super Admin (developer) with a Deny:')
 const s4 = resolveEffectiveSnapshot(ALL_FALSE, { [BRAND_KEY]: false }, 'developer', BRAND)
 assert(`Super Admin ignores Deny (absolute access)`, s4.effective[BRAND_KEY] === true, `effective=${s4.effective[BRAND_KEY]}`)
 
-console.log('\nScenario 5 — Kia user cannot reach another brand:')
+console.log('\nScenario 5 — another brand is out of reach BY DEFAULT:')
+const s5a = resolveEffectiveSnapshot(ALL_FALSE, {}, ROLE, BRAND)
+assert(`"${OTHER_BRAND_KEY}" denied with no override (branch-scoped out)`, s5a.effective[OTHER_BRAND_KEY] === false, `effective=${s5a.effective[OTHER_BRAND_KEY]}`)
+
+console.log('\nScenario 5b — …but an EXPLICIT grant crosses it, on purpose:')
+/*
+ * ⚠️ THIS ASSERTION IS THE REVERSE OF WHAT IT USED TO BE, and the change is deliberate.
+ *
+ * It previously demanded that an explicit `allowed = true` on another brand's key still resolve to
+ * FALSE. That is not a safety property, it is the bug: an admin ticked a box, `user_permissions`
+ * recorded the decision, and the resolver deleted it with no feedback anywhere. Measured live — a
+ * Service GM at Hyundai granted three kia.* keys received none of them, and it silently voided
+ * EVERY cross-brand grant for EVERY user.
+ *
+ * Brand scoping is a DEFAULT (it shapes roleDefaults — still asserted in 5a above). An override is
+ * a DECISION about one user and one key, and a default must not overrule a decision. Same principle
+ * as isPermissionExplicitlyAllowed in lib/permissions/deny.ts.
+ *
+ * The DATA stays scoped regardless: sections carry their own row-level branch filters
+ * (lib/kia/approval-scope.ts, lib/petty-cash/access.ts, bankSanctionVisibility), so this opens the
+ * SECTION for one named user — it does not hand them another dealership's rows.
+ */
 const s5 = resolveEffectiveSnapshot(ALL_FALSE, { [OTHER_BRAND_KEY]: true }, ROLE, BRAND)
-assert(`"${OTHER_BRAND_KEY}" stays denied (branch-scoped out)`, s5.effective[OTHER_BRAND_KEY] === false, `effective=${s5.effective[OTHER_BRAND_KEY]}`)
+assert(`"${OTHER_BRAND_KEY}" explicitly granted is HONOURED, not silently dropped`, s5.effective[OTHER_BRAND_KEY] === true, `effective=${s5.effective[OTHER_BRAND_KEY]}`)
+const s5c = resolveEffectiveSnapshot(ALL_FALSE, { [OTHER_BRAND_KEY]: false }, ROLE, BRAND)
+assert(`an explicit Deny on another brand’s key still denies`, s5c.effective[OTHER_BRAND_KEY] === false, `effective=${s5c.effective[OTHER_BRAND_KEY]}`)
 
 console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===\n`)
 process.exit(failures === 0 ? 0 : 1)

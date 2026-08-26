@@ -21,8 +21,7 @@ import {
   Recycle,
   PhoneCall,
   ShieldCheck,
-  LogOut,
-} from 'lucide-react'
+  LogOut, UserSearch } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -92,7 +91,6 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Booking Payment History', href: '/brands/kia/booking-payment-history' },
-          { name: 'Customer Profile', href: '/brands/kia/customer-profile' },
           { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups' },
           { name: 'Social Media Leads', href: '/social-media-leads' },
         ],
@@ -277,8 +275,18 @@ export function Sidebar() {
     queryFn: async () => {
       const response = await fetch('/api/auth/permissions', { cache: 'no-store' })
       if (!response.ok) throw new Error('Failed to load permissions')
-      const data = (await response.json()) as { permissions?: Record<string, boolean> | null } | null
-      return data?.permissions ?? null
+      const data = (await response.json()) as {
+        permissions?: Record<string, boolean> | null
+        overrides?: Record<string, boolean> | null
+      } | null
+      /*
+       * `overrides` was already in the response and thrown away here. It is needed because the
+       * sections gated on a hardcoded ROLE list (Petty Cash, AM Finance, Bank Sanctions) let an
+       * explicit Access-Map grant in on the SERVER — via isPermissionExplicitlyAllowed, which reads
+       * overrides, NOT effective. Without it the sidebar could not mirror those pages, so a granted
+       * user reached the page by URL while the link stayed hidden.
+       */
+      return { effective: data?.permissions ?? null, overrides: data?.overrides ?? {} }
     },
     // The server-side snapshot behind this endpoint is itself cached for ~75min and is explicitly
     // cleared on grant/revoke (updateUserPermissionOverrides → clearUserPermissionCache), so a short
@@ -300,7 +308,8 @@ export function Sidebar() {
     refetchOnReconnect: false,
     retry: 1,
   })
-  const permissionMap = permissionsQuery.data ?? null
+  const permissionMap = permissionsQuery.data?.effective ?? null
+  const permissionOverrides = permissionsQuery.data?.overrides ?? null
   // Ready once the first attempt resolves (success OR error). On error the map stays null and
   // hasPermission is fail-closed, so brand links are hidden rather than wrongly shown.
   const permissionsReady = permissionsQuery.isSuccess || permissionsQuery.isError
@@ -331,6 +340,21 @@ export function Sidebar() {
       router.refresh()
     }
   }, [permissionsQuery.data, permissionsQuery.isSuccess, router])
+
+  /**
+   * Did an admin EXPLICITLY tick this permission for this user?
+   *
+   * ⚠️ Reads `overrides`, NOT `effective` — the exact distinction made on the server in
+   * lib/permissions/deny.ts. `effective` also contains everything the role template and tier bundle
+   * hand out, so keying a role-gated section off it turns that gate into "whatever the tier model
+   * already grants" — a large, silent widening. `overrides` is only the per-user decisions an admin
+   * made by hand.
+   */
+  const hasExplicitGrant = (permissionKey: string) => {
+    if (isSuperAdminRole(userRole)) return true
+    if (!permissionOverrides) return false
+    return permissionOverrides[permissionKey] === true
+  }
 
   const hasPermission = (permissionKey: string) => {
     // Only Super Admins (developer, md) bypass the map. Everyone else defers to their effective
@@ -455,6 +479,22 @@ export function Sidebar() {
     // ── Common / global modules (shared across every branch) ──
     const commonNodes: NavNode[] = []
     if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, external: true, active: pathname === '/cockpit' })
+    /*
+     * Customer 360 — top-level and multi-brand, so it sits with the common modules rather than under
+     * a brand. It absorbed the KIA "Customer Profile" entry that used to live under KIA > Sales;
+     * that route now redirects here.
+     *
+     * The retired kia.customer_profile key and its route are gone; its two explicit grants were
+     * migrated onto customer_360.view first, so nobody lost access in the removal.
+     */
+    if (hasPermission('customer_360.view')) commonNodes.push({
+      key: '/customer-360',
+      label: 'Customer 360',
+      href: '/customer-360',
+      icon: UserSearch,
+      external: true,
+      active: Boolean(pathname?.startsWith('/customer-360')),
+    })
     // Targets — MD + Developer ONLY. Gated on the role constant, not a permission key: a key would
     // still reach `admin` and `hr`, because both are family:'super' in lib/permissions/tiers.ts and
     // the super tier bundle sets every key true, bypassing deny-by-default. The page and every
@@ -468,7 +508,14 @@ export function Sidebar() {
       active: Boolean(pathname?.startsWith('/targets')),
     })
     // Bank Sanctions — EA / MD / Accounts / Developer / PC default, or explicitly granted via Access Map.
-    if (canViewBankSanctions(userRole, permissionMap) || hasPermission('bank_sanctions.view')) commonNodes.push({
+    /*
+     * ⚠️ Mirrors app/bank-sanctions/page.tsx: the role constant OR an EXPLICIT grant. It used to
+     * pass `permissionMap` (the EFFECTIVE map) and OR in hasPermission, which made the link appear
+     * for admin / vp / finance_head / purchase_manager / finance_team — five roles the page then
+     * bounced, because the tier pyramid hands them `bank_sanctions.view` by inheritance. The server
+     * has never accepted that; only an explicit tick opens this section.
+     */
+    if (canViewBankSanctions(userRole) || hasExplicitGrant('bank_sanctions.view')) commonNodes.push({
       key: '/bank-sanctions',
       label: 'Bank Sanctions',
       href: '/bank-sanctions',
@@ -487,7 +534,10 @@ export function Sidebar() {
     // permission snapshot. Gate the sidebar link on the IDENTICAL role rule (AND the effective view
     // key, so an explicit per-user Deny still hides it) — otherwise the link showed for roles the
     // page rejects and they got bounced to /forbidden. See scripts/verify-guard-parity.ts.
-    if (canAccessPettyCash && hasPermission('petty_cash.view')) commonNodes.push({
+    // Mirrors app/petty-cash/page.tsx exactly: the role list OR an explicit grant, then the
+    // effective key so a Deny still hides it. Before this an explicitly-granted user could open the
+    // page by URL but had no link to it.
+    if ((canAccessPettyCash || hasExplicitGrant('petty_cash.view')) && hasPermission('petty_cash.view')) commonNodes.push({
       key: '/petty-cash',
       label: 'Petty Cash',
       href: '/petty-cash',

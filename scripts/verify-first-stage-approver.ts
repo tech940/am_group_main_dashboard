@@ -89,5 +89,46 @@ check(firstStageLabel('hyundai', 'Sales') === 'GSM Approval (Sales)', 'hyundai s
 check(firstStageLabel('hyundai', 'Service') === 'GSM Approval (Service)', 'hyundai service reads "GSM Approval (Service)"')
 check(!firstStageLabel('platinum', '').includes('ED'), 'platinum never reads "ED"')
 
+/*
+ * ── 10) VP IS NOT AN APPROVER OUTSIDE KIA ─────────────────────────────────────────────────────
+ *
+ * VP is a KIA-SERVICE role. Every other brand's first stage belongs to the GSM for the relevant
+ * department — the MD's instruction of 2026-08-26, and the reason this section exists.
+ *
+ * This was NOT merely a missing rule: the approvals screen decided the first stage with a
+ * brand-blind `isVpRole()` check, so on a Hyundai or Platinum service request it handed a VP the
+ * approve buttons and showed the General Service Manager NONE — while the API said the exact
+ * opposite (403 for the VP, allowed for the GSM). The screen and the routes now both read the
+ * roles from this module, so the buttons cannot disagree with the API again.
+ *
+ * Every spelling of VP the UI used to recognise is asserted, because a partial list is how the
+ * brand-blind check survived review in the first place.
+ */
+console.log('\n10) VP is never a first-stage approver outside KIA')
+const VP_SPELLINGS = ['vp', 'vice_president', 'vice_pres', 'vp_service', 'service_vp']
+for (const brand of ['hyundai', 'platinum', 'mg', 'tata', 'honda', 'bajaj', 'ktm', 'triumph']) {
+  for (const role of VP_SPELLINGS) {
+    for (const dept of ['Sales', 'Service', 'SERVICE', '']) {
+      check(!canApproveFirstStage(role, brand, dept),
+        `${role} cannot approve ${brand} / ${JSON.stringify(dept)}`)
+    }
+  }
+}
+for (const brand of ['hyundai', 'platinum']) {
+  for (const dept of ['Sales', 'Service', '']) {
+    const roles = firstStageApproverRoles(brand, dept)
+    check(roles.every((r) => !r.includes('vp')), `${brand} / ${JSON.stringify(dept)} approver list holds no VP: [${roles}]`)
+    check(roles.length > 0 && roles.every((r) => r.endsWith('general_manager')),
+      `${brand} / ${JSON.stringify(dept)} routes to a GSM: [${roles}]`)
+  }
+}
+
+console.log('\n11) A blank or odd department still reaches BOTH GSMs, never a VP')
+for (const dept of ['', null, 'Marketing', 'Admin']) {
+  const roles = firstStageApproverRoles('platinum', dept)
+  check(roles.includes('general_manager') && roles.includes('service_general_manager'),
+    `${JSON.stringify(dept)} -> both GSMs, so a data-entry gap cannot strand the request`)
+}
+
 console.log(failures === 0 ? '\n=== ALL CHECKS PASSED ===\n' : `\n=== ${failures} FAILURE(S) ===\n`)
 process.exit(failures === 0 ? 0 : 1)

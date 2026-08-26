@@ -95,6 +95,7 @@ function getIconBadgeStyle(label: string, active?: boolean) {
   if (l.includes('renewal') || l.includes('pipeline')) return 'bg-rose-100 text-rose-500'
   if (l.includes('call') || l.includes('analysis'))     return 'bg-indigo-100 text-indigo-600'
   if (l.includes('data') || l.includes('health'))       return 'bg-emerald-100 text-emerald-600'
+  if (l.includes('customer') || l.includes('360'))      return 'bg-teal-100 text-[#055B65]'
   if (l.includes('admin'))                              return 'bg-teal-100 text-teal-600'
   if (l.includes('effective') || l.includes('access')) return 'bg-blue-100 text-blue-600'
   if (l.includes('scrap'))                              return 'bg-amber-100 text-amber-600'
@@ -284,7 +285,34 @@ function AccordionRow({
       )}
 
       {/* Label */}
-      <span className="flex-1 truncate text-left leading-tight">{node.label}</span>
+      <span className="flex-1 truncate text-left leading-tight flex items-center gap-1.5 min-w-0">
+        <span className="truncate">{node.label}</span>
+        {(node.key === '/customer-360' || node.label.toLowerCase().includes('customer 360')) && (
+          <span
+            className={cn(
+              "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black tracking-tight shrink-0 shadow-2xs border transition-colors select-none",
+              node.active
+                ? "bg-white/20 text-white border-white/30"
+                : "bg-teal-50 text-[#055B65] border-teal-200/80"
+            )}
+            title="360° Customer Intelligence"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-2.5 w-2.5"
+            >
+              <path d="M21.5 12A9.5 9.5 0 1 1 15 3.3" />
+              <polyline points="21.5 3 21.5 7.5 17 7.5" />
+            </svg>
+            <span>360°</span>
+          </span>
+        )}
+      </span>
 
       {/* Brand Badge */}
       {node.badge && !node.active && (

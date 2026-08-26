@@ -65,6 +65,7 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
+import { brandHasEd, firstStageApproverRolesForTrack } from '@/lib/approvals/first-stage-approver'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
 /*
@@ -305,6 +306,36 @@ const getMdRemarksList = (req: ApprovalRequest | null | undefined): { user: stri
 
   return list
 }
+
+const BRANCH_CHIP_PALETTE = [
+  'bg-indigo-100 border-indigo-300 text-indigo-900',
+  'bg-emerald-100 border-emerald-300 text-emerald-900',
+  'bg-amber-100 border-amber-300 text-amber-900',
+  'bg-sky-100 border-sky-300 text-sky-900',
+  'bg-rose-100 border-rose-300 text-rose-900',
+  'bg-violet-100 border-violet-300 text-violet-900',
+  'bg-teal-100 border-teal-300 text-teal-900',
+  'bg-orange-100 border-orange-300 text-orange-900',
+  'bg-cyan-100 border-cyan-300 text-cyan-900',
+  'bg-lime-100 border-lime-300 text-lime-900',
+  'bg-fuchsia-100 border-fuchsia-300 text-fuchsia-900',
+  'bg-blue-100 border-blue-300 text-blue-900',
+]
+const BRANCH_CHIP_FALLBACK = 'bg-slate-100 border-slate-300 text-slate-800'
+
+/**
+ * What counts as one branch.
+ *
+ * `dealerCode` first — it is the outlet's real identity (JK402, N5211, KATHUA) and survives the
+ * dealer NAME being typed differently. Falls back to the name, then the location, for the old rows
+ * that predate the dealer fields. A row with none of the three gets '' and takes the neutral
+ * fallback colour rather than borrowing another branch's.
+ */
+const branchKeyOf = (row: Pick<ApprovalRequest, 'dealerCode' | 'dealerName' | 'location'>) =>
+  String(row.dealerCode || row.dealerName || row.location || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
 
 export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }) {
   const queryClient = useQueryClient()
@@ -1232,14 +1263,35 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     )
   }
 
+  /*
+   * ── Who owns the FIRST approval stage, on screen ──────────────────────────────────────────────
+   *
+   * Only KIA has an Executive Director, and only KIA has a VP on the service side. Every other
+   * brand routes this same stage to the GSM for the relevant department — General SALES Manager for
+   * sales work, General SERVICE Manager for service work.
+   *
+   *   KIA        sales   -> ED / GSM (Sales)          KIA        service -> VP
+   *   all others sales   -> GSM (Sales)               all others service -> GSM (Service)
+   *
+   * ⚠️ Built here rather than taken from lib/approvals/first-stage-approver's `firstStageLabel`,
+   * because that helper models KIA as a single 'ED Approval' and this screen shows KIA's two
+   * department variants separately. The ROLE rule still comes from the shared module, so the part
+   * that decides authority cannot drift from the server.
+   */
+  const firstStageDisplayLabel = (req?: ApprovalRequest | null): string => {
+    const isService = req ? isServiceCategory(req.department, req.approvalType) : false
+    if (req && !brandHasEd(req.brand)) return isService ? 'GSM (Service)' : 'GSM (Sales)'
+    return isService ? 'VP' : 'ED / GSM (Sales)'
+  }
+
   const getPendingStageLabel = (req: ApprovalRequest): string => {
-    const isService = isServiceCategory(req.department, req.approvalType)
+    const firstStage = firstStageDisplayLabel(req)
 
     if (req.vpApproval === 'NOT APPROVED') {
-      return isService ? 'Rejected by VP' : 'Rejected by ED / GSM (Sales)'
+      return `Rejected by ${firstStage}`
     }
     if (req.vpApproval === 'HELD') {
-      return isService ? 'Held by VP' : 'Held by ED / GSM (Sales)'
+      return `Held by ${firstStage}`
     }
 
     if (req.hrApproval === 'NOT APPROVED') return 'Rejected by HR'
@@ -1262,7 +1314,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     }
 
     if (!req.vpApproval || req.vpApproval === '') {
-      return isService ? 'Pending VP' : 'Pending ED / GSM (Sales)'
+      return `Pending ${firstStage}`
     }
 
     // Stage 1 approved — check if HR approval is required
@@ -1299,14 +1351,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (pendingLabel === 'Pending MD' || pendingLabel === 'Held by MD') return 'md'
     if (pendingLabel === 'Pending EA' || pendingLabel === 'Held by EA') return 'ea'
     if (pendingLabel === 'Pending HR' || pendingLabel === 'Held by HR') return 'hr'
-    if (
-      pendingLabel.startsWith('Pending ED') ||
-      pendingLabel.startsWith('Pending VP') ||
-      pendingLabel.startsWith('Pending General Service Manager') ||
-      pendingLabel.startsWith('Held by ED') ||
-      pendingLabel.startsWith('Held by VP') ||
-      pendingLabel.startsWith('Held by GSM')
-    ) return 'sales_manager'
+    /*
+     * The first stage, matched against THIS request's own label rather than a hand-kept list of
+     * prefixes ('Pending ED' / 'Pending VP' / 'Pending General Service Manager' / …). That list had
+     * already gone stale once and silently emptied the stage filter; adding the GSM wordings to it
+     * would only set the same trap again. Both strings come from getPendingStageLabel, so an exact
+     * comparison cannot drift from it.
+     */
+    const firstStage = firstStageDisplayLabel(req)
+    if (pendingLabel === `Pending ${firstStage}` || pendingLabel === `Held by ${firstStage}`) return 'sales_manager'
 
     return null
   }
@@ -1341,27 +1394,49 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   // Mirrors the server guards in app/api/brands/kia/approvals/[id]/action/route.ts and
   // .../bulk-action/route.ts. developer/admin keep blanket access (line below) as the
   // support escape hatch only.
+  /*
+   * May this user act on the FIRST approval stage of THIS request?
+   *
+   * ⚠️ Brand-aware, and that is the whole point. The rule for every brand except KIA is the GSM for
+   * the department — **not the VP**. VP is a KIA-service role; on a Hyundai or Platinum request it
+   * has no standing at all, and before this the screen offered a VP the buttons and showed a
+   * Service GSM none, while the server said the exact opposite (403 for the VP, allowed for the
+   * GSM). The role list comes from firstStageApproverRolesForTrack — the SAME function both
+   * approvals routes call — so the buttons and the API can no longer disagree.
+   *
+   * `effectiveRole` is checked alongside the real role because this screen supports acting under an
+   * assumed role; both must satisfy the same rule.
+   *
+   * KIA is deliberately untouched: ED or General Sales Manager on sales, VP on service.
+   */
+  const canActOnFirstStage = (req?: ApprovalRequest | null) => {
+    const isService = req ? isServiceCategory(req.department, req.approvalType) : false
+
+    if (req && !brandHasEd(req.brand)) {
+      const allowed = firstStageApproverRolesForTrack(req.brand, isService ? 'service' : 'sales')
+      return allowed.includes(userRoleLower) || allowed.includes(effectiveRoleLower)
+    }
+
+    // ── KIA, unchanged ──
+    if (isService) {
+      if (effectiveRole === 'ed' || currentUser.role === 'ed') return false // ED strictly excluded
+      return isVpRole(currentUser.role) || isVpRole(effectiveRole)
+    }
+    return (
+      effectiveRole === 'ed' ||
+      currentUser.role === 'ed' ||
+      isGeneralSalesManagerRole(currentUser.role) ||
+      isGeneralSalesManagerRole(effectiveRole)
+    )
+  }
+
   const isUserAuthorizedForStage = (stage: string, req?: ApprovalRequest | null) => {
     if (['developer', 'admin'].includes(currentUser.role)) return true
 
     const isSuperUser = ['md', 'ceo'].includes(effectiveRole) || ['md', 'ceo'].includes(currentUser.role)
 
     if (stage === 'sales_manager') {
-      if (req) {
-        const isService = isServiceCategory(req.department, req.approvalType)
-        if (isService) {
-          // SERVICE ORDER: VP, SuperUser, or Admin/Developer can approve. ED is excluded.
-          if (effectiveRole === 'ed' || currentUser.role === 'ed') return false
-          return isVpRole(currentUser.role) || isVpRole(effectiveRole) || isSuperUser
-        }
-      }
-      return (
-        effectiveRole === 'ed' ||
-        currentUser.role === 'ed' ||
-        isGeneralSalesManagerRole(currentUser.role) ||
-        isGeneralSalesManagerRole(effectiveRole) ||
-        isSuperUser
-      )
+      return canActOnFirstStage(req) || isSuperUser
     }
     if (stage === 'hr') return isHrRole || isSuperUser
     if (stage === 'ea') return ['ea', 'eba'].includes(effectiveRole) || ['ea', 'eba'].includes(currentUser.role) || isSuperUser
@@ -1398,36 +1473,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return isHrRole || ['developer', 'admin'].includes(currentUser.role)
     }
 
-    if (pendingLabel.includes('VP') || pendingLabel.includes('General Service Manager')) {
-      const isService = isServiceCategory(row.department, row.approvalType)
-      if (isService) {
-        if (effectiveRole === 'ed' || currentUser.role === 'ed') return false // Strictly exclude ED!
-        return (
-          isVpRole(currentUser.role) ||
-          isVpRole(effectiveRole) ||
-          ['developer', 'admin'].includes(currentUser.role)
-        )
-      }
-    }
-
-    if (pendingLabel.includes('Pending ED') || pendingLabel.includes('Held by ED') || pendingLabel.includes('GSM (Sales)')) {
-      const isService = isServiceCategory(row.department, row.approvalType)
-      if (isService) {
-        if (effectiveRole === 'ed' || currentUser.role === 'ed') return false // Strictly exclude ED!
-        return (
-          isVpRole(currentUser.role) ||
-          isVpRole(effectiveRole) ||
-          ['developer', 'admin'].includes(currentUser.role)
-        )
-      }
-      // md/ceo excluded — the ED / GSM stage is not theirs.
-      return (
-        effectiveRole === 'ed' ||
-        currentUser.role === 'ed' ||
-        isGeneralSalesManagerRole(currentUser.role) ||
-        isGeneralSalesManagerRole(effectiveRole) ||
-        ['developer', 'admin'].includes(currentUser.role)
-      )
+    /*
+     * The first stage. This used to be two blocks that sniffed the label for 'VP' / 'ED' / 'GSM
+     * (Sales)' and then re-derived the authority rule inline — which is how a Service GSM at a
+     * non-KIA brand ended up with an EMPTY "Pending My Approval" queue for requests the server was
+     * perfectly willing to let them approve. One check now, against the stage key, using the same
+     * brand-aware rule as the buttons. md/ceo stay excluded — this stage is not theirs.
+     */
+    if (getActiveStageKey(row) === 'sales_manager') {
+      return canActOnFirstStage(row) || ['developer', 'admin'].includes(currentUser.role)
     }
 
     // Pending EA stage is ONLY pending for EA / EBA / Admin roles. MD/CEO must NOT see it in Pending My Approval.
@@ -1451,19 +1505,55 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return false
   }
 
+  /*
+   * ── The rows every headline number describes ──────────────────────────────────────────────────
+   *
+   * The KPI cards and the tab counts used to read `data.rows` — EVERY request in the system — so
+   * selecting HYUNDAI narrowed the table to one row while the cards still read "132 requests" and
+   * "Rs91,90,061 approved". The numbers described a different population than the list underneath
+   * them.
+   *
+   * ⚠️ Scoped by the BRAND (and location) selector ONLY. Deliberately NOT by the tab, the search
+   * box, the department / GL selects, the date range or the workflow-state select:
+   *   - those answer "what am I looking at right now"; the cards answer "how much is there";
+   *   - and a tab count that obeyed its own tab would be circular — "Rejected Orders" would read 0
+   *     for as long as you stood on the Pending tab, because no pending row is rejected.
+   * Brand/location is the one axis that means "whose numbers are these", which is what was asked
+   * for. The card subtitles name the active scope so a drop from 132 to 1 reads as a filter rather
+   * than as missing data.
+   */
+  const scopedRows = useMemo(() => {
+    const rows = data?.rows || []
+    return rows.filter((row) => {
+      const matchesBrand =
+        selectedBrand === 'All' ||
+        (row.brand && row.brand.trim().toUpperCase() === selectedBrand.trim().toUpperCase())
+      if (!matchesBrand) return false
+      // selectedLocation has no control in the filter bar today, so this is always 'All' — kept so
+      // that adding one automatically carries the headline numbers with it.
+      return selectedLocation === 'All' || row.location === selectedLocation
+    })
+  }, [data?.rows, selectedBrand, selectedLocation])
+
+  /** Names the active scope for the KPI subtitles, e.g. "All time · HYUNDAI". */
+  const scopeSuffix =
+    selectedBrand !== 'All' ? ` · ${selectedBrand}`
+    : selectedLocation !== 'All' ? ` · ${selectedLocation}`
+    : ''
+
   // Compute metrics counts for top strip
-  const totalCount = data?.rows.length || 0
+  const totalCount = scopedRows.length
   const pendingForMeCount = useMemo(() => {
-    if (!data?.rows) return 0
-    return data.rows.filter(getIsPendingForUser).length
-  }, [data?.rows, effectiveRole])
+    return scopedRows.filter(getIsPendingForUser).length
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedRows, effectiveRole])
 
   const approvedVolume = useMemo(() => {
-    if (!data?.rows) return 0
-    return data.rows
+    return scopedRows
       .filter(r => r.managementApproval === 'APPROVED' && !getPendingStageLabel(r).startsWith('Rejected'))
       .reduce((sum, r) => sum + Number(r.amount || 0), 0)
-  }, [data?.rows])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedRows])
 
   const isPaidOrder = useCallback((req: ApprovalRequest) => {
     const pendingLabel = getPendingStageLabel(req)
@@ -1481,9 +1571,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }, [])
 
   const rejectedCount = useMemo(() => {
-    if (!data?.rows) return 0
-    return data.rows.filter(isRejectedOrder).length
-  }, [data?.rows, isRejectedOrder])
+    return scopedRows.filter(isRejectedOrder).length
+  }, [scopedRows, isRejectedOrder])
 
   // Persistent master database row sequence map (so serial numbers stay fixed when items get approved/removed)
   const dbRowIndexMap = useMemo(() => {
@@ -1501,19 +1590,16 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }, [])
 
   const mdRemarksCount = useMemo(() => {
-    if (!data?.rows) return 0
-    return data.rows.filter(hasMdRemarks).length
-  }, [data?.rows, hasMdRemarks])
+    return scopedRows.filter(hasMdRemarks).length
+  }, [scopedRows, hasMdRemarks])
 
   const sentBackCount = useMemo(() => {
-    if (!data?.rows) return 0
-    return data.rows.filter(isSentBackOrder).length
-  }, [data?.rows, isSentBackOrder])
+    return scopedRows.filter(isSentBackOrder).length
+  }, [scopedRows, isSentBackOrder])
 
   const activeRequestsCount = useMemo(() => {
-    if (!data?.rows) return 0
-    return data.rows.filter(r => !isPaidOrder(r) && !isSentBackOrder(r) && !isRejectedOrder(r)).length
-  }, [data?.rows, isPaidOrder, isSentBackOrder, isRejectedOrder])
+    return scopedRows.filter(r => !isPaidOrder(r) && !isSentBackOrder(r) && !isRejectedOrder(r)).length
+  }, [scopedRows, isPaidOrder, isSentBackOrder, isRejectedOrder])
 
   // Filter logic
   const filteredRows = useMemo(() => {
@@ -1649,9 +1735,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }, [filteredRows])
 
   const vendorSummary = useMemo(() => {
-    if (!data?.rows) return []
     const summaryMap: Record<string, { name: string; count: number; total: number; rows: ApprovalRequest[] }> = {}
-    data.rows.forEach(row => {
+    scopedRows.forEach(row => {
       const vName = (row.vendorName || 'Unknown Vendor').trim()
       if (!summaryMap[vName]) {
         summaryMap[vName] = { name: vName, count: 0, total: 0, rows: [] }
@@ -1661,12 +1746,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       summaryMap[vName].rows.push(row)
     })
     return Object.values(summaryMap).sort((a, b) => b.total - a.total)
-  }, [data?.rows])
+  }, [scopedRows])
 
   const glSummary = useMemo(() => {
-    if (!data?.rows) return []
     const summaryMap: Record<string, { id: string; name: string; code: string; count: number; total: number; rows: ApprovalRequest[] }> = {}
-    data.rows.forEach(row => {
+    scopedRows.forEach(row => {
       const glAcc = glAccounts.find(g => g.id === row.glAccountId)
       const glName = glAcc ? glAcc.glName : 'Unknown GL Category'
       const glCode = glAcc ? glAcc.glCode : '—'
@@ -1679,7 +1763,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       summaryMap[key].rows.push(row)
     })
     return Object.values(summaryMap).sort((a, b) => b.total - a.total)
-  }, [data?.rows, glAccounts])
+  }, [scopedRows, glAccounts])
 
   const glFilteredRows = useMemo(() => {
     if (!selectedGlName || !data?.rows) return []
@@ -1851,7 +1935,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         travelSpend: 0, softwareSpend: 0, professionalSpend: 0
       }
     }
-    if (!data?.rows || data.rows.length === 0) return empty
+    if (scopedRows.length === 0) return empty
     
     let totalApproved = 0   // MD approved or fully paid
     let totalPending = 0    // still in workflow (not rejected)
@@ -1868,7 +1952,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     let securitySpend = 0, vehiclePurchase = 0, partsPurchase = 0
     let travelSpend = 0, softwareSpend = 0, professionalSpend = 0
 
-    data.rows.forEach(row => {
+    scopedRows.forEach(row => {
       const amount = Number(row.amount || 0)
       totalAll += amount
 
@@ -1985,7 +2069,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       .sort((a, b) => b.total - a.total)
       .slice(0, 5)
       
-    const totalCount = data.rows.length
+    const totalCount = scopedRows.length
     const avgTxSize = totalCount > 0 ? totalAll / totalCount : 0
     
     return {
@@ -2004,11 +2088,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         travelSpend, softwareSpend, professionalSpend
       }
     }
-  }, [data?.rows])
+  }, [scopedRows])
 
   const completedPaymentsList = useMemo(() => {
-    if (!data?.rows) return []
-    return data.rows.filter((req) => {
+    return scopedRows.filter((req) => {
       // Strictly ONLY completed and paid orders!
       const isCompleted = isPaidOrder(req)
       if (!isCompleted) return false
@@ -2076,7 +2159,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
       return true
     }).sort((a, b) => new Date(b.paymentCompletedAt || b.updatedAt || b.createdAt).getTime() - new Date(a.paymentCompletedAt || a.updatedAt || a.createdAt).getTime())
-  }, [data?.rows, isPaidOrder, completedDatePreset, completedStartDate, completedEndDate, completedDeptFilter, completedLocationFilter, completedTypeFilter, completedSearch])
+  }, [scopedRows, isPaidOrder, completedDatePreset, completedStartDate, completedEndDate, completedDeptFilter, completedLocationFilter, completedTypeFilter, completedSearch])
 
   const totalCompletedSpend = useMemo(() => {
     return completedPaymentsList.reduce((sum, r) => sum + Number(r.amount || 0), 0)
@@ -2361,6 +2444,40 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (t.includes('RTGS') || t.includes('CHEQUE')) return 'border-violet-300 text-violet-800 bg-violet-100 font-extrabold'
     return 'border-slate-300 text-slate-800 bg-slate-100 font-extrabold'
   }
+
+  /*
+   * ── Per-branch colour for the Request No. and Dealer Name chips ───────────────────────────────
+   *
+   * The list mixes every brand and every outlet, and both of those chips used to be one flat colour
+   * (indigo for the request number, slate for the dealer), so a Kia Jammu row and a Kia Udhampur row
+   * were indistinguishable until you read them. Each BRANCH now carries its own colour, and both
+   * chips in a row share it, so a row reads as a single colour block you can scan for.
+   *
+   * ⚠️ Assigned by INDEX over the sorted branches actually present — deliberately not by hashing the
+   * branch name into the palette. With ~7 branches and a 12-colour palette a hash collides better
+   * than half the time (birthday problem), and two branches sharing a colour defeats the entire
+   * point of the feature. Indexing guarantees every branch is distinct up to the palette size.
+   *
+   * Built from ALL loaded rows, not the filtered ones, so a branch keeps its colour when you filter.
+   * Sorted by key so the same data always produces the same colours; adding a NEW branch can shift
+   * the colours of branches that sort after it, which is the accepted cost of collision-freedom.
+   */
+  const branchChipClassByKey = useMemo(() => {
+    const keys = Array.from(
+      new Set((data?.rows || []).map((row) => branchKeyOf(row)).filter(Boolean)),
+    ).sort()
+    const map = new Map<string, string>()
+    keys.forEach((key, index) => {
+      // Wrap rather than run out of colours. Past the palette size two branches DO repeat a colour;
+      // at 12 slots against the outlets this group runs, that is not reachable today.
+      map.set(key, BRANCH_CHIP_PALETTE[index % BRANCH_CHIP_PALETTE.length])
+    })
+    return map
+  }, [data?.rows])
+
+  /** The branch colour for one row's Request No. / Dealer Name chips. */
+  const getBranchChipClass = (row: Pick<ApprovalRequest, 'dealerCode' | 'dealerName' | 'location'>) =>
+    branchChipClassByKey.get(branchKeyOf(row)) || BRANCH_CHIP_FALLBACK
 
   const getBrandBadgeClass = (brand: string) => {
     const b = (brand || '').trim().toLowerCase()
@@ -2850,7 +2967,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           </td>
                           <td className="py-3 px-3.5 whitespace-nowrap">
                             {row.requestNo ? (
-                              <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50/90 px-2.5 py-1 font-sans text-xs font-bold tracking-wide text-indigo-900 shadow-2xs">
+                              <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 font-sans text-xs font-bold tracking-wide shadow-2xs ${getBranchChipClass(row)}`}>
                                 {row.requestNo}
                               </span>
                             ) : (
@@ -2874,7 +2991,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             </span>
                           </td>
                           <td className="py-3 px-3.5 whitespace-nowrap max-w-[160px]" title={row.dealerName || '—'}>
-                            <span className="inline-flex items-center max-w-full truncate rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-black text-slate-900 shadow-2xs">
+                            <span className={`inline-flex items-center max-w-full truncate rounded-lg border px-2.5 py-1 text-xs font-black shadow-2xs ${getBranchChipClass(row)}`}>
                               {row.dealerName || '—'}
                             </span>
                           </td>
@@ -3034,7 +3151,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             <KpiCard
               title="TOTAL REQUESTS"
               value={totalCount}
-              subtitle="All time"
+              subtitle={`All time${scopeSuffix}`}
               icon={FileText}
               colorScheme="purple"
               chartType="area"
@@ -3053,7 +3170,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             <KpiCard
               title="PENDING APPROVALS"
               value={pendingForMeCount}
-              subtitle="Awaiting your action"
+              subtitle={`Awaiting your action${scopeSuffix}`}
               icon={Clock}
               colorScheme="amber"
               chartType="bar"
@@ -3069,7 +3186,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             <KpiCard
               title="APPROVED VOLUME"
               value={`₹${approvedVolume.toLocaleString('en-IN')}`}
-              subtitle="This year"
+              subtitle={`This year${scopeSuffix}`}
               icon={IndianRupee}
               colorScheme="emerald"
               chartType="area"
@@ -3088,7 +3205,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             <KpiCard
               title="REJECTED"
               value={rejectedCount}
-              subtitle="All time"
+              subtitle={`All time${scopeSuffix}`}
               icon={XCircle}
               colorScheme="rose"
               chartType="area"
@@ -3282,7 +3399,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   Accounts used to sit above EA/MD, which read as though it came first.
                   Stage 1 is relabelled because this option matches ED, VP and GSM alike — that is
                   what getActiveStageKey('sales_manager') covers. */}
-              <option value="pending_sales_manager">Pending ED / VP</option>
+              <option value="pending_sales_manager">Pending ED / VP / GSM</option>
               <option value="pending_hr">Pending HR</option>
               <option value="pending_ea">Pending EA</option>
               <option value="pending_md">Pending MD</option>
@@ -3737,7 +3854,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           </td>
                           <td className="py-3 px-3.5 whitespace-nowrap">
                             {row.requestNo ? (
-                              <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50/90 px-2.5 py-1 font-mono text-xs font-black tracking-wide text-indigo-900 shadow-2xs">
+                              <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 font-mono text-xs font-black tracking-wide shadow-2xs ${getBranchChipClass(row)}`}>
                                 {row.requestNo}
                               </span>
                             ) : (
@@ -3763,7 +3880,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             </span>
                           </td>
                           <td className="py-3 px-3.5 whitespace-nowrap max-w-[170px]" title={row.dealerName || '—'}>
-                            <span className="inline-flex items-center max-w-full truncate rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-black text-slate-900 shadow-2xs">
+                            <span className={`inline-flex items-center max-w-full truncate rounded-lg border px-2.5 py-1 text-xs font-black shadow-2xs ${getBranchChipClass(row)}`}>
                               {row.dealerName || '—'}
                             </span>
                           </td>
@@ -4543,7 +4660,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
             const renderNewWorkflowStepper = (req: ApprovalRequest) => {
               const isService = isServiceCategory(req.department, req.approvalType)
-              const firstStageLabel = isService ? 'VP Approval' : 'ED / GSM'
+              // Brand-aware: VP is a KIA-service role, every other brand signs off at the GSM.
+              const firstStageLabel = brandHasEd(req.brand)
+                ? (isService ? 'VP Approval' : 'ED / GSM')
+                : (isService ? 'GSM (Service)' : 'GSM (Sales)')
               const requiresHrStage = isHrApprovalRequired(req.approvalType)
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
@@ -4608,7 +4728,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       const isHeld = stg.status === 'HELD'
                       
                       let isActive = false
-                      if ((pendingLabel.startsWith('Pending ED') || pendingLabel.startsWith('Pending VP') || pendingLabel.startsWith('Pending General Service Manager')) && stg.key === 'sales_manager') isActive = true
+                      // Keyed off getActiveStageKey, not a list of label prefixes — see the note there.
+                      if (getActiveStageKey(req) === 'sales_manager' && stg.key === 'sales_manager') isActive = true
                       else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
                       else if (pendingLabel === 'Pending EA' && stg.key === 'ea') isActive = true
                       else if (pendingLabel === 'Pending MD' && stg.key === 'md') isActive = true

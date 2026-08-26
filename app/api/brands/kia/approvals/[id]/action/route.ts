@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm'
 import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout } from '@/lib/email/templates/layout'
 import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
+import { sendApprovalDecisionEmail } from '@/lib/approvals/decision-emails'
 import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 import { createResubmitToken } from '@/lib/kia/approval-resubmit'
 
@@ -171,7 +172,17 @@ export async function POST(
 
     if (!isAuthorized) {
       return NextResponse.json({ 
-        error: `Your role (${appUser.role}) is not authorized to act on ${isServiceCategory ? 'Service (requires VP)' : 'Sales (requires ED or General Sales Manager)'} requests at the ${stage} stage.` 
+        /*
+         * Name the approver this BRAND actually has. The old message said "requires VP" for any
+         * service request — telling a Hyundai General Service Manager they lacked a role that this
+         * very route had just authorised them for, and pointing them at a role their brand has
+         * nobody in.
+         */
+        error: `Your role (${appUser.role}) is not authorized to act on ${
+          isServiceCategory
+            ? (brandHasEd(requestRow.brand) ? 'Service (requires VP)' : 'Service (requires the General Service Manager)')
+            : (brandHasEd(requestRow.brand) ? 'Sales (requires ED or General Sales Manager)' : 'Sales (requires the General Sales Manager)')
+        } requests at the ${stage} stage.`
       }, { status: 403 })
     }
 
@@ -301,10 +312,13 @@ export async function POST(
             requesterName: requestRow.name,
             vendorName: requestRow.vendorName || 'Vendor',
             amount: requestRow.amount,
+            // `purpose` is the REQUEST's own text; `remarks` is what the MD just typed. Both are
+            // shown, separately — conflating them is how the MD's note went missing for 69 orders.
             purpose: requestRow.remarks,
             department: requestRow.department,
             approvalType: requestRow.approvalType,
             approvalTime: new Date(),
+            remarks: remarks || '',
           })
         }
         updates.managementRemarks = remarks || ''
@@ -390,6 +404,42 @@ export async function POST(
       .set(updates)
       .where(eq(kiaApprovalRequests.id, id))
       .returning()
+
+    /*
+     * ── Tell the submitter a decision landed ──────────────────────────────────────────────────
+     *
+     * ⚠️ This route previously sent NOTHING on REJECT or HOLD. It set
+     * `emailSendStatus = 'Rejected' | 'Held'` — a column whose name promises a message that never
+     * left — and stopped there. Only `bulk-action` ever got the fix, so rejecting one request from
+     * its row button was silent while rejecting fifty from the toolbar notified everyone.
+     *
+     * Sent for EVERY stage, not just MD: a request killed at the GSM, HR, EA or Accounts desk is
+     * just as dead to the person waiting on it. SEND_BACK is handled in its own branch above
+     * (it needs the signed re-submit link), so it is excluded here.
+     *
+     * AFTER the update, deliberately: an email must not claim a decision the database rejected.
+     * The send itself is fire-and-forget and swallows its own errors — a decision already written
+     * is not rolled back because a mail server blinked.
+     */
+    if (action === 'REJECT' || action === 'HOLD') {
+      try {
+        sendApprovalDecisionEmail(action, {
+          id: requestRow.id,
+          name: requestRow.name,
+          email: requestRow.email,
+          amount: requestRow.amount,
+          vendorName: requestRow.vendorName,
+          requestNo: requestRow.requestNo,
+          brand: requestRow.brand,
+        }, {
+          stage,
+          senderName: appUser.fullName || 'An approver',
+          remarks: remarks || '',
+        })
+      } catch (err) {
+        console.error('[approvals-action] Failed to dispatch %s email:', action, err)
+      }
+    }
 
     return NextResponse.json({
       success: true,

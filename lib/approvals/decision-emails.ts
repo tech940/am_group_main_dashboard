@@ -3,6 +3,7 @@ import 'server-only'
 import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout } from '@/lib/email/templates/layout'
 import { createResubmitToken } from '@/lib/kia/approval-resubmit'
+import { firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
 
 /**
  * Emails a submitter receives when a decision lands on their payment request.
@@ -29,8 +30,20 @@ const STAGE_LABELS: Record<string, string> = {
   ea: 'EA',
   md: 'MD',
   accounts: 'Accounts',
-  sales_manager: 'VP',
   payment_done: 'Payment',
+}
+
+/**
+ * What to call the desk that acted.
+ *
+ * ⚠️ The first stage ('sales_manager') is NOT a fixed word. It was hardcoded to 'VP' here, which
+ * would tell a Hyundai or Platinum submitter their request was decided by a role their brand does
+ * not have — the same KIA-only assumption already fixed in the routes and the approvals screen. It
+ * is resolved from the BRAND instead: 'ED' at KIA, 'GSM' everywhere else.
+ */
+export function stageLabelFor(row: DecisionRecipient, stage: string): string {
+  if (stage === 'sales_manager') return firstStageShortLabel(row.brand, null)
+  return STAGE_LABELS[stage] || stage.toUpperCase()
 }
 
 /** Same resolution order as lib/delegation/emails.ts so every outbound link agrees on the host. */
@@ -58,6 +71,8 @@ export type DecisionRecipient = {
   vendorName: string | null
   /** Shown so the submitter can quote it back — see lib/approvals/request-number.ts. */
   requestNo?: string | null
+  /** Decides what the first approval stage is CALLED — 'ED' at KIA, 'GSM' at every other brand. */
+  brand?: string | null
 }
 
 type DecisionContext = {
@@ -86,7 +101,7 @@ function requestLabel(row: DecisionRecipient): string {
 export function sendApprovalSentBackEmail(row: DecisionRecipient, ctx: DecisionContext): void {
   if (!row.email) return
   try {
-    const stageLabel = STAGE_LABELS[ctx.stage] || ctx.stage.toUpperCase()
+    const stageLabel = stageLabelFor(row, ctx.stage)
     const resubmitUrl = `${getAppBaseUrl()}/brands/kia/payment-approvals/submit?resubmit=${createResubmitToken(row.id)}`
     const bodyHtml = `
       <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${escapeHtml(row.name)},</p>
@@ -142,7 +157,7 @@ export function sendApprovalSentBackEmail(row: DecisionRecipient, ctx: DecisionC
 export function sendApprovalRejectedEmail(row: DecisionRecipient, ctx: DecisionContext): void {
   if (!row.email) return
   try {
-    const stageLabel = STAGE_LABELS[ctx.stage] || ctx.stage.toUpperCase()
+    const stageLabel = stageLabelFor(row, ctx.stage)
     const bodyHtml = `
       <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${escapeHtml(row.name)},</p>
       <p style="margin:0 0 16px;font-size:15px;color:#334155">
@@ -184,7 +199,7 @@ export function sendApprovalRejectedEmail(row: DecisionRecipient, ctx: DecisionC
 export function sendApprovalHeldEmail(row: DecisionRecipient, ctx: DecisionContext): void {
   if (!row.email) return
   try {
-    const stageLabel = STAGE_LABELS[ctx.stage] || ctx.stage.toUpperCase()
+    const stageLabel = stageLabelFor(row, ctx.stage)
     const bodyHtml = `
       <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${escapeHtml(row.name)},</p>
       <p style="margin:0 0 16px;font-size:15px;color:#334155">
@@ -213,6 +228,52 @@ export function sendApprovalHeldEmail(row: DecisionRecipient, ctx: DecisionConte
     }).catch((err) => console.error('[approvals] hold email failed for %s:', row.email, err))
   } catch (err) {
     console.error('[approvals] could not build the hold email for %s:', row.email, err)
+  }
+}
+
+/**
+ * "The MD has left a remark on your request."
+ *
+ * A remark is NOT a decision — the request stays exactly where it is. It gets its own message
+ * because the MD often asks a question here ("3 Quotes?") that the submitter has to answer before
+ * anything moves, and a question nobody sees stalls the request indefinitely.
+ *
+ * ⚠️ Lifted out of app/api/brands/kia/approvals/[id]/remark/route.ts, where it lived inline. That is
+ * the same shape that caused the send-back and reject gaps: a template that lives in ONE route
+ * cannot be reused, so the second caller either forks it or sends nothing. It also interpolated the
+ * submitter's name and the remark RAW into HTML; both are escaped here.
+ */
+export function sendMdRemarkEmail(row: DecisionRecipient, ctx: Pick<DecisionContext, 'senderName' | 'remarks'>): void {
+  if (!row.email) return
+  try {
+    const vendorLabel = String(row.vendorName || '').trim()
+    const bodyHtml = `
+      <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${escapeHtml(row.name)},</p>
+      <p style="margin:0 0 16px;font-size:15px;color:#334155">
+        The MD has added a remark on your payment approval request ${requestLabel(row)}
+        of <strong>INR ${escapeHtml(row.amount)}</strong>.
+      </p>
+      <div style="margin:20px 0;padding:16px;border:1px solid #e6e8f0;border-radius:12px;background:#fbfbfd;">
+        <h4 style="margin:0 0 6px 0;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#0f766e;">Remark from ${escapeHtml(ctx.senderName)}:</h4>
+        <p style="margin:0;font-size:14px;color:#4b5563;white-space:pre-wrap;line-height:1.5;">${escapeHtml(ctx.remarks)}</p>
+      </div>
+      <p style="margin:0;font-size:13px;color:#64748b;">
+        If the remark asks for something, please reply with it so the request can move forward.
+        Your request has not been rejected — it is still in the approval flow.
+      </p>
+    `
+    void sendEmail({
+      to: row.email,
+      subject: `MD Remark on your Payment Request${row.requestNo ? ` ${row.requestNo}` : (vendorLabel ? ` for ${vendorLabel}` : '')}`,
+      html: emailLayout({
+        heading: 'MD Remark Added',
+        eyebrow: 'AM Group · Approvals',
+        preheader: 'MD remark on your payment request',
+        bodyHtml,
+      }),
+    }).catch((err) => console.error('[approvals] MD remark email failed for %s:', row.email, err))
+  } catch (err) {
+    console.error('[approvals] could not build the MD remark email for %s:', row.email, err)
   }
 }
 

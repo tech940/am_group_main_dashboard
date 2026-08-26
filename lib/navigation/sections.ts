@@ -303,15 +303,17 @@ export const ALL_SECTIONS: SearchSection[] = [
     category: 'kia',
   },
   {
-    id: 'kia_customer_profile',
-    name: 'Customer Profile',
-    description: 'One customer, end to end — enquiry, booking, insurance, service and complaints, plus the gaps between them.',
-    href: '/brands/kia/customer-profile',
+    id: 'customer_360',
+    name: 'Customer 360',
+    description: 'Search any customer and see their whole relationship with the group — enquiries, bookings, vehicles, insurance, service, spend and what to do next.',
+    href: '/customer-360',
     department: 'sales',
-    brand: 'kia',
+    // 'common', not 'kia': the section is multi-brand, and a brand tag here would have
+    // canUserAccessSection apply the brand-assignment check and hide it from anyone not on KIA.
+    brand: 'common',
     iconName: 'UserSearch',
-    initials: 'CP',
-    category: 'kia',
+    initials: 'C360',
+    category: 'common_dashboards',
   },
   {
     id: 'kia_demo_cars_list',
@@ -571,7 +573,7 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/brands/kia/follow-ups',
   '/brands/kia/call-analytics',
   '/brands/kia/booking-payment-history',
-  '/brands/kia/customer-profile',
+  '/customer-360',
   // Reached as a tab inside Bookings; the old standalone path stays allowed because it still
   // resolves (it redirects to the tab), so a bookmarked link is not blocked by the href allowlist.
   '/brands/kia/proforma/allocation-history',

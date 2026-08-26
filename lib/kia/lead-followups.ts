@@ -2,6 +2,7 @@ import 'server-only'
 
 import { and, desc, eq, gt, gte, ilike, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { formatIstDateTime, getIndiaYmd, indiaDayBounds } from '@/lib/date-time'
 import { kiaBookingActivity, kiaBookings, kiaLeadFollowups, users } from '@/lib/db/schema'
 import { canDeliverKiaBooking } from '@/lib/kia/workflow-access'
 import type { AppUser } from '@/lib/auth/app-user'
@@ -279,6 +280,97 @@ function toRow(r: Record<string, unknown>, now: Date, bucket: FollowupBucket, ca
   }
 }
 
+/**
+ * Auto-enrolls bookings waiting for delivery for 15+ days into the Booking Follow-ups pipeline.
+ *
+ * Rules:
+ * - Active bookings (deleted_at IS NULL, status NOT IN ('delivered', 'cancelled')).
+ * - Booking is in a delivery-pending state (status 'ready_delivery', 'payment_confirmed', or 'vehicle_allocated').
+ * - At least 15 days have elapsed since created or updated.
+ * - Must NOT already have an open (status = 'pending') follow-up in kia_lead_followups.
+ * - Created follow-up is due immediately, with reason: 'delivery', priority: 'high', and notes explaining the 15-day delivery wait.
+ */
+export async function syncOverdueDeliveryFollowups(): Promise<number> {
+  try {
+    const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000)
+
+    const candidates = await db.select({
+      id: kiaBookings.id,
+      bookingNumber: kiaBookings.bookingNumber,
+      customerName: kiaBookings.customerName,
+      status: kiaBookings.status,
+      dealerCode: kiaBookings.dealerCode,
+      consultantName: kiaBookings.consultantName,
+      consultantEmail: kiaBookings.consultantEmail,
+      createdBy: kiaBookings.createdBy,
+      createdAt: kiaBookings.createdAt,
+      updatedAt: kiaBookings.updatedAt,
+    })
+      .from(kiaBookings)
+      .where(and(
+        isNull(kiaBookings.deletedAt),
+        ne(kiaBookings.status, 'delivered'),
+        ne(kiaBookings.status, 'cancelled'),
+        or(
+          eq(kiaBookings.status, 'ready_delivery'),
+          inArray(kiaBookings.status, ['ready_delivery', 'payment_confirmed', 'vehicle_allocated'])
+        ),
+        or(
+          lte(kiaBookings.updatedAt, fifteenDaysAgo),
+          lte(kiaBookings.createdAt, fifteenDaysAgo)
+        ),
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${kiaLeadFollowups} f
+          WHERE f.booking_id = ${kiaBookings.id} AND f.status = 'pending'
+        )`
+      ))
+      .limit(50)
+
+    if (!candidates.length) return 0
+
+    let enrolledCount = 0
+    const now = new Date()
+
+    for (const b of candidates) {
+      const assignee = await resolveAssignee(b)
+      const notes = `Vehicle has been waiting for delivery for over 15 days without delivery confirmation. Follow up with customer and sales team on delivery status.`
+
+      const [created] = await db.insert(kiaLeadFollowups).values({
+        bookingId: b.id,
+        assignedTo: assignee.id,
+        assignedName: assignee.name,
+        assignedEmail: assignee.email,
+        dealerCode: b.dealerCode,
+        dueAt: now,
+        status: 'pending',
+        reason: 'delivery',
+        priority: 'high',
+        notes,
+        source: 'manual',
+        createdBy: b.createdBy || assignee.id || b.id,
+      }).returning({ id: kiaLeadFollowups.id })
+
+      if (created) {
+        enrolledCount++
+        await db.insert(kiaBookingActivity).values({
+          bookingId: b.id,
+          activityType: 'delivery_delayed_followup',
+          title: 'Delivery Follow-up Auto-enrolled (15+ Days)',
+          description: `Vehicle has been waiting for delivery for 15+ days without being delivered. Automatically re-added to Booking Follow-ups pipeline for CRE action.`,
+          actorName: 'System',
+          actorRole: 'system',
+          afterValue: { followupId: created.id, reason: 'delivery', priority: 'high' },
+        }).catch(() => {})
+      }
+    }
+
+    return enrolledCount
+  } catch (err) {
+    console.error('[syncOverdueDeliveryFollowups] Error syncing overdue delivery followups:', err)
+    return 0
+  }
+}
+
 export async function listFollowups(appUser: AppUser, input: { 
   mine?: boolean; 
   search?: string | null; 
@@ -294,6 +386,9 @@ export async function listFollowups(appUser: AppUser, input: {
   priority?: string | null;
   assignedTo?: string | null;
 }) {
+  // Ensure any 15+ day undelivered bookings are enqueued into the pipeline
+  await syncOverdueDeliveryFollowups().catch(() => {})
+
   const now = new Date()
   const { startOfTodayUtc, endOfTodayUtc, endOfTomorrowUtc } = istDayBoundaries(now)
   const search = String(input.search || '').trim()
@@ -455,18 +550,28 @@ export async function listFollowups(appUser: AppUser, input: {
 
   const hasDateFilter = Boolean(input.startDate || input.endDate)
 
-  if (input.startDate) {
-    const start = new Date(input.startDate)
-    start.setHours(0, 0, 0, 0)
-    where.push(gte(dateColumn, start))
-    cancelledWhere.push(gte(dateColumn, start))
-    deliveredWhere.push(gte(dateColumn, start))
+  /*
+   * The date filter runs on the INDIAN day, not the server's.
+   *
+   * The previous form was wrong at both ends and wrong only in production. `new Date('2026-08-26')`
+   * parses a date-only string as UTC midnight, which is 05:30 IST, and `setHours` applies the
+   * SERVER's zone — UTC on Vercel. So "26 Aug" actually selected 26 Aug 05:30 through 27 Aug 05:29
+   * IST: every follow-up due before half past five in the morning was missing, and the next
+   * morning's leaked in. It looked correct in local development because a developer's machine is
+   * already on IST, which is exactly why it survived.
+   */
+  const startBound = indiaDayBounds(input.startDate).start
+  const endBound = indiaDayBounds(input.endDate).end
+
+  if (startBound) {
+    where.push(gte(dateColumn, startBound))
+    cancelledWhere.push(gte(dateColumn, startBound))
+    deliveredWhere.push(gte(dateColumn, startBound))
   }
-  if (input.endDate) {
-    const end = new Date(new Date(input.endDate).setHours(23, 59, 59, 999))
-    where.push(lte(dateColumn, end))
-    cancelledWhere.push(lte(dateColumn, end))
-    deliveredWhere.push(lte(dateColumn, end))
+  if (endBound) {
+    where.push(lte(dateColumn, endBound))
+    cancelledWhere.push(lte(dateColumn, endBound))
+    deliveredWhere.push(lte(dateColumn, endBound))
   }
 
   const [pending, nextDay, scheduled, notConnected, cancelled, rescheduled, noAnswerRetry, customerConcerns, delivered] = await Promise.all([
@@ -613,7 +718,13 @@ export async function listFollowups(appUser: AppUser, input: {
     ...nextDay.map((r) => toRow(r as Record<string, unknown>, now, 'next_day', canSeePhone)),
     ...scheduled.map((r) => toRow(r as Record<string, unknown>, now, 'scheduled', canSeePhone)),
     ...cancelled.map((r) => toRow(r as Record<string, unknown>, now, 'cancelled', canSeePhone)),
-    ...rescheduled.map((r) => toRow(r as Record<string, unknown>, now, 'rescheduled', canSeePhone)),
+    // Rescheduled follow-ups whose due date has now passed are promoted to 'pending' so they
+    // surface in the Pending Call tab rather than staying hidden in the Rescheduled tab.
+    ...rescheduled.map((r) => {
+      const dueAt = r.dueAt as Date
+      const isOverdueRow = dueAt.getTime() < now.getTime()
+      return toRow(r as Record<string, unknown>, now, isOverdueRow ? 'pending' : 'rescheduled', canSeePhone)
+    }),
     ...delivered.map((r) => toRow(r as Record<string, unknown>, now, 'delivered', canSeePhone)),
   ]
 
@@ -713,14 +824,13 @@ export async function exportFollowups(appUser: AppUser, input: {
     ? kiaLeadFollowups.completedAt
     : kiaLeadFollowups.dueAt
 
-  if (input.startDate) {
-    const start = new Date(input.startDate)
-    start.setHours(0, 0, 0, 0)
-    where.push(gte(dateColumn, start))
-  }
-  if (input.endDate) {
-    where.push(lte(dateColumn, new Date(new Date(input.endDate).setHours(23, 59, 59, 999))))
-  }
+  // IST day boundaries — see the note on the same filter in listFollowups. The export must select
+  // exactly the rows the screen showed, so the two have to agree on where a day starts and ends.
+  const exportStart = indiaDayBounds(input.startDate).start
+  const exportEnd = indiaDayBounds(input.endDate).end
+
+  if (exportStart) where.push(gte(dateColumn, exportStart))
+  if (exportEnd) where.push(lte(dateColumn, exportEnd))
 
   // NOTE: customerPhone is intentionally ABSENT from this selection — do not add it.
   const rows = await db.select({
@@ -819,7 +929,9 @@ export async function createFollowup(appUser: AppUser, input: {
     bookingId,
     activityType: 'followup_scheduled',
     title: 'Follow-up scheduled',
-    description: `Due ${due.toISOString()}${assignee.name ? ` · ${assignee.name}` : ''}${reason !== 'general' ? ` · ${reason.replace(/_/g, ' ')}` : ''}`,
+    // Human prose, so it gets a human timestamp. The machine-readable copy lives in `afterValue`
+    // below and stays as an ISO string on purpose — these two must not be conflated.
+    description: `Due ${formatIstDateTime(due)}${assignee.name ? ` · ${assignee.name}` : ''}${reason !== 'general' ? ` · ${reason.replace(/_/g, ' ')}` : ''}`,
     actorUserId: appUser.id,
     actorName: appUser.fullName,
     actorRole: appUser.role,
@@ -864,7 +976,7 @@ export async function updateFollowup(appUser: AppUser, id: string, patch: {
     updates.dueAt = due
     updates.reminderSentAt = null // rescheduling re-arms the reminder
     updates.source = 'rescheduled' // mark as rescheduled
-    activityBits.push(`rescheduled to ${due.toISOString()}`)
+    activityBits.push(`rescheduled to ${formatIstDateTime(due)}`)
   }
   if (patch.reason && REASONS.has(patch.reason)) updates.reason = patch.reason
   if (patch.priority && PRIORITIES.has(patch.priority)) updates.priority = patch.priority
@@ -1047,7 +1159,9 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
         assignedTo: existing.assignedTo,
         notes: input.nextDueAt
           ? `Next touch scheduled by ${appUser.fullName} after: ${notes}`.slice(0, 2000)
-          : `Auto-scheduled ${FOLLOWUP_REPEAT_DAYS} days after contact on ${new Date().toISOString().slice(0, 10)}.`,
+          // The note is displayed verbatim on the follow-up card, so the date must be the Indian
+          // one. A UTC date told a user contacted at 01:00 IST that they were contacted yesterday.
+          : `Auto-scheduled ${FOLLOWUP_REPEAT_DAYS} days after contact on ${getIndiaYmd()}.`,
       })
     }
     return { ok: true, next }

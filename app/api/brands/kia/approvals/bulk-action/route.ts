@@ -259,10 +259,12 @@ export async function POST(request: Request) {
             requesterName: row.name,
             vendorName: row.vendorName || 'Vendor',
             amount: row.amount,
+            // `purpose` is the REQUEST's own text; `remarks` is what the MD just typed.
             purpose: row.remarks,
             department: row.department,
             approvalType: row.approvalType,
             approvalTime: new Date(),
+            remarks: remarks || '',
           })
         }
         updates.managementRemarks = remarks || ''

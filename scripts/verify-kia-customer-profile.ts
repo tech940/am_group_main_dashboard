@@ -39,15 +39,27 @@ async function main() {
     SELECT
       (SELECT COUNT(*) FROM kia_enquiry_report)::int AS enquiry_raw,
       (SELECT COUNT(DISTINCT customer_id) FROM latest_enquiry)::int AS enquiry_customers,
+      (SELECT COUNT(*) FROM latest_enquiry)::int AS enquiry_deduped,
       (SELECT COUNT(*) FROM kia_booking_report)::int AS booking_raw,
       (SELECT COUNT(*) FROM latest_booking)::int AS bookings`
 
+  /*
+   * The invariant is that DEDUPE REMOVES ROWS - not how much snapshot history happens to have
+   * accumulated.
+   *
+   * This previously asserted `enquiry_raw > enquiry_customers * 3`, which failed at 19,872 raw
+   * against 8,371 customers (threshold 25,113) even though the feed is still a cumulative snapshot
+   * and dedupe is still required (19,872 -> 11,700 distinct (customer_id, enquiry_no) = 1.70x).
+   * That test measured accumulated history since the last re-base, so it went red after a re-base
+   * and would have gone green again on its own - it could not tell anyone anything useful.
+   */
   assert.ok(
-    dedupe.enquiry_raw > dedupe.enquiry_customers * 3,
-    `kia_enquiry_report should be a cumulative snapshot (raw >> customers); got ${dedupe.enquiry_raw} raw vs ${dedupe.enquiry_customers} customers. `
-    + 'If these are close, the feed changed shape and the dedupe assumptions need rechecking.',
+    dedupe.enquiry_raw > dedupe.enquiry_deduped,
+    `kia_enquiry_report should re-export rows (raw > deduped); got ${dedupe.enquiry_raw} raw vs ${dedupe.enquiry_deduped} deduped. `
+    + 'If these are equal the feed is no longer a cumulative snapshot and the dedupe assumptions need rechecking.',
   )
-  ok(`enquiry snapshot dedupes ${dedupe.enquiry_raw.toLocaleString('en-IN')} rows -> ${dedupe.enquiry_customers.toLocaleString('en-IN')} customers`)
+  ok(`enquiry snapshot dedupes ${dedupe.enquiry_raw.toLocaleString('en-IN')} rows -> ${dedupe.enquiry_deduped.toLocaleString('en-IN')} enquiries `
+    + `(${(dedupe.enquiry_raw / dedupe.enquiry_deduped).toFixed(2)}x) across ${dedupe.enquiry_customers.toLocaleString('en-IN')} customer ids`)
   assert.ok(dedupe.bookings < dedupe.booking_raw, 'booking feed should also be a cumulative snapshot')
   ok(`booking snapshot dedupes ${dedupe.booking_raw.toLocaleString('en-IN')} rows -> ${dedupe.bookings.toLocaleString('en-IN')} bookings`)
 
@@ -85,9 +97,17 @@ async function main() {
   assert.ok(list.totalCustomers > dedupe.enquiry_customers, 'directory must include service-only vehicles on top of sales customers')
   ok(`directory = ${list.totalCustomers.toLocaleString('en-IN')} (sales customers + service-only vehicles)`)
 
+  /*
+   * Bounded by the number of PROFILES, not by distinct customer_id.
+   *
+   * Since the party key became (customer_id, outlet), one customer_id can legitimately produce more
+   * than one profile - 8,371 ids resolve to 10,775 people, because 2,411 of those ids were shared by
+   * more than one person. Comparing a per-profile gap count against a per-id count made this
+   * assertion fail for the right reason at the wrong place.
+   */
   assert.ok(
-    list.gapCounts.enquiryNoBooking > 0 && list.gapCounts.enquiryNoBooking < dedupe.enquiry_customers,
-    'enquiry-without-booking must be a strict subset of enquiry customers',
+    list.gapCounts.enquiryNoBooking > 0 && list.gapCounts.enquiryNoBooking <= list.totalCustomers,
+    'enquiry-without-booking must be a strict subset of the directory',
   )
   ok(`gap counts present: ${JSON.stringify(list.gapCounts)}`)
 

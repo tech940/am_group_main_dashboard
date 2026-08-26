@@ -44,7 +44,12 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // cached that degraded result for the full 75-minute TTL. Fixing the enum alone would have left
 // affected users locked out until their entry expired; bumping the version orphans every poisoned
 // v26 registers bank_sanctions in PERMISSION_GROUPS and SECTION_ROUTES for Access Map control.
-const PERMISSION_CACHE_VERSION = 'v26'
+// v30 — `kia.approvals` is treated as brand-neutral (it is a common, all-brand section).
+// v29 — the resolver now keeps an explicit Access-Map Allow through brand constraining (see
+// resolveEffectiveSnapshot). ⚠️ THE BUMP IS LOAD-BEARING, not decoration: every logged-in user
+// holds a snapshot computed by the OLD rules for up to the 75-minute TTL, so without it the people
+// this fixes stay locked out for another hour and it reads as "the fix did not work".
+const PERMISSION_CACHE_VERSION = 'v30'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -152,6 +157,35 @@ function applyBranchRoleDefaults(
   }
 }
 
+/*
+ * ── Sections that are COMMON to every branch despite a brand-prefixed key ─────────────────────
+ *
+ * Vendor Payment Approvals started life as a KIA screen and its permission group is still
+ * `kia.approvals` (route /brands/kia/payment-approvals). The SECTION is no longer KIA's — every
+ * brand files payment requests through it, and the first approval stage is routed per brand
+ * (lib/approvals/first-stage-approver.ts). The key simply never caught up with the product.
+ *
+ * That mismatch had a real cost: brand constraining reads the `kia.` prefix and strips the key from
+ * every non-KIA user, so a Hyundai `accounts` or `ea` — whose ROLE TEMPLATE grants it — silently got
+ * nothing, and the multi-brand routing was inert for the people it was built for.
+ *
+ * ⚠️ WHY NOT JUST RENAME THE KEY: syncPermissionRegistry upserts `permissions` with
+ * `target: permissions.name`, and `name` IS the key. A new key therefore creates a NEW row with a
+ * NEW id, while `user_permissions.permission_id` still points at the old one — **22 live grants
+ * would stop working, silently**. Renaming needs a migration that remaps those rows first; until
+ * then the honest fix is to stop pretending this key means a brand.
+ *
+ * Listing a group here means "brand assignment does not gate this section". It does NOT mean the
+ * DATA is unscoped: approvals rows are still filtered per branch by lib/kia/approval-scope.ts.
+ */
+const BRAND_NEUTRAL_PERMISSION_GROUPS = new Set<string>(['kia.approvals'])
+
+function isBrandNeutralGroup(groupKey: string): boolean {
+  return [...BRAND_NEUTRAL_PERMISSION_GROUPS].some(
+    (group) => groupKey === group || groupKey.startsWith(`${group}.`)
+  )
+}
+
 function constrainSnapshotToBranch(
   values: Record<string, boolean>,
   role: PermissionRole,
@@ -165,6 +199,8 @@ function constrainSnapshotToBranch(
       permission.groupKey === prefix || permission.groupKey.startsWith(`${prefix}.`)
     )
     if (!belongsToKnownBranch) continue
+    // Common-to-every-branch sections keep their historical brand prefix but are not brand-gated.
+    if (isBrandNeutralGroup(permission.groupKey)) continue
     const isAssignedBranch = prefixes.some((prefix) =>
       permission.groupKey === prefix || permission.groupKey.startsWith(`${prefix}.`)
     )
@@ -555,6 +591,36 @@ export function resolveEffectiveSnapshot(
   // Overrides merge LAST, so an explicit Deny wins over the role / brand / global default.
   const effective = { ...roleDefaults, ...overrides }
   constrainSnapshotToBranch(effective, role, branchAccess)
+
+  /*
+   * ── An explicit Access-Map Allow is NEVER silently discarded ──────────────────────────────────
+   *
+   * ⚠️ THE BUG THIS FIXES, measured on a live user: a Service GM at Hyundai was granted `kia.view`,
+   * `kia.sales.view` and `kia.payment_window_requests.view` in the Access Map. All three were stored
+   * as `allowed = true` in `user_permissions`. All three resolved to FALSE — because
+   * constrainSnapshotToBranch runs on `effective` AFTER the overrides merge and zeroes every
+   * brand-prefixed key outside the user's own brand. The admin ticked the box, the database agreed,
+   * and the resolver quietly deleted the decision. Nothing surfaced it anywhere.
+   *
+   * It is not specific to that role or that brand: it silently voided EVERY cross-brand grant for
+   * EVERY user, and it is why the multi-brand Approvals section — whose key is still `kia.approvals`
+   * — could never be opened by a Hyundai or Platinum login however many boxes you ticked.
+   *
+   * The layers have different jobs and this restores that separation:
+   *   role template / tier / brand / global-access  -> DEFAULTS. What you get without anyone asking.
+   *   an override                                    -> A DECISION about one user and one key.
+   * A default must not overrule a decision. Brand scoping is a default, so it shapes `roleDefaults`
+   * (constrained above, deliberately untouched) and stops there.
+   *
+   * Only `true` is re-applied, so an explicit DENY still wins over everything — the property the
+   * merge order was protecting in the first place. This is the same principle as
+   * isPermissionExplicitlyAllowed in lib/permissions/deny.ts: ticking one box widens access by
+   * exactly one user and one key, which is what ticking it is supposed to mean.
+   */
+  for (const key of Object.keys(overrides)) {
+    if (overrides[key] === true && key in effective) effective[key] = true
+  }
+
   // Super Admins (developer, md) are never restrictable — the final guardrail so the top
   // administrators cannot be locked out of the console by a stray override.
   if (isSuperAdminRole(role)) {

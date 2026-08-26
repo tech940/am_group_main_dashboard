@@ -32,6 +32,7 @@ import {
 import { KpiCard as KpiCardComponent } from '@/components/ui/kpi-card'
 import { canRevealKiaFollowupPhone } from '@/lib/kia/pii'
 import { MainLayout } from '@/components/layout/main-layout'
+import { INDIA_TIME_ZONE, getIndiaYmd, getIndiaCivilDate, indiaDayDiff } from '@/lib/date-time'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -194,7 +195,7 @@ const getFollowupMdRemarksList = (f: Followup | null | undefined, activities?: A
         user: 'MD / Management',
         role: 'MD',
         remark: text,
-        date: f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN') : undefined
+        date: istDate(f.createdAt)
       })
     }
   }
@@ -210,7 +211,7 @@ const getFollowupMdRemarksList = (f: Followup | null | undefined, activities?: A
             user: f.assignedName || f.consultantName || 'MD / Management',
             role: 'MD',
             remark: text,
-            date: f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN') : undefined
+            date: istDate(f.createdAt)
           })
         }
       }
@@ -229,7 +230,7 @@ const getFollowupMdRemarksList = (f: Followup | null | undefined, activities?: A
               user: act.actorName || 'MD / Management',
               role: 'MD',
               remark: remarkText,
-              date: act.createdAt ? new Date(act.createdAt).toLocaleDateString('en-IN') : undefined
+              date: istDate(act.createdAt)
             })
           }
         }
@@ -250,6 +251,37 @@ const CONTACTED_OUTCOME_VALUES = new Set(['reached', 'done'])
 
 function dealerLabel(code: string | null) { return code ? (DEALER_LABELS[code] || code) : '—' }
 
+/*
+ * ── EVERY timestamp in this section renders in IST ────────────────────────────────────────────
+ *
+ * The dealership runs on India Standard Time, so a follow-up "due at 10:00" means 10:00 in Jammu no
+ * matter where the person reading the screen happens to be. These three helpers are the only way a
+ * date should reach the UI from here.
+ *
+ * The trap they close: toLocaleString('en-IN', ...) looks India-specific, but 'en-IN' is only a
+ * LANGUAGE — it selects the wording and the day/month order, never the timezone. With no explicit
+ * timeZone the value renders in the viewer's own zone in the browser and in UTC during SSR, so the
+ * same follow-up showed one time to a user abroad and a different one again on first paint.
+ *
+ * ⚠️ Never reintroduce toDateString() / getDate() / getMonth() / toISOString().slice(0, 10) to
+ * decide which calendar day something belongs to. Those read the viewer's local calendar, which
+ * moves a row into the wrong BUCKET rather than merely mislabelling it. Use getIndiaYmd.
+ */
+const istParts = (value: Date | string, options: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat('en-IN', { timeZone: INDIA_TIME_ZONE, ...options }).format(new Date(value))
+
+/** '26 Aug 2026' */
+const istDate = (value: Date | string | null | undefined) =>
+  (value ? istParts(value, { day: '2-digit', month: 'short', year: 'numeric' }) : '—')
+
+/** '26 Aug, 03:45 pm' */
+const istDateTime = (value: Date | string | null | undefined) =>
+  (value ? istParts(value, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—')
+
+/** '03:45 pm' */
+const istTime = (value: Date | string | null | undefined) =>
+  (value ? istParts(value, { hour: '2-digit', minute: '2-digit', hour12: true }) : '—')
+
 /** Converts an HTML datetime-local string (e.g. "2026-07-25T16:30") explicitly to IST ISO. */
 function toIstIso(value: string): string {
   if (!value) return new Date().toISOString()
@@ -265,7 +297,7 @@ function toIstIso(value: string): string {
 
 function defaultLocal(daysAhead = 1) {
   const now = new Date()
-  const options: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Kolkata' }
+  const options: Intl.DateTimeFormatOptions = { timeZone: INDIA_TIME_ZONE }
   const formatter = new Intl.DateTimeFormat('en-CA', { ...options, year: 'numeric', month: '2-digit', day: '2-digit' })
   const targetTime = new Date(now.getTime() + daysAhead * 86_400_000)
   const ymd = formatter.format(targetTime)
@@ -277,7 +309,7 @@ function formatDue(iso: string, bucket: Followup['bucket']) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
 
-  const options: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Kolkata' }
+  const options: Intl.DateTimeFormatOptions = { timeZone: INDIA_TIME_ZONE }
   const time = d.toLocaleTimeString('en-IN', { ...options, hour: '2-digit', minute: '2-digit', hour12: true })
   const dateStr = d.toLocaleDateString('en-IN', { ...options, day: '2-digit', month: 'short' })
 
@@ -307,8 +339,15 @@ function formatDue(iso: string, bucket: Followup['bucket']) {
 
 function agingLabel(dueAt: string, isDone: boolean): { text: string; cls: string } | null {
   if (isDone) return null
-  const diffMs = Date.now() - new Date(dueAt).getTime()
-  const days = Math.floor(diffMs / 86_400_000)
+  /*
+   * Calendar days in IST, not elapsed milliseconds.
+   *
+   * floor(elapsed / 86_400_000) answers "how many 24-hour periods have passed", which is a
+   * different question: something due at 23:00 last night stayed labelled "Due today" until 23:00
+   * tonight, and something due at 01:00 this morning only flipped to "1 day overdue" at 01:00
+   * tomorrow rather than at midnight. The badge asserts a DATE, so it must be computed from dates.
+   */
+  const days = indiaDayDiff(dueAt, new Date())
   if (days < 0) return null // future
   if (days === 0) return { text: 'Due today', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
   if (days === 1) return { text: '1 day overdue', cls: 'bg-rose-50 text-rose-700 border-rose-200' }
@@ -536,25 +575,49 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
     Boolean(startDate || endDate),
   ].filter(Boolean).length
 
-  // Quick date preset helper (IST-aware)
+  /*
+   * Quick date presets, resolved against the INDIAN calendar.
+   *
+   * This block used to carry the comment "(IST-aware)" while every line of it read the viewer's
+   * local calendar through getFullYear / getMonth / getDate / getDay. The comment was the only
+   * IST-aware thing about it. The consequence was not a wrong label but a wrong RESULT SET: the
+   * YYYY-MM-DD produced here is sent to the server as the row filter, so at 21:00 in New York —
+   * when it is already tomorrow in Jammu — "Today" fetched yesterday's Indian queue, and "This
+   * week" could be anchored a full seven days out because the local weekday had not yet rolled.
+   *
+   * Everything below works on getIndiaCivilDate(): the IST calendar day pinned to UTC midnight.
+   * Day arithmetic on that marker is exact and carries no offset of its own, so setUTCDate is safe
+   * where setDate was not.
+   */
   const applyDatePreset = (preset: 'today' | 'tomorrow' | 'this_week' | 'this_month' | 'all') => {
-    const now = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    // The IST day we are currently in, as a zone-free marker. Never render this as a time.
+    const today = getIndiaCivilDate()
+    const fmt = (d: Date) => d.toISOString().slice(0, 10)
+    const shifted = (days: number) => {
+      const d = new Date(today.getTime())
+      d.setUTCDate(d.getUTCDate() + days)
+      return d
+    }
+
     if (preset === 'all') { setStartDate(''); setEndDate(''); return }
-    if (preset === 'today') { setStartDate(fmt(now)); setEndDate(fmt(now)); return }
-    const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
-    if (preset === 'tomorrow') { setStartDate(fmt(tomorrow)); setEndDate(fmt(tomorrow)); return }
+    if (preset === 'today') { setStartDate(fmt(today)); setEndDate(fmt(today)); return }
+    if (preset === 'tomorrow') {
+      const tomorrow = shifted(1)
+      setStartDate(fmt(tomorrow)); setEndDate(fmt(tomorrow)); return
+    }
     if (preset === 'this_week') {
-      const day = now.getDay()
-      const mon = new Date(now); mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1))
-      const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+      // getUTCDay on a UTC-midnight marker is the weekday of the IST date itself. A weekday is a
+      // property of a civil date, so once the date is right the weekday cannot drift.
+      const day = today.getUTCDay()
+      const mon = shifted(-(day === 0 ? 6 : day - 1))
+      const sun = new Date(mon.getTime()); sun.setUTCDate(sun.getUTCDate() + 6)
       setStartDate(fmt(mon)); setEndDate(fmt(sun)); return
     }
     if (preset === 'this_month') {
-      setStartDate(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`)
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      setEndDate(fmt(lastDay)); return
+      const first = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1))
+      // Day 0 of the NEXT month is the last day of this one.
+      const last = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0))
+      setStartDate(fmt(first)); setEndDate(fmt(last)); return
     }
   }
 
@@ -589,7 +652,9 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `booking-follow-ups-${new Date().toISOString().slice(0, 10)}.xlsx`
+      // The Indian working day, not the UTC one: exporting at 01:00 IST used to stamp the file with
+      // yesterday's date, which is confusing on a desktop full of daily exports.
+      a.download = `booking-follow-ups-${getIndiaYmd()}.xlsx`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -629,16 +694,18 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
     const checkAlarms = () => {
       if (!data?.rows) return
       const now = Date.now()
-      const todayString = new Date().toDateString() // Today local date
+      // The Indian working day. toDateString() read the VIEWER's calendar, so a user abroad either
+      // never received the same-day alarm or received it a day early.
+      const todayString = getIndiaYmd()
       
       for (const f of data.rows) {
         if (f.status !== 'pending') continue
         
         const dueTime = new Date(f.dueAt).getTime()
-        const dueLocalDate = new Date(f.dueAt).toDateString()
+        const dueIstDate = getIndiaYmd(f.dueAt)
         
         // Same-day check: is the follow-up scheduled for today?
-        const isSameDay = dueLocalDate === todayString
+        const isSameDay = dueIstDate === todayString
         
         // Has the due time been reached or passed?
         const isTimeReached = dueTime <= now
@@ -817,9 +884,11 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
 
   // CRE Performance stats — computed from already-fetched rows
   const allRows = data?.rows || []
-  const todayStr = new Date().toDateString()
+  // The Indian working day: this is a performance figure people compare with one another, so it
+  // has to mean the same day for everyone reading it.
+  const todayStr = getIndiaYmd()
   const completedToday = allRows.filter(
-    (r) => r.status === 'done' && r.completedAt && new Date(r.completedAt).toDateString() === todayStr
+    (r) => r.status === 'done' && r.completedAt && getIndiaYmd(r.completedAt) === todayStr
   ).length
   const totalPending = data?.counts.pending ?? 0
   const totalOverdue = data?.counts.overdue ?? 0
@@ -1360,6 +1429,11 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                                     {aging.text}
                                   </span>
                                 )}
+                                {f.reason === 'delivery' && (
+                                  <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black border bg-rose-50 text-rose-700 border-rose-200 uppercase tracking-wide shadow-2xs">
+                                    🚗 Delivery Pending (15+d)
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -1383,7 +1457,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                           </td>
                           <td className="p-3">
                             <div className="flex flex-col min-w-[110px]">
-                              <span className="font-bold text-slate-600">{new Date(f.dueAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span className="font-bold text-slate-600">{istDate(f.dueAt)}</span>
                               <span className={cn('text-[10px] mt-0.5 font-bold flex items-center gap-1', f.overdue && !isDone ? 'text-rose-500' : 'text-slate-400')}>
                                 <span className={cn('inline-block h-1 w-1 rounded-full', f.overdue && !isDone ? 'bg-rose-500 animate-pulse' : 'bg-slate-400')} />
                                 {formatDue(f.dueAt, f.bucket)}
@@ -1812,9 +1886,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                           <div>
                             <span className="text-[9px] font-black text-slate-400 uppercase">Booking Date</span>
                             <p className="text-slate-800 font-black mt-0.5">
-                              {bookingDetailQuery.data.booking.createdAt
-                                ? new Date(bookingDetailQuery.data.booking.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                                : '—'}
+                              {istDate(bookingDetailQuery.data.booking.createdAt)}
                             </p>
                           </div>
                           <div>
@@ -1870,7 +1942,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                               <div className="mt-1 flex items-center gap-1.5 text-[9px] font-bold text-slate-400">
                                 <span>{act.actorName || 'System'}</span>
                                 <span>•</span>
-                                <span>{new Date(act.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                                <span>{istDateTime(act.createdAt)}</span>
                               </div>
                             </div>
                           </div>
@@ -1909,7 +1981,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                                   {badgeLabel}
                                 </span>
                                 <span className="text-[9px] font-bold text-slate-400">
-                                  {new Date(act.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                  {istDateTime(act.createdAt)}
                                 </span>
                               </div>
                               <p className="mt-1.5 text-xs font-semibold text-slate-800 leading-relaxed whitespace-pre-wrap">
@@ -2682,7 +2754,7 @@ function AlarmAlertPopup({
           </div>
           <div className="flex justify-between border-b border-slate-100 pb-1.5">
             <span className="text-slate-400">Scheduled Time</span>
-            <span className="text-indigo-600 font-black">{new Date(followup.dueAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="text-indigo-600 font-black">{istTime(followup.dueAt)}</span>
           </div>
           {followup.notes && (
             <div className="pt-1.5">

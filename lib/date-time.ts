@@ -117,6 +117,79 @@ export function formatIstDateTime(value: Date | string | null | undefined): stri
   }).format(timestamp)} IST`
 }
 
+/**
+ * The India calendar day of `value` as 'YYYY-MM-DD'.
+ *
+ * This is THE day key. Anything that decides which calendar day something belongs to — "due today",
+ * "completed today", a date-filter boundary, an export filename — must derive it from here and never
+ * from `toDateString()`, `getDate()` or `toISOString().slice(0, 10)`. Those read the viewer's local
+ * calendar (or the server's, which is UTC on Vercel), so the same instant lands on different days
+ * for different people, and the row silently moves to the wrong bucket rather than merely showing a
+ * wrong label.
+ *
+ * Differs from getIndiaDatePart, which returns the same day compacted to 'YYYYMMDD' with no
+ * separators. Both are kept: this one is what you compare and what you put in a filename.
+ */
+export function getIndiaYmd(value: Date | string | null | undefined = new Date()): string {
+  const timestamp = parseAppDate(value) || new Date()
+  // 'en-CA' formats as YYYY-MM-DD, which is exactly the shape we want and is locale-stable.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: INDIA_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(timestamp)
+}
+
+/**
+ * The India calendar day of `value`, as a Date pinned to UTC midnight.
+ *
+ * Why this shape: once an instant has been reduced to a civil date, calendar arithmetic on it
+ * (add a day, which weekday is it, first of the month) is timezone-free — but only if the Date you
+ * do that arithmetic on carries no offset of its own. Anchoring at UTC midnight and using the
+ * getUTC / setUTC family gives exact, DST-proof day maths.
+ *
+ * ⚠️ The result is NOT the same instant as `value`. It is a marker for a calendar day. Never render
+ * it as a time or compare it against a real timestamp.
+ */
+export function getIndiaCivilDate(value: Date | string | null | undefined = new Date()): Date {
+  return new Date(`${getIndiaYmd(value)}T00:00:00Z`)
+}
+
+/** Whole India calendar days from `from` to `to`. Positive when `to` is the later day. */
+export function indiaDayDiff(
+  from: Date | string | null | undefined,
+  to: Date | string | null | undefined,
+): number {
+  const a = getIndiaCivilDate(from)
+  const b = getIndiaCivilDate(to)
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000)
+}
+
+/**
+ * The India-time boundaries of a 'YYYY-MM-DD' date-input value, as absolute instants.
+ *
+ * Use for every server-side date-range filter. The naive form — `new Date('2026-08-26')` for the
+ * start and `setHours(23, 59, 59, 999)` for the end — is wrong twice over: the constructor parses a
+ * date-only string as UTC midnight (05:30 IST), and `setHours` applies the SERVER's zone, which is
+ * UTC in production. The resulting window runs 26 Aug 05:30 to 27 Aug 05:29 IST, so it drops every
+ * row due before 05:30 and pulls in the next morning's. It is invisible in local development,
+ * because a developer's machine is already on IST.
+ *
+ * Returns nulls for an empty or unparseable value so the caller can skip the predicate entirely.
+ */
+export function indiaDayBounds(value: string | null | undefined): { start: Date | null; end: Date | null } {
+  const ymd = String(value || '').trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return { start: null, end: null }
+
+  const start = parseIndiaLocalDateTime(ymd, '00:00:00')
+  const endOfSecond = parseIndiaLocalDateTime(ymd, '23:59:59')
+  // parseIndiaLocalDateTime has second resolution; carry it to .999 so a row stamped at
+  // 23:59:59.500 IST is still inside its own day.
+  const end = endOfSecond ? new Date(endOfSecond.getTime() + 999) : null
+  return { start, end }
+}
+
 export function getIndiaDatePart(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: INDIA_TIME_ZONE,

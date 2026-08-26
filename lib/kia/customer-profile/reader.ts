@@ -88,6 +88,14 @@ export type KiaCustomerListResult = {
 export type KiaCustomerListFilters = {
   search?: string | null
   dealerCode?: string | null
+  /**
+   * The branches the SIGNED-IN USER may see. NULL = unrestricted.
+   *
+   * Distinct from `dealerCode`, which is a filter the user chose. This one they cannot widen: it is
+   * applied on top, so a pinned user narrowing to a branch they do not hold gets nothing rather than
+   * someone else's customers.
+   */
+  dealerScope?: string[] | null
   gap?: keyof KiaCustomerGaps | null
   serviceGapMonths?: number | null
   page?: number
@@ -110,25 +118,63 @@ export type KiaCustomerListFilters = {
  *   profile open. Pushing the predicate into the CTEs rather than filtering at the end keeps
  *   ONE definition of the gap logic — the list and the profile can never disagree.
  */
-function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = null) {
+function directoryCte(
+  serviceGapMonths: number,
+  scope: KiaCustomerKey | null = null,
+  dealerScope: string[] | null = null,
+) {
   const isCustomerScope = scope?.kind === 'customer'
   const isVehicleScope = scope?.kind === 'vehicle'
 
+  /*
+   * The BRANCH the signed-in user is pinned to, as a predicate rather than a rejection.
+   *
+   * ⚠️ This section has no branch selector, so the usual enforceDealerScope backstop -- which 403s
+   * when `dealer_code` is absent because absent means "give me every branch" -- rejected every
+   * request from a pinned user. 27 of 30 active KIA branch-pinned users saw a red error instead of
+   * their own customers. Scoping the query is the correct shape here: a branch user sees their
+   * branch, which is exactly what they should see.
+   *
+   * NULL means unrestricted (MD, developer, unpinned). An EMPTY array would mean "no branches at
+   * all" and is never produced -- getUserDealerScope returns DEALER_SCOPE_NONE for a stale pin,
+   * which is a real sentinel value and correctly matches nothing.
+   */
+  const outletIn = (prefix: string) => {
+    if (!dealerScope || !dealerScope.length) return sql``
+    const codes = dealerScope.map((c) => c.trim().toUpperCase()).filter(Boolean)
+    if (!codes.length) return sql``
+    const expr = sql.raw(
+      `UPPER(BTRIM(COALESCE(NULLIF(BTRIM(${prefix}dealer_code_2), ''), NULLIF(BTRIM(${prefix}dealer_code), ''), '')))`,
+    )
+    return sql`AND ${expr} IN (${sql.join(codes.map((c) => sql`${c}`), sql`, `)})`
+  }
+
+  // The outlet half of the party key. Without it a profile opened by customer_id alone still shows
+  // every person who shares that id -- see the KiaCustomerKey comment in identity.ts.
+  const keyOutlet = isCustomerScope ? String((scope as { outlet?: string }).outlet || '').trim().toUpperCase() : ''
+  const keyOutletIn = (prefix: string) => {
+    if (!keyOutlet) return sql``
+    const expr = sql.raw(
+      `UPPER(BTRIM(COALESCE(NULLIF(BTRIM(${prefix}dealer_code_2), ''), NULLIF(BTRIM(${prefix}dealer_code), ''), '')))`,
+    )
+    return sql`AND ${expr} = ${keyOutlet}`
+  }
+
   // Sales-side rows are irrelevant when the key is a service-only vehicle, and vice versa.
   const enquiryScope = !scope
-    ? sql``
+    ? outletIn('')
     : isCustomerScope
-      ? sql`AND customer_id = ${scope.value}`
+      ? sql`AND customer_id = ${scope.value} ${keyOutletIn('')} ${outletIn('')}`
       : sql`AND FALSE`
   const salesScope = !scope
-    ? sql``
+    ? outletIn('')
     : isCustomerScope
-      ? sql`AND UPPER(BTRIM(COALESCE(customerid, ''))) = ${scope.value}`
-      : sql`AND UPPER(BTRIM(vin_number)) = ${scope.value}`
+      ? sql`AND UPPER(BTRIM(COALESCE(customerid, ''))) = ${scope.value} ${keyOutletIn('')} ${outletIn('')}`
+      : sql`AND UPPER(BTRIM(vin_number)) = ${scope.value} ${outletIn('')}`
   const orphanScope = !scope
-    ? sql``
+    ? outletIn('r.')
     : isVehicleScope
-      ? sql`AND UPPER(BTRIM(r.vin)) = ${scope.value}`
+      ? sql`AND UPPER(BTRIM(r.vin)) = ${scope.value} ${outletIn('r.')}`
       : sql`AND FALSE`
 
   return sql`
@@ -142,14 +188,22 @@ function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = n
   latest_enquiry AS MATERIALIZED (
     SELECT DISTINCT ON (customer_id, enquiry_no)
       customer_id, enquiry_no, booking_no, enquiry_date, booking_date, delivery_date,
-      name_of_the_customer, contact_number, customer_email, city, dealer_code, uploaded_at
+      name_of_the_customer, contact_number, customer_email, city, dealer_code, uploaded_at,
+      -- The outlet this row belongs to. dealer_code_2 FIRST — see kiaOutletSql in identity.ts;
+      -- reading dealer_code first credits every Udhampur row to Jammu.
+      UPPER(BTRIM(COALESCE(NULLIF(BTRIM(dealer_code_2), ''), NULLIF(BTRIM(dealer_code), ''), ''))) AS outlet
     FROM kia_enquiry_report
     WHERE COALESCE(customer_id, '') <> '' ${enquiryScope}
     ORDER BY customer_id, enquiry_no, uploaded_at DESC NULLS LAST
   ),
   latest_sales AS MATERIALIZED (
     SELECT DISTINCT ON (UPPER(BTRIM(vin_number)))
-      vin_number, customerid, model, registration_name, invoice_date, delivery_date
+      vin_number, customerid, model, registration_name, invoice_date, delivery_date,
+      -- Identity of last resort for a buyer with no enquiry row - see sales_only_identity.
+      contact_num1,
+      -- Projected so vehicle_state can derive the outlet: a car must attach to the person who
+      -- bought it at THAT outlet, not to whoever else shares the customer_id elsewhere.
+      dealer_code_2, dealer_code
     FROM kia_sales_report
     WHERE COALESCE(vin_number, '') <> '' ${salesScope}
     ORDER BY UPPER(BTRIM(vin_number)), uploaded_at DESC NULLS LAST
@@ -166,6 +220,10 @@ function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = n
     SELECT
       UPPER(BTRIM(s.vin_number)) AS vin,
       UPPER(BTRIM(COALESCE(s.customerid, ''))) AS customer_id,
+      -- WARNING: the party column here is customerid (NO underscore) - kia_sales_report is the only
+      -- table spelling it that way, and getting it wrong yields a silent zero-row join.
+      -- (No backticks in SQL comments: they terminate the enclosing template literal.)
+      UPPER(BTRIM(COALESCE(NULLIF(BTRIM(s.dealer_code_2), ''), NULLIF(BTRIM(s.dealer_code), ''), ''))) AS outlet,
       s.model,
       ro.vehicle_reg_no AS registration_name,
       s.invoice_date,
@@ -192,7 +250,7 @@ function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = n
   -- Per-customer rollup of the vehicle side.
   customer_vehicles AS MATERIALIZED (
     SELECT
-      customer_id,
+      customer_id, outlet,
       COUNT(*)::int AS vehicle_count,
       COALESCE(SUM(service_count), 0)::int AS service_count,
       MAX(last_service_date) AS last_service_date,
@@ -202,13 +260,15 @@ function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = n
         OR last_service_date < (CURRENT_DATE - (${serviceGapMonths} || ' months')::interval)) AS any_service_overdue
     FROM vehicle_state
     WHERE customer_id <> ''
-    GROUP BY customer_id
+    -- Per (customer_id, outlet): a car bought at JK402 must not appear under the different person
+    -- who happens to share that customer_id at JK501.
+    GROUP BY customer_id, outlet
   ),
 
   -- Enquiry rollup. booking_no on the enquiry row IS the funnel: 1,146/1,146 resolve to a booking.
   customer_enquiry AS MATERIALIZED (
     SELECT
-      customer_id,
+      customer_id, outlet,
       COUNT(*)::int AS enquiry_count,
       COUNT(*) FILTER (WHERE COALESCE(booking_no, '') <> '')::int AS booking_count,
       BOOL_OR(COALESCE(booking_no, '') <> '' AND delivery_date IS NULL) AS booked_not_delivered,
@@ -218,28 +278,80 @@ function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = n
         COALESCE(delivery_date, '1900-01-01'::date)
       )) AS last_sales_activity
     FROM latest_enquiry
-    GROUP BY customer_id
+    -- Per (customer_id, outlet), matching customer_identity. Grouping by customer_id alone gave
+    -- BOTH people behind a shared id the combined enquiry and booking counts.
+    GROUP BY customer_id, outlet
   ),
 
   -- Identity fields from the most recent enquiry row.
   -- ⚠️ 2,318 of 8,110 customer_ids (29%) carry more than one distinct phone across snapshot
   -- rows. Take the latest upload, never an aggregate, or the profile shows a stale number.
+  /*
+   * ⚠️ Keyed on (customer_id, outlet), NOT customer_id alone.
+   *
+   * customer_id is a per-DMS-instance sequence, not a group party key. Measured 2026-08-26: of
+   * 8,371 distinct customer_ids, 2,411 (28.8%) resolve to MORE THAN ONE PERSON — C2025020002 is
+   * 'ANAND' at JK402 and 'MILANPANDEY' at JK501. DISTINCT ON (customer_id) picked whichever name
+   * was uploaded last and showed that person the other's enquiries, bookings, spend and contact
+   * details. Qualifying by outlet resolves 2,396 of the 2,411 (99.4%); the surviving 15 stay SPLIT
+   * rather than merged, because showing less history is a far smaller error than showing someone
+   * else's.
+   */
   customer_identity AS MATERIALIZED (
-    SELECT DISTINCT ON (customer_id)
-      customer_id, name_of_the_customer, contact_number, customer_email, city, dealer_code
+    SELECT DISTINCT ON (customer_id, outlet)
+      customer_id, outlet, name_of_the_customer, contact_number, customer_email, city, dealer_code
     FROM latest_enquiry
-    ORDER BY customer_id, uploaded_at DESC NULLS LAST, enquiry_date DESC NULLS LAST
+    ORDER BY customer_id, outlet, uploaded_at DESC NULLS LAST, enquiry_date DESC NULLS LAST
+  ),
+
+  /*
+   * Buyers with NO enquiry row at all.
+   *
+   * Identity is normally taken from the enquiry feed, which is richer. But a walk-in who bought
+   * without an enquiry ever being logged has no row there — and dropping them means a customer who
+   * gave us money does not exist in the customer section. Measured: 1 today (Rahuljeet Singh
+   * Jasrotia, C2024120003 @ JK402). One is enough: the failure is silent and grows with every
+   * unlogged walk-in.
+   *
+   * kia_sales_report carries registration_name and contact_num1, so the fallback is real data, not
+   * a placeholder. city and email are genuinely absent and stay NULL rather than being invented.
+   */
+  sales_only_identity AS MATERIALIZED (
+    SELECT DISTINCT ON (customer_id, outlet) * FROM (
+      SELECT
+        UPPER(BTRIM(COALESCE(s.customerid, ''))) AS customer_id,
+        UPPER(BTRIM(COALESCE(NULLIF(BTRIM(s.dealer_code_2), ''), NULLIF(BTRIM(s.dealer_code), ''), ''))) AS outlet,
+        s.registration_name AS name_of_the_customer,
+        s.contact_num1 AS contact_number,
+        NULL::text AS customer_email,
+        NULL::text AS city,
+        s.dealer_code
+      FROM latest_sales s
+      WHERE COALESCE(s.customerid, '') <> ''
+    ) t
+    WHERE NOT EXISTS (
+      SELECT 1 FROM customer_identity ci
+      WHERE ci.customer_id = t.customer_id AND ci.outlet = t.outlet
+    )
+  ),
+
+  all_identity AS MATERIALIZED (
+    SELECT customer_id, outlet, name_of_the_customer, contact_number, customer_email, city, dealer_code
+    FROM customer_identity
+    UNION ALL
+    SELECT customer_id, outlet, name_of_the_customer, contact_number, customer_email, city, dealer_code
+    FROM sales_only_identity
   ),
 
   -- Complaints attach by VIN (95% of complaint VINs resolve), so they roll up per customer.
   customer_complaints AS MATERIALIZED (
-    SELECT v.customer_id,
+    SELECT v.customer_id, v.outlet,
       COUNT(*)::int AS complaint_count,
       COUNT(*) FILTER (WHERE c.close_date IS NULL)::int AS open_complaints
     FROM kia_call_center_complaints c
     JOIN vehicle_state v ON UPPER(BTRIM(v.vin)) = UPPER(BTRIM(COALESCE(c.vin_no, '')))
     WHERE v.customer_id <> ''
-    GROUP BY v.customer_id
+    GROUP BY v.customer_id, v.outlet
   ),
 
   -- Population 1: everyone with a DMS party key.
@@ -247,6 +359,7 @@ function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = n
     SELECT
       'customer'::text AS kind,
       i.customer_id AS key_value,
+      i.outlet AS key_outlet,
       i.customer_id,
       i.name_of_the_customer AS name,
       i.contact_number AS phone,
@@ -265,10 +378,12 @@ function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = n
       (COALESCE(c.open_complaints, 0) > 0) AS gap_open_complaint,
       COALESCE(v.any_insurance_lapsed, FALSE) AS gap_insurance_lapsed,
       COALESCE(e.booked_not_delivered, FALSE) AS gap_booked_not_delivered
-    FROM customer_identity i
-    LEFT JOIN customer_enquiry e ON e.customer_id = i.customer_id
-    LEFT JOIN customer_vehicles v ON v.customer_id = i.customer_id
-    LEFT JOIN customer_complaints c ON c.customer_id = i.customer_id
+    FROM all_identity i
+    LEFT JOIN customer_enquiry e ON e.customer_id = i.customer_id AND e.outlet = i.outlet
+    -- INNER, not LEFT: no purchased vehicle means not a customer. This one word is the whole
+    -- buyers-only rule; making it LEFT again silently restores the 12,654-row prospect list.
+    JOIN customer_vehicles v ON v.customer_id = i.customer_id AND v.outlet = i.outlet
+    LEFT JOIN customer_complaints c ON c.customer_id = i.customer_id AND c.outlet = i.outlet
   ),
 
   -- Population 2: vehicles seen only in the workshop, with no owning customer_id.
@@ -290,6 +405,7 @@ function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = n
     SELECT
       'vehicle'::text AS kind,
       o.vin AS key_value,
+      ''::text AS key_outlet,
       NULL::text AS customer_id,
       COALESCE(p.name, MAX_RO.customer_name) AS name,
       p.mobile AS phone,
@@ -327,10 +443,21 @@ function directoryCte(serviceGapMonths: number, scope: KiaCustomerKey | null = n
     ) MAX_RO ON TRUE
   ),
 
+  /*
+   * BUYERS ONLY — people who actually bought a vehicle from us.
+   *
+   * The directory used to union three populations: buyers, enquiry-only prospects, and service-only
+   * VINs with no party key at all. That made it a 12,654-row prospect list. Per the MD it is a
+   * CUSTOMER list: 889 people who took delivery of one of our 914 cars.
+   *
+   * The restriction is the INNER JOIN to customer_vehicles below — that CTE is derived from
+   * kia_sales_report, so joining it is exactly "appears in the sales report". service_directory
+   * (1,884 orphan VINs seen only in the workshop) is dropped for the same reason: they are real
+   * relationships, but we did not sell them the car and they carry no party key to hang a
+   * purchase history on.
+   */
   directory AS MATERIALIZED (
     SELECT * FROM sales_directory
-    UNION ALL
-    SELECT * FROM service_directory
   )
   `
 }
@@ -345,8 +472,11 @@ function mapSummary(row: Record<string, unknown>): KiaCustomerSummary {
     insuranceLapsed: Boolean(row.gap_insurance_lapsed),
     bookedNotDelivered: Boolean(row.gap_booked_not_delivered),
   }
+  // The outlet is part of the party key — see KiaCustomerKey. Without it the link opens a profile
+  // that merges everyone sharing this customer_id.
+  const outlet = String(row.key_outlet || '').trim().toUpperCase()
   const key: KiaCustomerKey = kind === 'customer'
-    ? { kind: 'customer', value: String(row.key_value) }
+    ? { kind: 'customer', value: String(row.key_value), outlet: outlet || undefined }
     : { kind: 'vehicle', value: String(row.key_value) }
   const lastActivity = dateStr(row.last_activity_date)
 
@@ -382,6 +512,7 @@ const GAP_COLUMN: Record<keyof KiaCustomerGaps, string> = {
 export async function listKiaCustomers(
   filters: KiaCustomerListFilters = {},
 ): Promise<KiaCustomerListResult> {
+  const dealerScope = filters.dealerScope ?? null
   const page = Math.max(1, Number(filters.page) || 1)
   const pageSize = Math.min(100, Math.max(10, Number(filters.pageSize) || 25))
   const offset = (page - 1) * pageSize
@@ -392,6 +523,9 @@ export async function listKiaCustomers(
 
   if (term) {
     const matchers = []
+    // A DMS party key typed straight in. Cheap, exact, and one of the search inputs the section is
+    // expected to accept; without it "C2025020002" fell through to the name scan and matched nothing.
+    if (term.customerId) matchers.push(sql`UPPER(BTRIM(d.customer_id)) = ${term.customerId}`)
     if (term.phone) matchers.push(sql`${phone10Sql(sql.raw('d.phone'))} = ${term.phone}`)
     if (term.vin) matchers.push(sql`EXISTS (SELECT 1 FROM vehicle_state v WHERE v.vin = ${term.vin}
       AND (v.customer_id = d.customer_id OR d.key_value = ${term.vin}))`)
@@ -421,7 +555,7 @@ export async function listKiaCustomers(
   const where = sql.join(conditions, sql` AND `)
 
   const result = await db.execute(sql`
-    WITH ${directoryCte(serviceGapMonths)}
+    WITH ${directoryCte(serviceGapMonths, null, dealerScope)}
     SELECT d.*,
       COUNT(*) OVER ()::int AS total_rows,
       (SELECT COUNT(*) FROM directory)::int AS total_customers,
@@ -509,10 +643,36 @@ export type KiaCustomerProfile = KiaCustomerSummary & {
 
 export async function getKiaCustomerProfile(
   key: KiaCustomerKey,
-  options: { serviceGapMonths?: number | null } = {},
+  options: { serviceGapMonths?: number | null; dealerScope?: string[] | null } = {},
 ): Promise<KiaCustomerProfile | null> {
+  // The same branch pin the directory applies. A pinned user must not be able to open a customer
+  // from another branch by pasting the key straight into the URL.
+  const dealerScope = options.dealerScope ?? null
   const serviceGapMonths = Math.min(60, Math.max(1, Number(options.serviceGapMonths) || DEFAULT_SERVICE_GAP_MONTHS))
   const isCustomer = key.kind === 'customer'
+  /*
+   * The outlet half of the party key. customer_id alone is shared by more than one person on 2,411
+   * of 8,371 KIA ids, so a profile filtered on it shows one person another person's history.
+   *
+   * A legacy link (cid:C2025020002, no outlet) still resolves to the OLD merged behaviour rather
+   * than 404-ing - the directory only ever emits composite keys now, so this is reachable only from
+   * an old bookmark, and the profile header names the outlet so the merge is at least visible.
+   */
+  const outlet = isCustomer ? String((key as { outlet?: string }).outlet || '').trim().toUpperCase() : ''
+  /**
+   * @param hasDealerCode2 whether this table carries dealer_code_2.
+   *
+   * NOT every KIA feed has it: enquiry, booking and sales do, kia_receipt_report has only
+   * dealer_code. Assuming it everywhere threw 42703 at runtime, not at compile time - the SQL here
+   * is a template string, so a wrong column name is invisible until the query runs.
+   */
+  const outletFilter = (hasDealerCode2 = true) => {
+    if (!outlet) return sql``
+    const expr = hasDealerCode2
+      ? sql.raw("COALESCE(NULLIF(BTRIM(dealer_code_2), ''), NULLIF(BTRIM(dealer_code), ''), '')")
+      : sql.raw("COALESCE(NULLIF(BTRIM(dealer_code), ''), '')")
+    return sql`AND UPPER(BTRIM(${expr})) = ${outlet}`
+  }
 
   // ⚠️ Round trips, not query cost, dominate here: a trivial statement costs ~250ms against
   // the pooler (`prepare: false`, 2 RTT/statement) and a cold connection ~1.8s. The five
@@ -522,7 +682,7 @@ export async function getKiaCustomerProfile(
   // NB Promise.all does NOT pipeline inside a transaction, but these are not in one.
   const [summaryResult, vehiclesResult, enquiryResult, bookingResult, receiptResult] = await Promise.all([
     db.execute(sql`
-      WITH ${directoryCte(serviceGapMonths, key)}
+      WITH ${directoryCte(serviceGapMonths, key, dealerScope)}
       SELECT d.* FROM directory d
       WHERE d.kind = ${key.kind} AND d.key_value = ${key.value}
       LIMIT 1
@@ -535,7 +695,7 @@ export async function getKiaCustomerProfile(
       FROM kia_sales_report
       WHERE COALESCE(vin_number, '') <> ''
         AND ${isCustomer
-          ? sql`UPPER(BTRIM(COALESCE(customerid, ''))) = ${key.value}`
+          ? sql`UPPER(BTRIM(COALESCE(customerid, ''))) = ${key.value} ${outletFilter()}`
           : sql`UPPER(BTRIM(vin_number)) = ${key.value}`}
       ORDER BY UPPER(BTRIM(vin_number)), uploaded_at DESC NULLS LAST
     )
@@ -569,7 +729,7 @@ export async function getKiaCustomerProfile(
                enquiry_no, enquiry_date, model, enquiry_status, enquiry_source, consultant_name,
                test_drive_date, booking_no, booking_date, delivery_date, lost_date
         FROM kia_enquiry_report
-        WHERE customer_id = ${key.value}
+        WHERE customer_id = ${key.value} ${outletFilter()}
         ORDER BY enquiry_no, uploaded_at DESC NULLS LAST
       `)
       : Promise.resolve([]),
@@ -578,14 +738,14 @@ export async function getKiaCustomerProfile(
         SELECT DISTINCT ON (booking_no)
                booking_no, booking_date, model, consultant_name, committed_delivery_date
         FROM kia_booking_report
-        WHERE customer_id = ${key.value}
+        WHERE customer_id = ${key.value} ${outletFilter()}
         ORDER BY booking_no, uploaded_at DESC NULLS LAST
       `)
       : Promise.resolve([]),
     isCustomer
       ? db.execute(sql`
         SELECT DISTINCT ON (receipt_date, model) receipt_date, model
-        FROM kia_receipt_report WHERE customer_id = ${key.value}
+        FROM kia_receipt_report WHERE customer_id = ${key.value} ${outletFilter(false)}
         ORDER BY receipt_date DESC NULLS LAST, model
       `)
       : Promise.resolve([]),

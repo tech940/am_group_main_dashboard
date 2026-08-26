@@ -16,6 +16,18 @@ export const PETTY_CASH_VIEW_ROLES = [
   'admin', 'developer', 'branch_admin', 'ea', 'md', 'eba', 'accounts', 'manager', 'general_manager', 'sales_manager', 'ed',
 ] as const
 
+/*
+ * ⚠️ 'general_manager' here is the General SALES Manager. The General SERVICE Manager
+ * ('service_general_manager') is a SEPARATE role and is deliberately NOT listed: every role in this
+ * array gets Petty Cash by ROLE, and a role added here must ALSO carry `petty_cash.view` in its
+ * template or the sidebar (role AND permission) hides a link the page (role OR explicit grant) then
+ * admits — the desync scripts/verify-petty-cash-multibrand.ts section 3 exists to catch.
+ *
+ * A Service GM reaches Petty Cash the other way: an explicit Access-Map grant, which the page has
+ * always honoured and the sidebar now honours too (hasExplicitGrant in components/layout/sidebar.tsx).
+ * That grants it to the ONE user an admin ticked rather than to every Service GM by default.
+ */
+
 export function isAmFinanceViewRole(role: string | null | undefined): boolean {
   return Boolean(role && (AM_FINANCE_VIEW_ROLES as readonly string[]).includes(role))
 }

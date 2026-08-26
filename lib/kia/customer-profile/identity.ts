@@ -128,6 +128,29 @@ export const KIA_SNAPSHOT_DEDUPE_KEYS = {
 } as const
 
 /* ------------------------------------------------------------------------------------ *
+ * Outlet
+ * ------------------------------------------------------------------------------------ */
+
+/**
+ * Which KIA outlet a row belongs to.
+ *
+ * ⚠️ `dealer_code_2` is read FIRST and the order is load-bearing. The feed changed shape on
+ * 2026-07-22; reading `dealer_code` first credits every Udhampur (JK501) row to Jammu (JK402).
+ * The same ordering is used by OUTLET_SQL in lib/kia/retail-review.ts and by KIA_OUTLET_SQL in
+ * lib/targets/actuals.ts — this is the third copy and they must not diverge.
+ *
+ * ⚠️ Never `main_dealer_code`: it is the literal 'JK402' on every row, including JK501's.
+ */
+export function kiaOutletSql(alias = '') {
+  const a = alias ? `${alias}.` : ''
+  return sql.raw(`UPPER(BTRIM(COALESCE(NULLIF(BTRIM(${a}dealer_code_2), ''), NULLIF(BTRIM(${a}dealer_code), ''), '')))`)
+}
+
+export function normalizeOutlet(value: string | null | undefined): string {
+  return String(value ?? '').trim().toUpperCase()
+}
+
+/* ------------------------------------------------------------------------------------ *
  * Profile keys
  * ------------------------------------------------------------------------------------ */
 
@@ -139,8 +162,24 @@ export const KIA_SNAPSHOT_DEDUPE_KEYS = {
  * vehicle alone. Dropping them would silently remove a large, and very actionable, outreach
  * population from the section.
  */
+/**
+ * ⚠️ A party key is `customer_id` + OUTLET, never `customer_id` alone.
+ *
+ * `customer_id` is a per-DMS-instance sequence, not a group party key, and it is not unique per
+ * person even inside one brand. Measured 2026-08-26 on kia_enquiry_report: of 8,371 distinct
+ * customer_ids, 2,411 (28.8%) resolve to MORE THAN ONE PERSON — e.g. C2025020002 is 'ANAND' at
+ * JK402 and 'MILANPANDEY' at JK501. Filtering on the bare id showed one person another person's
+ * enquiries, bookings, spend and contact details: a PII cross-disclosure, not a cosmetic bug.
+ *
+ * Qualifying by outlet resolves 2,396 of those 2,411 (99.4%), leaving 15 that need a human
+ * decision. Those 15 are deliberately left SPLIT rather than merged — showing less history is a
+ * far smaller error than showing someone else's.
+ *
+ * `outlet` is optional ONLY so a legacy `cid:C2025020002` link still parses; the reader resolves
+ * such a key to its outlet(s) and refuses to merge across them.
+ */
 export type KiaCustomerKey =
-  | { kind: 'customer'; value: string }
+  | { kind: 'customer'; value: string; outlet?: string }
   | { kind: 'vehicle'; value: string }
 
 const CUSTOMER_ID_PATTERN = /^C\d{6,}$/i
@@ -154,8 +193,15 @@ export function parseCustomerKey(raw: string | null | undefined): KiaCustomerKey
     return isVinLike(vin) ? { kind: 'vehicle', value: vin } : null
   }
   if (value.startsWith('cid:')) {
-    const id = value.slice(4).trim().toUpperCase()
-    return id ? { kind: 'customer', value: id } : null
+    // 'cid:JK402:C2025020002' (current) or 'cid:C2025020002' (legacy, outlet unresolved).
+    const rest = value.slice(4).trim().toUpperCase()
+    const parts = rest.split(':').filter(Boolean)
+    if (parts.length >= 2) {
+      const outlet = parts[0]
+      const id = parts.slice(1).join(':')
+      return id ? { kind: 'customer', value: id, outlet } : null
+    }
+    return rest ? { kind: 'customer', value: rest } : null
   }
 
   // Bare values: a 17-char VIN is unambiguous, and C-prefixed ids are the DMS format.
@@ -166,7 +212,10 @@ export function parseCustomerKey(raw: string | null | undefined): KiaCustomerKey
 }
 
 export function serializeCustomerKey(key: KiaCustomerKey): string {
-  return key.kind === 'customer' ? `cid:${key.value}` : `vin:${key.value}`
+  if (key.kind === 'vehicle') return `vin:${key.value}`
+  // Outlet first so the prefix reads as a scope, and so a truncated link degrades to "unresolved"
+  // rather than to a different customer.
+  return key.outlet ? `cid:${key.outlet}:${key.value}` : `cid:${key.value}`
 }
 
 /* ------------------------------------------------------------------------------------ *
@@ -175,6 +224,8 @@ export function serializeCustomerKey(key: KiaCustomerKey): string {
 
 export type KiaSearchTerm = {
   raw: string
+  /** A DMS party key typed directly, e.g. C2025020002. Exact match, never fuzzy. */
+  customerId: string
   phone: string
   vin: string
   registration: string
@@ -208,12 +259,15 @@ export function classifySearchTerm(raw: string | null | undefined): KiaSearchTer
     ? compact
     : ''
 
+  const customerId = CUSTOMER_ID_PATTERN.test(value) ? value.toUpperCase() : ''
+
   return {
     raw: value,
+    customerId,
     phone: digitsOnly ? phone : '',
     vin,
     registration,
     name: value,
-    isExact: Boolean(vin) || Boolean(digitsOnly && phone),
+    isExact: Boolean(vin) || Boolean(customerId) || Boolean(digitsOnly && phone),
   }
 }

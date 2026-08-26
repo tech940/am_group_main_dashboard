@@ -35,7 +35,7 @@ const CURRENT: Record<string, string> = {
   '/brands/kia/sales-performance': 'kia.sales_performance.view',
   '/brands/kia/call-center': 'kia.call_center.view',
   '/brands/kia/follow-ups': 'kia.lead_followups.view',
-  '/brands/kia/customer-profile': 'kia.customer_profile.view',
+  '/customer-360': 'customer_360.view',
   '/brands/kia/call-analytics': 'kia.call_analytics.view',
   '/brands/kia/bookings': 'kia.bookings.view',
   '/brands/kia/payment-approvals': 'kia.approvals.view',

@@ -607,7 +607,8 @@ function PurchaseOrdersPageContent() {
   // they live on the Petty Cash sidebar page.
   const canViewCa = isCaViewRole(userRole)
   const canEditInitialOrder = Boolean(canCreateOrders && selectedOrder && !['completed', 'cancelled'].includes(selectedOrder.status))
-  const effectivePurchaseOrderListMode: PurchaseOrderListMode = isApprovalRole(userRole) ? 'all' : purchaseOrderListMode
+  const effectivePurchaseOrderListMode: PurchaseOrderListMode =
+    isApprovalRole(userRole) ? 'all' : userRole === 'accounts' && purchaseOrderListMode === 'today' ? 'all' : purchaseOrderListMode
 
   const queueTitle = useMemo(() => {
     switch (userRole) {
@@ -713,6 +714,9 @@ function PurchaseOrdersPageContent() {
         return
       }
       setUserRole(data.role || '')
+      if (data.role === 'accounts') {
+        setPurchaseOrderListMode('all')
+      }
       if (data.role === 'md' || data.role === 'ea') {
         /*
          * Seed with MY_BRANCHES, not the raw `users.brand`.

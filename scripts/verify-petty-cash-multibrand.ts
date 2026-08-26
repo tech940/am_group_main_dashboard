@@ -5,7 +5,7 @@
  */
 import { eq } from 'drizzle-orm'
 import { db } from '../lib/db'
-import { getPettyCashBrandStatus, getPettyCashConfiguredBranches, getPettyCashLocationOptions, getPettyCashUserBrands, isPettyCashAllBranchRole, isPettyCashConfiguredForBranch, isPettyCashOwnSubmissionsOnlyRole } from '../lib/petty-cash/constants'
+import { getPettyCashBrandStatus, getPettyCashConfiguredBranches, getPettyCashLocationOptions, getPettyCashTopUpThreshold, getPettyCashUserBrands, isPettyCashAllBranchRole, isPettyCashConfiguredForBranch, isPettyCashOwnSubmissionsOnlyRole } from '../lib/petty-cash/constants'
 import { canCreatePettyCashRequest, canReadPettyCashExpense, canViewPettyCashBranch, hasPettyCashAllBranchAccess, pettyCashBranchScope } from '../lib/petty-cash/access'
 import { pettyCashRequests } from '../lib/db/schema'
 import { ROLE_PERMISSION_TEMPLATES } from '../lib/permissions/registry'
@@ -179,6 +179,17 @@ console.log(`
   ok("an EA CAN still open any expense in their branch (review depends on it)",
     canReadPettyCashExpense(approver, { branchId: 'kia', createdBy: 'someone-else' } as never))
   ok('an EA still cannot open another BRANCH', !canReadPettyCashExpense(approver, { branchId: 'hyundai', createdBy: 'x' } as never))
+}
+
+console.log(`
+9) Branch-specific top-up thresholds (KIA: ₹1,000; Others: ₹10,000)`)
+{
+  ok('KIA threshold is exactly 1,000', getPettyCashTopUpThreshold('kia') === 1000)
+  ok('KIA threshold case-insensitive', getPettyCashTopUpThreshold('KIA') === 1000)
+  ok('Hyundai threshold is exactly 10,000', getPettyCashTopUpThreshold('hyundai') === 10000)
+  ok('Platinum threshold is exactly 10,000', getPettyCashTopUpThreshold('platinum') === 10000)
+  ok('MG threshold is exactly 10,000', getPettyCashTopUpThreshold('mg') === 10000)
+  ok('Null/undefined branch defaults to 10,000', getPettyCashTopUpThreshold(null) === 10000)
 }
 
 console.log(fail === 0 ? '\n=== ALL CHECKS PASSED ===\n' : `\n=== ${fail} FAILURE(S) ===\n`)

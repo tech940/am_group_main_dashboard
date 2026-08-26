@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CreditCard,
   Plus,
@@ -43,6 +43,12 @@ import { INDIA_TIME_ZONE } from '@/lib/date-time'
 import { cn } from '@/lib/utils'
 import { BANK_SANCTION_BRANDS } from '@/lib/auth/bank-sanctions-access'
 import { getBranchLabel } from '@/lib/branches'
+import {
+  formatCompactINR,
+  historyActionLabel,
+  historyChanges,
+  formatHistoryValue,
+} from '@/lib/bank-sanctions/history-diff'
 
 type ExpiryStatus = 'old_expired' | 'current_month' | null
 
@@ -146,13 +152,6 @@ function formatCurrencyINR(val: number | null): string {
   return inr.format(val)
 }
 
-function formatCompactINR(val: number | null): string {
-  if (val === null || val === undefined) return '—'
-  if (val >= 10000000) return `₹${(val / 10000000).toFixed(2)} Cr`
-  if (val >= 100000) return `₹${(val / 100000).toFixed(2)} L`
-  return inr.format(val)
-}
-
 const istStamp = (value: string) =>
   `${new Date(value).toLocaleDateString('en-IN', { timeZone: INDIA_TIME_ZONE, day: '2-digit', month: 'short', year: 'numeric' })}, ${new Date(value).toLocaleTimeString('en-IN', { timeZone: INDIA_TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: true })} IST`
 
@@ -216,6 +215,21 @@ function getLocationBadge(location: string): { bg: string; text: string; border:
   return { bg: 'bg-blue-50 dark:bg-blue-950/60', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800' }
 }
 
+function formatLastUpdated(value: string | null | undefined): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: INDIA_TIME_ZONE,
+  }).format(date)
+}
+
 export function BankSanctionsWorkspace() {
   const [records, setRecords] = useState<SanctionRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -249,8 +263,20 @@ export function BankSanctionsWorkspace() {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [saving, setSaving] = useState(false)
   const [uploadingSlot, setUploadingSlot] = useState<1 | 2 | null>(null)
-  const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[] | null>(null)
+  /*
+   * The facility whose trail is open in the standalone History dialog (the "History" button on the
+   * table row). Separate from `viewingRecord` so the trail is reachable in ONE click from the table
+   * — the sheet's whole point was the revision list, and burying it two clicks deep inside the
+   * detail modal made the section look like it had thrown that history away.
+   */
+  const [historyRecord, setHistoryRecord] = useState<SanctionRecord | null>(null)
+  /*
+   * Which facility the in-flight history request belongs to. Two facilities opened in quick
+   * succession race, and without this the slower response overwrites the faster one — showing
+   * facility A's limits and guarantors under facility B's name.
+   */
+  const historyRequestRef = useRef<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -435,15 +461,11 @@ export function BankSanctionsWorkspace() {
 
   const handleOpenView = (record: SanctionRecord) => {
     setViewingRecord(record)
-    setShowHistory(false)
-    setHistory(null)
   }
 
   const handleOpenEdit = (record: SanctionRecord | 'new') => {
     setEditingRecord(record)
     setDraft(record === 'new' ? EMPTY_DRAFT : draftFrom(record))
-    setShowHistory(false)
-    setHistory(null)
   }
 
   const setField = (key: keyof Draft, value: string) => setDraft((prev) => ({ ...prev, [key]: value }))
@@ -492,19 +514,35 @@ export function BankSanctionsWorkspace() {
     }
   }
 
-  const loadHistoryForRecord = async (recordId: string) => {
-    setShowHistory(true)
-    if (history) return
+  /*
+   * Always refetches for the id asked for.
+   *
+   * ⚠️ This used to short-circuit on `if (history) return`, which was only ever safe because every
+   * caller happened to null the state first — one entry point that forgot would have shown the
+   * previous facility's trail. The register is small and this is one indexed read, so correctness
+   * beats the saved request.
+   */
+  const fetchHistory = useCallback(async (recordId: string) => {
+    historyRequestRef.current = recordId
+    setHistory(null)
     try {
       const res = await fetch(`/api/bank-sanctions/${recordId}/history`, { cache: 'no-store' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || data.error) throw new Error(data.error || 'Failed to load history')
+      if (historyRequestRef.current !== recordId) return // a newer request has taken over
       setHistory(data.history || [])
     } catch (error) {
+      if (historyRequestRef.current !== recordId) return
       toast({ title: 'History failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'error' })
       setHistory([])
     }
-  }
+  }, [])
+
+  /** The table's History button — opens the standalone revision trail for one facility. */
+  const openHistory = useCallback((record: SanctionRecord) => {
+    setHistoryRecord(record)
+    void fetchHistory(record.id)
+  }, [fetchHistory])
 
   const uploadPdf = async (slot: 1 | 2, file: File | null) => {
     if (!file) return
@@ -857,7 +895,10 @@ export function BankSanctionsWorkspace() {
                   <th className="py-3 px-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-300 whitespace-nowrap">
                     Docs
                   </th>
-                  <th className="py-3 px-4 text-center text-[11px] font-bold uppercase tracking-wider text-slate-300 min-w-[160px]">
+                  <th className="py-3 px-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-300 whitespace-nowrap">
+                    Last Updated
+                  </th>
+                  <th className="py-3 px-4 text-center text-[11px] font-bold uppercase tracking-wider text-slate-300 min-w-[250px]">
                     Actions
                   </th>
                 </tr>
@@ -866,6 +907,11 @@ export function BankSanctionsWorkspace() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-normal">
                 {paginatedGroups.map((group) => {
                   const isOpen = isGroupOpen(group.key)
+                  const groupLatestUpdate = group.rows.reduce<string | null>((latest, r) => {
+                    if (!r.updatedAt) return latest
+                    if (!latest) return r.updatedAt
+                    return new Date(r.updatedAt) > new Date(latest) ? r.updatedAt : latest
+                  }, null)
                   return (
                   <Fragment key={group.key}>
                     {/* ── Location header: the rich executive summary of one location/group position ── */}
@@ -1051,6 +1097,13 @@ export function BankSanctionsWorkspace() {
                         </span>
                       </td>
 
+                      {/* Last Updated Across Group */}
+                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
+                        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                          {formatLastUpdated(groupLatestUpdate)}
+                        </span>
+                      </td>
+
                       {/* Actions: Clean Expand / Collapse Action Button */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <button
@@ -1229,6 +1282,13 @@ export function BankSanctionsWorkspace() {
                         </div>
                       </td>
 
+                      {/* Last Updated */}
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        <span className="font-semibold text-xs tabular-nums text-slate-700 dark:text-slate-300">
+                          {formatLastUpdated(row.updatedAt)}
+                        </span>
+                      </td>
+
                       {/* Action Buttons using Theme Outline */}
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
@@ -1252,6 +1312,21 @@ export function BankSanctionsWorkspace() {
                           >
                             <Pencil className="h-3.5 w-3.5 mr-1" />
                             Edit
+                          </Button>
+
+                          {/*
+                            History — every revision this facility has ever had, including the
+                            original sheet's response rows at their own timestamps.
+                          */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openHistory(row)}
+                            title={`Revision history for ${row.loanType}`}
+                            className="h-7 px-2.5 rounded-lg text-xs font-semibold cursor-pointer shadow-2xs"
+                          >
+                            <HistoryIcon className="h-3.5 w-3.5 mr-1" />
+                            History
                           </Button>
                         </div>
                       </td>
@@ -1285,7 +1360,7 @@ export function BankSanctionsWorkspace() {
                   <td className="py-3 px-3 text-right text-xs font-semibold tabular-nums text-slate-700 dark:text-slate-300">
                     {formatCurrencyINR(totals.interestAmount)}
                   </td>
-                  <td colSpan={3} />
+                  <td colSpan={4} />
                 </tr>
               </tfoot>
             </table>
@@ -1454,47 +1529,28 @@ export function BankSanctionsWorkspace() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => (showHistory ? setShowHistory(false) : void loadHistoryForRecord(viewingRecord.id))}
+                        onClick={() => {
+                          const rec = viewingRecord
+                          setViewingRecord(null)
+                          openHistory(rec)
+                        }}
                         className="h-9 px-3 rounded-xl text-xs font-semibold gap-1.5 cursor-pointer shadow-2xs"
                       >
                         <HistoryIcon className="h-3.5 w-3.5" />
-                        {showHistory ? 'View Facility' : 'Audit Trail'}
+                        History
                       </Button>
                     </div>
                   </div>
                 </DialogTitle>
               </DialogHeader>
 
-              {showHistory ? (
-                /* History View Inside View Modal */
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Immutable Audit Trail</h4>
-                  {history === null ? (
-                    <p className="text-xs font-medium text-slate-500 py-6 text-center">Loading audit history…</p>
-                  ) : history.length === 0 ? (
-                    <p className="text-xs font-medium text-slate-500 py-6 text-center">No history recorded for this facility yet.</p>
-                  ) : (
-                    history.map((entry) => (
-                      <div key={entry.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 p-4 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold uppercase tracking-wider text-[var(--dashboard-primary)]">
-                            {entry.action}
-                          </span>
-                          <span className="text-xs tabular-nums text-slate-500">{istStamp(entry.createdAt)}</span>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          Modified by: <strong className="text-slate-700 dark:text-slate-300">{entry.changedByEmail || 'System'}</strong>
-                        </p>
-                        <p className="text-xs tabular-nums text-slate-600 dark:text-slate-400 pt-1">
-                          Limit: {String(entry.snapshot.creditLimit ?? '—')} · Outstanding: {String(entry.snapshot.outstandingAmount ?? '—')} · Expiry: {String(entry.snapshot.expiryDate ?? '—')}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              ) : (
-                /* Structured Executive Overview */
-                <div className="space-y-6">
+              {/*
+                The revision trail used to render here as a second face of this modal, printing raw
+                decimal strings. It now lives in ONE place — the History dialog — which the button
+                above opens, so the table row and the detail view show the identical trail.
+                Below is the structured executive overview of the facility itself.
+              */}
+              <div className="space-y-6">
                   {/* 4 Financial Highlights */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
@@ -1649,7 +1705,6 @@ export function BankSanctionsWorkspace() {
                     </Button>
                   </div>
                 </div>
-              )}
             </div>
           )}
         </DialogContent>
@@ -2016,6 +2071,160 @@ export function BankSanctionsWorkspace() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════
+          MODAL 3: REVISION HISTORY — every entry this facility has ever had
+          ═══════════════════════════════════════════════════════════════ */}
+      <Dialog open={historyRecord !== null} onOpenChange={(open) => { if (!open) setHistoryRecord(null) }}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto rounded-3xl p-6 border-slate-200 dark:border-slate-800 shadow-2xl">
+          {historyRecord && (
+            <div className="space-y-5 font-sans">
+              <DialogHeader className="border-b border-slate-100 dark:border-slate-800 pb-4">
+                <DialogTitle asChild>
+                  <div className="space-y-1.5 text-left pr-8">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={cn('px-2.5 py-0.5 rounded-lg text-xs font-bold border uppercase tracking-wider', getBankBadge(historyRecord.loanType).bg, getBankBadge(historyRecord.loanType).text, getBankBadge(historyRecord.loanType).border)}>
+                        {getBankBadge(historyRecord.loanType).label}
+                      </span>
+                      <span className={cn('px-2.5 py-0.5 rounded-lg text-xs font-semibold border uppercase tracking-wider', getFacilityTypeBadge(historyRecord.loanType).bg, getFacilityTypeBadge(historyRecord.loanType).text, getFacilityTypeBadge(historyRecord.loanType).border)}>
+                        {getFacilityTypeBadge(historyRecord.loanType).label}
+                      </span>
+                      <span className={cn('px-2.5 py-0.5 rounded-lg text-xs font-semibold border', getLocationBadge(historyRecord.location).bg, getLocationBadge(historyRecord.location).text, getLocationBadge(historyRecord.location).border)}>
+                        {historyRecord.location}
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50 pt-0.5">
+                      {historyRecord.loanType}
+                    </h3>
+                    <p className="text-xs font-medium text-slate-500">
+                      {history === null
+                        ? 'Loading revision history…'
+                        : history.length === 0
+                        ? 'No entries recorded for this facility.'
+                        : `${history.length} ${history.length === 1 ? 'entry' : 'entries'} · ${istStamp(history[history.length - 1].createdAt)} → ${istStamp(history[0].createdAt)}`}
+                    </p>
+                  </div>
+                </DialogTitle>
+              </DialogHeader>
+
+              {history === null ? (
+                <p className="py-10 text-center text-xs font-medium text-slate-500">Loading revision history…</p>
+              ) : history.length === 0 ? (
+                <p className="py-10 text-center text-xs font-medium text-slate-500">
+                  No entries recorded for this facility yet.
+                </p>
+              ) : (
+                <ol className="space-y-3">
+                  {history.map((entry, index) => {
+                    const action = historyActionLabel(entry.action)
+                    /*
+                     * `history` is newest-first, so the version this entry replaced is the NEXT one
+                     * in the array. The last item has nothing before it — that is the original.
+                     */
+                    const previous = history[index + 1]
+                    const changes = historyChanges(entry.snapshot, previous?.snapshot)
+                    const isOriginal = !previous
+                    return (
+                      <li
+                        key={entry.id}
+                        className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className={cn('px-2 py-0.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider', action.className)}>
+                              {action.label}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              #{history.length - index}
+                            </span>
+                          </div>
+                          <span className="text-xs font-semibold tabular-nums text-slate-700 dark:text-slate-300">
+                            {istStamp(entry.createdAt)}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                          <div>
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Limit</span>
+                            <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                              {formatHistoryValue('money', entry.snapshot?.creditLimit)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Outstanding</span>
+                            <span className="font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                              {formatHistoryValue('money', entry.snapshot?.outstandingAmount)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">ROI</span>
+                            <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                              {formatHistoryValue('percent', entry.snapshot?.roiPct)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Expiry</span>
+                            <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                              {formatHistoryValue('date', entry.snapshot?.expiryDate)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {isOriginal ? (
+                          <p className="text-[11px] font-medium text-slate-500 border-t border-slate-200 dark:border-slate-700 pt-2.5">
+                            First recorded entry for this facility.
+                          </p>
+                        ) : changes.length === 0 ? (
+                          <p className="text-[11px] font-medium text-slate-500 border-t border-slate-200 dark:border-slate-700 pt-2.5">
+                            Re-submitted with no change to any tracked field.
+                          </p>
+                        ) : (
+                          <div className="border-t border-slate-200 dark:border-slate-700 pt-2.5 space-y-1.5">
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Changed in this entry
+                            </span>
+                            <ul className="space-y-1">
+                              {changes.map((change) => (
+                                <li key={change.key} className="text-[11px] leading-relaxed">
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300">{change.label}: </span>
+                                  <span className="text-slate-500 line-through decoration-slate-400/70">
+                                    {formatHistoryValue(change.kind, change.from)}
+                                  </span>
+                                  <span className="text-slate-400"> → </span>
+                                  <span className="font-semibold text-[var(--dashboard-primary)] dark:text-slate-100">
+                                    {formatHistoryValue(change.kind, change.to)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        <p className="text-[11px] text-slate-500">
+                          {/* Sheet responses carry no author — the form did not capture one. */}
+                          {entry.changedByEmail
+                            ? <>Recorded by <strong className="text-slate-700 dark:text-slate-300">{entry.changedByEmail}</strong></>
+                            : 'Recorded from the original Bank Sanction Limits form'}
+                        </p>
+                      </li>
+                    )
+                  })}
+                </ol>
+              )}
+
+              <div className="flex justify-end border-t border-slate-100 dark:border-slate-800 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setHistoryRecord(null)}
+                  className="h-9 px-4 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

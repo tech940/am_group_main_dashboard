@@ -34,7 +34,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
 import { getBranchLabel } from '@/lib/branches'
-import { getAllPettyCashLocationOptions, getPettyCashBrandStatus, getPettyCashConfiguredBranches, getPettyCashLocationOptions, getPettyCashUserBrands, PETTY_CASH_DEPARTMENT_OPTIONS, PETTY_CASH_TOP_UP_THRESHOLD, isPettyCashAllBranchRole, isPettyCashConfiguredForBranch } from '@/lib/petty-cash/constants'
+import { getAllPettyCashLocationOptions, getPettyCashBrandStatus, getPettyCashConfiguredBranches, getPettyCashLocationOptions, getPettyCashUserBrands, PETTY_CASH_DEPARTMENT_OPTIONS, PETTY_CASH_TOP_UP_THRESHOLD, getPettyCashTopUpThreshold, isPettyCashAllBranchRole, isPettyCashConfiguredForBranch } from '@/lib/petty-cash/constants'
 import { toast } from '@/hooks/use-toast'
 import { formatWaitingDuration } from '@/lib/petty-cash/status-tracking'
 import { cn } from '@/lib/utils'
@@ -613,7 +613,7 @@ export function PettyCashWorkspace() {
           return { allocated: acc.allocated + allocated, spent: acc.spent + spent, remaining: acc.remaining + remaining }
         }, { allocated: 0, spent: 0, remaining: 0 })
         const activeRows = rows.filter((r) => r.status === 'active')
-        const needsTopUp = rows.filter((row) => row.status === 'active' && readMoney(row).remaining <= PETTY_CASH_TOP_UP_THRESHOLD).length
+        const needsTopUp = rows.filter((row) => row.status === 'active' && readMoney(row).remaining <= getPettyCashTopUpThreshold(row.branchId || row.branch_id)).length
         return {
           brand,
           label: getBranchLabel(brand),
@@ -644,9 +644,10 @@ export function PettyCashWorkspace() {
       const allocated = Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
       const spent = Number(allocation.spentAmount || allocation.spent_amount || 0)
       const remaining = Number(allocation.remainingAmount ?? (allocated - spent))
+      const threshold = getPettyCashTopUpThreshold(normalizeBranchId(allocation))
 
       const matchDept = overviewDeptFilter === 'all' || dept === overviewDeptFilter.toLowerCase()
-      const matchLow = !overviewLowBalanceOnly || (allocation.status === 'active' && remaining <= PETTY_CASH_TOP_UP_THRESHOLD)
+      const matchLow = !overviewLowBalanceOnly || (allocation.status === 'active' && remaining <= threshold)
       const matchQ = !q ||
         (allocation.location || '').toLowerCase().includes(q) ||
         (allocation.allocatedToName || '').toLowerCase().includes(q)
@@ -660,11 +661,12 @@ export function PettyCashWorkspace() {
       const allocated = Number(row.allocatedAmount || row.allocated_amount || 0)
       const spent = Number(row.spentAmount || row.spent_amount || 0)
       const remaining = Number(row.remainingAmount ?? (allocated - spent))
+      const threshold = getPettyCashTopUpThreshold(normalizeBranchId(row))
       return {
         allocated: acc.allocated + allocated,
         spent: acc.spent + spent,
         remaining: acc.remaining + remaining,
-        lowCount: acc.lowCount + (row.status === 'active' && remaining <= PETTY_CASH_TOP_UP_THRESHOLD ? 1 : 0),
+        lowCount: acc.lowCount + (row.status === 'active' && remaining <= threshold ? 1 : 0),
         activeCount: acc.activeCount + (row.status === 'active' ? 1 : 0),
       }
     }, { allocated: 0, spent: 0, remaining: 0, lowCount: 0, activeCount: 0 })
@@ -1049,7 +1051,7 @@ export function PettyCashWorkspace() {
         {canCreate && branchConfigured && !canRequestTopUp && (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs font-semibold text-amber-800">
             <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{topUpReason || 'A new request unlocks only when the remaining balance is ₹1,000 or lower.'}</span>
+            <span>{topUpReason || (currentBranchId === 'kia' ? 'A new request unlocks only when the remaining balance is ₹1,000 or lower.' : 'A new request unlocks only when the remaining balance is ₹10,000 or lower.')}</span>
           </div>
         )}
 
@@ -1535,8 +1537,8 @@ export function PettyCashWorkspace() {
                           const remaining = Number(allocation.remainingAmount ?? (allocated - spent))
                           const spentPct = allocated > 0 ? Math.min(100, Math.round((spent / allocated) * 100)) : 0
                           const isActive = allocation.status === 'active'
-                          const needsTopUp = isActive && remaining <= PETTY_CASH_TOP_UP_THRESHOLD
                           const branchBrand = normalizeBranchId(allocation)
+                          const needsTopUp = isActive && remaining <= getPettyCashTopUpThreshold(branchBrand)
                           const branchName = getBranchLabel(branchBrand)
                           const locBadge = getLocationBadge(allocation.location || branchName)
 
@@ -1682,7 +1684,7 @@ export function PettyCashWorkspace() {
                         const remaining = Number(allocation.remainingAmount ?? (allocated - spent))
                         const spentPct = allocated > 0 ? Math.min(100, Math.round((spent / allocated) * 100)) : 0
                         const isActive = allocation.status === 'active'
-                        const needsTopUp = isActive && remaining <= PETTY_CASH_TOP_UP_THRESHOLD
+                        const needsTopUp = isActive && remaining <= getPettyCashTopUpThreshold(normalizeBranchId(allocation))
                         const locBadge = getLocationBadge(allocation.location || getBranchLabel(normalizeBranchId(allocation)))
 
                         return (

@@ -34,7 +34,12 @@ import {
   getPettyCashRequestVisibilityFilter,
   pettyCashBranchScope,
 } from './access'
-import { PETTY_CASH_TOP_UP_THRESHOLD, getPettyCashUserBrands, isPettyCashExpenseStatus, isPettyCashRequestStatus,
+import {
+  PETTY_CASH_TOP_UP_THRESHOLD,
+  getPettyCashTopUpThreshold,
+  getPettyCashUserBrands,
+  isPettyCashExpenseStatus,
+  isPettyCashRequestStatus,
   isPettyCashOwnSubmissionsOnlyRole,
 } from './constants'
 import { sendPettyCashApprovalEmail } from './emails'
@@ -127,22 +132,29 @@ function getRemainingBalance(allocation: Pick<PettyCashAllocationRecord, 'alloca
   return parseMoney(allocation.allocatedAmount) - parseMoney(allocation.spentAmount)
 }
 
-function getTopUpStatus(allocation: Pick<PettyCashAllocationRecord, 'allocatedAmount' | 'spentAmount'> | null | undefined) {
+function getTopUpStatus(
+  allocation: (Pick<PettyCashAllocationRecord, 'allocatedAmount' | 'spentAmount'> & { branchId?: string | null }) | null | undefined,
+  branchId?: string | null,
+) {
+  const effectiveBranch = allocation?.branchId || branchId
+  const threshold = getPettyCashTopUpThreshold(effectiveBranch)
   if (!allocation) {
     return {
       canRequestTopUp: true,
       remainingAmount: 0,
+      threshold,
       topUpReason: 'No active allocation exists.',
     }
   }
 
   const remainingAmount = getRemainingBalance(allocation)
   return {
-    canRequestTopUp: remainingAmount <= PETTY_CASH_TOP_UP_THRESHOLD,
+    canRequestTopUp: remainingAmount <= threshold,
     remainingAmount,
-    topUpReason: remainingAmount <= PETTY_CASH_TOP_UP_THRESHOLD
-      ? `Remaining balance is at or below ${toMoney(PETTY_CASH_TOP_UP_THRESHOLD)}.`
-      : `Top-up requests unlock when remaining balance is ${toMoney(PETTY_CASH_TOP_UP_THRESHOLD)} or below.`,
+    threshold,
+    topUpReason: remainingAmount <= threshold
+      ? `Remaining balance is at or below ${toMoney(threshold)}.`
+      : `Top-up requests unlock when remaining balance is ${toMoney(threshold)} or below.`,
   }
 }
 
@@ -859,7 +871,7 @@ export async function getPettyCashDashboard(appUser: AppUser, branchId?: string 
       remainingAmount: Math.max(0, allocationAmount - spentAmount),
       canRequestTopUp: topUpStatus.canRequestTopUp,
       canSubmitExpense,
-      topUpThreshold: PETTY_CASH_TOP_UP_THRESHOLD,
+      topUpThreshold: topUpStatus.threshold,
       topUpReason: topUpStatus.topUpReason,
       pendingRequestCount,
       pendingExpenseCount,
@@ -890,7 +902,7 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
   }
 
   const activeAllocation = await getActivePettyCashAllocationForScope(branchId, appUser.id)
-  const topUpStatus = getTopUpStatus(activeAllocation)
+  const topUpStatus = getTopUpStatus(activeAllocation, branchId)
   if (!topUpStatus.canRequestTopUp) {
     throw new Error(topUpStatus.topUpReason)
   }
@@ -1158,8 +1170,9 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
         if (!updatedRequest) throw new Error('Request already moved to another stage')
 
         if (activeAllocation) {
-          if (carryForwardAmount > PETTY_CASH_TOP_UP_THRESHOLD) {
-            throw new Error(`Top-up requests unlock when remaining balance is ${toMoney(PETTY_CASH_TOP_UP_THRESHOLD)} or below`)
+          const threshold = getPettyCashTopUpThreshold(activeAllocation.branchId || request.branchId)
+          if (carryForwardAmount > threshold) {
+            throw new Error(`Top-up requests unlock when remaining balance is ${toMoney(threshold)} or below`)
           }
 
           const [closedAllocation] = await tx
@@ -1173,12 +1186,12 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
             .where(and(
               eq(pettyCashAllocations.id, activeAllocation.id),
               eq(pettyCashAllocations.status, 'active'),
-              sql`${pettyCashAllocations.allocatedAmount} - ${pettyCashAllocations.spentAmount} <= ${toMoney(PETTY_CASH_TOP_UP_THRESHOLD)}::numeric`
+              sql`${pettyCashAllocations.allocatedAmount} - ${pettyCashAllocations.spentAmount} <= ${toMoney(threshold)}::numeric`
             ))
             .returning()
 
           if (!closedAllocation) {
-            throw new Error(`Top-up requests unlock when remaining balance is ${toMoney(PETTY_CASH_TOP_UP_THRESHOLD)} or below`)
+            throw new Error(`Top-up requests unlock when remaining balance is ${toMoney(threshold)} or below`)
           }
 
           await tx.insert(pettyCashLedgerEntries).values({

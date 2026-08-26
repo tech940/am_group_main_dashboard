@@ -1,6 +1,15 @@
 import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout } from '@/lib/email/templates/layout'
 
+/** Emails are HTML: vendor names, purposes and MD remarks are free text and must not be raw. */
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 export interface MdApprovalEmailParams {
   toEmail: string
   requesterName: string
@@ -10,6 +19,14 @@ export interface MdApprovalEmailParams {
   department?: string | null
   approvalType?: string | null
   approvalTime?: Date
+  /**
+   * The MD's own comment recorded with the approval.
+   *
+   * ⚠️ This template had NO remarks field at all, so an MD who approved WITH a note sent the
+   * requester an email that silently dropped it — 69 live orders carry such a note and not one of
+   * them reached the person who raised it. `purpose` is the REQUEST's text, not the MD's.
+   */
+  remarks?: string | null
 }
 
 export async function sendMdApprovalNotificationEmail(params: MdApprovalEmailParams) {
@@ -22,6 +39,7 @@ export async function sendMdApprovalNotificationEmail(params: MdApprovalEmailPar
     department,
     approvalType,
     approvalTime = new Date(),
+    remarks,
   } = params
 
   if (!toEmail || !toEmail.includes('@')) {
@@ -47,10 +65,10 @@ export async function sendMdApprovalNotificationEmail(params: MdApprovalEmailPar
 
   const bodyHtml = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
-      <p style="margin: 0 0 16px; font-size: 15px; color: #0f172a;">Hi ${requesterName || 'there'},</p>
+      <p style="margin: 0 0 16px; font-size: 15px; color: #0f172a;">Hi ${escapeHtml(requesterName) || 'there'},</p>
       
       <p style="margin: 0 0 16px; font-size: 15px; color: #334155;">
-        Your vendor payment order request for <strong>${vendorName}</strong> has been <strong>APPROVED</strong> by the Managing Director (MD) on <strong>${formattedTime}</strong>.
+        Your vendor payment order request for <strong>${escapeHtml(vendorName)}</strong> has been <strong>APPROVED</strong> by the Managing Director (MD) on <strong>${formattedTime}</strong>.
       </p>
 
       <div style="margin: 20px 0; padding: 20px; border: 1px solid #cbd5e1; border-radius: 16px; background-color: #f8fafc;">
@@ -60,7 +78,7 @@ export async function sendMdApprovalNotificationEmail(params: MdApprovalEmailPar
         <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #334155;">
           <tr>
             <td style="padding: 6px 0; font-weight: bold; width: 140px; color: #64748b;">Vendor / Beneficiary:</td>
-            <td style="padding: 6px 0; font-weight: bold; color: #0f172a;">${vendorName}</td>
+            <td style="padding: 6px 0; font-weight: bold; color: #0f172a;">${escapeHtml(vendorName)}</td>
           </tr>
           <tr>
             <td style="padding: 6px 0; font-weight: bold; color: #64748b;">Approved Amount:</td>
@@ -69,17 +87,17 @@ export async function sendMdApprovalNotificationEmail(params: MdApprovalEmailPar
           ${department ? `
           <tr>
             <td style="padding: 6px 0; font-weight: bold; color: #64748b;">Department:</td>
-            <td style="padding: 6px 0;">${department}</td>
+            <td style="padding: 6px 0;">${escapeHtml(department)}</td>
           </tr>` : ''}
           ${approvalType ? `
           <tr>
             <td style="padding: 6px 0; font-weight: bold; color: #64748b;">Payment Type:</td>
-            <td style="padding: 6px 0;">${approvalType}</td>
+            <td style="padding: 6px 0;">${escapeHtml(approvalType)}</td>
           </tr>` : ''}
           ${purpose ? `
           <tr>
             <td style="padding: 6px 0; font-weight: bold; color: #64748b;">Purpose / Remarks:</td>
-            <td style="padding: 6px 0;">${purpose}</td>
+            <td style="padding: 6px 0;">${escapeHtml(purpose)}</td>
           </tr>` : ''}
           <tr>
             <td style="padding: 6px 0; font-weight: bold; color: #64748b;">Approved At:</td>
@@ -87,6 +105,12 @@ export async function sendMdApprovalNotificationEmail(params: MdApprovalEmailPar
           </tr>
         </table>
       </div>
+
+      ${remarks && String(remarks).trim() ? `
+      <div style="margin: 20px 0; padding: 16px; border: 1px solid #99f6e4; border-radius: 12px; background-color: #f0fdfa;">
+        <h4 style="margin: 0 0 6px 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #0f766e; font-weight: 800;">Remarks from the MD:</h4>
+        <p style="margin: 0; font-size: 14px; color: #134e4a; white-space: pre-wrap; line-height: 1.5;">${escapeHtml(remarks)}</p>
+      </div>` : ''}
 
       <p style="margin: 16px 0 0; font-size: 13px; color: #64748b;">
         This payment order is now queued for final processing and execution with Accounts.
@@ -105,7 +129,7 @@ export async function sendMdApprovalNotificationEmail(params: MdApprovalEmailPar
         bodyHtml,
       }),
     })
-    console.log(`[md-approval-email] Successfully sent MD approval notification to ${toEmail} for vendor ${vendorName}`)
+    console.log(`[md-approval-email] Successfully sent MD approval notification to ${toEmail} for vendor ${escapeHtml(vendorName)}`)
   } catch (err) {
     console.error(`[md-approval-email] Failed to send MD approval email to ${toEmail}:`, err)
   }

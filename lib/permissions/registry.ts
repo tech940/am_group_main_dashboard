@@ -306,18 +306,26 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
-    // One customer's whole relationship with us — enquiry, booking, insurance, service and
-    // complaints — plus the gaps between them.
-    //
-    // Restricted-by-default ON PURPOSE: it is absent from DEFAULT_VISIBLE_SECTIONS below and
-    // from every ROLE_PERMISSION_TEMPLATES entry, so it resolves to MD + Developer only until
-    // somebody is granted it explicitly from the Access Map. It concentrates more customer
-    // contact detail on one screen than anything else in the dashboard.
-    key: 'kia.customer_profile',
-    name: 'Customer Profile',
-    parentKey: 'kia.sales',
-    description: 'AM KIA single-customer view across enquiry, booking, insurance, service and complaints, with gap detection.',
-    sortOrder: 46,
+    /*
+     * CUSTOMER 360 — one customer's whole relationship with the group.
+     *
+     * Top-level, not under kia.*, because it is multi-brand by design. That distinction is not
+     * cosmetic: applyBrandDefault() grants every non-restricted `kia.*` key to any user whose brand
+     * is KIA, so a kia-prefixed key here would silently reach every KIA user regardless of intent.
+     *
+     * Deliberately NOT in DEFAULT_VISIBLE_SECTIONS: it concentrates more customer contact detail on
+     * one screen than anything else in the app, so it starts at MD + Developer and is granted
+     * outwards from the Access Map. Contact details are separately masked unless the viewer is MD or
+     * Super Admin.
+     *
+     * ⚠️ sortOrder MUST be an integer. A fractional one fails the registry sync with 22P02 and takes
+     * the whole Access Map down with it.
+     */
+    key: 'customer_360',
+    name: 'Customer 360',
+    parentKey: null,
+    description: 'One customer end to end across every brand — enquiries, bookings, vehicles, insurance, service, spend and what to do next.',
+    sortOrder: 9,
     actions: ['view'],
   },
   {
@@ -892,7 +900,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   scrap_erp: { href: '/scrap-erp' },
   insurance_analysis: { href: '/insurance' },
   'kia.booking_payment_history': { href: '/brands/kia/booking-payment-history' },
-  'kia.customer_profile': { href: '/brands/kia/customer-profile' },
+  customer_360: { href: '/customer-360' },
   'kia.business_excellence': { href: '/brands/kia/business-excellence', aliases: ['/brands/kia/business-excellence/executive-dashboard', '/brands/kia/business-excellence/overview'] },
   'kia.service_appointment': { href: '/brands/kia/service-appointment' },
   'kia.demo_job_cards': { href: '/brands/kia/demo-job-cards' },

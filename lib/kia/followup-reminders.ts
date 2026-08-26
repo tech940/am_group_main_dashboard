@@ -1,9 +1,10 @@
 import 'server-only'
 
 import { env } from '@/config/env-config'
-import { getDueFollowupsForReminders, markReminderSent, type DueFollowup } from '@/lib/kia/lead-followups'
+import { getDueFollowupsForReminders, markReminderSent, syncOverdueDeliveryFollowups, type DueFollowup } from '@/lib/kia/lead-followups'
 import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout, detailTable, primaryButton, escapeHtml } from '@/lib/email/templates/layout'
+import { formatIstDateTime } from '@/lib/date-time'
 
 const FOLLOWUPS_URL = `${String(env.app.url || '').replace(/\/$/, '')}/brands/kia/follow-ups`
 const REASON_LABEL: Record<string, string> = {
@@ -15,6 +16,9 @@ const REASON_LABEL: Record<string, string> = {
 // model + booking number only — never the phone).
 // (The in-app notification half was removed with the notification system; email is the only channel.)
 export async function runFollowupReminders(): Promise<{ due: number; emailed: number }> {
+  // Ensure any 15+ day undelivered bookings are enqueued before compiling reminders
+  await syncOverdueDeliveryFollowups().catch(() => {})
+
   const due = await getDueFollowupsForReminders()
   if (!due.length) return { due: 0, emailed: 0 }
 
@@ -48,7 +52,14 @@ function digestHtml(items: DueFollowup[]): string {
       ['Vehicle', f.model || '—'],
       ['Booking', f.bookingNumber || '—'],
       ['Reason', REASON_LABEL[f.reason] || f.reason],
-      ['Due', new Date(f.dueAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })],
+      /*
+        * ⚠️ IST, explicitly, and labelled as such in the email body.
+        *
+        * This ran on the server with no timeZone, and the server clock is UTC in production — so
+        * every reminder ever sent announced a due time 5h30m EARLIER than the real one. A follow-up
+        * genuinely due at 10:00 am was emailed to staff as "04:30 am".
+        */
+      ['Due', formatIstDateTime(f.dueAt)],
     ]))
     .join('<div style="height:12px"></div>')
   const bodyHtml = `
