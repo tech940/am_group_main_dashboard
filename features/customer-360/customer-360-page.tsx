@@ -1,7 +1,7 @@
 'use client'
 
-import { useDeferredValue, useMemo, useState } from 'react'
-import { useQuery, type UseQueryResult } from '@tanstack/react-query'
+import { useCallback, useEffect, useDeferredValue, useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { MainLayout } from '@/components/layout/main-layout'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -335,6 +335,8 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
     return params.toString()
   }, [brand, deferredSearch, gap, serviceGapMonths, page, displayMode])
 
+  const queryClient = useQueryClient()
+
   const list = useQuery<KiaCustomerListResult & BrandMeta>({
     queryKey: ['customer-360', 'list', listParams],
     queryFn: async () => {
@@ -344,6 +346,44 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
     },
     staleTime: 2 * 60 * 1000,
   })
+
+  // Reusable profile prefetcher to load sidebar data before the user even clicks
+  const prefetchProfile = useCallback(
+    (key: string) => {
+      if (!key) return
+      queryClient.prefetchQuery({
+        queryKey: ['customer-360', 'detail', brand, key, serviceGapMonths],
+        queryFn: async () => {
+          const res = await fetch(
+            `/api/customer-360/${encodeURIComponent(key)}`
+            + `?brand=${brand}&service_gap_months=${serviceGapMonths}`,
+          )
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load')
+          return res.json()
+        },
+        staleTime: 5 * 60 * 1000,
+      })
+    },
+    [brand, serviceGapMonths, queryClient]
+  )
+
+  /*
+   * Preload the first few profiles so the dossier opens instantly — but each key AT MOST ONCE per
+   * mount, and only a handful. The unguarded version prefetched 16 full profiles on EVERY list
+   * render (each page change, gap filter, settled search keystroke), and a profile is the
+   * section's most expensive call (~10 statements against a pooler that charges ~2 RTTs each).
+   * This repo has already had a Vercel Active-CPU incident from exactly this speculative-prefetch
+   * pattern; the per-row onMouseEnter prefetch below covers the click-latency goal user-driven.
+   */
+  const prefetchedKeysRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!list.data?.rows?.length) return
+    for (const r of list.data.rows.slice(0, 8)) {
+      if (prefetchedKeysRef.current.has(r.key)) continue
+      prefetchedKeysRef.current.add(r.key)
+      prefetchProfile(r.key)
+    }
+  }, [list.data?.rows, prefetchProfile])
 
   const profile = useQuery<KiaCustomerProfile & BrandMeta>({
     queryKey: ['customer-360', 'detail', brand, openKey, serviceGapMonths],
@@ -356,7 +396,8 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load')
       return res.json()
     },
-    staleTime: 2 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
   })
 
   const common = useQuery<CommonResult>({
@@ -718,6 +759,7 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
                       <div
                         key={row.key}
                         onClick={() => setOpenKey(row.key)}
+                        onMouseEnter={() => prefetchProfile(row.key)}
                         className="group p-4 rounded-2xl bg-white border border-slate-200/90 hover:border-[var(--dashboard-primary)] hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-3.5"
                       >
                         {/* Top Metadata Row */}
@@ -816,6 +858,7 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
                           <tr
                             key={row.key}
                             onClick={() => setOpenKey(row.key)}
+                            onMouseEnter={() => prefetchProfile(row.key)}
                             className="hover:bg-slate-50 transition-colors cursor-pointer group"
                           >
                             <td className="py-3.5 px-4">
@@ -915,7 +958,7 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
       </div>
 
       <Dialog open={Boolean(openKey)} onOpenChange={(open) => { if (!open) setOpenKey(null) }}>
-        <DialogContent className="fixed inset-y-0 !left-0 sm:!left-auto !right-0 !top-0 z-50 !flex min-w-0 h-dvh max-h-dvh w-full max-w-full sm:max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l border-slate-200 bg-slate-50 p-0 shadow-2xl duration-300 sm:!w-[min(880px,calc(100vw-1rem))]">
+        <DialogContent className="fixed inset-y-0 !left-0 sm:!left-auto !right-0 !top-0 z-50 !flex min-w-0 h-dvh max-h-dvh w-full max-w-full sm:max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l border-slate-200 bg-slate-50 p-0 shadow-2xl duration-300 sm:!w-[min(1180px,calc(100vw-1rem))]">
           <DialogHeader className="sr-only">
             <DialogTitle>{profile.data?.name || 'Customer Profile'}</DialogTitle>
           </DialogHeader>
@@ -956,7 +999,7 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
  */
 type TimelineEvent = {
   date: string
-  category: 'sales' | 'insurance' | 'service' | 'communication'
+  category: 'sales' | 'insurance' | 'service' | 'communication' | 'accessories'
   title: string
   detail: string | null
   vin: string | null
@@ -981,6 +1024,7 @@ const CATEGORY_LABEL: Record<TimelineEvent['category'], string> = {
   sales: 'Sales & Delivery',
   insurance: 'Insurance',
   service: 'Workshop Service',
+  accessories: 'Accessories',
   communication: 'Communication',
 }
 
@@ -988,6 +1032,7 @@ const CATEGORY_CONFIG: Record<TimelineEvent['category'], { dotCls: string; badge
   sales: { dotCls: 'bg-indigo-600 ring-indigo-100', badgeCls: 'bg-indigo-50 text-indigo-700 border-indigo-200', icon: Car },
   insurance: { dotCls: 'bg-emerald-600 ring-emerald-100', badgeCls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: ShieldCheck },
   service: { dotCls: 'bg-amber-600 ring-amber-100', badgeCls: 'bg-amber-50 text-amber-800 border-amber-200', icon: Wrench },
+  accessories: { dotCls: 'bg-violet-600 ring-violet-100', badgeCls: 'bg-violet-50 text-violet-700 border-violet-200', icon: Store },
   communication: { dotCls: 'bg-rose-600 ring-rose-100', badgeCls: 'bg-rose-50 text-rose-800 border-rose-200', icon: MessageSquare },
 }
 
@@ -1086,6 +1131,17 @@ function formatRoadwayDate(dateStr: string | null) {
 function getRoadwayVisuals(item: TimelineEvent, index: number) {
   const t = item.title.toLowerCase()
   const numStr = String(index + 1).padStart(2, '0')
+
+  // 0. Accessories — checked by CATEGORY, first: the title has no keyword the branches below catch.
+  if (item.category === 'accessories') {
+    return {
+      num: numStr,
+      icon: Store,
+      iconBoxCls: 'bg-[#6D28D9] text-white',
+      badgeLabel: 'Accessories',
+      badgeCls: 'bg-violet-50/80 text-violet-800 border border-violet-200/70',
+    }
+  }
 
   // 1. Insurance (Check first to avoid generic 'started' match)
   if (item.category === 'insurance' || t.includes('insurance') || t.includes('policy')) {
@@ -1523,13 +1579,9 @@ function ActivityStreamRoadway({
   const chunkSize = 4
   const rows: { index: number; items: { item: TimelineEvent; originalIdx: number }[] }[] = []
   for (let i = 0; i < events.length; i += chunkSize) {
-    const slice = events.slice(i, i + chunkSize).map((item, localIdx) => ({
-      item,
-      originalIdx: i + localIdx,
-    }))
     rows.push({
       index: Math.floor(i / chunkSize),
-      items: slice,
+      items: events.slice(i, i + chunkSize).map((item, localIdx) => ({ item, originalIdx: i + localIdx })),
     })
   }
 
@@ -1549,6 +1601,46 @@ function ActivityStreamRoadway({
     )
   }
 
+  /*
+   * ── THE ROAD: geometry contract ──────────────────────────────────────────────────────────────
+   *
+   * The road is a light band drawn BEHIND the cards, snaking left-to-right then right-to-left with
+   * a U-turn loop at alternating row ends. Three numbers have to agree or the loops visibly detach
+   * from the straights, so they live here as constants rather than scattered through the classes:
+   *
+   *   ROAD_H  — height of the band, and therefore the BORDER WIDTH of each U-turn ring (the ring's
+   *             border IS the road as it curves).
+   *   ROW_GAP — the lg row spacing (lg:space-y-10 = 40px). A U-turn must span from this row's
+   *             centreline to the next row's, so its box is calc(100% + ROW_GAP + ROAD_H) tall,
+   *             starting at calc(50% - ROAD_H/2). Change the spacing class without changing this
+   *             constant and every loop misses its road.
+   *   TURN_W  — how far a loop bulges into the side padding. It must be < the lg:px-24 (96px)
+   *             padding or the loop clips at the container edge.
+   *
+   * The road and loops render on lg+ only: below lg the cards stack vertically, and a horizontal
+   * band behind a vertical stack is nonsense.
+   *
+   * ── Serpentine ordering ──────────────────────────────────────────────────────────────────────
+   * Reversed rows use lg:[direction:rtl] on the grid instead of reversing the array. That keeps
+   * three things right at once: visual order flows right-to-left on odd rows; a PARTIAL reversed
+   * row anchors to the right, where the road actually arrives (a reversed array leaves it stranded
+   * on the left); and each card resets direction: ltr for its own text.
+   *
+   * ⚠️ The rtl is gated to lg DELIBERATELY, not as a shorthand. Below lg the road, loops and cars
+   * are all hidden — the serpentine metaphor does not exist on screen — and the sm breakpoint is a
+   * 2-column grid, where an ungated rtl renders a reversed row as "6 5 / 8 7": scrambled numbers
+   * with nothing visible to explain them. No road, no mirroring.
+   */
+  const ROAD_H = 44
+  const ROW_GAP = 40
+  const TURN_W = 80
+
+  const cruisePos = ['left-[22%]', 'right-[30%]', 'left-[58%]']
+
+  const lastRow = rows[rows.length - 1]
+  // Even rows travel left->right, so the journey ends on the right unless the last row is reversed.
+  const journeyEndsRight = lastRow.index % 2 === 0
+
   return (
     <div className="relative w-full rounded-2xl border border-slate-200/90 bg-gradient-to-b from-slate-50/80 via-white to-slate-50/80 p-3.5 sm:p-5 shadow-xs">
       {/* Background Subtle Automotive Road Grid */}
@@ -1561,145 +1653,200 @@ function ActivityStreamRoadway({
         }}
       />
 
-      <div className="relative space-y-6 sm:space-y-8">
+      <div className="relative space-y-4 sm:space-y-5 lg:space-y-10 lg:px-24">
         {rows.map((row) => {
           const isReverse = row.index % 2 === 1
+          const isFirstRow = row.index === 0
           const isLastRow = row.index === rows.length - 1
-          const hasNextRow = row.index < rows.length - 1
+          const hasNextRow = !isLastRow
           const isThisRowHovered = row.index === hoveredRowIndex
 
-          // When row is reversed, we display items visually from right to left so the path meanders!
-          const displayItems = isReverse ? [...row.items].reverse() : row.items
+          /*
+           * Which ends of this row's straight connect to a U-turn. The loop AFTER an even row is on
+           * the right and AFTER an odd row on the left; a row also RECEIVES the previous loop on the
+           * side that loop was on. A connected end runs flat to the content edge, where the ring's
+           * arm continues it; an unconnected end gets a rounded cap — the start and finish of the
+           * journey.
+           */
+          const connectsRight = (hasNextRow && !isReverse) || isReverse
+          const connectsLeft = (hasNextRow && isReverse) || (!isFirstRow && !isReverse)
 
+          // No transition on this wrapper: it carries only zIndex, and an ANIMATED z-index makes
+          // the neighbouring row's popover flicker underneath during hover handoff.
           return (
             <div
               key={row.index}
-              className="relative transition-all"
+              className="relative"
               style={{ zIndex: isThisRowHovered ? 100 : 1 }}
             >
-              {/* Continuous Dark Asphalt Road Track behind Cards */}
-              <div className="absolute inset-y-1/2 -translate-y-1/2 left-2 right-2 h-7 sm:h-8 bg-slate-800 dark:bg-slate-900 rounded-xl border-y border-slate-950/70 flex items-center shadow-sm pointer-events-none">
-                {/* Central Dashed White Road Line */}
-                <div className="w-full border-t border-dashed border-white/95" />
+              {/* The straight: a light road band behind this row's cards */}
+              <div
+                aria-hidden
+                className={cn(
+                  'absolute top-1/2 -translate-y-1/2 hidden lg:flex items-center pointer-events-none',
+                  'bg-slate-200 dark:bg-slate-700 border-y border-slate-300/70 dark:border-slate-600',
+                  connectsLeft ? 'left-0' : '-left-14 rounded-l-full',
+                  connectsRight ? 'right-0' : '-right-14 rounded-r-full'
+                )}
+                style={{ height: ROAD_H }}
+              >
+                {/* Central dashed lane line */}
+                <div className="w-full border-t-[3px] border-dashed border-white dark:border-slate-400" />
               </div>
 
-              {/* Decorative mini cars cruising on road */}
-              {row.index === 0 && (
-                <div className="absolute top-1/2 -translate-y-1/2 left-1/4 z-0 pointer-events-none hidden md:block">
-                  <MiniCarGraphic color="#94A3B8" className="w-7 h-4 -rotate-2" />
-                </div>
-              )}
-              {row.index === 1 && (
-                <div className="absolute top-1/2 -translate-y-1/2 right-1/4 z-0 pointer-events-none hidden md:block">
-                  <MiniCarGraphic color="#CBD5E1" className="w-7 h-4 scale-x-[-1]" />
-                </div>
-              )}
-              {row.index === 2 && (
-                <div className="absolute top-1/2 -translate-y-1/2 left-1/3 z-0 pointer-events-none hidden md:block">
-                  <MiniCarGraphic color="#94A3B8" className="w-7 h-4" />
+              {/* A car cruising the straight */}
+              <div
+                aria-hidden
+                className={cn(
+                  'absolute top-1/2 -translate-y-1/2 z-[5] pointer-events-none hidden lg:block',
+                  cruisePos[row.index % cruisePos.length]
+                )}
+              >
+                <MiniCarGraphic
+                  color={row.index % 2 === 0 ? '#475569' : '#64748B'}
+                  className={cn('w-9 h-5', isReverse && 'scale-x-[-1]')}
+                />
+              </div>
+
+              {/* The journey sets off here */}
+              {isFirstRow && (
+                <div aria-hidden className="absolute top-1/2 -translate-y-1/2 -left-[4.5rem] z-[5] pointer-events-none hidden lg:block">
+                  <MiniCarGraphic color="#1E40AF" className="w-12 h-7" />
                 </div>
               )}
 
-              {/* Curved U-Turn Loop to Next Row */}
+              {/* U-turn loop to the next row. Its border is the road bending around. */}
               {hasNextRow && (
                 <div
                   aria-hidden
                   className={cn(
-                    "absolute top-1/2 z-0 hidden lg:block pointer-events-none drop-shadow-xs",
-                    isReverse
-                      ? "-left-3.5 w-10 h-[calc(100%+1.6rem)] sm:h-[calc(100%+2rem)] rounded-l-2xl border-l-[12px] border-y-[12px] border-slate-800 dark:border-slate-900"
-                      : "-right-3.5 w-10 h-[calc(100%+1.6rem)] sm:h-[calc(100%+2rem)] rounded-r-2xl border-r-[12px] border-y-[12px] border-slate-800 dark:border-slate-900"
+                    'absolute z-0 hidden lg:block pointer-events-none border-slate-200 dark:border-slate-700',
+                    isReverse ? 'rounded-l-full' : 'rounded-r-full'
                   )}
+                  style={{
+                    top: `calc(50% - ${ROAD_H / 2}px)`,
+                    height: `calc(100% + ${ROW_GAP + ROAD_H}px)`,
+                    width: TURN_W,
+                    borderWidth: ROAD_H,
+                    ...(isReverse ? { left: -TURN_W, borderRightWidth: 0 } : { right: -TURN_W, borderLeftWidth: 0 }),
+                  }}
                 />
               )}
 
-              {/* Grid of Cards in this Row */}
+              {/* A tree tucked into the loop's hollow */}
+              {hasNextRow && (
+                <div
+                  aria-hidden
+                  className={cn(
+                    'absolute z-0 hidden lg:block pointer-events-none',
+                    isReverse ? '-left-7' : '-right-7'
+                  )}
+                  style={{ top: 'calc(100% + 2px)' }}
+                >
+                  <RoadsideTree className="w-5 h-8" />
+                </div>
+              )}
+
+              {/* Grid of Cards in this Row — rtl on reversed rows is what makes the path meander */}
               <div
                 className={cn(
-                  "relative z-10 grid gap-3 sm:gap-3.5",
-                  displayItems.length === 1
-                    ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-                    : displayItems.length === 2
-                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
-                    : displayItems.length === 3
-                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
-                    : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+                  'relative z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-x-7 items-stretch',
+                  isReverse && 'lg:[direction:rtl]'
                 )}
               >
-                {displayItems.map(({ item, originalIdx }, colIdx) => {
+                {row.items.map(({ item, originalIdx }, colIdx) => {
                   const eventId = `${item.date}-${item.title}-${item.vin ?? ''}-${item.reference ?? ''}-${originalIdx}`
                   const visuals = getRoadwayVisuals(item, originalIdx)
                   const Icon = visuals.icon
                   const isExpanded = expandedEventId === eventId
                   const isHovered = hoveredEventId === eventId
 
-                  // Horizontal alignment for the popover so it never clips off-screen
+                  // Step numbers pick up their milestone's accent, as on the reference design.
+                  const numCls = visuals.badgeLabel === 'Insurance'
+                    ? 'text-teal-700 dark:text-teal-400'
+                    : visuals.badgeLabel === 'Workshop Service'
+                      ? 'text-orange-700 dark:text-orange-400'
+                      : visuals.badgeLabel === 'Accessories'
+                        ? 'text-violet-700 dark:text-violet-400'
+                        : 'text-[var(--dashboard-primary)]'
+
+                  /*
+                   * Popover edge-pinning must follow the VISUAL position: under rtl, colIdx 0
+                   * renders at the right edge, so its popover pins right, not left.
+                   */
                   const popoverAlign =
                     colIdx === 0
-                      ? "left-0"
-                      : colIdx === displayItems.length - 1
-                      ? "right-0"
-                      : "left-1/2 -translate-x-1/2"
+                      ? (isReverse ? 'right-0' : 'left-0')
+                      : colIdx === row.items.length - 1
+                        ? (isReverse ? 'left-0' : 'right-0')
+                        : 'left-1/2 -translate-x-1/2'
 
                   return (
                     <div
                       key={eventId}
-                      className="relative transition-all"
-                      style={{ zIndex: isHovered ? 200 : 1 }}
+                      className="relative"
+                      style={{ zIndex: isHovered ? 200 : 1, direction: 'ltr' }}
                       onMouseEnter={() => setHoveredEventId(eventId)}
                       onMouseLeave={() => setHoveredEventId((cur) => (cur === eventId ? null : cur))}
                     >
-                      {/* Compact Milestone Card */}
+                      {/* Milestone Card */}
                       <div
                         onClick={() => onToggleExpand(isExpanded ? null : eventId)}
                         className={cn(
-                          "w-full bg-white dark:bg-slate-800 rounded-xl border transition-all duration-200 p-2.5 sm:p-3 shadow-xs hover:shadow-lg cursor-pointer flex flex-col justify-between select-none group min-h-[112px] sm:min-h-[118px]",
+                          'h-full w-full bg-white dark:bg-slate-800 rounded-xl border transition-all duration-200 p-3 lg:p-3.5 shadow-sm hover:shadow-lg cursor-pointer flex flex-col select-none group min-h-[112px] lg:min-h-[148px]',
                           isExpanded
-                            ? "border-[var(--dashboard-primary)] ring-2 ring-[var(--dashboard-primary)]/20 shadow-md bg-blue-50/20"
-                            : "border-slate-200/90 dark:border-slate-700/80 hover:border-slate-400 hover:-translate-y-0.5"
+                            ? 'border-[var(--dashboard-primary)] ring-2 ring-[var(--dashboard-primary)]/20 shadow-md bg-blue-50/20'
+                            : 'border-slate-200/90 dark:border-slate-700/80 hover:border-slate-400 hover:-translate-y-0.5'
                         )}
                       >
-                        {/* Card Header: Icon Badge + Step Number + Date */}
-                        <div className="flex items-center justify-between gap-1.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center font-black text-xs shadow-2xs shrink-0 group-hover:scale-105 transition-transform", visuals.iconBoxCls)}>
-                              <Icon className="h-3.5 w-3.5 stroke-[2]" />
+                        {/* Header: icon badge + step number, date right */}
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className={cn('h-7 w-7 lg:h-8 lg:w-8 rounded-lg flex items-center justify-center shadow-2xs shrink-0 group-hover:scale-105 transition-transform', visuals.iconBoxCls)}>
+                              <Icon className="h-3.5 w-3.5 lg:h-4 lg:w-4 stroke-[2]" />
                             </div>
-                            <span className="font-extrabold text-xs font-sans tabular-nums text-slate-800 dark:text-slate-200">
+                            <span className={cn('font-black text-sm font-sans tabular-nums', numCls)}>
                               {visuals.num}
                             </span>
                           </div>
-                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-400 shrink-0">
+                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-400 shrink-0 pt-0.5">
                             {formatRoadwayDate(item.date)}
                           </span>
                         </div>
 
-                        {/* Card Body: Title & Category Pill */}
-                        <div className="my-1 space-y-1">
-                          <h4 className="font-black text-xs text-slate-900 dark:text-slate-100 tracking-tight leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
+                        {/* Body: title + category pill */}
+                        <div className="mt-1.5 lg:mt-2 space-y-1 lg:space-y-1.5 flex-1">
+                          <h4 className="font-black text-xs lg:text-[13px] text-slate-900 dark:text-slate-100 tracking-tight leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
                             {item.title}
                           </h4>
                           <div>
-                            <span className={cn("inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold", visuals.badgeCls)}>
+                            <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold', visuals.badgeCls)}>
                               {visuals.badgeLabel}
                             </span>
                           </div>
                         </div>
 
-                        {/* Card Footer: Subtitle / Model / RO details */}
-                        <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 text-[10px] font-medium text-slate-500 dark:text-slate-400 line-clamp-1 leading-normal">
+                        {/* Footer: subtitle / model / reference */}
+                        <div className="pt-1.5 mt-1.5 border-t border-slate-100 dark:border-slate-800 text-[10px] font-medium text-slate-500 dark:text-slate-400 line-clamp-1 leading-normal">
                           {item.detail || [item.vin, item.reference].filter(Boolean).join(' • ') || 'Milestone recorded'}
                         </div>
                       </div>
 
-                      {/* Floating Hover Card Detail Popover (Attached right over/under this card) */}
+                      {/* Floating hover popover (physical left/right classes are unaffected by rtl) */}
                       {isHovered && (
                         <div
                           className={cn(
-                            "absolute z-[9999] pointer-events-auto animate-in fade-in zoom-in-95 duration-100 drop-shadow-2xl",
-                            row.index === 0 ? "top-full mt-2" : "bottom-full mb-2",
+                            'absolute z-[9999] pointer-events-auto animate-in fade-in zoom-in-95 duration-100 drop-shadow-2xl',
+                            /*
+                             * pt/pb, not mt/mb: a MARGIN gap sits outside the hover subtree, so
+                             * crossing it fires onMouseLeave and unmounts the popover before the
+                             * pointer can reach its Focus Garage / Copy buttons. Padding keeps the
+                             * bridge hoverable.
+                             */
+                            row.index === 0 ? 'top-full pt-2' : 'bottom-full pb-2',
                             popoverAlign
                           )}
+                          style={{ direction: 'ltr' }}
                         >
                           <ActivityEventHoverCard
                             item={item}
@@ -1711,18 +1858,33 @@ function ActivityStreamRoadway({
                     </div>
                   )
                 })}
-
-                {/* Roadside Landmarks / Finish Line at row edges */}
-                {isLastRow && (
-                  <div className="hidden lg:flex items-center gap-2 pl-1 self-center">
-                    <FinishFlagLandmark />
-                    <DealershipLandmark />
-                  </div>
-                )}
               </div>
             </div>
           )
         })}
+
+        {/*
+          * The end of the road. Normal flow rather than absolute positioning, so the landmark chips
+          * can never clip against the container edge; mirrored when the journey finishes on the
+          * left. The finish cluster sits on the side the road actually ends.
+          */}
+        <div
+          aria-hidden
+          className={cn(
+            'hidden lg:flex items-center gap-3 pt-1',
+            journeyEndsRight ? 'justify-between' : 'justify-between flex-row-reverse'
+          )}
+        >
+          <div className={cn('flex items-center gap-3', !journeyEndsRight && 'flex-row-reverse')}>
+            <WorkshopLandmark />
+            <InsuranceLandmark />
+            <RoadsideTree className="w-5 h-8" />
+          </div>
+          <div className={cn('flex items-center gap-2.5', !journeyEndsRight && 'flex-row-reverse')}>
+            <FinishFlagLandmark />
+            <DealershipLandmark />
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -1760,9 +1922,11 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
   const spend = profile.vehicles.reduce(
     (acc, v) => {
       if (v.serviceSpend !== null && v.serviceSpend !== undefined) acc.total += v.serviceSpend
+      if (v.accessoriesSpend !== null && v.accessoriesSpend !== undefined) acc.total += v.accessoriesSpend
       acc.priced += v.servicesBilled || 0
       acc.unpriced += v.servicesUnbilled || 0
-      const premium = v.insurance?.grossPremium
+      // A cancelled policy's premium is not money we kept — excluded from the spend figure.
+      const premium = v.insurance?.cancelled ? null : v.insurance?.grossPremium
       if (premium !== null && premium !== undefined) acc.total += premium
       return acc
     },
@@ -1830,7 +1994,10 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
             </div>
 
             {/* Total Paid / Relationship Summary */}
-            <div className="text-left sm:text-right bg-white/5 p-3.5 rounded-xl border border-white/10">
+            <div
+              className="text-left sm:text-right bg-white/5 p-3.5 rounded-xl border border-white/10"
+              title="Workshop bills + insurance premium + accessories — priced records only. The vehicle purchase itself is not included, and 42% of workshop visits carry no recorded price."
+            >
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                 Total Spend Recorded
               </span>
@@ -1843,6 +2010,81 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
             </div>
           </div>
         </div>
+
+        {/*
+          * ── NEXT BEST ACTION ───────────────────────────────────────────────────
+          * The server computes these (renewal value at risk, never-serviced win-back, unpaid
+          * bills, cancelled policy, open complaint) and the redesign had silently stopped
+          * rendering them — the array travelled in every payload while URGENCY_STYLE sat here as
+          * dead code. This panel is the whole point of half the profile logic: what to DO, ahead
+          * of what happened. Clicking an action focuses the activity stream on its evidence.
+          */}
+        {(profile.nextBestActions?.length ?? 0) > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-slate-600" />
+              NEXT BEST ACTION ({Math.min(profile.nextBestActions!.length, 5)})
+            </h3>
+            <div className="space-y-1.5">
+              {profile.nextBestActions!.slice(0, 5).map((a, i) => (
+                <button
+                  key={`${a.title}-${a.vin ?? i}`}
+                  type="button"
+                  onClick={() => setTimelineFocus({ category: actionCategory(a.title), vin: a.vin })}
+                  className={cn(
+                    'w-full text-left rounded-xl border p-3 text-xs transition-shadow hover:shadow-sm cursor-pointer',
+                    URGENCY_STYLE[a.urgency]?.cardCls || URGENCY_STYLE.watch.cardCls
+                  )}
+                >
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider',
+                      URGENCY_STYLE[a.urgency]?.badgeCls || URGENCY_STYLE.watch.badgeCls)}>
+                      {a.urgency}
+                    </span>
+                    <span className="font-black">{a.title}</span>
+                  </span>
+                  <span className="mt-1 block font-medium opacity-80 leading-relaxed">{a.reason}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/*
+          * ── IN THE WORKSHOP RIGHT NOW ──────────────────────────────────────────
+          * A strip, not a panel: it exists only while a repair order is genuinely open (closed and
+          * gate-passed rows are filtered server-side), so 94% of profiles never see it — but anyone
+          * about to phone this customer sees it before anything else. The snapshot date is always
+          * stated: this is an uploaded feed, not a live socket.
+          */}
+        {(profile.liveRos?.length ?? 0) > 0 && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3 space-y-2">
+            {profile.liveRos.map((ro) => (
+              <div key={`${ro.roNo}-${ro.vin}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className="inline-flex items-center gap-1.5 font-black text-amber-900 uppercase tracking-wide text-[10px]">
+                  <Wrench className="h-3.5 w-3.5" /> In the workshop right now
+                </span>
+                <span className="font-bold text-slate-900">
+                  {[ro.model, ro.registration].filter(Boolean).join(' · ') || ro.vin}
+                </span>
+                <span className="text-slate-600 font-medium">
+                  RO {ro.roNo || '—'} · opened {fmtDate(ro.roDate)}
+                  {ro.subStatus ? ` · ${ro.subStatus}` : ''}
+                  {ro.workType ? ` · ${ro.workType}` : ''}
+                </span>
+                {ro.estimate !== null && (
+                  <span className="font-bold text-slate-900 font-sans tabular-nums">est {fmtMoney(ro.estimate)}</span>
+                )}
+                {ro.advisor && <span className="text-slate-600">with {ro.advisor}</span>}
+                {ro.promisedOn && <span className="text-slate-600">promised {ro.promisedOn}</span>}
+                {ro.delayReason && (
+                  <span className="font-bold text-rose-700">delay: {ro.delayReason}</span>
+                )}
+                <span className="text-[10px] text-amber-700/80 font-medium">as of {fmtDate(ro.asOf)}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ── VEHICLE FLEET SECTION ────────────────────────────────────────────── */}
         <div className="space-y-3 pt-2">
@@ -1910,8 +2152,10 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
                               <span className="text-slate-400 italic">Not Linked</span>
                             ) : v.insurance ? (
                               <div className="flex items-center gap-1 mt-0.5">
-                                <span className={cn("font-bold", v.insurance.lapsed ? "text-rose-600" : "text-[var(--dashboard-primary)]")}>
-                                  {v.insurance.lapsed ? 'Lapsed' : 'Active'}
+                                {/* Cancelled outranks everything: a cancelled policy is not cover,
+                                    whatever its expiry date says. 17 policies were showing Active. */}
+                                <span className={cn("font-bold", v.insurance.cancelled || v.insurance.lapsed ? "text-rose-600" : "text-[var(--dashboard-primary)]")}>
+                                  {v.insurance.cancelled ? 'Cancelled' : v.insurance.lapsed ? 'Lapsed' : 'Active'}
                                 </span>
                                 <span className="text-slate-400 font-medium">
                                   ({fmtDate(v.insurance.expiryDate)})
@@ -1925,7 +2169,17 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
                           <div>
                             <span className="text-[10px] font-semibold text-slate-400 block">Last Service</span>
                             <span className="font-bold text-slate-900 block mt-0.5 font-sans tabular-nums">
-                              {caps.service ? (v.lastServiceDate ? fmtDate(v.lastServiceDate) : 'Never Serviced') : 'Unlinked'}
+                              {/*
+                                * An NVI-only vehicle has workshop rows but has never actually come
+                                * in: every row is our own pre-delivery inspection. Showing that
+                                * date as "Last Service" is how 126 never-serviced customers looked
+                                * recently serviced.
+                                */}
+                              {!caps.service
+                                ? 'Unlinked'
+                                : v.nviOnly
+                                  ? <span className="text-slate-400 italic font-normal">Pre-delivery only</span>
+                                  : v.lastServiceDate ? fmtDate(v.lastServiceDate) : 'Never Serviced'}
                             </span>
                           </div>
 
@@ -1942,7 +2196,9 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
                             </div>
                           )}
 
-                          {caps.insurance && v.insurance && (
+                          {/* No premium stat on a cancelled policy: that money was likely
+                              refunded, and quoting it as paid contradicts the Cancelled status. */}
+                          {caps.insurance && v.insurance && !v.insurance.cancelled && (
                             <div>
                               <span className="text-[10px] font-semibold text-slate-400 block">Premium</span>
                               <span className="font-bold text-slate-900 block mt-0.5 font-sans tabular-nums">
@@ -1952,7 +2208,33 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
                               </span>
                             </div>
                           )}
+
+                          {/* != null (not !== null): a stale cached payload from before this
+                              deploy has the field UNDEFINED, and !== null would render the block
+                              and then crash on v.accessories.length. Degrade to absent instead. */}
+                          {caps.service && v.accessoriesSpend != null && (
+                            <div>
+                              <span className="text-[10px] font-semibold text-slate-400 block">Accessories</span>
+                              <span className="font-bold text-slate-900 block mt-0.5 font-sans tabular-nums"
+                                title={`${v.accessories?.length ?? 0} line item${(v.accessories?.length ?? 0) === 1 ? '' : 's'} — see the timeline for what was fitted`}>
+                                {fmtMoney(v.accessoriesSpend)}
+                              </span>
+                            </div>
+                          )}
                         </div>
+
+                        {/*
+                          * Collections flag. The figure is the BILLED value of the flagged bills —
+                          * the DMS records no balance column, so an outstanding amount cannot be
+                          * computed and is deliberately never shown.
+                          */}
+                        {caps.service && v.unpaidCount > 0 && (
+                          <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-50 border border-rose-200 text-[10px] font-bold text-rose-800"
+                            title="The DMS marks these bills 'Payment Not Received' or 'Partial Paymant Received'. The amount actually outstanding is not recorded.">
+                            <CreditCard className="h-3 w-3" />
+                            {v.unpaidCount} bill{v.unpaidCount === 1 ? '' : 's'} of {fmtMoney(v.unpaidBilledTotal) ?? 'unrecorded value'} billed — not marked fully collected
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1998,7 +2280,13 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
                 {(['all', ...categories] as const).map((cat) => {
                   const count = cat === 'all' ? events.length : events.filter((e) => e.category === cat).length
                   const isActive = activeCategory === cat
-                  const label = cat === 'all' ? `All (${count})` : cat === 'sales' ? `Sales & Delivery (${count})` : cat === 'insurance' ? `Insurance (${count})` : `Workshop Service (${count})`
+                  /*
+                   * Labels come from CATEGORY_LABEL, never a ternary chain: the old chain's final
+                   * else branch labelled EVERY unlisted category 'Workshop Service', so the new
+                   * accessories pill rendered as a second 'Workshop Service' pill with a different
+                   * count that filtered to accessory events.
+                   */
+                  const label = cat === 'all' ? `All (${count})` : `${CATEGORY_LABEL[cat] || cat} (${count})`
 
                   return (
                     <button
@@ -2088,11 +2376,20 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
 
               {/* Pinned Deep Dive Panel if a card is clicked */}
               {expandedEventId && (() => {
+                /*
+                 * Fail CLOSED on a stale id. The id embeds the event's index in the current
+                 * filtered/sorted ordering, so changing the sort, a category pill or the VIN focus
+                 * invalidates it. The previous `|| filteredEvents[0]` fallback then rendered the
+                 * FIRST event under the banner "Selected Milestone Deep Dive" — a record the user
+                 * never clicked, presented as their selection. The panel disappearing is honest;
+                 * the wrong record wearing a "selected" label is not. (The list view already fails
+                 * closed on the same stale id.)
+                 */
                 const selectedItem = filteredEvents.find((_, idx) => {
                   const ev = filteredEvents[idx]
                   const eventId = `${ev.date}-${ev.title}-${ev.vin ?? ''}-${ev.reference ?? ''}-${idx}`
                   return eventId === expandedEventId
-                }) || filteredEvents[0]
+                })
 
                 if (!selectedItem) return null
 

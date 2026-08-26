@@ -224,6 +224,8 @@ export async function getSalesOnlyCustomerProfile(
     enquiries: [],
     bookings: [],
     receipts: [],
+    // No workshop link for this brand, so there is nothing that could be on a ramp.
+    liveRos: [],
     vehicles: list.map((row) => ({
       // The masked VIN is passed through exactly as stored. It is what the feed holds, and the real
       // stored value is more useful to somebody reconciling against the DMS than a blank would be.
@@ -245,6 +247,10 @@ export async function getSalesOnlyCustomerProfile(
       servicesBilled: 0,
       servicesUnbilled: 0,
       nviOnly: false,
+      accessories: [],
+      accessoriesSpend: null,
+      unpaidCount: 0,
+      unpaidBilledTotal: null,
       services: [],
       complaints: [],
     })),

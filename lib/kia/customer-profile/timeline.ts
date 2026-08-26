@@ -25,7 +25,7 @@ import type { KiaCustomerProfile } from './reader'
  * warranty" rather than "we do not hold that". Only categories with at least one real event are
  * offered; see `availableCategories`.
  */
-export type TimelineCategory = 'sales' | 'insurance' | 'service' | 'communication'
+export type TimelineCategory = 'sales' | 'insurance' | 'service' | 'communication' | 'accessories'
 
 export type TimelineEvent = {
   /** ISO date. Events without a date are dropped — an undated row cannot be placed in a story. */
@@ -279,7 +279,18 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
             ? 'Pre-Delivery Inspection (NVI) — not a customer visit'
             : 'Workshop Repair Order (RO)',
           'Work Type': s.workType,
-          'Total Billed': rupees(s.amount),
+          'Total Billed': s.billStatus === 'Cancel'
+            ? `${rupees(s.amount)} — bill cancelled, excluded from totals`
+            : rupees(s.amount),
+          /*
+           * The DMS collection status, verbatim (its own misspelling included — correcting it would
+           * match nothing). Only the statuses that SAY something are surfaced; 'Full Payment
+           * Received' and the unbilled 'No Payment' are the quiet norm. There is no balance column
+           * anywhere in the feed, so this must never be turned into an amount owed.
+           */
+          ...(s.billStatus === 'Payment Not Received' || s.billStatus === 'Partial Paymant Received'
+            ? { 'Payment Status': `Marked '${s.billStatus}' in the DMS — outstanding amount not recorded` }
+            : {}),
           ...(priced ? {
             'Labour': rupees(s.labour, '—'),
             'Parts': rupees(s.parts, '—'),
@@ -295,6 +306,37 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
           'Facility': 'Authorized Dealer Workshop',
         })
     }
+    /*
+     * Accessory counter sales, one event per BILL rather than per line: the average vehicle has a
+     * dozen lines, and a dozen near-identical timeline cards for one afternoon at the counter
+     * buries every other event. The items themselves go in the metadata, where the breakdown grid
+     * lists them.
+     */
+    const accessoryBills = new Map<string, { billDate: string | null; items: typeof v.accessories }>()
+    for (const a of v.accessories || []) {
+      const billKey = a.billNo || `${a.billDate || 'undated'}`
+      if (!accessoryBills.has(billKey)) accessoryBills.set(billKey, { billDate: a.billDate, items: [] })
+      accessoryBills.get(billKey)!.items.push(a)
+    }
+    for (const [billKey, bill] of accessoryBills) {
+      const total = bill.items.map((a) => a.amount).filter((x): x is number => x !== null).reduce((a, b) => a + b, 0)
+      const names = bill.items.map((a) => a.description).filter(Boolean) as string[]
+      const shown = names.slice(0, 8)
+      push(out, bill.billDate, 'accessories', 'Accessories purchased',
+        `${bill.items.length} item${bill.items.length === 1 ? '' : 's'} · ${rupees(total, 'amount not recorded')}`,
+        v.vin, bill.items[0]?.billNo || null, {
+          'Record Type': 'Accessory Counter Sale',
+          // Only a REAL bill number is labelled as one — the grouping key falls back to the date,
+          // and a date wearing a 'Bill No' label is a fabricated document reference.
+          ...(bill.items[0]?.billNo ? { 'Bill No': bill.items[0].billNo } : {}),
+          'Items': shown.join(', ') + (names.length > shown.length ? ` +${names.length - shown.length} more` : ''),
+          'Total (incl. tax)': rupees(total, 'Not recorded'),
+          'Vehicle Model': v.model,
+          'Registration Number': v.registration,
+          'Chassis / VIN': v.vin,
+        })
+    }
+
     for (const c of v.complaints || []) {
       push(out, c.date, 'communication', 'Complaint raised', c.model || label, v.vin, c.complaintNo, {
         'Record Type': 'Customer Feedback / Complaint',
@@ -331,7 +373,7 @@ const isNviVisit = (workType: string | null | undefined): boolean =>
 
 /** Only the categories that actually occur — see the note on TimelineCategory. */
 export function availableCategories(events: TimelineEvent[]): TimelineCategory[] {
-  const order: TimelineCategory[] = ['sales', 'insurance', 'service', 'communication']
+  const order: TimelineCategory[] = ['sales', 'insurance', 'service', 'accessories', 'communication']
   const present = new Set(events.map((e) => e.category))
   return order.filter((c) => present.has(c))
 }
@@ -363,21 +405,37 @@ export function buildNextBestActions(profile: KiaCustomerProfile, today: Date = 
   for (const v of profile.vehicles || []) {
     const label = [v.model, v.registration].filter(Boolean).join(' · ') || v.vin
 
+    /*
+     * The renewal prompt names the money. A renewal desk works its list by VALUE, not by date —
+     * "expires in 12 days" is a chore, "Rs 28,092 of premium at risk in 12 days" is a priority.
+     * grosspremium is populated on 100% of the policies we hold, so the fallback wording is rare.
+     */
+    const premiumNote = v.insurance?.grossPremium
+      ? ` Last premium ${rupees(v.insurance.grossPremium)} — that renewal value is at risk.`
+      : ''
     const expiry = iso(v.insurance?.expiryDate)
-    if (expiry) {
+    if (v.insurance?.cancelled) {
+      // A cancelled policy is not cover, whatever its expiry date says. Before this check, 17
+      // cancelled policies rendered as live insurance and their expiry dates drove renewal prompts.
+      actions.push({
+        priority: 1, urgency: 'urgent', vin: v.vin,
+        title: 'Policy cancelled',
+        reason: `${label} — policy ${v.insurance.policyNo || ''} is marked cancelled in our book. The vehicle may be uninsured.`,
+      })
+    } else if (expiry) {
       const days = daysBetween(today, new Date(`${expiry}T00:00:00Z`))
       if (days < 0) {
         actions.push({
           priority: 1, urgency: 'overdue', vin: v.vin,
           title: 'Insurance has lapsed',
-          reason: `${label} — expired ${Math.abs(days)} days ago on ${expiry}. The vehicle is uninsured.`,
+          reason: `${label} — expired ${Math.abs(days)} days ago on ${expiry}. The vehicle is uninsured.${premiumNote}`,
         })
-      } else if (days <= 30) {
+      } else if (days <= 90) {
         actions.push({
           priority: days <= 7 ? 1 : 2,
           urgency: days <= 7 ? 'urgent' : 'soon', vin: v.vin,
           title: 'Insurance renewal due',
-          reason: `${label} — expires in ${days} day${days === 1 ? '' : 's'} on ${expiry}.`,
+          reason: `${label} — expires in ${days} day${days === 1 ? '' : 's'} on ${expiry}.${premiumNote}`,
         })
       }
     } else if (v.invoiceDate) {
@@ -390,14 +448,30 @@ export function buildNextBestActions(profile: KiaCustomerProfile, today: Date = 
       })
     }
 
-    const last = iso(v.lastServiceDate)
-    if (!last && v.invoiceDate) {
+    /*
+     * The last REAL visit, never an NVI row. NVI is the dealership's own pre-delivery inspection,
+     * stamped on delivery day — before this filter, 126 sold vehicles whose only workshop row was
+     * that inspection looked "recently serviced" and the win-back prompt below never fired for
+     * exactly the customers who have never once come in.
+     */
+    const lastRealVisit = (v.services || []).find((svc) => String(svc.workType || '').trim().toUpperCase() !== 'NVI')
+    /*
+     * Date the real visit the way the timeline does: billDate, then roDate. The earlier form fell
+     * back to v.lastServiceDate when the found visit was undated — and lastServiceDate is the
+     * UNFILTERED max, i.e. potentially the NVI delivery-day date this whole block exists to
+     * exclude. A real visit with no date at all yields null, and the guard below then makes NO
+     * claim rather than a wrong one.
+     */
+    const last = lastRealVisit ? iso(lastRealVisit.billDate ?? lastRealVisit.roDate) : null
+    if (!lastRealVisit && v.invoiceDate) {
       const since = daysBetween(new Date(`${iso(v.invoiceDate)}T00:00:00Z`), today)
       if (since > 365) {
         actions.push({
           priority: 2, urgency: 'overdue', vin: v.vin,
           title: 'Never serviced with us',
-          reason: `${label} — sold ${Math.round(since / 365)} year(s) ago and has never come in.`,
+          reason: v.nviOnly
+            ? `${label} — sold ${Math.round(since / 365)} year(s) ago. Only our own pre-delivery inspection is on file; the customer has never come in.`
+            : `${label} — sold ${Math.round(since / 365)} year(s) ago and has never come in.`,
         })
       }
     } else if (last) {
@@ -426,6 +500,31 @@ export function buildNextBestActions(profile: KiaCustomerProfile, today: Date = 
         })
       }
     }
+  }
+
+  /*
+   * Bills the DMS says were never fully collected. The figure quoted is the BILLED value of those
+   * bills — there is no amount-received or balance column anywhere in the feed, so an outstanding
+   * amount cannot be computed and must never be implied. One customer in five carries at least one
+   * such bill, and the advisor phoning about the next service deserves to know before offering a
+   * courtesy.
+   */
+  const unpaid = (profile.vehicles || []).reduce(
+    (acc, v) => {
+      acc.count += v.unpaidCount || 0
+      if (v.unpaidBilledTotal) acc.billed += v.unpaidBilledTotal
+      return acc
+    },
+    { count: 0, billed: 0 },
+  )
+  if (unpaid.count > 0) {
+    actions.push({
+      priority: 2, urgency: 'soon', vin: null,
+      title: 'Service bills not marked fully collected',
+      reason: `${unpaid.count} bill${unpaid.count === 1 ? '' : 's'} of ${rupees(unpaid.billed, 'unrecorded value')} billed `
+        + `${unpaid.count === 1 ? 'is' : 'are'} marked 'Payment Not Received' or 'Partial Paymant Received' in the DMS. `
+        + `The amount actually outstanding is not recorded — check before offering anything free.`,
+    })
   }
 
   // An enquiry that never became a booking, with nothing since. Only when they own no vehicle:

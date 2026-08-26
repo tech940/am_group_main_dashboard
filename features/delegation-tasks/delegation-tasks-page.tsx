@@ -94,6 +94,7 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
   const canDelegate = canDelegateTasks(currentUserRole)
   const groupWide = canViewAllDelegationTasks({ role: currentUserRole, brand: currentUserBrand })
   const isEa = ['ea', 'eba', 'admin', 'developer'].includes(String(currentUserRole || '').trim().toLowerCase())
+  const isLeadershipOrMd = ['md', 'ceo', 'ea', 'eba', 'admin', 'developer'].includes(String(currentUserRole || '').trim().toLowerCase())
 
   const [tab, setTab] = useState<'mine' | 'delegated' | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState('assigned')
@@ -104,6 +105,8 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
   const [noteTaskId, setNoteTaskId] = useState<string | null>(null)
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null)
   const [reassignTaskId, setReassignTaskId] = useState<string | null>(null)
+  const [mdRemarkTaskId, setMdRemarkTaskId] = useState<string | null>(null)
+  const [mdRemarkTaskInitial, setMdRemarkTaskInitial] = useState<string>('')
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<'list' | 'performance'>('list')
   const [selectedEmp, setSelectedEmp] = useState<any | null>(null)
@@ -651,9 +654,18 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                 {filteredRows.map((r) => {
                   const waUrl = getWhatsAppLink(r)
                   const emailUrl = getEmailLink(r)
+                  const hasMdRemark = Boolean(r.metadata?.mdRemark)
+                  const mdRemarkText = typeof r.metadata?.mdRemark === 'string' ? r.metadata.mdRemark : null
+
                   return (
-                    <tr key={r.id} onClick={() => setOpenId(r.id)}
-                      className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50/70">
+                    <tr
+                      key={r.id}
+                      onClick={() => setOpenId(r.id)}
+                      className={cn(
+                        "cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50/70 transition-colors",
+                        hasMdRemark && "bg-rose-50/40 hover:bg-rose-50/60 border-l-4 border-l-rose-500"
+                      )}
+                    >
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
@@ -670,12 +682,23 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-700 whitespace-nowrap">{r.assignedName || '—'}</td>
                       <td className="px-4 py-3 max-w-[260px] lg:max-w-[320px] xl:max-w-[380px]">
-                        <div className="flex items-center gap-1.5 overflow-hidden">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <p className="font-bold text-slate-800 line-clamp-1">{r.title}</p>
+                          {hasMdRemark && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider shadow-2xs shrink-0 animate-pulse">
+                              <TriangleAlert className="h-2.5 w-2.5" /> MD Remark
+                            </span>
+                          )}
                           {groupWide && r.brand && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">{r.brand}</span>}
                           {r.mdUserName && <span className="shrink-0 rounded bg-indigo-50 border border-indigo-100/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">MD: {r.mdUserName}</span>}
                         </div>
                         {r.description && <p className="line-clamp-1 text-xs text-slate-400 mt-0.5">{r.description}</p>}
+                        {hasMdRemark && mdRemarkText && (
+                          <div className="mt-1.5 flex items-start gap-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs shadow-2xs">
+                            <span className="font-black text-rose-700 uppercase text-[9px] shrink-0 mt-0.5">MD Directive:</span>
+                            <span className="font-bold line-clamp-2">{mdRemarkText}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {r.assignedPhone
@@ -689,6 +712,27 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                       <td className="px-4 py-3 text-slate-700 whitespace-nowrap text-[15px] font-bold">{fmtDate(r.followUpAt)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+                          {/* MD Remark button */}
+                          {isLeadershipOrMd && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setMdRemarkTaskId(r.id)
+                                setMdRemarkTaskInitial(typeof r.metadata?.mdRemark === 'string' ? r.metadata.mdRemark : '')
+                              }}
+                              className={cn(
+                                "h-8 gap-1.5 rounded-xl font-black text-xs px-3 shadow-xs border transition-colors",
+                                hasMdRemark
+                                  ? "bg-rose-600 text-white hover:bg-rose-700 border-rose-600 shadow-sm"
+                                  : "bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200/80"
+                              )}
+                              title={hasMdRemark ? "Edit MD Remark" : "Add MD Remark"}
+                            >
+                              <TriangleAlert className="h-3.5 w-3.5" />
+                              <span>{hasMdRemark ? 'MD Remark' : '+ MD Remark'}</span>
+                            </Button>
+                          )}
                           {/* WhatsApp button */}
                           <a href={waUrl} target="_blank" rel="noopener noreferrer" title="WhatsApp Assignee"
                             className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-emerald-50 px-3 text-xs font-black text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 transition shadow-xs border border-emerald-100/80">
@@ -818,14 +862,25 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
         const selectedTask = rows.find(r => r.id === openId)
         return (
           <TaskDrawer taskId={openId} initialTask={selectedTask} onClose={() => setOpenId(null)} onChanged={invalidate}
-            canDelegate={canDelegate} assigneesEnabled={canDelegate} />
+            canDelegate={canDelegate} assigneesEnabled={canDelegate} currentUserRole={currentUserRole} />
         )
       })()}
       {delegateOpen && (
-        <DelegateDialog onClose={() => setDelegateOpen(false)} onCreated={() => { setDelegateOpen(false); invalidate() }} />
+        <DelegateDialog currentUserRole={currentUserRole} currentUserId={currentUserId} onClose={() => setDelegateOpen(false)} onCreated={() => { setDelegateOpen(false); invalidate() }} />
       )}
       {noteTaskId && (
         <AddNoteDialog taskId={noteTaskId} onClose={() => setNoteTaskId(null)} onAdded={() => { setNoteTaskId(null); invalidate() }} />
+      )}
+      {mdRemarkTaskId && (
+        <AddMdRemarkDialog
+          taskId={mdRemarkTaskId}
+          initialRemark={mdRemarkTaskInitial}
+          onClose={() => setMdRemarkTaskId(null)}
+          onSaved={() => {
+            setMdRemarkTaskId(null)
+            invalidate()
+          }}
+        />
       )}
 
       {reassignTaskId && (
@@ -916,10 +971,12 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
 }
 
 // ── Drawer ─────────────────────────────────────────────────────────────────────────────────────
-function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assigneesEnabled }: {
-  taskId: string; initialTask?: TaskRow; onClose: () => void; onChanged: () => void; canDelegate: boolean; assigneesEnabled: boolean
+function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assigneesEnabled, currentUserRole }: {
+  taskId: string; initialTask?: TaskRow; onClose: () => void; onChanged: () => void; canDelegate: boolean; assigneesEnabled: boolean; currentUserRole?: string
 }) {
   const queryClient = useQueryClient()
+  const isLeadershipOrMd = ['md', 'ceo', 'ea', 'eba', 'admin', 'developer'].includes(String(currentUserRole || '').trim().toLowerCase())
+  const [showMdRemarkModal, setShowMdRemarkModal] = useState(false)
   const [remark, setRemark] = useState('')
   const [reassignTo, setReassignTo] = useState('')
   const [searchEmp, setSearchEmp] = useState('')
@@ -981,8 +1038,32 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
             <h2 className="text-lg font-black text-slate-900">{task.title}</h2>
             <div className="mt-2 flex flex-wrap gap-2">
               <span className={cn('rounded-md px-2 py-0.5 text-[11px] font-bold', STATUS_STYLE[task.status])}>{STATUS_LABEL[task.status]}</span>
-
             </div>
+
+            {/* MD Directive Red Alert Banner */}
+            {Boolean(task.metadata?.mdRemark) && (
+              <div className="mt-3 rounded-2xl border-2 border-rose-500 bg-rose-50/90 p-3.5 shadow-xs space-y-1.5 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider shadow-2xs">
+                    <TriangleAlert className="h-3 w-3" /> Executive MD Remark
+                  </span>
+                  {Boolean(task.metadata.mdRemarkAt) && (
+                    <span className="text-[10px] font-bold text-rose-600">
+                      {fmtDateTime(String(task.metadata.mdRemarkAt))}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm font-black text-rose-950 whitespace-pre-line leading-relaxed pt-1">
+                  {String(task.metadata.mdRemark)}
+                </p>
+                {Boolean(task.metadata.mdRemarkByName) && (
+                  <p className="text-[11px] font-bold text-rose-700">
+                    Added by: {String(task.metadata.mdRemarkByName)} ({String(task.metadata.mdRemarkByRole || 'MD')})
+                  </p>
+                )}
+              </div>
+            )}
+
             {task.description && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{task.description}</p>}
 
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -1000,6 +1081,20 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
 
             {/* Actions */}
             <div className="mt-5 space-y-3">
+              {/* MD Remark Action */}
+              {isLeadershipOrMd && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">MD Directive</p>
+                  <Button
+                    onClick={() => setShowMdRemarkModal(true)}
+                    className="mt-2 w-full rounded-xl bg-rose-600 text-white hover:bg-rose-700 font-black text-xs shadow-xs gap-1.5"
+                  >
+                    <TriangleAlert className="h-4 w-4" />
+                    <span>{task.metadata?.mdRemark ? 'Edit MD Remark' : 'Add MD Remark (Red Alert)'}</span>
+                  </Button>
+                </div>
+              )}
+
               {task.viewerIsEa && isOpen && (
                 <div className="rounded-xl border border-slate-200 p-3">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Complete task</p>
@@ -1054,23 +1149,21 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
                           type="button"
                           onClick={() => {
                             setReassignTo('other')
-                            setSearchEmp('Other (Enter manually)')
+                            setSearchEmp('Other (Manual Entry)')
                             setDropdownOpen(false)
                           }}
-                          className="flex w-full items-center justify-between rounded-lg border-t border-slate-100 px-3 py-2 text-left text-xs text-slate-900 hover:bg-slate-50 font-bold"
+                          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs hover:bg-slate-50 text-indigo-600 font-black border-t border-slate-100"
                         >
-                          <span>Other...</span>
-                          <span className="text-[9px] font-black uppercase text-slate-400">Add external contact</span>
+                          + Other (Add New Contact)
                         </button>
                       </div>
                     )}
                   </div>
 
                   {reassignTo === 'other' && (
-                    <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 space-y-2.5">
-                      <p className="text-xs font-bold text-slate-700">Enter External Contact Details</p>
+                    <div className="space-y-2 rounded-xl bg-slate-50 p-2.5 border border-slate-200">
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Name</label>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Full Name (Mandatory)</label>
                         <Input
                           value={extName}
                           onChange={(e) => setExtName(e.target.value)}
@@ -1136,12 +1229,21 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
               <ol className="mt-2 space-y-3 border-l border-slate-200 pl-4">
                 {(detailQuery.data?.activity ?? []).map((a) => (
                   <li key={a.id} className="relative text-left">
-                    <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-slate-400" />
-                    <p className="text-xs font-bold capitalize text-slate-800">{a.type.replace(/_/g, ' ')}</p>
+                    <span className={cn(
+                      "absolute -left-[21px] top-1.5 h-2 w-2 rounded-full",
+                      a.type === 'md_remark' ? "bg-rose-600 ring-2 ring-rose-300" : "bg-slate-400"
+                    )} />
+                    <p className={cn(
+                      "text-xs font-bold capitalize",
+                      a.type === 'md_remark' ? "text-rose-700 font-black" : "text-slate-800"
+                    )}>
+                      {a.type === 'md_remark' ? '🚨 MD Remark Added' : a.type.replace(/_/g, ' ')}
+                    </p>
                     {a.message && (
                       <p className={cn(
                         "mt-0.5 text-xs text-slate-500",
-                        a.message.startsWith('Rescheduled: ') && "rounded-lg bg-amber-50 p-2 text-amber-800 border border-amber-100/50 mt-1 font-semibold whitespace-pre-line text-left"
+                        a.message.startsWith('Rescheduled: ') && "rounded-lg bg-amber-50 p-2 text-amber-800 border border-amber-100/50 mt-1 font-semibold whitespace-pre-line text-left",
+                        a.type === 'md_remark' && "rounded-lg bg-rose-50 p-2 text-rose-900 border border-rose-200 mt-1 font-black whitespace-pre-line text-left"
                       )}>
                         {a.message.startsWith('Rescheduled: ') ? a.message.replace('Rescheduled: ', 'Reason: ') : a.message}
                       </p>
@@ -1477,6 +1579,105 @@ function AddNoteDialog({ taskId, onClose, onAdded }: { taskId: string; onClose: 
             </Button>
           </div>
         </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AddMdRemarkDialog({
+  taskId,
+  initialRemark,
+  onClose,
+  onSaved,
+}: {
+  taskId: string
+  initialRemark?: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [remark, setRemark] = useState(initialRemark || '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!remark.trim()) {
+      setError('Please enter an MD remark.')
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      await fetchJson(`/api/delegation-tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'md_remark',
+          remark: remark.trim(),
+        }),
+      })
+      onSaved()
+    } catch (err) {
+      setError((err as Error).message || 'Failed to save MD remark')
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md rounded-2xl border border-slate-100 shadow-2xl bg-white p-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shadow-xs shrink-0">
+              <TriangleAlert className="h-5 w-5 stroke-[2.5]" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-black text-slate-900">
+                {initialRemark ? 'Edit MD Remark' : 'Add MD Remark'}
+              </DialogTitle>
+              <p className="text-xs font-semibold text-slate-400">
+                Adds a high-priority executive directive with prominent red alert styling.
+              </p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700">MD Remark / Directive Note</label>
+            <Textarea
+              value={remark}
+              onChange={(e) => setRemark(e.target.value)}
+              placeholder="e.g. Please expedite this by today 2 PM and update MD office directly..."
+              rows={4}
+              className="rounded-xl border-slate-200 text-xs font-medium focus:ring-rose-500 focus:border-rose-500"
+              autoFocus
+            />
+          </div>
+
+          <div className="flex gap-2.5 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              className="flex-1 rounded-xl text-xs font-bold border-slate-200"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="flex-1 rounded-xl bg-rose-600 text-white hover:bg-rose-700 text-xs font-black shadow-sm gap-1.5"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 stroke-[2.5]" />}
+              <span>Save MD Remark</span>
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   )

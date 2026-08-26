@@ -82,6 +82,7 @@
     "verify:customer-360-timeline": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-customer-360-timeline.ts",
     "verify:customer-360-scope": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-customer-360-scope.ts",
     "verify:customer-360-common": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-customer-360-common.ts",
+    "verify:customer-360-features": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-customer-360-features.ts",
     "verify:followups-ist": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-followups-ist.ts",
     "verify:first-stage": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-first-stage-approver.ts",
     "verify:approval-emails": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approval-decision-emails.ts",

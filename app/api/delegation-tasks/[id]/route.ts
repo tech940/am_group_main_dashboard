@@ -6,7 +6,7 @@ import { sendTaskAssignedEmail } from '@/lib/delegation/emails'
 
 export const dynamic = 'force-dynamic'
 
-const ACTIONS: TaskAction[] = ['complete', 'reopen', 'cancel', 'reassign', 'edit', 'comment', 'remind']
+const ACTIONS: TaskAction[] = ['complete', 'reopen', 'cancel', 'reassign', 'edit', 'comment', 'remind', 'md_remark']
 
 export async function GET(_request: Request, context: RouteContext<'/api/delegation-tasks/[id]'>) {
   const appUser = await getAuthenticatedAppUser()

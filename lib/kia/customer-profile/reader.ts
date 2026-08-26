@@ -261,7 +261,8 @@ function directoryCte(
       (ins.vinno IS NOT NULL) AS has_insurance,
       (ins.policy_expiry_date IS NOT NULL AND ins.policy_expiry_date < CURRENT_DATE) AS insurance_lapsed,
       ro.service_count,
-      ro.last_service_date
+      ro.last_service_date,
+      ro.last_customer_service_date
     FROM latest_sales s
     LEFT JOIN latest_insurance ins ON UPPER(BTRIM(ins.vinno)) = UPPER(BTRIM(s.vin_number))
     -- WARNING: kia_sales_report.registration_name is the NAME the vehicle is registered to
@@ -269,6 +270,11 @@ function directoryCte(
     -- ro_billing_report.vehicle_reg_no (5,422 of 5,505 rows populated).
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS service_count, MAX(r.bill_date) AS last_service_date,
+             -- The last REAL visit. NVI is the dealership's own pre-delivery inspection (964 rows,
+             -- billed on none of them), and counting it as a service visit hid 126 sold vehicles
+             -- from the never-serviced gap: their only workshop row was our own paperwork, stamped
+             -- on delivery day, which made them look recently serviced for a year.
+             MAX(r.bill_date) FILTER (WHERE UPPER(BTRIM(COALESCE(r.work_type, ''))) <> 'NVI') AS last_customer_service_date,
              (ARRAY_AGG(r.vehicle_reg_no ORDER BY r.bill_date DESC NULLS LAST)
                 FILTER (WHERE COALESCE(r.vehicle_reg_no, '') <> ''))[1] AS vehicle_reg_no
       FROM ro_billing_report r
@@ -285,8 +291,9 @@ function directoryCte(
       MAX(last_service_date) AS last_service_date,
       BOOL_OR(NOT has_insurance) AS any_without_insurance,
       BOOL_OR(insurance_lapsed) AS any_insurance_lapsed,
-      BOOL_OR(last_service_date IS NULL
-        OR last_service_date < (CURRENT_DATE - (${serviceGapMonths} || ' months')::interval)) AS any_service_overdue
+      -- Judged on the last CUSTOMER visit, never on an NVI row — see the note in the lateral.
+      BOOL_OR(last_customer_service_date IS NULL
+        OR last_customer_service_date < (CURRENT_DATE - (${serviceGapMonths} || ' months')::interval)) AS any_service_overdue
     FROM vehicle_state
     WHERE customer_id <> ''
     -- Per (customer_id, outlet): a car bought at JK402 must not appear under the different person
@@ -665,6 +672,13 @@ export type KiaProfileVehicle = {
     workType: string | null
     advisor: string | null
     /*
+     * The DMS collection status, VERBATIM (including its own misspelling, 'Partial Paymant
+     * Received' - matching a corrected spelling matches nothing). There is NO amount-received or
+     * balance column anywhere in the feed, so nothing downstream may ever state an amount owed:
+     * the only honest sentence is "bill of Rs X, marked <status>".
+     */
+    billStatus: string | null
+    /*
      * NULL means "this visit was never billed" — 2,398 of 5,711 rows. The feed stores that as a
      * literal 0, which is converted to null HERE, once, so no call site downstream has to know the
      * difference between an unbilled visit and a free one. Tax-inclusive.
@@ -684,6 +698,23 @@ export type KiaProfileVehicle = {
    * Such a vehicle has a service COUNT but has never actually been in for a customer visit.
    */
   nviOnly: boolean
+  /** Accessory counter sales for this VIN — deduplicated, retail-only, cancelled bills excluded. */
+  accessories: {
+    billNo: string | null
+    billDate: string | null
+    description: string | null
+    qty: number | null
+    /** Line total including tax. */
+    amount: number | null
+  }[]
+  accessoriesSpend: number | null
+  /**
+   * Bills the DMS marks 'Payment Not Received' or 'Partial Paymant Received'. The total is the
+   * BILLED value of those bills — the outstanding amount is not recorded anywhere in the feed and
+   * must never be presented as such.
+   */
+  unpaidCount: number
+  unpaidBilledTotal: number | null
   complaints: { complaintNo: string | null; date: string | null; closeDate: string | null; model: string | null }[]
 }
 
@@ -710,6 +741,23 @@ export type KiaCustomerProfile = KiaCustomerSummary & {
   }[]
   vehicles: KiaProfileVehicle[]
   receipts: { receiptDate: string | null; model: string | null }[]
+  /** Repair orders open in the workshop right now, filtered of already-closed rows. */
+  liveRos: {
+    vin: string | null
+    registration: string | null
+    model: string | null
+    roNo: string | null
+    roDate: string | null
+    workType: string | null
+    subStatus: string | null
+    advisor: string | null
+    estimate: number | null
+    /** Verbatim from the feed (text, often date-only). Displayed, never parsed. */
+    promisedOn: string | null
+    delayReason: string | null
+    /** When the snapshot feed was last uploaded — the strip states it. */
+    asOf: string | null
+  }[]
   /** Present when a figure could not be produced the intended way. Never hide these. */
   notes: string[]
 }
@@ -862,7 +910,20 @@ export async function getKiaCustomerProfile(
 
   const vins = vehicleRows.map((row) => String(row.vin)).filter(Boolean)
 
-  const [servicesResult, complaintsResult] = vins.length
+  /*
+   * The live-RO match. VIN is exact; the customer-id fallback exists because two thirds of open ROs
+   * sit on VINs we did not sell — but a bare customer_id is shared by DIFFERENT PEOPLE across
+   * outlets (2,411 of 8,371 ids), so the id-based match also requires the servicing outlet to be
+   * the profile's outlet. Showing this customer a stranger's car on the ramp would be worse than
+   * missing one of their own.
+   */
+  const profileOutlet = isCustomer ? String(key.outlet || '').trim().toUpperCase() : ''
+  const liveRoCustomerMatch = isCustomer && profileOutlet
+    ? sql`OR (UPPER(BTRIM(COALESCE(o.customer_id, ''))) = ${key.value}
+          AND UPPER(BTRIM(COALESCE(NULLIF(BTRIM(o.dealer_code_2), ''), o.dealer_code, ''))) = ${profileOutlet})`
+    : sql``
+
+  const [servicesResult, complaintsResult, accessoriesResult, liveRoResult] = vins.length
     ? await Promise.all([
       db.execute(sql`
         /*
@@ -884,7 +945,7 @@ export async function getKiaCustomerProfile(
          * visit - see the note on nvi_only below.
          */
         SELECT UPPER(BTRIM(vin)) AS vin, bill_date, ro_date, model, vehicle_reg_no,
-               work_type, service_advisor,
+               work_type, service_advisor, bill_status,
                total_amt, labour_amt, part_amt, labour_tax, part_tax, total_disc
         FROM ro_billing_report
         WHERE UPPER(BTRIM(vin)) IN (${sql.join(vins.map((v) => sql`${v}`), sql`, `)})
@@ -896,8 +957,69 @@ export async function getKiaCustomerProfile(
         WHERE UPPER(BTRIM(COALESCE(vin_no, ''))) IN (${sql.join(vins.map((v) => sql`${v}`), sql`, `)})
         ORDER BY complaint_date DESC NULLS LAST
       `),
+      db.execute(sql`
+        /*
+         * Accessory counter sales, DEDUPLICATED. The feed is a cumulative snapshot: 8,082 raw rows
+         * are only ~4,400 real lines, so summing raw rows near-doubles a customer's accessory
+         * spend. The DISTINCT ON key is the line itself (bill no + item + amount + qty).
+         * Cancelled bills are excluded, and so are B2B lines - those are corporate/fleet counter
+         * sales that happen to share a VIN, not this retail customer's purchases.
+         * customer_name and customer_mobile exist on this table and are deliberately NOT selected.
+         */
+        SELECT DISTINCT ON (UPPER(BTRIM(a.vin)), a.csr_bill_no, BTRIM(a.accessories_description), a.accessory_taxable_amount, a.accessories_qty)
+          UPPER(BTRIM(a.vin)) AS vin,
+          a.csr_bill_no,
+          -- Both dates are 100% populated today; the COALESCE guards a future partial upload,
+          -- because an undated bill would vanish from the timeline while its money stayed in the
+          -- vehicle-card total.
+          COALESCE(a.csr_bill_date, a.csr_date) AS csr_bill_date,
+          BTRIM(a.accessories_description) AS description,
+          a.accessories_qty,
+          a.accessory_taxable_amount,
+          a.tax_amount
+        FROM kia_accessories_counter_sales_report a
+        WHERE UPPER(BTRIM(a.vin)) IN (${sql.join(vins.map((v) => sql`${v}`), sql`, `)})
+          AND a.bill_status <> 'Cancel'
+          AND COALESCE(a.type_of_party, '') <> 'B2B'
+      `),
+      db.execute(sql`
+        /*
+         * Repair orders open RIGHT NOW — and proving "right now" takes three filters, because this
+         * feed APPENDS a small daily batch and NEVER re-uploads or updates a row (0 of 227 ROs
+         * appear in more than one batch). A July row that simply stopped being current still sits
+         * here looking open forever.
+         *
+         *   1. Not since billed: an RO with a bill in ro_billing_report is a finished job. This one
+         *      check retires 201 of 227 rows - without it the strip showed cars delivered weeks ago
+         *      as "on a ramp right now".
+         *   2. No closing timestamp / not sub-status Closed or Work Ended.
+         *   3. Not cancelled.
+         *
+         * uploaded_at still travels with the row so the strip states when the snapshot was taken.
+         */
+        SELECT UPPER(BTRIM(o.vin)) AS vin, o.reg_no, o.model, o.r_o_no, o.ro_date, o.work_type,
+               o.ro_sub_status, o.service_adv, o.estimate_amt, o.promise_date_time, o.delay_reason,
+               o.uploaded_at
+        FROM kia_open_ro_yearly o
+        WHERE (UPPER(BTRIM(o.vin)) IN (${sql.join(vins.map((v) => sql`${v}`), sql`, `)})
+               ${liveRoCustomerMatch})
+          AND COALESCE(BTRIM(o.closing_date_time), '') = ''
+          AND COALESCE(BTRIM(o.cancel_date), '') = ''
+          AND UPPER(BTRIM(COALESCE(o.ro_sub_status, ''))) NOT IN ('CLOSED', 'WORK ENDED')
+          AND NOT EXISTS (
+            -- Same RO number AND same vehicle: ro_no is reused across VINs in the billing feed
+            -- (537 numbers carry multiple bills, some on two different VINs), and an unqualified
+            -- match would let a number collision hide a genuinely open RO. Verified to change
+            -- nothing today (the shown set stays 23) - this closes the latent edge only.
+            SELECT 1 FROM ro_billing_report rb
+            WHERE UPPER(BTRIM(rb.ro_no)) = UPPER(BTRIM(o.r_o_no))
+              AND UPPER(BTRIM(rb.vin)) = UPPER(BTRIM(o.vin))
+          )
+        ORDER BY o.ro_date DESC NULLS LAST
+        LIMIT 5
+      `),
     ])
-    : [[], []]
+    : [[], [], [], []]
 
   const servicesByVin = new Map<string, Record<string, unknown>[]>()
   for (const row of rows(servicesResult)) {
@@ -905,6 +1027,13 @@ export async function getKiaCustomerProfile(
     if (!servicesByVin.has(vin)) servicesByVin.set(vin, [])
     servicesByVin.get(vin)!.push(row)
   }
+  const accessoriesByVin = new Map<string, Record<string, unknown>[]>()
+  for (const row of rows(accessoriesResult)) {
+    const vin = String(row.vin)
+    if (!accessoriesByVin.has(vin)) accessoriesByVin.set(vin, [])
+    accessoriesByVin.get(vin)!.push(row)
+  }
+
   const complaintsByVin = new Map<string, Record<string, unknown>[]>()
   for (const row of rows(complaintsResult)) {
     const vin = String(row.vin)
@@ -945,11 +1074,46 @@ export async function getKiaCustomerProfile(
        * so the count of unpriced visits travels alongside the money and is rendered with it.
        */
       serviceSpend: (() => {
-        const billed = services.map((s) => money(s.total_amt)).filter((v): v is number => v !== null)
+        // Cancelled bills carry real amounts (22 rows, Rs 4.85L) and are NOT revenue.
+        const billed = services
+          .filter((s) => str(s.bill_status) !== 'Cancel')
+          .map((s) => money(s.total_amt))
+          .filter((v): v is number => v !== null)
         return billed.length ? billed.reduce((a, b) => a + b, 0) : null
       })(),
-      servicesBilled: services.filter((s) => money(s.total_amt) !== null).length,
-      servicesUnbilled: services.filter((s) => money(s.total_amt) === null).length,
+      servicesBilled: services.filter((s) => money(s.total_amt) !== null && str(s.bill_status) !== 'Cancel').length,
+      servicesUnbilled: services.filter((s) => money(s.total_amt) === null || str(s.bill_status) === 'Cancel').length,
+      /*
+       * Billed value of bills the DMS says were never fully collected. The literals are matched
+       * exactly as the DMS spells them — including 'Paymant'.
+       */
+      ...((() => {
+        const flagged = services.filter((s) =>
+          str(s.bill_status) === 'Payment Not Received' || str(s.bill_status) === 'Partial Paymant Received')
+        const total = flagged.map((s) => money(s.total_amt)).filter((v): v is number => v !== null)
+          .reduce((a, b) => a + b, 0)
+        return { unpaidCount: flagged.length, unpaidBilledTotal: total > 0 ? total : null }
+      })()),
+      ...((() => {
+        const lines = accessoriesByVin.get(vin) || []
+        const mapped = lines
+          .map((a) => ({
+            billNo: str(a.csr_bill_no),
+            billDate: dateStr(a.csr_bill_date),
+            description: str(a.description),
+            qty: (() => {
+              const q = Number(a.accessories_qty)
+              return Number.isFinite(q) && q > 0 ? q : null
+            })(),
+            amount: (money(a.accessory_taxable_amount) ?? 0) + (money(a.tax_amount) ?? 0) > 0
+              ? (money(a.accessory_taxable_amount) ?? 0) + (money(a.tax_amount) ?? 0)
+              : null,
+          }))
+          .sort((a, b) => String(b.billDate ?? '').localeCompare(String(a.billDate ?? '')))
+        const spend = mapped.map((a) => a.amount).filter((v): v is number => v !== null)
+          .reduce((a, b) => a + b, 0)
+        return { accessories: mapped.slice(0, 40), accessoriesSpend: spend > 0 ? spend : null }
+      })()),
       // Every row is our own pre-delivery inspection: a service count with no real customer visit.
       nviOnly: services.length > 0 && services.every((s) => isNvi(str(s.work_type))),
       services: services.slice(0, 50).map((s) => ({
@@ -960,6 +1124,7 @@ export async function getKiaCustomerProfile(
         workType: str(s.work_type),
         advisor: str(s.service_advisor),
         amount: money(s.total_amt),
+        billStatus: str(s.bill_status),
         labour: money(s.labour_amt),
         parts: money(s.part_amt),
         tax: (() => {
@@ -1013,5 +1178,20 @@ export async function getKiaCustomerProfile(
     notes.push(`No billed service in the last ${serviceGapMonths} months on at least one vehicle. They may be using another workshop.`)
   }
 
-  return { ...summary, enquiries, bookings, vehicles, receipts, notes }
+  const liveRos: KiaCustomerProfile['liveRos'] = rows(liveRoResult).map((row) => ({
+    vin: str(row.vin),
+    registration: str(row.reg_no),
+    model: str(row.model),
+    roNo: str(row.r_o_no),
+    roDate: dateStr(row.ro_date),
+    workType: str(row.work_type),
+    subStatus: str(row.ro_sub_status),
+    advisor: str(row.service_adv),
+    estimate: money(row.estimate_amt),
+    promisedOn: str(row.promise_date_time),
+    delayReason: str(row.delay_reason),
+    asOf: dateStr(row.uploaded_at),
+  }))
+
+  return { ...summary, enquiries, bookings, vehicles, receipts, liveRos, notes }
 }

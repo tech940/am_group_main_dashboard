@@ -39,7 +39,7 @@ export type CreateTaskInput = {
   externalContactPhone?: string | null
 }
 
-export type TaskAction = 'complete' | 'reopen' | 'cancel' | 'reassign' | 'edit' | 'comment' | 'remind'
+export type TaskAction = 'complete' | 'reopen' | 'cancel' | 'reassign' | 'edit' | 'comment' | 'remind' | 'md_remark'
 export type UpdateTaskInput = {
   completionRemark?: string | null
   assignedTo?: string | null
@@ -639,6 +639,22 @@ export async function updateDelegationTask(id: string, action: TaskAction, input
       case 'remind': {
         activityType = 'reminded'
         activityMessage = 'Sent task reminder email'
+        break
+      }
+      case 'md_remark': {
+        const mdRemarkText = text(input.remark || input.completionRemark)
+        if (!mdRemarkText) throw new Error('MD Remark content is required.')
+        const existingMeta = (task.metadata as Record<string, unknown>) || {}
+        updates.metadata = {
+          ...existingMeta,
+          mdRemark: mdRemarkText,
+          mdRemarkBy: actor.id,
+          mdRemarkByName: actor.fullName,
+          mdRemarkByRole: actor.role,
+          mdRemarkAt: new Date().toISOString(),
+        }
+        activityType = 'md_remark'
+        activityMessage = `MD Remark: ${mdRemarkText}`
         break
       }
       default:
