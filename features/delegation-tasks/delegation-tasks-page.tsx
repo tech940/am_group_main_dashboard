@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Clock, ListChecks, Loader2, Plus, TriangleAlert, X, Check, MessageSquare, Mail, MessageCircle, Phone, UserPlus, Download, Trash2 } from 'lucide-react'
+import { CheckCircle2, Clock, ListChecks, Loader2, Plus, TriangleAlert, X, Check, MessageSquare, Mail, MessageCircle, Phone, UserPlus, Download, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -115,10 +115,13 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
   const [bulkLoading, setBulkLoading] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [pageSize, setPageSize] = useState<number>(20)
+  const [currentPage, setCurrentPage] = useState<number>(1)
 
   useEffect(() => {
     setSelectedTaskIds([])
-  }, [tab, statusFilter, brandFilter, search])
+    setCurrentPage(1)
+  }, [tab, statusFilter, brandFilter, search, pageSize])
 
   const handleBulkComplete = async () => {
     if (selectedTaskIds.length === 0) return
@@ -276,12 +279,22 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
     ),
     staleTime: 10_000,
   })
-  const rows = useMemo(() => listQuery.data?.rows ?? [], [listQuery.data])
+  const rows = useMemo(() => {
+    const list = listQuery.data?.rows ?? []
+    return [...list].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  }, [listQuery.data?.rows])
 
   const filteredRows = useMemo(() => {
     if (statusFilter === 'all') return rows
     return rows.filter((r) => r.status === statusFilter)
   }, [rows, statusFilter])
+
+  const totalTasks = filteredRows.length
+  const totalPages = Math.max(1, Math.ceil(totalTasks / pageSize))
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * pageSize
+    return filteredRows.slice(start, start + pageSize)
+  }, [filteredRows, currentPage, pageSize])
 
   const handleExportCsv = () => {
     if (filteredRows.length === 0) {
@@ -626,12 +639,14 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                     <input
                       type="checkbox"
                       className="rounded border-slate-300 text-slate-900 focus:ring-slate-900 h-4 w-4 cursor-pointer"
-                      checked={filteredRows.length > 0 && selectedTaskIds.length === filteredRows.length}
+                      checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedTaskIds.includes(r.id))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedTaskIds(filteredRows.map(r => r.id))
+                          const pageIds = paginatedRows.map(r => r.id)
+                          setSelectedTaskIds(prev => Array.from(new Set([...prev, ...pageIds])))
                         } else {
-                          setSelectedTaskIds([])
+                          const pageIdSet = new Set(paginatedRows.map(r => r.id))
+                          setSelectedTaskIds(prev => prev.filter(id => !pageIdSet.has(id)))
                         }
                       }}
                     />
@@ -646,12 +661,12 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
               </thead>
               <tbody>
                 {listQuery.isLoading && (
-                  <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></td></tr>
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></td></tr>
                 )}
                 {!listQuery.isLoading && filteredRows.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-12 text-center text-sm font-semibold text-slate-400">No tasks here yet.</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-sm font-semibold text-slate-400">No tasks here yet.</td></tr>
                 )}
-                {filteredRows.map((r) => {
+                {paginatedRows.map((r) => {
                   const waUrl = getWhatsAppLink(r)
                   const emailUrl = getEmailLink(r)
                   const hasMdRemark = Boolean(r.metadata?.mdRemark)
@@ -781,6 +796,64 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Toolbar */}
+          {filteredRows.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-3 text-xs">
+              <div className="flex items-center gap-2 text-slate-500 font-semibold">
+                <span>
+                  Showing <strong className="text-slate-900">{(currentPage - 1) * pageSize + 1}</strong> to <strong className="text-slate-900">{Math.min(currentPage * pageSize, totalTasks)}</strong> of <strong className="text-slate-900">{totalTasks}</strong> tasks
+                </span>
+              </div>
+
+              <div className="flex items-center gap-4">
+                {/* Page Size Selector */}
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-bold text-[11px] uppercase tracking-wider">Per page:</span>
+                  <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                    <SelectTrigger className="h-8 w-20 rounded-xl text-xs font-bold bg-white border-slate-200">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="20" className="text-xs font-semibold">20</SelectItem>
+                      <SelectItem value="40" className="text-xs font-semibold">40</SelectItem>
+                      <SelectItem value="100" className="text-xs font-semibold">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Navigation Buttons */}
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="h-8 px-2.5 rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold gap-1 shadow-none disabled:opacity-40"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">Prev</span>
+                  </Button>
+
+                  <div className="flex items-center gap-1 px-1">
+                    <span className="text-xs font-bold text-slate-800">Page {currentPage}</span>
+                    <span className="text-xs text-slate-400 font-semibold">of {totalPages}</span>
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="h-8 px-2.5 rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold gap-1 shadow-none disabled:opacity-40"
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
       ) : (
         <Card className="p-6 rounded-2xl border border-slate-200 bg-white">

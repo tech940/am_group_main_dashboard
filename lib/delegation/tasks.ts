@@ -231,13 +231,11 @@ export async function listDelegationTasks(input: TaskListInput, viewer: Viewer) 
     .leftJoin(delegationContacts, eq(delegationTasks.externalContactId, delegationContacts.id))
     .leftJoin(mdUsersTable, eq(delegationTasks.mdUserId, mdUsersTable.id))
     .where(filters.length ? and(...filters) : undefined)
-    // Open first, then by due date (soonest / overdue first), then newest.
+    // Always newest tasks on top
     .orderBy(
-      sql`case when ${delegationTasks.status} = 'assigned' then 0 else 1 end`,
-      sql`${delegationTasks.dueAt} asc nulls last`,
       desc(delegationTasks.createdAt),
     )
-    .limit(500)
+    .limit(2000)
 
   return rows.map((r) => decorate(r, viewer))
 }
