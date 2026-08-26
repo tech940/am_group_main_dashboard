@@ -142,6 +142,52 @@ const getCurrentMonthEndDate = () => {
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
 
+const KIA_VEHICLE_MODEL_PHOTOS: Record<string, string> = {
+  sonet: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Sonet/11411/1782132032079/front-left-side-47.jpg',
+  seltos: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Seltos/13094/1778328978290/front-left-side-47.jpg',
+  carens: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Carens/11623/1772787448187/front-left-side-47.jpg',
+  carnival: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Carnival/8001/1774601542816/front-left-side-47.jpg',
+  ev6: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/EV6/8947/1758804909873/front-left-side-47.jpg',
+  ev9: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/EV9/8949/1758805086847/front-left-side-47.jpg',
+  syros: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Syros/11603/1772786968058/front-left-side-47.jpg',
+  clavis: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Syros/11603/1772786968058/front-left-side-47.jpg',
+}
+
+const STATIC_VEHICLE_FALLBACK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 100' fill='none'%3E%3Crect width='160' height='100' rx='8' fill='%23F8FAFC'/%3E%3Cpath d='M22 62C22 62 26 50 38 46C50 42 62 30 84 28C106 26 122 36 130 46C138 48 142 54 142 62C142 65 140 66 136 66H126C124 58 116 52 108 52C100 52 92 58 90 66H66C64 58 56 52 48 52C40 52 32 58 30 66H24C22 66 22 64 22 62Z' fill='%2394A3B8'/%3E%3Ccircle cx='48' cy='66' r='11' fill='%23334155'/%3E%3Ccircle cx='48' cy='66' r='6' fill='%23CBD5E1'/%3E%3Ccircle cx='48' cy='66' r='2.5' fill='%23334155'/%3E%3Ccircle cx='108' cy='66' r='11' fill='%23334155'/%3E%3Ccircle cx='108' cy='66' r='6' fill='%23CBD5E1'/%3E%3Ccircle cx='108' cy='66' r='2.5' fill='%23334155'/%3E%3Cpath d='M64 34L44 48H64V34Z' fill='%23E2E8F0'/%3E%3Cpath d='M68 34H88V48H68V34Z' fill='%23E2E8F0'/%3E%3Cpath d='M92 34C102 34 114 40 120 48H92V34Z' fill='%23E2E8F0'/%3E%3Cpath d='M136 50C140 50 142 53 142 55H134L136 50Z' fill='%23FDE047'/%3E%3Cpath d='M22 52H26V56H22V52Z' fill='%23F87171'/%3E%3C/svg%3E"
+
+function getKiaVehicleModelPhoto(model?: string | null): string {
+  if (!model) return KIA_VEHICLE_MODEL_PHOTOS.seltos
+  const clean = model.toLowerCase().trim()
+  for (const [key, url] of Object.entries(KIA_VEHICLE_MODEL_PHOTOS)) {
+    if (clean.includes(key)) return url
+  }
+  return STATIC_VEHICLE_FALLBACK
+}
+
+function KiaVehiclePhoto({
+  model,
+  className = 'h-full w-full object-contain mix-blend-multiply dark:mix-blend-normal',
+  alt,
+}: {
+  model?: string | null
+  className?: string
+  alt?: string
+}) {
+  return (
+    <img
+      src={getKiaVehicleModelPhoto(model)}
+      alt={alt || model || 'Kia Vehicle'}
+      className={className}
+      loading="lazy"
+      onError={(e) => {
+        if (e.currentTarget.src !== STATIC_VEHICLE_FALLBACK) {
+          e.currentTarget.src = STATIC_VEHICLE_FALLBACK
+        }
+      }}
+    />
+  )
+}
+
 type BookingStatus =
   | 'draft'
   | 'booking_created'
@@ -821,7 +867,20 @@ function BookingMobileCard({
 
       {/* Vehicle & Consultant Grid */}
       <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50/70 p-2.5 rounded-xl border border-slate-150">
-        <FieldValue label="Vehicle" value={<><span className="font-bold text-[var(--kia-text)]">{row.model || '—'}</span><br /><span className="text-[var(--kia-text-soft)]">{row.variant || '—'}</span></>} />
+        <FieldValue
+          label="Vehicle"
+          value={
+            <div className="flex items-center gap-2 mt-0.5">
+              <div className="h-8 w-11 shrink-0 rounded-md bg-white border border-slate-200 overflow-hidden flex items-center justify-center p-0.5 shadow-2xs">
+                <KiaVehiclePhoto model={row.model} className="h-full w-full object-contain mix-blend-multiply" />
+              </div>
+              <div className="min-w-0">
+                <span className="font-bold text-[var(--kia-text)] block truncate">{row.model || '—'}</span>
+                <span className="text-[var(--kia-text-soft)] block truncate">{row.variant || '—'}</span>
+              </div>
+            </div>
+          }
+        />
         <FieldValue label="Consultant" value={<>{row.consultantName || '—'}<br /><span className="text-[var(--kia-text-faint)]">{formatDate(row.updatedAt)}</span></>} />
         <FieldValue label="VIN" value={row.allocatedVin || '—'} mono />
         <FieldValue label="Finance" value={row.financeOrderNumber || '—'} />
@@ -3497,8 +3556,15 @@ export function KiaBookingsClient({
                         <div className="text-[11px] font-medium text-[var(--kia-text-soft)]">{maskKiaPii(row.customerPhone, canViewPii)}</div>
                       </TableCell>
                       <TableCell className="px-3 py-3">
-                        <div className="text-sm font-semibold leading-5 text-[var(--kia-text)]">{row.model}</div>
-                        <div className="max-w-[240px] truncate text-[11px] text-[var(--kia-text-soft)]">{[row.variant, row.color].filter(Boolean).join(' · ')}</div>
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-9 w-12 shrink-0 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 overflow-hidden flex items-center justify-center p-0.5 shadow-2xs">
+                            <KiaVehiclePhoto model={row.model} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-bold leading-5 text-[var(--kia-text)]">{row.model}</div>
+                            <div className="max-w-[220px] truncate text-[11px] font-medium text-[var(--kia-text-soft)]">{[row.variant, row.color].filter(Boolean).join(' · ')}</div>
+                          </div>
+                        </div>
                       </TableCell>
                       <TableCell className="px-3 py-3">
                         <div className="text-xs font-bold text-[var(--kia-text)]">{row.dealerCode || '—'}</div>
@@ -3777,7 +3843,14 @@ export function KiaBookingsClient({
                         }}
                       >
                         <TableCell className="px-3 py-2.5 text-xs font-semibold text-slate-400">{idx + 1}</TableCell>
-                        <TableCell className="px-3 py-2.5 text-sm font-bold text-slate-800">{row.model}</TableCell>
+                        <TableCell className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="h-7 w-10 shrink-0 rounded-md bg-white border border-slate-200 overflow-hidden flex items-center justify-center p-0.5 shadow-2xs">
+                              <KiaVehiclePhoto model={row.model} className="h-full w-full object-contain mix-blend-multiply" />
+                            </div>
+                            <span className="text-sm font-bold text-slate-800">{row.model}</span>
+                          </div>
+                        </TableCell>
                         <TableCell className="max-w-[260px] truncate px-3 py-2.5 text-xs font-medium text-slate-600">{row.variant || '—'}</TableCell>
                         <TableCell className="max-w-[150px] truncate px-3 py-2.5 text-xs font-semibold text-slate-600">{row.color || '—'}</TableCell>
                         <TableCell className="px-3 py-2.5 text-right">
@@ -6054,43 +6127,62 @@ function BookingDrawer({
 
   return (
     <>
-      <div className="relative shrink-0 overflow-hidden border-b w-full min-w-0" style={{ borderColor: 'var(--kia-hairline)', background: 'linear-gradient(135deg, color-mix(in srgb, var(--dashboard-primary) 9%, var(--kia-surface)), var(--kia-surface))' }}>
-        <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--dashboard-action-bg) 18%, transparent), transparent 70%)' }} />
-        <div className="relative p-4 sm:p-6 w-full min-w-0">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between w-full min-w-0">
-            <div className="flex min-w-0 items-start gap-3 w-full">
-              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl" style={toneSoftStyle('accent')}>
-                <Car className="h-7 w-7" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <Kicker>Vehicle Journey</Kicker>
-                <h2 className="mt-0.5 break-words text-xl font-extrabold tracking-tight text-[var(--kia-text)] sm:text-2xl">
-                  {[booking.model, booking.variant].filter(Boolean).join(' ') || booking.bookingNumber}
+      <div className="relative shrink-0 overflow-hidden border-b w-full min-w-0" style={{ borderColor: 'var(--kia-hairline)', background: 'linear-gradient(135deg, color-mix(in srgb, var(--dashboard-primary) 8%, var(--kia-surface)), var(--kia-surface))' }}>
+        <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--dashboard-action-bg) 15%, transparent), transparent 70%)' }} />
+        <div className="relative p-5 sm:p-6 w-full min-w-0">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 w-full min-w-0">
+            {/* Left: Prominent Vehicle Studio Photo + Journey Metadata */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4.5 min-w-0 flex-1">
+              <div className="group relative h-24 sm:h-28 w-36 sm:w-44 shrink-0 rounded-2xl bg-white/95 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 p-2 shadow-sm flex items-center justify-center overflow-hidden">
+                <KiaVehiclePhoto
+                  model={booking.model}
+                  className="h-full w-full object-contain mix-blend-multiply dark:mix-blend-normal group-hover:scale-105 transition-transform duration-300 drop-shadow-sm"
+                />
+              </div>
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Kicker>Vehicle Journey</Kicker>
+                  {allocation?.vinNumber && (
+                    <span className="font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      VIN: {allocation.vinNumber}
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black tracking-tight text-[var(--kia-text)] leading-snug">
+                  {booking.model || 'Kia Vehicle'}
                 </h2>
-                <p className="mt-0.5 text-xs font-semibold text-[var(--kia-text-soft)]">
-                  {[allocation?.color || booking.color || booking.colorPreference, booking.dealerCode].filter(Boolean).join(' · ') || booking.customerName}
-                </p>
-                {allocation?.vinNumber && <p className="mt-1 font-mono text-[11px] font-bold text-[var(--kia-text)]">VIN: {allocation.vinNumber}</p>}
-                <p className="mt-1 text-[11px] font-medium text-[var(--kia-text-faint)]"><span className="kia-tnum">{booking.bookingNumber}</span> · {booking.customerName}</p>
+                <div className="text-xs font-bold text-[var(--kia-text-soft)]">
+                  {[booking.variant, allocation?.color || booking.color || booking.colorPreference].filter(Boolean).join(' · ')}
+                </div>
+                <div className="flex items-center gap-2 pt-0.5 text-[11px] font-medium text-[var(--kia-text-faint)] flex-wrap">
+                  <span className="font-bold text-slate-800 dark:text-slate-200">{booking.dealerCode}</span>
+                  <span>•</span>
+                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{booking.bookingNumber}</span>
+                  <span>•</span>
+                  <span>{booking.customerName}</span>
+                </div>
               </div>
             </div>
-            <div className="flex flex-col items-start gap-2 md:items-end">
-              <StatusBadge status={booking.status} />
-              {/* Waiting / Pending with — refined by the linked proforma's approval state. */}
-              <BookingWaitingIndicator
-                status={booking.status}
-                approvalStatus={proforma?.status}
-                updatedAt={booking.updatedAt}
-                now={now}
-                align="right"
-              />
+
+            {/* Right: Status Pill & Action Buttons */}
+            <div className="flex flex-col items-start lg:items-end gap-2.5 shrink-0">
+              <div className="flex items-center gap-2">
+                <StatusBadge status={booking.status} />
+                <BookingWaitingIndicator
+                  status={booking.status}
+                  approvalStatus={proforma?.status}
+                  updatedAt={booking.updatedAt}
+                  now={now}
+                  align="right"
+                />
+              </div>
               <div className="flex gap-2 flex-wrap">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={shareTrackingLink}
                   disabled={sharingLink}
-                  className="h-8 rounded-xl text-xs font-bold"
+                  className="h-8 rounded-xl text-xs font-bold shadow-2xs cursor-pointer"
                 >
                   {sharingLink ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Share2 className="mr-1.5 h-3.5 w-3.5" />}
                   Share tracking link
@@ -6099,7 +6191,7 @@ function BookingDrawer({
                   variant="outline"
                   size="sm"
                   onClick={() => setIsDiscountDialogOpen(true)}
-                  className="h-8 rounded-xl text-xs font-bold border-slate-200 hover:bg-slate-100 text-slate-800"
+                  className="h-8 rounded-xl text-xs font-bold border-slate-200 hover:bg-slate-100 text-slate-800 shadow-2xs cursor-pointer"
                 >
                   <Percent className="mr-1.5 h-3.5 w-3.5 text-slate-700" />
                   Apply Discount
@@ -6115,7 +6207,7 @@ function BookingDrawer({
                       })
                     }
                   }}
-                  className="h-8 rounded-xl text-xs font-bold border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50"
+                  className="h-8 rounded-xl text-xs font-bold border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 shadow-2xs cursor-pointer"
                 >
                   <Calculator className="mr-1.5 h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />
                   Calculate EMI
@@ -6570,19 +6662,28 @@ function BookingDrawer({
 
         <section className="kia-surface p-4 sm:p-5">
           <div className="flex items-center gap-3">
-            <IconTile icon={Car} tone="info" />
-            <h3 className="text-base font-extrabold tracking-tight text-[var(--kia-text)] sm:text-lg">Vehicle Allocation</h3>
-            <p className="text-xs font-medium leading-5 text-[var(--kia-text-soft)]">
-              Matchable VINs exclude local Retail and active allocations.
-            </p>
+            <div className="h-9 w-12 shrink-0 rounded-lg bg-white dark:bg-slate-800 border border-slate-200/80 overflow-hidden flex items-center justify-center p-0.5 shadow-2xs">
+              <KiaVehiclePhoto model={allocation?.model || booking.model} />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold tracking-tight text-[var(--kia-text)] sm:text-lg">Vehicle Allocation</h3>
+              <p className="text-xs font-medium leading-5 text-[var(--kia-text-soft)]">
+                Matchable VINs exclude local Retail and active allocations.
+              </p>
+            </div>
           </div>
           {allocation ? (
-            <div className="mt-4 rounded-2xl border p-3.5" style={toneSoftStyle('success')}>
-              <p className="break-all font-mono text-sm font-extrabold" style={{ color: 'var(--kia-text)' }}>{allocation.vinNumber}</p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-[var(--kia-text-soft)]">{allocation.model} · {allocation.variant} · {allocation.color || 'Color NA'}</p>
-              <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.1em]" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface)', color: 'var(--kia-text-soft)' }}>
-                <CalendarCheck className="h-3.5 w-3.5" /> Payment window: {formatTimeRemaining(allocation.expiresAt)}
-              </span>
+            <div className="mt-4 rounded-2xl border p-4 flex items-center gap-3.5" style={toneSoftStyle('success')}>
+              <div className="h-12 w-16 shrink-0 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 overflow-hidden flex items-center justify-center p-0.5 shadow-2xs">
+                <KiaVehiclePhoto model={allocation.model} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="break-all font-mono text-sm font-extrabold" style={{ color: 'var(--kia-text)' }}>{allocation.vinNumber}</p>
+                <p className="mt-0.5 text-xs font-semibold leading-5 text-[var(--kia-text-soft)]">{allocation.model} · {allocation.variant} · {allocation.color || 'Color NA'}</p>
+                <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[11px] font-bold uppercase tracking-[0.1em]" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface)', color: 'var(--kia-text-soft)' }}>
+                  <CalendarCheck className="h-3.5 w-3.5" /> Payment window: {formatTimeRemaining(allocation.expiresAt)}
+                </span>
+              </div>
             </div>
           ) : matchingLoading ? (
             <div className="mt-4 flex items-center justify-center py-8">
@@ -6598,13 +6699,18 @@ function BookingDrawer({
                 <StaggerItem key={vehicle.vinNumber}>
                   <div className="kia-surface-flush kia-lift h-full p-3.5">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="break-all font-mono text-xs font-extrabold text-[var(--kia-text)]">{vehicle.vinNumber}</p>
-                        <p className="mt-1 text-sm font-bold text-[var(--kia-text)]">{vehicle.model} · {vehicle.variant}</p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          <Chip tone="neutral">{vehicle.dealerCode}</Chip>
-                          <Chip tone={vehicle.source === 'bbnd' ? 'warning' : 'info'}>{vehicle.source === 'bbnd' ? 'BBND' : (vehicle.stockStatus || 'DMS')}</Chip>
-                          {typeof vehicle.stockAge === 'number' && <Chip tone="neutral">{vehicle.stockAge}d</Chip>}
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                        <div className="h-9 w-12 shrink-0 rounded-lg bg-white dark:bg-slate-800 border border-slate-200/80 overflow-hidden flex items-center justify-center p-0.5 shadow-2xs">
+                          <KiaVehiclePhoto model={vehicle.model} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="break-all font-mono text-xs font-extrabold text-[var(--kia-text)]">{vehicle.vinNumber}</p>
+                          <p className="mt-0.5 text-sm font-bold text-[var(--kia-text)]">{vehicle.model} · {vehicle.variant}</p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <Chip tone="neutral">{vehicle.dealerCode}</Chip>
+                            <Chip tone={vehicle.source === 'bbnd' ? 'warning' : 'info'}>{vehicle.source === 'bbnd' ? 'BBND' : (vehicle.stockStatus || 'DMS')}</Chip>
+                            {typeof vehicle.stockAge === 'number' && <Chip tone="neutral">{vehicle.stockAge}d</Chip>}
+                          </div>
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-col gap-2">

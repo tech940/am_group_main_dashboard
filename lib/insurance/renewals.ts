@@ -11,25 +11,18 @@ import {
   type InsuranceBrandId,
   type InsuranceColumnKey,
 } from '@/lib/insurance/brands'
+import { getCrmRecords, type CrmDisposition } from '@/lib/insurance/crm'
 
-/**
- * Vehicles whose insurance is about to lapse — a WORK QUEUE, not a chart.
- *
- * ⚠️ A renewal event is an OWN-DAMAGE policy, not a row. Every car carries an OD policy AND a
- * fixed-premium third-party companion, plus one pair per year, so a 4-year-old vehicle holds ~7 rows
- * for 4 renewals. Counting rows here would put the same car in the queue several times and inflate
- * the pipeline. `isOdExpr` is the brand-specific discriminator that already encodes this
- * (hyundai/platinum: od_tenure <> '0'; kia: producttype = 'Addon').
- *
- * ⚠️ Read through `insuranceSource()`, never the raw table: the Hyundai and Platinum feeds append a
- * new row each time a policy is re-uploaded, so the raw table holds snapshot versions of one policy.
- *
- * "Due" means: the vehicle's LATEST own-damage policy expires inside the window, and no later policy
- * has been written for it. The second half is what stops an already-renewed car reappearing in the
- * queue — without it the list is mostly noise and the calling team stops trusting it.
- */
+export type RenewalBucket = '30' | '60' | '90' | 'lapsed' | 'lost'
 
-export type RenewalBucket = '30' | '60' | '90' | 'lapsed'
+export type UrgencySubBucket =
+  | 'critical_7'   // 0 to 7 days
+  | 'urgent_15'    // 8 to 15 days
+  | 'standard_30'  // 16 to 30 days
+  | 'upcoming_60'  // 31 to 60 days
+  | 'upcoming_90'  // 61 to 90 days
+  | 'lapsed_30'    // 1 to 30 days ago
+  | 'lost_6m'      // 31 to 180 days ago
 
 export type RenewalDue = {
   brand: InsuranceBrandId
@@ -43,33 +36,46 @@ export type RenewalDue = {
   expiryDate: string
   daysToExpiry: number
   bucket: RenewalBucket
+  urgencySubBucket: UrgencySubBucket
   lastPremium: number | null
   dealerCode: string | null
+  // CRM tracking fields
+  disposition?: CrmDisposition
+  lossReason?: string | null
+  competitorDestination?: string | null
+  remarks?: string | null
+  followUpDate?: string | null
+  calledBy?: string | null
 }
 
 export type RenewalSummary = {
+  critical7: number
+  urgent15: number
+  standard30: number
+  upcoming30Total: number
   lapsed: number
+  lost6m: number
   due30: number
   due60: number
   due90: number
   total: number
   premiumAtRisk: number
+  premiumUpcoming30: number
 }
 
-/**
- * Per-branch rollup. Renewals are worked by the branch that sold the car, so the group total is not
- * an actionable number — it has to be split before anyone can be given a list.
- */
 export type BranchRenewalStats = {
   dealerCode: string
   brands: InsuranceBrandId[]
+  critical7: number
+  urgent15: number
+  standard30: number
   lapsed: number
+  lost6m: number
   due30: number
   due60: number
   due90: number
   total: number
   premiumAtRisk: number
-  /** Expiries per week across the window — the sparkline on the branch KPI card. */
   trend: number[]
 }
 
@@ -79,6 +85,8 @@ export type RenewalPipeline = {
   summary: RenewalSummary
   branches: BranchRenewalStats[]
   rows: RenewalDue[]
+  upcoming30Rows: RenewalDue[]
+  lost6mRows: RenewalDue[]
 }
 
 function rows(result: unknown): Record<string, unknown>[] {
@@ -91,7 +99,6 @@ function text(value: unknown): string | null {
   return s === '' ? null : s
 }
 
-/** Postgres DATE columns arrive as JS Date objects through this driver — String() gives "Thu Jul 30". */
 function iso(value: unknown): string | null {
   if (!value) return null
   if (value instanceof Date) return value.toISOString().slice(0, 10)
@@ -99,27 +106,29 @@ function iso(value: unknown): string | null {
   return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null
 }
 
-/**
- * `col()` THROWS when a brand has no column for a key — correct for a surface that requires it, but
- * wrong here: this queue should degrade to a blank cell rather than 500 the whole page because one
- * feed lacks, say, a variant name. Returns a SQL fragment: the column, or literal NULL.
- */
 function optCol(brand: InsuranceBrand, key: InsuranceColumnKey, alias: string): string {
   const name = brand.columns[key]
   return name ? `${alias}.${name}` : 'NULL'
 }
 
 function bucketFor(days: number): RenewalBucket {
+  if (days < -30) return 'lost'
   if (days < 0) return 'lapsed'
   if (days <= 30) return '30'
   if (days <= 60) return '60'
   return '90'
 }
 
-/**
- * One brand's due list. `lookaheadDays` bounds the future; `lapsedDays` how far back an expired
- * policy is still worth chasing (past that the customer has almost certainly bought elsewhere).
- */
+function urgencySubBucketFor(days: number): UrgencySubBucket {
+  if (days < -30) return 'lost_6m'
+  if (days < 0) return 'lapsed_30'
+  if (days <= 7) return 'critical_7'
+  if (days <= 15) return 'urgent_15'
+  if (days <= 30) return 'standard_30'
+  if (days <= 60) return 'upcoming_60'
+  return 'upcoming_90'
+}
+
 async function readBrand(
   brandId: InsuranceBrandId,
   asOf: string,
@@ -151,7 +160,6 @@ async function readBrand(
         AND t.${sql.raw(expiryCol)} IS NOT NULL
     ),
     latest AS (
-      -- One row per vehicle: its most recent own-damage policy.
       SELECT DISTINCT ON (chassis_no) *
       FROM od
       ORDER BY chassis_no, expiry_date DESC
@@ -184,19 +192,13 @@ async function readBrand(
       expiryDate: expiry,
       daysToExpiry: days,
       bucket: bucketFor(days),
+      urgencySubBucket: urgencySubBucketFor(days),
       lastPremium: premium !== null && Number.isFinite(premium) ? premium : null,
       dealerCode: text(row.dealer_code),
     }]
   })
 }
 
-/**
- * Rolls the merged queue up by dealer code. Computed in JS from rows already fetched — a second set
- * of grouped queries would double the cost of the page for numbers we can derive for free.
- *
- * Vehicles with no dealer code land under UNASSIGNED rather than being dropped: a car nobody owns is
- * exactly the one that goes uncalled, so it must stay visible.
- */
 function summariseBranches(
   rows: RenewalDue[],
   asOf: string,
@@ -213,7 +215,8 @@ function summariseBranches(
     let entry = map.get(key)
     if (!entry) {
       entry = {
-        dealerCode: key, brands: [], lapsed: 0, due30: 0, due60: 0, due90: 0,
+        dealerCode: key, brands: [], critical7: 0, urgent15: 0, standard30: 0,
+        lapsed: 0, lost6m: 0, due30: 0, due60: 0, due90: 0,
         total: 0, premiumAtRisk: 0, trend: new Array(weeks).fill(0),
       }
       map.set(key, entry)
@@ -221,10 +224,14 @@ function summariseBranches(
     if (!entry.brands.includes(row.brand)) entry.brands.push(row.brand)
     entry.total += 1
     entry.premiumAtRisk += row.lastPremium ?? 0
+    if (row.urgencySubBucket === 'critical_7') entry.critical7 += 1
+    if (row.urgencySubBucket === 'urgent_15') entry.urgent15 += 1
+    if (row.urgencySubBucket === 'standard_30') entry.standard30 += 1
+    if (row.urgencySubBucket === 'lost_6m') entry.lost6m += 1
     if (row.bucket === 'lapsed') entry.lapsed += 1
     else if (row.bucket === '30') entry.due30 += 1
     else if (row.bucket === '60') entry.due60 += 1
-    else entry.due90 += 1
+    else if (row.bucket === '90') entry.due90 += 1
 
     const slot = Math.floor((Date.parse(`${row.expiryDate}T00:00:00Z`) - start) / WEEK_MS)
     if (slot >= 0 && slot < weeks) entry.trend[slot] += 1
@@ -242,34 +249,63 @@ export async function getRenewalPipeline(opts: {
   lapsedDays?: number
 }): Promise<RenewalPipeline> {
   const lookaheadDays = opts.lookaheadDays ?? 90
-  const lapsedDays = opts.lapsedDays ?? 30
+  const lapsedDays = opts.lapsedDays ?? 180 // Support 6 months of lapsed tracking
   const brandIds = opts.brands?.length ? opts.brands : (Object.keys(INSURANCE_BRANDS) as InsuranceBrandId[])
 
-  const perBrand = await Promise.all(
-    brandIds.map((id) => readBrand(id, opts.asOf, lookaheadDays, lapsedDays).catch(() => [] as RenewalDue[])),
-  )
+  const [perBrand, crmRecords] = await Promise.all([
+    Promise.all(brandIds.map((id) => readBrand(id, opts.asOf, lookaheadDays, lapsedDays).catch(() => [] as RenewalDue[]))),
+    getCrmRecords().catch(() => ({} as Record<string, any>)),
+  ])
 
-  // Hyundai and Platinum share 492 chassis. The same physical car must appear ONCE in a calling
-  // queue, or two branches ring the same customer — keep the record with the later expiry.
+  const crmMap = crmRecords as Record<string, any>
   const byChassis = new Map<string, RenewalDue>()
   for (const row of perBrand.flat()) {
     const existing = byChassis.get(row.chassisNo)
-    if (!existing || row.expiryDate > existing.expiryDate) byChassis.set(row.chassisNo, row)
+    if (!existing || row.expiryDate > existing.expiryDate) {
+      const crm = crmMap[row.chassisNo]
+      const enrichedRow: RenewalDue = {
+        ...row,
+        disposition: crm?.disposition || 'PENDING',
+        lossReason: crm?.lossReason || null,
+        competitorDestination: crm?.competitorDestination || null,
+        remarks: crm?.remarks || null,
+        followUpDate: crm?.followUpDate || null,
+        calledBy: crm?.calledBy || null,
+      }
+      byChassis.set(row.chassisNo, enrichedRow)
+    }
   }
   const merged = [...byChassis.values()].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate))
+
+  const upcoming30Rows = merged.filter((r) => r.daysToExpiry >= 0 && r.daysToExpiry <= 30)
+  const lost6mRows = merged.filter((r) => r.daysToExpiry >= -180 && r.daysToExpiry < 0)
+
+  const critical7 = merged.filter((r) => r.urgencySubBucket === 'critical_7').length
+  const urgent15 = merged.filter((r) => r.urgencySubBucket === 'urgent_15').length
+  const standard30 = merged.filter((r) => r.urgencySubBucket === 'standard_30').length
+  const lost6m = merged.filter((r) => r.daysToExpiry >= -180 && r.daysToExpiry < -30).length
+  const lapsed = merged.filter((r) => r.daysToExpiry >= -30 && r.daysToExpiry < 0).length
 
   return {
     generatedAt: new Date().toISOString(),
     asOf: opts.asOf,
     branches: summariseBranches(merged, opts.asOf, lookaheadDays, lapsedDays),
     rows: merged,
+    upcoming30Rows,
+    lost6mRows,
     summary: {
-      lapsed: merged.filter((r) => r.bucket === 'lapsed').length,
+      critical7,
+      urgent15,
+      standard30,
+      upcoming30Total: upcoming30Rows.length,
+      lapsed,
+      lost6m,
       due30: merged.filter((r) => r.bucket === '30').length,
       due60: merged.filter((r) => r.bucket === '60').length,
       due90: merged.filter((r) => r.bucket === '90').length,
       total: merged.length,
       premiumAtRisk: Math.round(merged.reduce((sum, r) => sum + (r.lastPremium ?? 0), 0)),
+      premiumUpcoming30: Math.round(upcoming30Rows.reduce((sum, r) => sum + (r.lastPremium ?? 0), 0)),
     },
   }
 }

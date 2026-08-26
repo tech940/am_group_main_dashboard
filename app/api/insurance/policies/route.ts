@@ -26,7 +26,8 @@ export const maxDuration = 30
 /** Columns the register table and the policy inspector read, in display order. */
 const ROW_KEYS: InsuranceColumnKey[] = [
   'id', 'policyNo', 'proposalNo', 'customerName', 'insuranceCompany', 'policyType',
-  'modelName', 'variantName', 'vehRegistNo', 'chassisNo', 'grossPremium', 'netPremium',
+  'modelName', 'variantName', 'vehRegistNo', 'chassisNo', 'engineNo', 'grossPremium', 'netPremium',
+  'netOdPremiumA', 'thirdPartyLiability', 'addOnPremium', 'addonOpted', 'serviceTax',
   'totalIdv', 'policyIssueDate', 'policyStartDate', 'odExpiryDate', 'column64vbStatus',
   'paymentMode', 'rmName', 'dpName', 'dealerCode', 'subUser',
   'odTenure', 'tpTenure', 'currentNcbPercentage', 'mfgYear', 'fuelType',
@@ -215,6 +216,7 @@ export async function GET(request: Request) {
       pageSize,
       totalCount,
       totalPages,
+      policies: rowsRes,
       rows: rowsRes,
     })
   } catch (error: any) {

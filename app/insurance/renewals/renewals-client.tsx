@@ -18,6 +18,7 @@ import type { BranchRenewalStats, RenewalBucket, RenewalDue, RenewalPipeline } f
 
 const BUCKETS: { id: RenewalBucket | 'all'; label: string; className: string }[] = [
   { id: 'all', label: 'All', className: 'bg-slate-900 text-white' },
+  { id: 'lost', label: 'Lost (>30d lapsed)', className: 'bg-red-600 text-white' },
   { id: 'lapsed', label: 'Already lapsed', className: 'bg-rose-600 text-white' },
   { id: '30', label: 'Due ≤30 days', className: 'bg-amber-500 text-white' },
   { id: '60', label: '31–60 days', className: 'bg-sky-600 text-white' },
@@ -25,6 +26,7 @@ const BUCKETS: { id: RenewalBucket | 'all'; label: string; className: string }[]
 ]
 
 const BUCKET_PILL: Record<RenewalBucket, string> = {
+  lost: 'bg-red-50 text-red-700 border-red-200',
   lapsed: 'bg-rose-50 text-rose-700 border-rose-200',
   '30': 'bg-amber-50 text-amber-800 border-amber-200',
   '60': 'bg-sky-50 text-sky-700 border-sky-200',

@@ -51,6 +51,52 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
+const KIA_VEHICLE_MODEL_PHOTOS: Record<string, string> = {
+  sonet: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Sonet/11411/1782132032079/front-left-side-47.jpg',
+  seltos: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Seltos/13094/1778328978290/front-left-side-47.jpg',
+  carens: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Carens/11623/1772787448187/front-left-side-47.jpg',
+  carnival: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Carnival/8001/1774601542816/front-left-side-47.jpg',
+  ev6: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/EV6/8947/1758804909873/front-left-side-47.jpg',
+  ev9: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/EV9/8949/1758805086847/front-left-side-47.jpg',
+  syros: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Syros/11603/1772786968058/front-left-side-47.jpg',
+  clavis: 'https://stimg.cardekho.com/images/carexteriorimages/630x420/Kia/Syros/11603/1772786968058/front-left-side-47.jpg',
+}
+
+const STATIC_VEHICLE_FALLBACK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 100' fill='none'%3E%3Crect width='160' height='100' rx='8' fill='%23F8FAFC'/%3E%3Cpath d='M22 62C22 62 26 50 38 46C50 42 62 30 84 28C106 26 122 36 130 46C138 48 142 54 142 62C142 65 140 66 136 66H126C124 58 116 52 108 52C100 52 92 58 90 66H66C64 58 56 52 48 52C40 52 32 58 30 66H24C22 66 22 64 22 62Z' fill='%2394A3B8'/%3E%3Ccircle cx='48' cy='66' r='11' fill='%23334155'/%3E%3Ccircle cx='48' cy='66' r='6' fill='%23CBD5E1'/%3E%3Ccircle cx='48' cy='66' r='2.5' fill='%23334155'/%3E%3Ccircle cx='108' cy='66' r='11' fill='%23334155'/%3E%3Ccircle cx='108' cy='66' r='6' fill='%23CBD5E1'/%3E%3Ccircle cx='108' cy='66' r='2.5' fill='%23334155'/%3E%3Cpath d='M64 34L44 48H64V34Z' fill='%23E2E8F0'/%3E%3Cpath d='M68 34H88V48H68V34Z' fill='%23E2E8F0'/%3E%3Cpath d='M92 34C102 34 114 40 120 48H92V34Z' fill='%23E2E8F0'/%3E%3Cpath d='M136 50C140 50 142 53 142 55H134L136 50Z' fill='%23FDE047'/%3E%3Cpath d='M22 52H26V56H22V52Z' fill='%23F87171'/%3E%3C/svg%3E"
+
+function getKiaVehicleModelPhoto(model?: string | null): string {
+  if (!model) return KIA_VEHICLE_MODEL_PHOTOS.seltos
+  const clean = model.toLowerCase().trim()
+  for (const [key, url] of Object.entries(KIA_VEHICLE_MODEL_PHOTOS)) {
+    if (clean.includes(key)) return url
+  }
+  return STATIC_VEHICLE_FALLBACK
+}
+
+function KiaVehiclePhoto({
+  model,
+  className = 'h-full w-full object-contain mix-blend-multiply dark:mix-blend-normal',
+  alt,
+}: {
+  model?: string | null
+  className?: string
+  alt?: string
+}) {
+  return (
+    <img
+      src={getKiaVehicleModelPhoto(model)}
+      alt={alt || model || 'Kia Vehicle'}
+      className={className}
+      loading="lazy"
+      onError={(e) => {
+        if (e.currentTarget.src !== STATIC_VEHICLE_FALLBACK) {
+          e.currentTarget.src = STATIC_VEHICLE_FALLBACK
+        }
+      }}
+    />
+  )
+}
+
 type Slice = { name: string; count: number; amount: number }
 type TrendPoint = { date: string; count: number; amount: number }
 type ReceiptRow = {
@@ -763,8 +809,13 @@ export function KiaBookingPaymentHistoryPage() {
                                 {r.bookingNo || '—'}
                               </Badge>
                             </td>
-                            <td className="whitespace-nowrap px-4 py-3 font-extrabold text-xs text-slate-800 dark:text-slate-200">
-                              {r.model || '—'}
+                            <td className="whitespace-nowrap px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="h-7 w-10 shrink-0 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden flex items-center justify-center p-0.5 shadow-2xs">
+                                  <KiaVehiclePhoto model={r.model} />
+                                </div>
+                                <span className="font-extrabold text-xs text-slate-800 dark:text-slate-200">{r.model || '—'}</span>
+                              </div>
                             </td>
                             <td className="whitespace-nowrap px-4 py-3">
                               <ModeBadge mode={r.paymentType} />
@@ -1064,9 +1115,14 @@ function KiaReceiptVoucherModal({
 
             <div className="space-y-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
               <span className="text-[10px] font-black uppercase text-slate-400 block">Vehicle Model</span>
-              <span className="font-extrabold text-slate-900 dark:text-slate-100 block">
-                {receipt.model || '—'}
-              </span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <div className="h-8 w-11 shrink-0 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden flex items-center justify-center p-0.5 shadow-2xs">
+                  <KiaVehiclePhoto model={receipt.model} />
+                </div>
+                <span className="font-extrabold text-slate-900 dark:text-slate-100 block">
+                  {receipt.model || '—'}
+                </span>
+              </div>
             </div>
 
             <div className="space-y-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">

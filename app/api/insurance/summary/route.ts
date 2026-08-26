@@ -132,6 +132,8 @@ export async function GET(request: Request) {
       policyTypeDeepRes,
       policyTypeTrendRes,
       ncbResetRes,
+      vintageRes,
+      trajectoryRes,
     ] = await Promise.all([
       // 1. Executive KPIs
       gate(() => db.execute(sql.raw(`
@@ -353,23 +355,7 @@ export async function GET(request: Request) {
         ORDER BY month_key ASC
       `))),
 
-      // 15. Claim incidence, via NCB reset.
-      //
-      // There is NO insurance claims data anywhere in this database — the *_warranty_claim_* tables
-      // are vehicle warranty, a different thing entirely, and the insurer holds the real claims
-      // ledger. But No Claim Bonus is reset to zero when a customer claims, and
-      // current_ncb_percentage is 100% populated on every own-damage row. So a vehicle whose NCB
-      // FELL between two consecutive own-damage policies almost certainly claimed in between.
-      //
-      // Two exclusions make it honest:
-      //   - own-damage rows only (od_tenure <> '0'); a third-party top-up carries no NCB
-      //   - renewals where cover had lapsed more than 90 days are dropped, because a long break
-      //     kills the NCB by itself and would otherwise be counted as a claim
-      //
-      // The LAG runs over the vehicle's FULL history and the filter is applied afterwards. Putting
-      // the filter inside the window instead looks correct and is not: with year=2026 selected, the
-      // previous policy falls outside the window, every prev_ncb is NULL, and the card reports
-      // "0 of 0" — measured. The filter chooses which renewals to COUNT, never what to compare against.
+      // 15. Claim incidence, via NCB reset
       gate(() => skipIf(
         hasCol(brand, 'currentNcbPercentage'),
         () => db.execute(sql.raw(`
@@ -393,6 +379,42 @@ export async function GET(request: Request) {
         FROM ev JOIN scope s ON s.id = ev.id
       `)),
       )),
+
+      // 16. Renewal Depth & Customer Lifetime Vintage Sequence (1st Policy to 6th+ Renewal)
+      gate(() => db.execute(sql.raw(`
+        WITH vehicle_policies AS (
+          SELECT 
+            ${C('chassisNo')} as chassis,
+            ROW_NUMBER() OVER (PARTITION BY UPPER(TRIM(${C('chassisNo')})) ORDER BY ${issueDate} ASC, id ASC) as policy_seq
+          FROM ${tableName}
+          WHERE ${C('chassisNo')} IS NOT NULL AND TRIM(${C('chassisNo')}) != '' AND ${issueDate} IS NOT NULL
+        )
+        SELECT 
+          policy_seq::int as sequence,
+          COUNT(*)::int as count_policies,
+          COUNT(DISTINCT chassis)::int as unique_vehicles
+        FROM vehicle_policies
+        GROUP BY policy_seq
+        ORDER BY policy_seq ASC
+        LIMIT 7
+      `))),
+
+      // 17. Month-Wise Policy Trajectory with New vs Renewal split (Jan 2025 forward)
+      gate(() => db.execute(sql.raw(`
+        SELECT 
+          to_char(${issueDate}, 'YYYY-MM') as month_key,
+          to_char(${issueDate}, 'Mon YYYY') as month_label,
+          COUNT(*)::int as policies,
+          ${countEq('policyType', PT_NEW)} as new_count,
+          ${countEq('policyType', PT_RENEWAL)} as renewal_count,
+          ${countEq('policyType', PT_ROLLOVER)} as rollover_count,
+          ${sumOr0('grossPremium')} as gross_premium,
+          ${sumOr0('netPremium')} as net_premium
+        FROM ${tableName}
+        WHERE ${issueDate} IS NOT NULL AND ${issueDate} >= '2024-01-01'
+        GROUP BY month_key, month_label
+        ORDER BY month_key ASC
+      `))),
     ])
 
     const kpiData = kpisRes[0] || {}
@@ -416,11 +438,73 @@ export async function GET(request: Request) {
 
     const addonsData = addonRes[0] || {}
 
+    // Process Month-Wise Trajectory & Same-Month-Last-Year YoY Comparison
+    const trajectoryRaw = Array.isArray(trajectoryRes) ? trajectoryRes : (trajectoryRes as any)?.rows || []
+    const trajectoryMap = new Map<string, any>()
+    trajectoryRaw.forEach((r: any) => {
+      trajectoryMap.set(r.month_key, {
+        monthKey: r.month_key,
+        monthLabel: r.month_label,
+        policies: safeNum(r.policies),
+        newCount: safeNum(r.new_count),
+        renewalCount: safeNum(r.renewal_count),
+        rolloverCount: safeNum(r.rollover_count),
+        grossPremium: safeNum(r.gross_premium),
+        netPremium: safeNum(r.net_premium),
+      })
+    })
+
+    const monthlyTrajectory = Array.from(trajectoryMap.values())
+      .filter((r) => r.monthKey >= '2025-01')
+      .map((r) => {
+        const [y, m] = r.monthKey.split('-').map(Number)
+        const priorYearKey = `${y - 1}-${String(m).padStart(2, '0')}`
+        const prior = trajectoryMap.get(priorYearKey)
+        const priorPolicies = prior ? prior.policies : null
+        const priorGrossPremium = prior ? prior.grossPremium : null
+        const yoyPoliciesDelta = priorPolicies !== null ? r.policies - priorPolicies : null
+        const yoyPoliciesGrowthPct = priorPolicies !== null && priorPolicies > 0
+          ? ((r.policies - priorPolicies) / priorPolicies) * 100
+          : null
+        const yoyPremiumGrowthPct = priorGrossPremium !== null && priorGrossPremium > 0
+          ? ((r.grossPremium - priorGrossPremium) / priorGrossPremium) * 100
+          : null
+
+        return {
+          ...r,
+          priorYearKey,
+          priorPolicies,
+          priorGrossPremium,
+          yoyPoliciesDelta,
+          yoyPoliciesGrowthPct,
+          yoyPremiumGrowthPct,
+        }
+      })
+
+    // Process Renewal Depth Vintages
+    const vintageRaw = Array.isArray(vintageRes) ? vintageRes : (vintageRes as any)?.rows || []
+    const sequenceLabels: Record<number, string> = {
+      1: '1st Policy (New Purchase)',
+      2: '1st Renewal (2nd Year)',
+      3: '2nd Renewal (3rd Year)',
+      4: '3rd Renewal (4th Year)',
+      5: '4th Renewal (5th Year)',
+      6: '5th Renewal (6th Year)',
+      7: '6th+ Renewal (7th+ Year)',
+    }
+    const renewalDepth = vintageRaw.map((v: any) => {
+      const seq = Number(v.sequence)
+      return {
+        sequence: seq,
+        label: sequenceLabels[seq] || `${seq - 1}th Renewal`,
+        policies: safeNum(v.count_policies),
+        uniqueVehicles: safeNum(v.unique_vehicles),
+      }
+    })
+
     return NextResponse.json({
       type: brandId,
       brand: brandId,
-      // The client keys "hide this card / tab / dropdown" off these, so a brand never renders a
-      // metric as 0 when the truth is that its feed has no such column.
       capabilities: brand.capabilities,
       gapDisclosure: brand.gapDisclosure,
       summary: {
@@ -449,6 +533,8 @@ export async function GET(request: Request) {
           minDate: kpiData.min_date,
           maxDate: kpiData.max_date,
         },
+        renewalDepth,
+        monthlyTrajectory,
         monthlyTrend: monthlyTrendRes.map((r: any) => ({
           monthKey: r.month_key,
           monthLabel: r.month_label,

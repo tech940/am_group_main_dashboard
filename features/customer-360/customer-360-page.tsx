@@ -49,6 +49,11 @@ import {
   MessageSquare,
   LayoutGrid,
   List,
+  Flag,
+  Truck,
+  Store,
+  ArrowUpDown,
+  ChevronDown,
 } from 'lucide-react'
 import type { KiaCustomerGaps, KiaCustomerListResult, KiaCustomerProfile, KiaCustomerSummary } from '@/lib/kia/customer-profile/reader'
 import type { BrandCapabilities, CustomerBrand } from '@/lib/customer-360/brands'
@@ -259,6 +264,41 @@ export function ExecutiveAvatar({
       <span>{initials}</span>
     </div>
   )
+}
+
+/**
+ * A rupee figure, or null when we hold no price.
+ *
+ * ⚠️ Returns NULL rather than picking its own "not available" wording, so every call site states
+ * what absence means in its own context — an unbilled workshop visit, a brand with no workshop
+ * link, and a policy with no premium recorded are three different facts and should not share a
+ * phrase.
+ *
+ * ⚠️ Do NOT swap this for formatCurrency in components/petty-cash/pc-shared.tsx. That one does
+ * `Number.isFinite(amount) ? amount : 0`, so it renders null and undefined as a confident Rs 0 —
+ * which on this screen would tell an employee that 2,398 real workshop visits were free.
+ */
+function fmtMoney(value: number | null | undefined): string | null {
+  if (value === null || value === undefined) return null
+  const parsed = Number(value)
+  // Below a rupee is a feed artefact (labour is stored as 0.01 on parts-only jobs), and at zero
+  // decimal places it would print a misleading "₹0".
+  if (!Number.isFinite(parsed) || parsed < 1) return null
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+  }).format(parsed)
+}
+
+/** Compact rupees for a headline figure, where the exact number goes in a title attribute. */
+function fmtMoneyCompact(value: number | null | undefined): string | null {
+  if (value === null || value === undefined) return null
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 1) return null
+  if (parsed >= 10000000) return `₹${(parsed / 10000000).toFixed(2)} Cr`
+  if (parsed >= 100000) return `₹${(parsed / 100000).toFixed(2)} L`
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+  }).format(parsed)
 }
 
 function fmtDate(value: string | null) {
@@ -874,11 +914,8 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
         )}
       </div>
 
-      {/* ========================================================================= */}
-      {/* CUSTOMER 360 DOSSIER DRAWER                                               */}
-      {/* ========================================================================= */}
       <Dialog open={Boolean(openKey)} onOpenChange={(open) => { if (!open) setOpenKey(null) }}>
-        <DialogContent className="fixed inset-y-0 !left-0 sm:!left-auto !right-0 !top-0 z-50 !flex min-w-0 h-dvh max-h-dvh w-full max-w-full sm:max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l border-slate-200 bg-slate-50 p-0 shadow-2xl duration-300 sm:!w-[min(940px,calc(100vw-2rem))] sm:rounded-l-2xl">
+        <DialogContent className="fixed inset-y-0 !left-0 sm:!left-auto !right-0 !top-0 z-50 !flex min-w-0 h-dvh max-h-dvh w-full max-w-full sm:max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l border-slate-200 bg-slate-50 p-0 shadow-2xl duration-300 sm:!w-[min(880px,calc(100vw-1rem))]">
           <DialogHeader className="sr-only">
             <DialogTitle>{profile.data?.name || 'Customer Profile'}</DialogTitle>
           </DialogHeader>
@@ -1033,58 +1070,326 @@ function VehicleThumbnail({ model, className }: { model?: string | null; classNa
   )
 }
 
-function formatStreamDate(dateStr: string | null) {
-  if (!dateStr) return { day: '—', monthYear: '—' }
+function formatRoadwayDate(dateStr: string | null) {
+  if (!dateStr) return '—'
   const parts = dateStr.split('-')
-  if (parts.length !== 3) return { day: dateStr, monthYear: '' }
+  if (parts.length !== 3) return dateStr
   const [y, m, d] = parts
   const date = new Date(Number(y), Number(m) - 1, Number(d))
-  if (Number.isNaN(date.getTime())) return { day: dateStr, monthYear: '' }
+  if (Number.isNaN(date.getTime())) return dateStr
   const day = date.toLocaleDateString('en-IN', { day: 'numeric' })
-  const monthYear = date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
-  return { day, monthYear }
+  const month = date.toLocaleDateString('en-IN', { month: 'short' })
+  const year = date.toLocaleDateString('en-IN', { year: 'numeric' })
+  return `${day} ${month} ${year}`
 }
 
-function getStreamItemVisuals(item: TimelineEvent) {
+function getRoadwayVisuals(item: TimelineEvent, index: number) {
   const t = item.title.toLowerCase()
-  if (item.category === 'insurance') {
+  const numStr = String(index + 1).padStart(2, '0')
+
+  // 1. Insurance (Check first to avoid generic 'started' match)
+  if (item.category === 'insurance' || t.includes('insurance') || t.includes('policy')) {
+    const isExpiry = t.includes('expire') || t.includes('lapsed')
     return {
-      icon: Shield,
+      num: numStr,
+      icon: isExpiry ? ShieldAlert : ShieldCheck,
+      iconBoxCls: 'bg-[#134E4A] text-white',
       badgeLabel: 'Insurance',
-      badgeCls: 'bg-blue-50 text-blue-600 border border-blue-100',
-      iconCls: 'border-blue-200 text-blue-600 bg-blue-50/50',
+      badgeCls: 'bg-teal-50/80 text-teal-800 border border-teal-200/70',
     }
   }
-  if (item.category === 'service') {
+
+  // 2. Workshop Service
+  if (item.category === 'service' || t.includes('service') || t.includes('workshop') || t.includes('job card')) {
+    const isVisit = t.includes('visit') || t.includes('checkup')
     return {
-      icon: Wrench,
+      num: numStr,
+      icon: isVisit ? Car : Wrench,
+      iconBoxCls: isVisit ? 'bg-[#334155] text-white' : 'bg-[#9A3412] text-white',
       badgeLabel: 'Workshop Service',
-      badgeCls: 'bg-slate-100 text-slate-600 border border-slate-200',
-      iconCls: 'border-slate-200 text-slate-600 bg-slate-50',
+      badgeCls: 'bg-amber-50/80 text-amber-800 border border-amber-200/70',
     }
   }
-  if (t.includes('delivered') || t.includes('delivery')) {
+
+  // 3. Payments
+  if (t.includes('payment') || t.includes('paid') || t.includes('receipt') || t.includes('advance') || t.includes('deposit')) {
     return {
-      icon: Car,
+      num: numStr,
+      icon: CreditCard,
+      iconBoxCls: 'bg-[#1E3A8A] text-white',
       badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-blue-50/60 text-blue-700 border border-blue-100',
-      iconCls: 'border-slate-200 text-slate-600 bg-slate-50',
+      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
     }
   }
-  if (t.includes('test drive')) {
+
+  // 4. Test Drive
+  if (t.includes('test drive') || t.includes('demo')) {
     return {
+      num: numStr,
       icon: Compass,
+      iconBoxCls: 'bg-[#065F46] text-white',
       badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-blue-50/60 text-blue-700 border border-blue-100',
-      iconCls: 'border-slate-200 text-slate-600 bg-slate-50',
+      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
     }
   }
-  return {
-    icon: MessageSquare,
-    badgeLabel: 'Sales & Delivery',
-    badgeCls: 'bg-blue-50/60 text-blue-700 border border-blue-100',
-    iconCls: 'border-slate-200 text-slate-600 bg-slate-50',
+
+  // 5. Lost / Cancelled Enquiry
+  if (t.includes('lost') || t.includes('cancelled') || t.includes('dropped')) {
+    return {
+      num: numStr,
+      icon: FileText,
+      iconBoxCls: 'bg-[#92400E] text-white',
+      badgeLabel: 'Sales & Delivery',
+      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
+    }
   }
+
+  // 6. Delivery
+  if (t.includes('delivered') || t.includes('delivery') || t.includes('handover')) {
+    return {
+      num: numStr,
+      icon: Truck,
+      iconBoxCls: 'bg-[#312E81] text-white',
+      badgeLabel: 'Sales & Delivery',
+      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
+    }
+  }
+
+  // 7. Vehicle Invoiced / Sale Completed
+  if (t.includes('sale') || t.includes('completed') || t.includes('invoice') || t.includes('invoiced')) {
+    return {
+      num: numStr,
+      icon: Building2,
+      iconBoxCls: 'bg-[#1E293B] text-white',
+      badgeLabel: 'Sales & Delivery',
+      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
+    }
+  }
+
+  // 8. Booking Created
+  if (t.includes('booking') || t.includes('allotment')) {
+    return {
+      num: numStr,
+      icon: Calendar,
+      iconBoxCls: 'bg-[#1E40AF] text-white',
+      badgeLabel: 'Sales & Delivery',
+      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
+    }
+  }
+
+  // 9. Enquiry Created / Lead
+  if (t.includes('enquiry') || t.includes('lead') || t.includes('contact')) {
+    return {
+      num: numStr,
+      icon: MessageSquare,
+      iconBoxCls: 'bg-[#1D4ED8] text-white',
+      badgeLabel: 'Sales & Delivery',
+      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
+    }
+  }
+
+  // 10. Journey Started
+  if (t.includes('journey') || t.includes('start')) {
+    return {
+      num: numStr,
+      icon: Flag,
+      iconBoxCls: 'bg-[#2563EB] text-white',
+      badgeLabel: 'Sales & Delivery',
+      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
+    }
+  }
+
+  // Fallback
+  return {
+    num: numStr,
+    icon: FileText,
+    iconBoxCls: 'bg-[#334155] text-white',
+    badgeLabel: 'Sales & Delivery',
+    badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
+  }
+}
+
+function MiniCarGraphic({ color = '#3B82F6', className = 'w-10 h-6' }: { color?: string; className?: string }) {
+  return (
+    <svg viewBox="0 0 70 36" fill="none" className={cn('drop-shadow-xs', className)} xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 22C8 22 12 16 18 14C24 12 30 6 42 6C54 6 60 12 64 16C68 18 70 20 70 24C70 26 68 27 66 27H58C56 22 52 18 46 18C40 18 36 22 34 27H22C20 22 16 18 10 18C6 18 3 20 1 23C0 24 0 25 0 26C0 27 1 27 2 27H4C4 26 4 25 4 24C4 22 6 22 8 22Z" fill={color} />
+      <circle cx="10" cy="26" r="5" fill="#1E293B" />
+      <circle cx="10" cy="26" r="2.5" fill="#CBD5E1" />
+      <circle cx="46" cy="26" r="5" fill="#1E293B" />
+      <circle cx="46" cy="26" r="2.5" fill="#CBD5E1" />
+      <path d="M30 9L20 16H30V9Z" fill="#E2E8F0" />
+      <path d="M33 9H44V16H33V9Z" fill="#E2E8F0" />
+      <path d="M47 9C52 9 58 12 60 16H47V9Z" fill="#E2E8F0" />
+    </svg>
+  )
+}
+
+function RoadsideTree({ className = 'w-5 h-8' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 36" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="12" cy="14" rx="10" ry="13" fill="#22C55E" opacity="0.9" />
+      <ellipse cx="12" cy="12" rx="7" ry="10" fill="#16A34A" />
+      <rect x="10" y="24" width="4" height="12" rx="1" fill="#78350F" />
+    </svg>
+  )
+}
+
+function InsuranceLandmark() {
+  return (
+    <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-teal-50/90 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 shadow-2xs">
+      <div className="h-8 w-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs">
+        <ShieldCheck className="h-5 w-5" />
+      </div>
+      <span className="text-[9px] font-black uppercase text-teal-800 dark:text-teal-300 tracking-wider mt-1">Insurance</span>
+    </div>
+  )
+}
+
+function WorkshopLandmark() {
+  return (
+    <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-amber-50/90 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 shadow-2xs">
+      <div className="h-8 w-8 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-xs">
+        <Wrench className="h-5 w-5" />
+      </div>
+      <span className="text-[9px] font-black uppercase text-amber-800 dark:text-amber-300 tracking-wider mt-1">Workshop</span>
+    </div>
+  )
+}
+
+function DealershipLandmark() {
+  return (
+    <div className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900 text-white border border-slate-800 shadow-sm">
+      <div className="h-7 w-7 rounded-lg bg-white/10 text-white flex items-center justify-center">
+        <Building2 className="h-4 w-4" />
+      </div>
+      <span className="text-[9px] font-black uppercase text-slate-200 tracking-wider mt-1">Dealership</span>
+    </div>
+  )
+}
+
+function FinishFlagLandmark() {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-wider shadow-sm border border-slate-800">
+      <Flag className="h-4 w-4 text-amber-400 fill-amber-400" />
+      <span>Finish Line</span>
+    </div>
+  )
+}
+
+function ActivityEventHoverCard({
+  item,
+  visuals,
+  onFocusVin,
+}: {
+  item: TimelineEvent
+  visuals: ReturnType<typeof getRoadwayVisuals>
+  onFocusVin: (vin: string | null) => void
+}) {
+  const [copied, setCopied] = useState(false)
+  const Icon = visuals.icon
+
+  const copyDetails = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const metaEntries = Object.entries(item.metadata || {})
+    const lines = [
+      `--- EVENT DETAIL: ${item.title.toUpperCase()} ---`,
+      `Milestone: ${visuals.num} - ${item.title}`,
+      `Category: ${CATEGORY_LABEL[item.category] || item.category}`,
+      `Date: ${formatRoadwayDate(item.date)} (${item.date})`,
+      item.reference ? `Reference No: ${item.reference}` : '',
+      item.vin ? `VIN: ${item.vin}` : '',
+      item.detail ? `Summary: ${item.detail}` : '',
+      ...metaEntries.map(([k, v]) => `${k}: ${v ?? '—'}`),
+    ].filter(Boolean)
+
+    navigator.clipboard.writeText(lines.join('\n'))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const entries = Object.entries(item.metadata || {}).filter(
+    ([_, v]) => v !== null && v !== undefined && v !== ''
+  )
+
+  return (
+    <div className="w-72 sm:w-80 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl p-3 space-y-2 select-text text-left">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center shrink-0 shadow-2xs", visuals.iconBoxCls)}>
+            <Icon className="h-3.5 w-3.5 stroke-[2]" />
+          </div>
+          <div className="min-w-0">
+            <span className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 block">
+              Step {visuals.num} • {formatRoadwayDate(item.date)}
+            </span>
+            <h4 className="text-xs font-extrabold text-slate-900 dark:text-slate-100 truncate">
+              {item.title}
+            </h4>
+          </div>
+        </div>
+        <span className={cn("px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0", visuals.badgeCls)}>
+          {visuals.badgeLabel}
+        </span>
+      </div>
+
+      {/* Summary */}
+      {item.detail && (
+        <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium leading-normal bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+          {item.detail}
+        </p>
+      )}
+
+      {/* Key-Value Breakdown */}
+      <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+        {item.reference && (
+          <div className="p-1.5 rounded-md bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+            <span className="text-[8px] font-bold uppercase text-slate-400 block">Reference</span>
+            <span className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate block">#{item.reference}</span>
+          </div>
+        )}
+        {item.vin && (
+          <div className="p-1.5 rounded-md bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+            <span className="text-[8px] font-bold uppercase text-slate-400 block">VIN</span>
+            <span className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate block">{item.vin}</span>
+          </div>
+        )}
+        {entries.slice(0, 6).map(([k, v]) => (
+          <div key={k} className="p-1.5 rounded-md bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+            <span className="text-[8px] font-bold uppercase text-slate-400 block truncate" title={k}>{k}</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block" title={String(v)}>{String(v)}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Action Footer */}
+      <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+        {item.vin ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onFocusVin(item.vin)
+            }}
+            className="inline-flex items-center gap-1 text-[10px] font-bold text-[var(--dashboard-primary)] hover:underline cursor-pointer"
+          >
+            <Car className="h-3 w-3" /> Focus Garage
+          </button>
+        ) : (
+          <span className="text-[9px] font-medium text-slate-400">Click for full record</span>
+        )}
+
+        <button
+          type="button"
+          onClick={copyDetails}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+        >
+          {copied ? <Check className="h-2.5 w-2.5 text-emerald-600" /> : <Copy className="h-2.5 w-2.5 text-slate-400" />}
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function ActivityEventDeepDive({
@@ -1201,16 +1506,249 @@ function ActivityEventDeepDive({
   )
 }
 
+function ActivityStreamRoadway({
+  events,
+  expandedEventId,
+  onToggleExpand,
+  onFocusVin,
+}: {
+  events: TimelineEvent[]
+  expandedEventId: string | null
+  onToggleExpand: (id: string | null) => void
+  onFocusVin: (vin: string | null) => void
+}) {
+  const [hoveredEventId, setHoveredEventId] = useState<string | null>(null)
+
+  // Chunk events into rows of 4 cards
+  const chunkSize = 4
+  const rows: { index: number; items: { item: TimelineEvent; originalIdx: number }[] }[] = []
+  for (let i = 0; i < events.length; i += chunkSize) {
+    const slice = events.slice(i, i + chunkSize).map((item, localIdx) => ({
+      item,
+      originalIdx: i + localIdx,
+    }))
+    rows.push({
+      index: Math.floor(i / chunkSize),
+      items: slice,
+    })
+  }
+
+  // Determine which row contains the currently hovered event
+  const hoveredRowIndex = rows.findIndex((r) =>
+    r.items.some(
+      ({ item, originalIdx }) =>
+        `${item.date}-${item.title}-${item.vin ?? ''}-${item.reference ?? ''}-${originalIdx}` === hoveredEventId
+    )
+  )
+
+  if (events.length === 0) {
+    return (
+      <div className="p-8 text-center text-slate-400 text-xs font-medium bg-slate-50/60 rounded-2xl border border-slate-200/90">
+        No activity records match the selected category filter.
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative w-full rounded-2xl border border-slate-200/90 bg-gradient-to-b from-slate-50/80 via-white to-slate-50/80 p-3.5 sm:p-5 shadow-xs">
+      {/* Background Subtle Automotive Road Grid */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.035]"
+        style={{
+          backgroundImage: 'radial-gradient(#000 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
+      />
+
+      <div className="relative space-y-6 sm:space-y-8">
+        {rows.map((row) => {
+          const isReverse = row.index % 2 === 1
+          const isLastRow = row.index === rows.length - 1
+          const hasNextRow = row.index < rows.length - 1
+          const isThisRowHovered = row.index === hoveredRowIndex
+
+          // When row is reversed, we display items visually from right to left so the path meanders!
+          const displayItems = isReverse ? [...row.items].reverse() : row.items
+
+          return (
+            <div
+              key={row.index}
+              className="relative transition-all"
+              style={{ zIndex: isThisRowHovered ? 100 : 1 }}
+            >
+              {/* Continuous Dark Asphalt Road Track behind Cards */}
+              <div className="absolute inset-y-1/2 -translate-y-1/2 left-2 right-2 h-7 sm:h-8 bg-slate-800 dark:bg-slate-900 rounded-xl border-y border-slate-950/70 flex items-center shadow-sm pointer-events-none">
+                {/* Central Dashed White Road Line */}
+                <div className="w-full border-t border-dashed border-white/95" />
+              </div>
+
+              {/* Decorative mini cars cruising on road */}
+              {row.index === 0 && (
+                <div className="absolute top-1/2 -translate-y-1/2 left-1/4 z-0 pointer-events-none hidden md:block">
+                  <MiniCarGraphic color="#94A3B8" className="w-7 h-4 -rotate-2" />
+                </div>
+              )}
+              {row.index === 1 && (
+                <div className="absolute top-1/2 -translate-y-1/2 right-1/4 z-0 pointer-events-none hidden md:block">
+                  <MiniCarGraphic color="#CBD5E1" className="w-7 h-4 scale-x-[-1]" />
+                </div>
+              )}
+              {row.index === 2 && (
+                <div className="absolute top-1/2 -translate-y-1/2 left-1/3 z-0 pointer-events-none hidden md:block">
+                  <MiniCarGraphic color="#94A3B8" className="w-7 h-4" />
+                </div>
+              )}
+
+              {/* Curved U-Turn Loop to Next Row */}
+              {hasNextRow && (
+                <div
+                  aria-hidden
+                  className={cn(
+                    "absolute top-1/2 z-0 hidden lg:block pointer-events-none drop-shadow-xs",
+                    isReverse
+                      ? "-left-3.5 w-10 h-[calc(100%+1.6rem)] sm:h-[calc(100%+2rem)] rounded-l-2xl border-l-[12px] border-y-[12px] border-slate-800 dark:border-slate-900"
+                      : "-right-3.5 w-10 h-[calc(100%+1.6rem)] sm:h-[calc(100%+2rem)] rounded-r-2xl border-r-[12px] border-y-[12px] border-slate-800 dark:border-slate-900"
+                  )}
+                />
+              )}
+
+              {/* Grid of Cards in this Row */}
+              <div
+                className={cn(
+                  "relative z-10 grid gap-3 sm:gap-3.5",
+                  displayItems.length === 1
+                    ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                    : displayItems.length === 2
+                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+                    : displayItems.length === 3
+                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+                    : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+                )}
+              >
+                {displayItems.map(({ item, originalIdx }, colIdx) => {
+                  const eventId = `${item.date}-${item.title}-${item.vin ?? ''}-${item.reference ?? ''}-${originalIdx}`
+                  const visuals = getRoadwayVisuals(item, originalIdx)
+                  const Icon = visuals.icon
+                  const isExpanded = expandedEventId === eventId
+                  const isHovered = hoveredEventId === eventId
+
+                  // Horizontal alignment for the popover so it never clips off-screen
+                  const popoverAlign =
+                    colIdx === 0
+                      ? "left-0"
+                      : colIdx === displayItems.length - 1
+                      ? "right-0"
+                      : "left-1/2 -translate-x-1/2"
+
+                  return (
+                    <div
+                      key={eventId}
+                      className="relative transition-all"
+                      style={{ zIndex: isHovered ? 200 : 1 }}
+                      onMouseEnter={() => setHoveredEventId(eventId)}
+                      onMouseLeave={() => setHoveredEventId((cur) => (cur === eventId ? null : cur))}
+                    >
+                      {/* Compact Milestone Card */}
+                      <div
+                        onClick={() => onToggleExpand(isExpanded ? null : eventId)}
+                        className={cn(
+                          "w-full bg-white dark:bg-slate-800 rounded-xl border transition-all duration-200 p-2.5 sm:p-3 shadow-xs hover:shadow-lg cursor-pointer flex flex-col justify-between select-none group min-h-[112px] sm:min-h-[118px]",
+                          isExpanded
+                            ? "border-[var(--dashboard-primary)] ring-2 ring-[var(--dashboard-primary)]/20 shadow-md bg-blue-50/20"
+                            : "border-slate-200/90 dark:border-slate-700/80 hover:border-slate-400 hover:-translate-y-0.5"
+                        )}
+                      >
+                        {/* Card Header: Icon Badge + Step Number + Date */}
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center font-black text-xs shadow-2xs shrink-0 group-hover:scale-105 transition-transform", visuals.iconBoxCls)}>
+                              <Icon className="h-3.5 w-3.5 stroke-[2]" />
+                            </div>
+                            <span className="font-extrabold text-xs font-sans tabular-nums text-slate-800 dark:text-slate-200">
+                              {visuals.num}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-400 shrink-0">
+                            {formatRoadwayDate(item.date)}
+                          </span>
+                        </div>
+
+                        {/* Card Body: Title & Category Pill */}
+                        <div className="my-1 space-y-1">
+                          <h4 className="font-black text-xs text-slate-900 dark:text-slate-100 tracking-tight leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
+                            {item.title}
+                          </h4>
+                          <div>
+                            <span className={cn("inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold", visuals.badgeCls)}>
+                              {visuals.badgeLabel}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Card Footer: Subtitle / Model / RO details */}
+                        <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 text-[10px] font-medium text-slate-500 dark:text-slate-400 line-clamp-1 leading-normal">
+                          {item.detail || [item.vin, item.reference].filter(Boolean).join(' • ') || 'Milestone recorded'}
+                        </div>
+                      </div>
+
+                      {/* Floating Hover Card Detail Popover (Attached right over/under this card) */}
+                      {isHovered && (
+                        <div
+                          className={cn(
+                            "absolute z-[9999] pointer-events-auto animate-in fade-in zoom-in-95 duration-100 drop-shadow-2xl",
+                            row.index === 0 ? "top-full mt-2" : "bottom-full mb-2",
+                            popoverAlign
+                          )}
+                        >
+                          <ActivityEventHoverCard
+                            item={item}
+                            visuals={visuals}
+                            onFocusVin={onFocusVin}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+
+                {/* Roadside Landmarks / Finish Line at row edges */}
+                {isLastRow && (
+                  <div className="hidden lg:flex items-center gap-2 pl-1 self-center">
+                    <FinishFlagLandmark />
+                    <DealershipLandmark />
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; caps: BrandCapabilities; onClose: () => void }) {
   const [timelineFocus, setTimelineFocus] = useState<{ category: TimelineEvent['category'] | 'all'; vin: string | null }>({
     category: 'all',
     vin: null,
   })
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null)
-  const [visibleCount, setVisibleCount] = useState(15)
+  const [viewMode, setViewMode] = useState<'roadway' | 'list'>('roadway')
+  const [sortOrder, setSortOrder] = useState<'oldest_first' | 'newest_first'>('oldest_first')
+  const [visibleCount, setVisibleCount] = useState(20)
 
-  const events = profile.timeline || []
+  const rawEvents = profile.timeline || []
   const categories = profile.timelineCategories || []
+
+  // Apply sorting
+  const events = useMemo(() => {
+    const arr = [...rawEvents]
+    if (sortOrder === 'oldest_first') {
+      return arr.sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    }
+    return arr.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+  }, [rawEvents, sortOrder])
 
   const activeCategory = timelineFocus.category
   const filteredEvents = events.filter((e) =>
@@ -1218,6 +1756,18 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
   )
 
   const totalServices = profile.vehicles.reduce((acc, v) => acc + (v.serviceCount || 0), 0)
+
+  const spend = profile.vehicles.reduce(
+    (acc, v) => {
+      if (v.serviceSpend !== null && v.serviceSpend !== undefined) acc.total += v.serviceSpend
+      acc.priced += v.servicesBilled || 0
+      acc.unpriced += v.servicesUnbilled || 0
+      const premium = v.insurance?.grossPremium
+      if (premium !== null && premium !== undefined) acc.total += premium
+      return acc
+    },
+    { total: 0, priced: 0, unpriced: 0 },
+  )
 
   return (
     <div className="bg-white min-h-full flex flex-col">
@@ -1238,91 +1788,59 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
             type="button"
             onClick={onClose}
             className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            aria-label="Close"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
       </div>
 
-      <div className="p-6 sm:p-8 space-y-6 flex-1">
-        {/* ── HERO IDENTITY & METRIC CARDS ────────────────────────────────────── */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          {/* Avatar & Customer Name */}
-          <div className="flex items-center gap-4">
-            <div className="h-16 w-16 sm:h-18 sm:w-18 rounded-full bg-[var(--dashboard-primary)] flex items-center justify-center text-white shrink-0 shadow-sm border border-white/20">
-              <User className="h-8 w-8 stroke-[1.5]" />
+      <div className="p-4 sm:p-6 space-y-6 flex-1">
+        {/* ── CUSTOMER HERO CARD ───────────────────────────────────────────────── */}
+        <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-md relative overflow-hidden">
+          <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/5" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/10 text-white border border-white/20">
+                  {(profile as any).brand ? String((profile as any).brand).toUpperCase() : 'CUSTOMER DOSSIER'}
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  ID: {profile.customerId || profile.key}
+                </span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">{profile.name}</h2>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-300 pt-1">
+                {profile.phone && (
+                  <span className="flex items-center gap-1">
+                    <Phone className="h-3.5 w-3.5 text-slate-400" /> {profile.phone}
+                  </span>
+                )}
+                {profile.email && (
+                  <span className="flex items-center gap-1">
+                    <Mail className="h-3.5 w-3.5 text-slate-400" /> {profile.email}
+                  </span>
+                )}
+                {profile.city && (
+                  <span className="flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5 text-slate-400" /> {profile.city}
+                  </span>
+                )}
+              </div>
             </div>
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight uppercase font-sans">
-                {profile.name || 'Unknown Customer'}
-              </h2>
-              <p className="text-xs font-medium text-slate-500 mt-1 flex items-center gap-1.5">
-                <span>{profile.city || 'JAMMU'}</span>
-                <span>•</span>
-                <span>Branch: <strong className="text-[var(--dashboard-primary)] font-bold">{profile.dealerCode || 'JK402'}</strong></span>
-              </p>
-            </div>
-          </div>
 
-          {/* 3 Metric Cards */}
-          <div className="grid grid-cols-3 gap-3 min-w-[280px] sm:min-w-[340px]">
-            <div className="p-3.5 rounded-xl border border-slate-200/90 bg-white text-center shadow-2xs">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">VEHICLES</span>
-              <span className="text-2xl font-black text-slate-900 font-sans tabular-nums mt-0.5 block">
-                {profile.vehicles.length}
+            {/* Total Paid / Relationship Summary */}
+            <div className="text-left sm:text-right bg-white/5 p-3.5 rounded-xl border border-white/10">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Total Spend Recorded
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-white block mt-0.5 font-sans tabular-nums">
+                {fmtMoney(spend.total) ?? '—'}
+              </span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                {profile.vehicles.length} Vehicle{profile.vehicles.length !== 1 ? 's' : ''} • {totalServices} Service{totalServices !== 1 ? 's' : ''}
               </span>
             </div>
-            <div className="p-3.5 rounded-xl border border-slate-200/90 bg-white text-center shadow-2xs">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">ENQUIRIES</span>
-              <span className="text-2xl font-black text-slate-900 font-sans tabular-nums mt-0.5 block">
-                {profile.enquiries.length}
-              </span>
-            </div>
-            <div className="p-3.5 rounded-xl border border-slate-200/90 bg-white text-center shadow-2xs">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">SERVICES</span>
-              <span className="text-2xl font-black text-slate-900 font-sans tabular-nums mt-0.5 block">
-                {totalServices}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* ── CONTACT STRIP (4 Mini Cards) ────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="p-3.5 rounded-xl border border-slate-200/80 bg-white shadow-2xs">
-            <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
-              <Phone className="h-3.5 w-3.5 text-slate-400" /> Phone
-            </span>
-            <span className="text-xs font-bold text-slate-900 font-sans tabular-nums block mt-1">
-              {caps.phone ? (profile.phone || '—') : <span className="text-slate-400 italic font-normal">Masked</span>}
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-xl border border-slate-200/80 bg-white shadow-2xs">
-            <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
-              <Mail className="h-3.5 w-3.5 text-slate-400" /> Email
-            </span>
-            <span className="text-xs font-bold text-slate-900 block mt-1 truncate">
-              {caps.phone ? (profile.email || '—') : <span className="text-slate-400 italic font-normal">Masked</span>}
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-xl border border-slate-200/80 bg-white shadow-2xs">
-            <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5 text-slate-400" /> City
-            </span>
-            <span className="text-xs font-bold text-slate-900 block mt-1 truncate">
-              {profile.city || '—'}
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-xl border border-slate-200/80 bg-white shadow-2xs">
-            <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
-              <Building2 className="h-3.5 w-3.5 text-slate-400" /> Outlet
-            </span>
-            <span className="text-xs font-bold text-slate-900 block mt-1">
-              {profile.dealerCode || '—'}
-            </span>
           </div>
         </div>
 
@@ -1385,7 +1903,7 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
                           VIN: {caps.vin ? v.vin : `${v.vin} (Masked)`}
                         </p>
 
-                        <div className="flex items-center gap-6 pt-1 text-xs">
+                        <div className="flex flex-wrap items-start gap-x-6 gap-y-2 pt-1 text-xs">
                           <div>
                             <span className="text-[10px] font-semibold text-slate-400 block">Insurance</span>
                             {!caps.insurance ? (
@@ -1410,6 +1928,30 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
                               {caps.service ? (v.lastServiceDate ? fmtDate(v.lastServiceDate) : 'Never Serviced') : 'Unlinked'}
                             </span>
                           </div>
+
+                          {caps.service && (
+                            <div>
+                              <span className="text-[10px] font-semibold text-slate-400 block">Service Spend</span>
+                              <span className="font-bold text-slate-900 block mt-0.5 font-sans tabular-nums">
+                                {fmtMoney(v.serviceSpend) ?? (
+                                  <span className="text-slate-400 italic font-normal">
+                                    {v.serviceCount > 0 ? 'Not billed' : '—'}
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          )}
+
+                          {caps.insurance && v.insurance && (
+                            <div>
+                              <span className="text-[10px] font-semibold text-slate-400 block">Premium</span>
+                              <span className="font-bold text-slate-900 block mt-0.5 font-sans tabular-nums">
+                                {fmtMoney(v.insurance.grossPremium) ?? (
+                                  <span className="text-slate-400 italic font-normal">Not recorded</span>
+                                )}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1434,138 +1976,238 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
           )}
         </div>
 
-        {/* ── ACTIVITY STREAM SECTION ──────────────────────────────────────────── */}
-        <div id="c360-timeline-section" className="space-y-3 pt-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* ── ACTIVITY STREAM SECTION (WINDING ROADWAY JOURNEY) ──────────────── */}
+        <div id="c360-timeline-section" className="space-y-4 pt-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                <Activity className="h-4 w-4 text-slate-600" />
-                ACTIVITY STREAM ({events.length})
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <Activity className="h-4 w-4 text-slate-600" />
+                  ACTIVITY STREAM ({filteredEvents.length})
+                </h3>
+              </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Click any event row to inspect full details and parameters from head to toe.
+                Hover over any milestone card to see its full breakdown, or click to open deep dive.
               </p>
             </div>
 
-            {/* Filter Pills */}
-            <div className="flex flex-wrap gap-1.5">
-              {(['all', ...categories] as const).map((cat) => {
-                const count = cat === 'all' ? events.length : events.filter((e) => e.category === cat).length
-                const isActive = activeCategory === cat
-                const label = cat === 'all' ? `All (${count})` : cat === 'sales' ? `Sales & Delivery (${count})` : cat === 'insurance' ? `Insurance (${count})` : `Workshop Service (${count})`
+            {/* Right Controls: Filters + Sort + View Switcher */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Category Filter Pills */}
+              <div className="flex flex-wrap gap-1">
+                {(['all', ...categories] as const).map((cat) => {
+                  const count = cat === 'all' ? events.length : events.filter((e) => e.category === cat).length
+                  const isActive = activeCategory === cat
+                  const label = cat === 'all' ? `All (${count})` : cat === 'sales' ? `Sales & Delivery (${count})` : cat === 'insurance' ? `Insurance (${count})` : `Workshop Service (${count})`
 
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setTimelineFocus((prev) => ({ ...prev, category: cat }))}
-                    className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer",
-                      isActive
-                        ? "bg-[var(--dashboard-primary)] text-white border-[var(--dashboard-primary)] shadow-2xs"
-                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                    )}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setTimelineFocus((prev) => ({ ...prev, category: cat }))}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer",
+                        isActive
+                          ? "bg-[var(--dashboard-primary)] text-white border-[var(--dashboard-primary)] shadow-2xs"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Sort Order Selector */}
+              <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-semibold shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setSortOrder('oldest_first')}
+                  className={cn(
+                    "px-2 py-1 rounded-md transition-colors cursor-pointer",
+                    sortOrder === 'oldest_first'
+                      ? "bg-slate-900 text-white font-bold"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                  title="Journey chronological order: 01 to N"
+                >
+                  Oldest First (01→N)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortOrder('newest_first')}
+                  className={cn(
+                    "px-2 py-1 rounded-md transition-colors cursor-pointer",
+                    sortOrder === 'newest_first'
+                      ? "bg-slate-900 text-white font-bold"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                  title="Newest first"
+                >
+                  Newest First
+                </button>
+              </div>
+
+              {/* View Mode Toggle: Roadway Map vs Classic List */}
+              <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('roadway')}
+                  className={cn(
+                    "p-1 rounded-md transition-colors cursor-pointer",
+                    viewMode === 'roadway' ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"
+                  )}
+                  title="Roadway Journey View"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className={cn(
+                    "p-1 rounded-md transition-colors cursor-pointer",
+                    viewMode === 'list' ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"
+                  )}
+                  title="Classic List View"
+                >
+                  <List className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Activity Stream Container */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white overflow-hidden shadow-2xs divide-y divide-slate-100">
-            {filteredEvents.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 text-xs font-medium">
-                No activity records match the selected category filter.
-              </div>
-            ) : (
-              filteredEvents.slice(0, visibleCount).map((item, idx) => {
-                const eventId = `${item.date}-${item.title}-${item.vin ?? ''}-${item.reference ?? ''}-${idx}`
-                const isExpanded = expandedEventId === eventId
-                const { day, monthYear } = formatStreamDate(item.date)
-                const visuals = getStreamItemVisuals(item)
-                const Icon = visuals.icon
+          {/* Render Active View: Roadway or List */}
+          {viewMode === 'roadway' ? (
+            <div className="space-y-4">
+              <ActivityStreamRoadway
+                events={filteredEvents}
+                expandedEventId={expandedEventId}
+                onToggleExpand={(id) => setExpandedEventId(id)}
+                onFocusVin={(vin) => setTimelineFocus((prev) => ({ ...prev, vin }))}
+              />
+
+              {/* Pinned Deep Dive Panel if a card is clicked */}
+              {expandedEventId && (() => {
+                const selectedItem = filteredEvents.find((_, idx) => {
+                  const ev = filteredEvents[idx]
+                  const eventId = `${ev.date}-${ev.title}-${ev.vin ?? ''}-${ev.reference ?? ''}-${idx}`
+                  return eventId === expandedEventId
+                }) || filteredEvents[0]
+
+                if (!selectedItem) return null
 
                 return (
-                  <div key={eventId} className="transition-colors">
-                    <div
-                      onClick={() => setExpandedEventId(isExpanded ? null : eventId)}
-                      className={cn(
-                        "flex items-center justify-between p-3.5 sm:p-4 hover:bg-slate-50/80 transition-all cursor-pointer group gap-3 select-none",
-                        isExpanded ? "bg-slate-50/60 border-l-4 border-l-[var(--dashboard-primary)] pl-2.5 sm:pl-3" : ""
-                      )}
-                    >
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        {/* Left Date Column */}
-                        <div className="w-14 sm:w-16 shrink-0 text-left pr-3 border-r border-slate-100">
-                          <div className="text-base font-black text-slate-900 leading-tight font-sans tabular-nums">
-                            {day}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-medium truncate">
-                            {monthYear}
-                          </div>
-                        </div>
-
-                        {/* Icon Circle */}
-                        <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shrink-0 border", visuals.iconCls)}>
-                          <Icon className="h-4 w-4 stroke-[1.75]" />
-                        </div>
-
-                        {/* Event Title & Subtitle */}
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs sm:text-sm font-bold text-slate-900 font-sans">
-                              {item.title}
-                            </span>
-                            <span className={cn("px-2 py-0.5 rounded text-[10px] font-semibold", visuals.badgeCls)}>
-                              {visuals.badgeLabel}
-                            </span>
-                            {isExpanded && (
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-[var(--dashboard-primary-soft)] text-[var(--dashboard-primary)] border border-[var(--dashboard-primary-border)]">
-                                Expanded
-                              </span>
-                            )}
-                          </div>
-
-                          <p className="text-[11px] text-slate-500 font-normal truncate flex items-center gap-1.5 flex-wrap">
-                            {item.detail}
-                            {item.reference && (
-                              <>
-                                <span>•</span>
-                                <span className="font-mono text-slate-400">#{item.reference}</span>
-                              </>
-                            )}
-                          </p>
-                        </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                        <span className="text-xs font-bold">Selected Milestone Deep Dive: {selectedItem.title}</span>
                       </div>
-
-                      {/* Right Chevron indicating expand state */}
-                      <ChevronRight
-                        className={cn(
-                          "h-4 w-4 transition-all shrink-0",
-                          isExpanded
-                            ? "rotate-90 text-[var(--dashboard-primary)] font-bold"
-                            : "text-slate-300 group-hover:text-slate-600 group-hover:translate-x-0.5"
-                        )}
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setExpandedEventId(null)}
+                        className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
+                      >
+                        ✕ Close
+                      </button>
                     </div>
-
-                    {/* Expandable Deep Dive Details (Head to Toe) */}
-                    {isExpanded && (
-                      <ActivityEventDeepDive
-                        item={item}
-                        onFocusVin={(vin) => setTimelineFocus((prev) => ({ ...prev, vin }))}
-                      />
-                    )}
+                    <ActivityEventDeepDive
+                      item={selectedItem}
+                      onFocusVin={(vin) => setTimelineFocus((prev) => ({ ...prev, vin }))}
+                    />
                   </div>
                 )
-              })
-            )}
-          </div>
+              })()}
+            </div>
+          ) : (
+            /* Classic List View */
+            <div className="rounded-2xl border border-slate-200/90 bg-white overflow-hidden shadow-2xs divide-y divide-slate-100">
+              {filteredEvents.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs font-medium">
+                  No activity records match the selected category filter.
+                </div>
+              ) : (
+                filteredEvents.slice(0, visibleCount).map((item, idx) => {
+                  const eventId = `${item.date}-${item.title}-${item.vin ?? ''}-${item.reference ?? ''}-${idx}`
+                  const isExpanded = expandedEventId === eventId
+                  const visuals = getRoadwayVisuals(item, idx)
+                  const Icon = visuals.icon
 
-          {/* Load More Button */}
-          {filteredEvents.length > visibleCount && (
+                  return (
+                    <div key={eventId} className="transition-colors">
+                      <div
+                        onClick={() => setExpandedEventId(isExpanded ? null : eventId)}
+                        className={cn(
+                          "flex items-center justify-between p-3.5 sm:p-4 hover:bg-slate-50/80 transition-all cursor-pointer group gap-3 select-none",
+                          isExpanded ? "bg-slate-50/60 border-l-4 border-l-[var(--dashboard-primary)] pl-2.5 sm:pl-3" : ""
+                        )}
+                      >
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          {/* Step Number & Date Column */}
+                          <div className="w-16 sm:w-20 shrink-0 text-left pr-3 border-r border-slate-100">
+                            <div className="text-xs font-black text-slate-900 font-mono">
+                              Step {visuals.num}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-medium truncate">
+                              {formatRoadwayDate(item.date)}
+                            </div>
+                          </div>
+
+                          {/* Icon Circle */}
+                          <div className={cn("h-8 w-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs", visuals.iconBoxCls)}>
+                            <Icon className="h-4 w-4 stroke-[2]" />
+                          </div>
+
+                          {/* Event Title & Subtitle */}
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs sm:text-sm font-bold text-slate-900 font-sans">
+                                {item.title}
+                              </span>
+                              <span className={cn("px-2 py-0.5 rounded text-[10px] font-semibold", visuals.badgeCls)}>
+                                {visuals.badgeLabel}
+                              </span>
+                            </div>
+
+                            <p className="text-[11px] text-slate-500 font-normal truncate flex items-center gap-1.5 flex-wrap">
+                              {item.detail}
+                              {item.reference && (
+                                <>
+                                  <span>•</span>
+                                  <span className="font-mono text-slate-400">#{item.reference}</span>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Right Chevron indicating expand state */}
+                        <ChevronRight
+                          className={cn(
+                            "h-4 w-4 transition-all shrink-0",
+                            isExpanded
+                              ? "rotate-90 text-[var(--dashboard-primary)] font-bold"
+                              : "text-slate-300 group-hover:text-slate-600 group-hover:translate-x-0.5"
+                          )}
+                        />
+                      </div>
+
+                      {/* Expandable Deep Dive Details (Head to Toe) */}
+                      {isExpanded && (
+                        <ActivityEventDeepDive
+                          item={item}
+                          onFocusVin={(vin) => setTimelineFocus((prev) => ({ ...prev, vin }))}
+                        />
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          )}
+
+          {/* Load More Button for List View */}
+          {viewMode === 'list' && filteredEvents.length > visibleCount && (
             <div className="pt-2 text-center">
               <button
                 type="button"

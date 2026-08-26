@@ -41,6 +41,35 @@ function num(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+/**
+ * A money value, or null when we genuinely hold no price.
+ *
+ * ⚠️ Zero is treated as ABSENT, and that is measured rather than assumed: ro_billing_report.total_amt
+ * has ZERO nulls across all 5,711 rows, and the 2,398 visits that were never billed store a literal
+ * 0. So an `IS NULL` test never fires, and a naive render shows 2,398 real visits as a confident
+ * "Rs 0" — which reads as "we serviced them free" and quietly destroys trust in every other figure
+ * on the screen.
+ *
+ * The conversion happens HERE, once, so no call site downstream has to know the feed's convention.
+ *
+ * ⚠️ Do NOT reuse this for kia_ew_report.kin_amt: on the "Free 4th & 5th Year" scheme rows a 0 there
+ * means genuinely free, the exact opposite convention.
+ */
+function money(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return parsed
+}
+
+/**
+ * NVI is the dealership's own new-vehicle inspection before handover, not a customer visit.
+ * 964 rows, billed on 0 of them.
+ */
+function isNvi(workType: string | null): boolean {
+  return String(workType || '').trim().toUpperCase() === 'NVI'
+}
+
 /** Postgres DATE arrives as a JS Date through this driver — String().slice() would give "Thu Jul 30". */
 function dateStr(value: unknown): string | null {
   if (!value) return null
@@ -603,14 +632,58 @@ export type KiaProfileVehicle = {
   deliveryDate: string | null
   insurance: {
     policyNo: string | null
+    /**
+     * The company that ACTUALLY covers the vehicle.
+     *
+     * ⚠️ Read from `insurancecompany` (1,438 of 1,438 rows), NOT `prev_ic_name`. That column is the
+     * PREVIOUS insurer — populated on just 44 rows, all of them renewals — so using it left the
+     * insurer blank on 97% of policies and, on the 44 it did fill, named the company the customer
+     * had LEFT: the profile said "ICICI Lombard" for a vehicle now covered by Cholamandalam MS.
+     */
     insurer: string | null
+    /** Who they were with before, on a renewal. Genuinely useful, but only present on 3% of rows. */
+    previousInsurer: string | null
+    /** 'New' or 'Renewal' — whether this customer has ever renewed with us before. */
+    policyType: string | null
+    /** 17 policies are cancelled and were previously rendered as live cover. */
+    cancelled: boolean
+    /** What the customer paid, inclusive of tax. Present on 100% of policies we hold. */
+    grossPremium: number | null
+    netPremium: number | null
     effectiveDate: string | null
     expiryDate: string | null
     lapsed: boolean
   } | null
   serviceCount: number
   lastServiceDate: string | null
-  services: { billDate: string | null; roDate: string | null; model: string | null; registration: string | null }[]
+  services: {
+    billDate: string | null
+    roDate: string | null
+    model: string | null
+    registration: string | null
+    /** Free Service / Paid Service / Running Repair / Accidental Repair / NVI / Test Drive. */
+    workType: string | null
+    advisor: string | null
+    /*
+     * NULL means "this visit was never billed" — 2,398 of 5,711 rows. The feed stores that as a
+     * literal 0, which is converted to null HERE, once, so no call site downstream has to know the
+     * difference between an unbilled visit and a free one. Tax-inclusive.
+     */
+    amount: number | null
+    labour: number | null
+    parts: number | null
+    tax: number | null
+    discount: number | null
+  }[]
+  /** Sum of billed visits only, and how many visits carry no price. Never coerce these together. */
+  serviceSpend: number | null
+  servicesBilled: number
+  servicesUnbilled: number
+  /**
+   * True when every workshop row for this vehicle is NVI — our own pre-delivery inspection.
+   * Such a vehicle has a service COUNT but has never actually been in for a customer visit.
+   */
+  nviOnly: boolean
   complaints: { complaintNo: string | null; date: string | null; closeDate: string | null; model: string | null }[]
 }
 
@@ -705,7 +778,9 @@ export async function getKiaCustomerProfile(
       ro.vehicle_reg_no AS registration_name,
       s.registration_name AS registered_owner,
       s.invoice_date, s.delivery_date,
-      ins.policyno, ins.prev_ic_name, ins.policy_effective_date, ins.policy_expiry_date
+      ins.policyno, ins.prev_ic_name, ins.insurancecompany, ins.policytype, ins.cancelled,
+      ins.policy_effective_date, ins.policy_expiry_date,
+      ins.grosspremium, ins.netpremium
     FROM scoped_sales s
     LEFT JOIN LATERAL (
       SELECT vehicle_reg_no FROM ro_billing_report
@@ -713,7 +788,9 @@ export async function getKiaCustomerProfile(
       ORDER BY bill_date DESC NULLS LAST LIMIT 1
     ) ro ON TRUE
     LEFT JOIN LATERAL (
-      SELECT policyno, prev_ic_name, policy_effective_date, policy_expiry_date
+      SELECT policyno, prev_ic_name, insurancecompany, policytype, cancelled,
+             policy_effective_date, policy_expiry_date,
+             grosspremium, netpremium
       FROM kia_insurance
       WHERE UPPER(BTRIM(vinno)) = UPPER(BTRIM(s.vin_number))
       ORDER BY policy_expiry_date DESC NULLS LAST, uploaded_at DESC NULLS LAST
@@ -767,10 +844,14 @@ export async function getKiaCustomerProfile(
         (SELECT vehicle_reg_no FROM ro_billing_report WHERE UPPER(BTRIM(vin)) = ${key.value}
          ORDER BY bill_date DESC NULLS LAST LIMIT 1) AS registration_name,
         NULL::date AS invoice_date, NULL::date AS delivery_date,
-        ins.policyno, ins.prev_ic_name, ins.policy_effective_date, ins.policy_expiry_date
+        ins.policyno, ins.prev_ic_name, ins.insurancecompany, ins.policytype, ins.cancelled,
+        ins.policy_effective_date, ins.policy_expiry_date,
+        ins.grosspremium, ins.netpremium
       FROM (SELECT 1) t
       LEFT JOIN LATERAL (
-        SELECT policyno, prev_ic_name, policy_effective_date, policy_expiry_date
+        SELECT policyno, prev_ic_name, insurancecompany, policytype, cancelled,
+               policy_effective_date, policy_expiry_date,
+               grosspremium, netpremium
         FROM kia_insurance WHERE UPPER(BTRIM(vinno)) = ${key.value}
         ORDER BY policy_expiry_date DESC NULLS LAST, uploaded_at DESC NULLS LAST LIMIT 1
       ) ins ON TRUE
@@ -784,7 +865,27 @@ export async function getKiaCustomerProfile(
   const [servicesResult, complaintsResult] = vins.length
     ? await Promise.all([
       db.execute(sql`
-        SELECT UPPER(BTRIM(vin)) AS vin, bill_date, ro_date, model, vehicle_reg_no
+        /*
+         * The money columns ride along on a statement that already runs, so per-visit pricing costs
+         * nothing extra against the pooler.
+         *
+         * ⚠️ total_amt is NEVER NULL — measured 0 nulls across all 5,711 rows. An unbilled visit
+         * stores a literal 0, so the "we do not hold a price" test is greater-than-zero, NOT IS NULL.
+         * A null
+         * check here would never fire and 2,398 visits would render as a confident Rs 0.
+         *
+         * ⚠️ total_amt is TAX-INCLUSIVE. labour + parts + other reconciles on 0 of 3,313 billed
+         * rows; labour + parts + labour_tax + part_tax reconciles on 3,300. So the tax line must be
+         * shown alongside any labour/parts split or the figures visibly fail to add up.
+         *
+         * other_amt is deliberately not selected: it is 0 on all 5,711 rows.
+         *
+         * work_type is selected because NVI is our own pre-delivery inspection, not a customer
+         * visit - see the note on nvi_only below.
+         */
+        SELECT UPPER(BTRIM(vin)) AS vin, bill_date, ro_date, model, vehicle_reg_no,
+               work_type, service_advisor,
+               total_amt, labour_amt, part_amt, labour_tax, part_tax, total_disc
         FROM ro_billing_report
         WHERE UPPER(BTRIM(vin)) IN (${sql.join(vins.map((v) => sql`${v}`), sql`, `)})
         ORDER BY bill_date DESC NULLS LAST
@@ -825,7 +926,12 @@ export async function getKiaCustomerProfile(
         ? {
           // The feed prefixes policy numbers with a stray backtick.
           policyNo: str(row.policyno)?.replace(/^`+/, '') ?? null,
-          insurer: str(row.prev_ic_name),
+          insurer: str(row.insurancecompany),
+          previousInsurer: str(row.prev_ic_name),
+          policyType: str(row.policytype),
+          cancelled: String(row.cancelled ?? '').trim().toUpperCase() === 'YES',
+          grossPremium: money(row.grosspremium),
+          netPremium: money(row.netpremium),
           effectiveDate: dateStr(row.policy_effective_date),
           expiryDate: expiry,
           lapsed: Boolean(expiry && expiry < new Date().toISOString().slice(0, 10)),
@@ -833,11 +939,35 @@ export async function getKiaCustomerProfile(
         : null,
       serviceCount: services.length,
       lastServiceDate: dateStr(services[0]?.bill_date),
+      /*
+       * Billed visits only. Summing the zeros would be harmless for the total but would silently
+       * halve any average, and it would let the UI claim a complete price history it does not have —
+       * so the count of unpriced visits travels alongside the money and is rendered with it.
+       */
+      serviceSpend: (() => {
+        const billed = services.map((s) => money(s.total_amt)).filter((v): v is number => v !== null)
+        return billed.length ? billed.reduce((a, b) => a + b, 0) : null
+      })(),
+      servicesBilled: services.filter((s) => money(s.total_amt) !== null).length,
+      servicesUnbilled: services.filter((s) => money(s.total_amt) === null).length,
+      // Every row is our own pre-delivery inspection: a service count with no real customer visit.
+      nviOnly: services.length > 0 && services.every((s) => isNvi(str(s.work_type))),
       services: services.slice(0, 50).map((s) => ({
         billDate: dateStr(s.bill_date),
         roDate: dateStr(s.ro_date),
         model: str(s.model),
         registration: str(s.vehicle_reg_no),
+        workType: str(s.work_type),
+        advisor: str(s.service_advisor),
+        amount: money(s.total_amt),
+        labour: money(s.labour_amt),
+        parts: money(s.part_amt),
+        tax: (() => {
+          const l = money(s.labour_tax) ?? 0
+          const p = money(s.part_tax) ?? 0
+          return l + p > 0 ? l + p : null
+        })(),
+        discount: money(s.total_disc),
       })),
       complaints: (complaintsByVin.get(vin) || []).map((c) => ({
         complaintNo: str(c.complaint_no),

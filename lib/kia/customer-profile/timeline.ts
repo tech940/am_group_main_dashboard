@@ -77,6 +77,32 @@ const iso = (value: string | null | undefined): string | null => {
   return null
 }
 
+/**
+ * A rupee figure for the timeline's metadata grid.
+ *
+ * ⚠️ Pre-formatted to a STRING, deliberately. The client's breakdown grid prints metadata with a
+ * bare String(val), so a raw number renders as "15234.5" — no symbol, no grouping. It also DROPS
+ * any key whose value is null, so a null amount would make its cell vanish silently rather than
+ * say anything. Both problems disappear if the server sends finished text.
+ *
+ * `absent` is the wording for "we hold no price", and it is never "Rs 0": an unbilled workshop
+ * visit and a genuinely free one are different facts, and 2,398 of 5,711 visits are the former.
+ */
+const rupees = (value: number | null | undefined, absent = 'Not billed'): string => {
+  /*
+   * Sub-rupee values are treated as absent. This is not fussiness: the feed stores labour as 0.01 on
+   * parts-only jobs, and at zero decimal places that prints "₹0" beside a ₹13,753 total — which
+   * reads as "labour was free" rather than "there was no labour". 282 of 3,313 billed rows are
+   * genuinely parts-only, so this case is common enough to get right.
+   */
+  if (value === null || value === undefined || !Number.isFinite(Number(value)) || Number(value) < 1) {
+    return absent
+  }
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+  }).format(Number(value))
+}
+
 const push = (
   out: TimelineEvent[],
   date: string | null | undefined,
@@ -195,9 +221,19 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
           'Record Type': 'Insurance Policy Inception',
           'Policy Number': v.insurance.policyNo,
           'Insurance Company': v.insurance.insurer,
+          'Policy Type': v.insurance.policyType,
+          ...(v.insurance.previousInsurer ? { 'Previous Insurer': v.insurance.previousInsurer } : {}),
+          ...(v.insurance.cancelled ? { 'Policy Cancelled': 'Yes — this policy is not in force' } : {}),
+          // Gross is what the customer actually paid; net is before tax. Both are present on every
+          // policy we hold, so no "not available" wording is needed here.
+          'Premium Paid (incl. tax)': rupees(v.insurance.grossPremium, 'Not recorded'),
+          'Net Premium': rupees(v.insurance.netPremium, 'Not recorded'),
           'Policy Inception Date': iso(v.insurance.effectiveDate),
           'Policy Expiry Date': iso(v.insurance.expiryDate),
-          'Current Policy Status': v.insurance.lapsed ? 'Expired / Lapsed' : 'Active In-Force',
+          // A cancelled policy is not cover, whatever its expiry date says.
+          'Current Policy Status': v.insurance.cancelled
+            ? 'Cancelled'
+            : v.insurance.lapsed ? 'Expired / Lapsed' : 'Active In-Force',
           'Vehicle Model': v.model,
           'Vehicle Registration': v.registration,
           'Chassis / VIN': v.vin,
@@ -210,9 +246,13 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
           'Record Type': 'Insurance Policy Expiry Milestone',
           'Policy Number': v.insurance.policyNo,
           'Insurance Company': v.insurance.insurer,
+          // The premium on the EXPIRING policy — the number the renewal conversation starts from.
+          'Premium Last Paid': rupees(v.insurance.grossPremium, 'Not recorded'),
           'Policy Expiry Date': iso(v.insurance.expiryDate),
           'Policy Inception Date': iso(v.insurance.effectiveDate),
-          'Current Renewal Status': v.insurance.lapsed ? 'Lapsed — Uninsured' : 'Active (Renewal Due Soon)',
+          'Current Renewal Status': v.insurance.cancelled
+            ? 'Cancelled — not in force'
+            : v.insurance.lapsed ? 'Lapsed — Uninsured' : 'Active (Renewal Due Soon)',
           'Vehicle Model': v.model,
           'Vehicle Registration': v.registration,
           'Chassis / VIN': v.vin,
@@ -220,9 +260,33 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
     }
 
     for (const s of v.services || []) {
+      /*
+       * The bill, split the way the feed actually stores it.
+       *
+       * ⚠️ Tax is shown whenever labour or parts are, and that is not decoration: total_amt is
+       * TAX-INCLUSIVE, and labour + parts alone reconciles to it on 0 of 3,313 billed rows while
+       * labour + parts + tax reconciles on 3,300. Omitting the tax line would put three numbers on
+       * screen that visibly refuse to add up to the total beside them.
+       *
+       * Discount appears only when there is one — it is non-zero on 394 rows, so an always-present
+       * "Discount Rs 0" would be noise on 93% of visits. 'Other' is never shown at all: the column
+       * is 0 on every one of the 5,711 rows.
+       */
+      const priced = s.amount !== null && s.amount !== undefined
       push(out, s.billDate || s.roDate, 'service', 'Service visit',
         [s.model, s.registration].filter(Boolean).join(' · ') || label, v.vin, null, {
-          'Record Type': 'Workshop Repair Order (RO)',
+          'Record Type': isNviVisit(s.workType)
+            ? 'Pre-Delivery Inspection (NVI) — not a customer visit'
+            : 'Workshop Repair Order (RO)',
+          'Work Type': s.workType,
+          'Total Billed': rupees(s.amount),
+          ...(priced ? {
+            'Labour': rupees(s.labour, '—'),
+            'Parts': rupees(s.parts, '—'),
+            'Tax': rupees(s.tax, '—'),
+          } : {}),
+          ...(s.discount ? { 'Discount Given': rupees(s.discount) } : {}),
+          'Service Advisor': s.advisor,
           'Invoice / Bill Date': iso(s.billDate),
           'Job Card (RO) Date': iso(s.roDate),
           'Vehicle Model': s.model || v.model,
@@ -257,6 +321,13 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
   // produced it purely because of array order.
   return out.sort((a, b) => (a.date === b.date ? a.category.localeCompare(b.category) : b.date.localeCompare(a.date)))
 }
+
+/**
+ * NVI is the dealership's own new-vehicle inspection before handover, not a customer visit.
+ * Labelling it in the timeline stops a pre-delivery check reading as a workshop relationship.
+ */
+const isNviVisit = (workType: string | null | undefined): boolean =>
+  String(workType || '').trim().toUpperCase() === 'NVI'
 
 /** Only the categories that actually occur — see the note on TimelineCategory. */
 export function availableCategories(events: TimelineEvent[]): TimelineCategory[] {

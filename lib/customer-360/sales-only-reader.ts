@@ -235,6 +235,16 @@ export async function getSalesOnlyCustomerProfile(
       insurance: null,
       serviceCount: 0,
       lastServiceDate: null,
+      /*
+       * Zero and empty here mean "this brand has no workshop link at all", not "this customer never
+       * came in". The capability flags in brands.ts are what the UI reads to tell those apart —
+       * `capabilities.service` is false for these brands, so the client renders "not linked" rather
+       * than a figure. Never render these values directly for a sales-only brand.
+       */
+      serviceSpend: null,
+      servicesBilled: 0,
+      servicesUnbilled: 0,
+      nviOnly: false,
       services: [],
       complaints: [],
     })),
