@@ -28,6 +28,7 @@ import { toast } from '@/hooks/use-toast'
 import * as XLSX from 'xlsx'
 import { maskKiaPii } from '@/lib/kia/pii'
 import { cn } from '@/lib/utils'
+import { KIA_PAYMENT_SECURED_THRESHOLD } from '@/lib/kia/workflow-access'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -63,6 +64,10 @@ type StockRow = {
   allocation_id: string | null
   allocation_status: string | null
   expires_at: string | null
+  /** Running total received against the booking (migration 0048). Rupees. */
+  amount_received?: number | null
+  /** Non-null means the reservation clock is suspended and the sweep will not release this car. */
+  payment_secured_at?: string | null
   allocated_at: string | null
   booking_id: string | null
   booking_number: string | null
@@ -359,6 +364,31 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [paymentBookingId, setPaymentBookingId] = useState('')
   const [paymentReference, setPaymentReference] = useState('')
+  // 'choose' first, so nobody lands on a form and confirms a full payment by muscle memory.
+  const [paymentStep, setPaymentStep] = useState<'choose' | 'full' | 'partial'>('choose')
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentMode, setPaymentMode] = useState('NEFT')
+  const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentRowTotal, setPaymentRowTotal] = useState(0)
+  // The receipts list for one vehicle. Separate from the record dialog: Accounts opens this to
+  // answer "what has this customer actually paid", which is a read, not an action.
+  const [ledgerBookingId, setLedgerBookingId] = useState('')
+  const [ledgerLabel, setLedgerLabel] = useState('')
+
+  type LedgerEntry = {
+    id: string; entryType: string; amount: string; totalAfter: string
+    paymentMode: string | null; reference: string | null; notes: string | null
+    recordedByName: string; createdAt: string
+  }
+  const ledgerQuery = useQuery<{ payments: LedgerEntry[] }>({
+    queryKey: ['kia-booking-payments', ledgerBookingId],
+    enabled: Boolean(ledgerBookingId),
+    queryFn: async () => {
+      const res = await fetch(`/api/brands/kia/bookings/${ledgerBookingId}/payment`, { cache: 'no-store' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load payments')
+      return res.json()
+    },
+  })
   const [paymentFile, setPaymentFile] = useState<File | null>(null)
 
   const [releaseDialogOpen, setReleaseDialogOpen] = useState(false)
@@ -657,9 +687,18 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   })
 
   const paymentMutation = useMutation({
-    mutationFn: async ({ bookingId, reference, file }: { bookingId: string; reference: string; file: File | null }) => {
+    mutationFn: async ({ bookingId, reference, file, mode, amount, payMode, notes }: {
+      bookingId: string; reference: string; file: File | null
+      mode: 'full' | 'partial'; amount?: string; payMode?: string; notes?: string
+    }) => {
       const formData = new FormData()
+      formData.append('mode', mode)
       formData.append('reference', reference)
+      if (mode === 'partial') {
+        formData.append('amount', amount || '')
+        formData.append('paymentMode', payMode || '')
+        formData.append('notes', notes || '')
+      }
       if (file) formData.append('invoice', file)
 
       const res = await fetch(`/api/brands/kia/bookings/${bookingId}/payment`, {
@@ -672,10 +711,22 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       }
       return res.json()
     },
-    onSuccess: () => {
-      toast({ title: 'Success', description: 'Payment confirmed successfully!', variant: 'success' })
+    onSuccess: (result: { mode?: string; totalReceived?: number; secured?: boolean; securedChanged?: boolean } | undefined) => {
+      const partial = result?.mode === 'partial' || typeof result?.totalReceived === 'number'
+      toast({
+        title: partial ? 'Payment recorded' : 'Payment confirmed',
+        description: partial
+          ? `Total received Rs ${Math.round(result?.totalReceived || 0).toLocaleString('en-IN')}.`
+            + (result?.securedChanged && result?.secured
+              ? ' Past the secured threshold — the payment timer has stopped and this vehicle will not be released.'
+              : ' The vehicle stays with Accounts.')
+          : 'Vehicle moved to Paid · To Deliver.',
+        variant: 'success',
+      })
       setPaymentDialogOpen(false)
       setPaymentReference('')
+      setPaymentAmount('')
+      setPaymentNotes('')
       setPaymentFile(null)
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
       // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
@@ -864,6 +915,25 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       )
     }
 
+    /*
+     * Secured takes precedence over every countdown branch below.
+     *
+     * It must render something explicit rather than falling through: an expires_at that is still set
+     * would otherwise show a normal green "72h to pay" on a car the sweep can no longer touch, and a
+     * secured in-transit car (expires_at NULL) would show the grey dash that already means "no
+     * allocation". Both would be actively misleading.
+     */
+    if (row.payment_secured_at) {
+      return (
+        <span
+          className="inline-flex items-center rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-black text-indigo-700"
+          title={`Rs ${Math.round(Number(row.amount_received || 0)).toLocaleString('en-IN')} received - past the secured threshold, so the payment window no longer applies and this vehicle will not be returned to free stock.`}
+        >
+          SECURED · NO TIMER
+        </span>
+      )
+    }
+
     if (row.expires_at) {
       const expiration = new Date(row.expires_at).getTime()
       const now = Date.now()
@@ -889,6 +959,14 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     return <span className="text-slate-400 font-semibold">-</span>
   }
 
+  /** Rs 1.2L / Rs 1.05Cr - chip-sized, so a long figure cannot push the STATUS column wide. */
+  const compactRupees = (value: number) => {
+    const v = Math.round(Number.isFinite(value) ? value : 0)
+    if (Math.abs(v) >= 10000000) return `Rs ${(v / 10000000).toFixed(2)}Cr`
+    if (Math.abs(v) >= 100000) return `Rs ${(v / 100000).toFixed(2)}L`
+    return `Rs ${v.toLocaleString('en-IN')}`
+  }
+
   const renderStatus = (row: StockRow) => {
     // Each state gets a distinct tone so Available / Allotted / Paid / Delivered
     // / Transferred never read as the same colour. Active allocation states take
@@ -896,6 +974,25 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     if (row.allocation_id) {
       if (row.booking_status === 'ready_delivery') return <Chip tone="violet">Paid · To Deliver</Chip>
       if (row.booking_status === 'delivered') return <Chip tone="blue">Delivered</Chip>
+      // Part paid: still Accounts' job, so it stays in the Payment Pending bucket and keeps an
+      // amber-family tone. The amount is on the chip because "how much have they actually paid" is
+      // the first question anyone asks about one of these rows.
+      const received = Number(row.amount_received || 0)
+      if (received > 0) {
+        return (
+          <button
+            type="button"
+            onClick={() => {
+              setLedgerBookingId(row.booking_id || '')
+              setLedgerLabel(`${row.customer_name || 'Customer'} · ${row.vin_number || ''}`)
+            }}
+            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+            title="See the payments recorded against this vehicle"
+          >
+            <Chip tone="amber">Part paid · {compactRupees(received)}</Chip>
+          </button>
+        )
+      }
       return <Chip tone="amber">Allotted</Chip>
     }
     if (row.transfer_id) return <Chip tone="sky">Transferred{row.to_dealer_code ? ` → ${row.to_dealer_code}` : ''}</Chip>
@@ -1062,12 +1159,45 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
              */
             { key: 'ALLOCATED_DMS', label: 'DMS Allocated', value: data.metrics.dms_allocated || 0, icon: Lock, tone: 'neutral' as Tone, hint: 'Committed in DMS · not ours' },
             { key: 'PAID_TO_DELIVER', label: 'Paid · To Deliver', value: data.metrics.paid_to_deliver, icon: BadgeIndianRupee, tone: 'violet' as Tone, hint: 'Ready to hand over' },
-            { key: 'DELIVERED', label: 'Delivered', value: data.metrics.delivered, icon: Truck, tone: 'teal' as Tone, hint: 'Completed' },
+            /*
+             * Vehicles in THIS stock list that OUR people marked delivered — no DMS signal, per the
+             * MD: a car the DMS invoiced or shows as 'Allocated' is someone else's commitment and
+             * belongs on the DMS Allocated card.
+             *
+             * ⚠️ It counts through a separate lateral join, NOT through `va`, because `va` requires a
+             * live allocation and allocations are RELEASED at handover — which hid 9 of the 12
+             * delivered cars still sitting in stock and made this card read 5.
+             */
+            { key: 'DELIVERED', label: 'Delivered', value: data.metrics.delivered, icon: Truck, tone: 'teal' as Tone, hint: 'Marked delivered by us' },
             { key: 'TRANSFERRED', label: 'Transfers', value: (data.metrics.transfers || 0) + (data.metrics.transfer_missing || 0), icon: RefreshCw, tone: 'sky' as Tone, hint: 'Inter-outlet' },
           ] as (KpiDatum & { active?: boolean })[]).map((item) => ({ ...item, active: status === item.key }))}
           onSelect={selectStatusImmediately}
         />
       )}
+
+      {/*
+        * A date range that ends before this month.
+        *
+        * ⚠️ kia_stock_management is a single-day REPLACE snapshot — every row carries the same
+        * uploaded_at — so the stock buckets have no history to filter and a past range empties the
+        * board. Delivered is the exception: it now reads kia_bookings.delivered_at, which DOES keep
+        * history. Warned rather than disabled, because blocking the range would also throw away the
+        * one metric that genuinely answers for a past month.
+        */}
+      {(() => {
+        if (!endDate) return null
+        const now = new Date()
+        const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+        if (endDate >= monthStart) return null
+        return (
+          <div role="note" className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-3 text-[12px] font-bold text-sky-900">
+            This range ends before the current month. Delivered reflects it correctly, but the stock
+            counts always describe inventory as it stands today — the DMS feed keeps no history — so
+            they will read empty.
+          </div>
+        )
+      })()}
+
 
       {/* 2. Main Grid Layout for Table and Audit Panel */}
       <div className={cn("grid grid-cols-1 gap-4 transition-all duration-300",
@@ -1488,7 +1618,14 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                               <Button 
                                 size="sm" 
                                 className="h-7 rounded-lg bg-slate-950 px-2.5 text-[10px] font-black text-white hover:bg-slate-800"
-                                onClick={() => { setPaymentBookingId(row.booking_id || ''); setPaymentDialogOpen(true) }}
+                                onClick={() => {
+        setPaymentBookingId(row.booking_id || '')
+        setPaymentRowTotal(Number(row.amount_received || 0))
+        setPaymentStep('choose')
+        setPaymentAmount('')
+        setPaymentNotes('')
+        setPaymentDialogOpen(true)
+      }}
                               >
                                 Payment received
                               </Button>
@@ -2168,48 +2305,257 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       {/* PAYMENT RECEIVED DIALOG */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="kia-premium max-w-md rounded-2xl border-0 bg-white p-5">
-          <LoaderOverlay show={paymentMutation.isPending} variant="payment" label="Confirming payment…" sublabel="Verifying receipt and unlocking delivery" />
+          <LoaderOverlay
+            show={paymentMutation.isPending}
+            variant="payment"
+            label={paymentStep === 'partial' ? 'Recording payment…' : 'Confirming payment…'}
+            sublabel={paymentStep === 'partial' ? 'Adding it to this booking' : 'Verifying receipt and unlocking delivery'}
+          />
           <DialogHeader>
-            <DialogTitle className="text-base font-extrabold tracking-tight text-[var(--kia-text)]">Confirm Payment Receipt</DialogTitle>
+            <DialogTitle className="text-base font-extrabold tracking-tight text-[var(--kia-text)]">
+              {paymentStep === 'choose' ? 'Payment received' : paymentStep === 'full' ? 'Full payment received' : 'Record part payment'}
+            </DialogTitle>
             <DialogDescription className="text-xs font-semibold text-slate-500">
-              Confirm payment receipt and upload the customer invoice.
+              {paymentStep === 'choose'
+                ? 'Has the customer paid in full, or is this one instalment?'
+                : paymentStep === 'full'
+                  ? 'This moves the vehicle to Paid · To Deliver.'
+                  : 'The vehicle stays with Accounts. You can keep adding payments until the balance is settled.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 my-2">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Payment Reference No.</label>
-              <Input 
-                value={paymentReference} 
-                onChange={(e) => setPaymentReference(e.target.value)} 
-                placeholder="Txn ID, Receipt No., Bank reference..." 
-                className="h-10 rounded-xl border border-slate-200 text-xs font-semibold" 
-              />
-            </div>
 
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Invoice PDF Document</label>
-              <Input 
-                type="file" 
-                accept=".pdf,.png,.jpg,.jpeg" 
-                onChange={(e) => setPaymentFile(e.target.files?.[0] || null)} 
-                className="h-10 rounded-xl border border-slate-200 text-xs pt-2" 
-              />
+          {/* Running total so far — shown on every step, so the amount is never entered blind. */}
+          {paymentRowTotal > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
+              Already received: Rs {Math.round(paymentRowTotal).toLocaleString('en-IN')}
             </div>
-          </div>
+          )}
+
+          {paymentStep === 'choose' && (
+            <div className="my-3 grid gap-2">
+              <Button
+                className="h-auto justify-start rounded-xl px-4 py-3 text-left"
+                onClick={() => setPaymentStep('full')}
+              >
+                <span className="block">
+                  <span className="block text-xs font-black">Full payment received</span>
+                  <span className="block text-[10px] font-semibold opacity-80">Balance settled · move to Paid · To Deliver</span>
+                </span>
+              </Button>
+              <Button
+                variant="outline"
+                className="h-auto justify-start rounded-xl border-slate-200 px-4 py-3 text-left"
+                onClick={() => setPaymentStep('partial')}
+              >
+                <span className="block">
+                  <span className="block text-xs font-black text-slate-800">Partial payment</span>
+                  <span className="block text-[10px] font-semibold text-slate-500">Record an instalment · stays with Accounts</span>
+                </span>
+              </Button>
+            </div>
+          )}
+
+          {paymentStep === 'partial' && (
+            <div className="my-2 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Amount received (Rs)</label>
+                <Input
+                  value={paymentAmount}
+                  inputMode="decimal"
+                  // Digits and one decimal point only. Keeps a stray letter or symbol out of a money
+                  // field where the server would reject it after a round trip.
+                  onChange={(e) => setPaymentAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                  placeholder="e.g. 100000"
+                  className="h-11 rounded-xl border border-slate-200 text-sm font-black tabular-nums"
+                />
+                {Number(paymentAmount) > 0 && (
+                  <p className="text-[10px] font-bold text-slate-500">
+                    Total after this: Rs {Math.round(paymentRowTotal + Number(paymentAmount)).toLocaleString('en-IN')}
+                  </p>
+                )}
+              </div>
+
+              {/*
+                * The consequence is stated BEFORE saving, not discovered afterwards. Crossing the
+                * threshold stops the release timer, which is the single most significant thing this
+                * dialog can do to a vehicle.
+                */}
+              {paymentRowTotal + Number(paymentAmount || 0) > KIA_PAYMENT_SECURED_THRESHOLD
+                && paymentRowTotal <= KIA_PAYMENT_SECURED_THRESHOLD && (
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-900">
+                  This takes the total past Rs {(KIA_PAYMENT_SECURED_THRESHOLD / 100000).toFixed(0)} lakh. The payment
+                  countdown stops and this vehicle will no longer be returned to free stock automatically.
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Mode</label>
+                  <select
+                    value={paymentMode}
+                    onChange={(e) => setPaymentMode(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800"
+                  >
+                    {['CASH', 'CHEQUE', 'UPI', 'NEFT', 'RTGS', 'BANK TRANSFER', 'DD', 'CARD', 'OTHER'].map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Reference</label>
+                  <Input
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                    placeholder="Txn / receipt no."
+                    className="h-10 rounded-xl border border-slate-200 text-xs font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Note (optional)</label>
+                <Input
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  placeholder="Anything worth recording against this payment"
+                  className="h-10 rounded-xl border border-slate-200 text-xs font-semibold"
+                />
+              </div>
+            </div>
+          )}
+
+          {paymentStep === 'full' && (
+            <div className="space-y-4 my-2">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Payment Reference No.</label>
+                <Input
+                  value={paymentReference}
+                  onChange={(e) => setPaymentReference(e.target.value)}
+                  placeholder="Txn ID, Receipt No., Bank reference..."
+                  className="h-10 rounded-xl border border-slate-200 text-xs font-semibold"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Invoice PDF Document</label>
+                <Input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  onChange={(e) => setPaymentFile(e.target.files?.[0] || null)}
+                  className="h-10 rounded-xl border border-slate-200 text-xs pt-2"
+                />
+              </div>
+            </div>
+          )}
+
           <DialogFooter className="gap-2 sm:gap-0 mt-2">
-            <Button variant="outline" className="h-9 rounded-xl text-xs font-black" onClick={() => setPaymentDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              className="h-9 rounded-xl px-4 text-xs font-bold"
-              disabled={paymentMutation.isPending || !paymentReference}
-              onClick={() => paymentMutation.mutate({ 
-                bookingId: paymentBookingId, 
-                reference: paymentReference, 
-                file: paymentFile 
-              })}
+            <Button
+              variant="outline"
+              className="h-9 rounded-xl text-xs font-black"
+              onClick={() => (paymentStep === 'choose' ? setPaymentDialogOpen(false) : setPaymentStep('choose'))}
             >
-              {paymentMutation.isPending ? 'Submitting...' : 'Confirm Receipt'}
+              {paymentStep === 'choose' ? 'Cancel' : 'Back'}
+            </Button>
+            {paymentStep === 'full' && (
+              <Button
+                className="h-9 rounded-xl px-4 text-xs font-bold"
+                disabled={paymentMutation.isPending || !paymentReference}
+                onClick={() => paymentMutation.mutate({
+                  bookingId: paymentBookingId, reference: paymentReference, file: paymentFile, mode: 'full',
+                })}
+              >
+                {paymentMutation.isPending ? 'Submitting...' : 'Confirm full payment'}
+              </Button>
+            )}
+            {paymentStep === 'partial' && (
+              <Button
+                className="h-9 rounded-xl px-4 text-xs font-bold"
+                disabled={paymentMutation.isPending || !(Number(paymentAmount) > 0)}
+                onClick={() => paymentMutation.mutate({
+                  bookingId: paymentBookingId, reference: paymentReference, file: paymentFile,
+                  mode: 'partial', amount: paymentAmount, payMode: paymentMode, notes: paymentNotes,
+                })}
+              >
+                {paymentMutation.isPending
+                  ? 'Recording...'
+                  : `Record Rs ${Math.round(Number(paymentAmount) || 0).toLocaleString('en-IN')}`}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PAYMENTS RECORDED — read-only receipts for one vehicle */}
+      <Dialog open={Boolean(ledgerBookingId)} onOpenChange={(open) => { if (!open) setLedgerBookingId('') }}>
+        <DialogContent className="kia-premium max-w-lg rounded-2xl border-0 bg-white p-5">
+          <DialogHeader>
+            <DialogTitle className="text-base font-extrabold tracking-tight text-[var(--kia-text)]">Payments recorded</DialogTitle>
+            <DialogDescription className="text-xs font-semibold text-slate-500">
+              {ledgerLabel}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/*
+            * ⚠️ Named "Payments recorded", never "Payment History". There is already a top-level
+            * Booking Payment History section reading the DMS receipts feed (kia_receipt_report);
+            * giving these the same name would have Accounts trying to reconcile two different books.
+            */}
+          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-semibold text-slate-500">
+            Recorded here by Accounts. The DMS keeps its own receipts register separately, under
+            Booking Payment History — the two will not match line for line.
+          </p>
+
+          <div className="my-2 max-h-80 overflow-y-auto">
+            {ledgerQuery.isLoading ? (
+              <div className="flex h-24 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+            ) : ledgerQuery.isError ? (
+              <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                {(ledgerQuery.error as Error)?.message}
+              </p>
+            ) : !ledgerQuery.data?.payments?.length ? (
+              <p className="py-8 text-center text-xs font-semibold text-slate-400">No payments recorded yet.</p>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    <th scope="col" className="pb-2">When</th>
+                    <th scope="col" className="pb-2">Mode · reference</th>
+                    <th scope="col" className="pb-2 text-right">Amount</th>
+                    <th scope="col" className="pb-2 text-right">Running total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledgerQuery.data.payments.map((e) => {
+                    const amount = Number(e.amount)
+                    const reversal = e.entryType === 'reversal'
+                    return (
+                      <tr key={e.id} className="border-t border-slate-100 align-top">
+                        <td className="py-2 font-semibold text-slate-600">
+                          {new Date(e.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                          <span className="block text-[9px] font-medium text-slate-400">{e.recordedByName}</span>
+                        </td>
+                        <td className="py-2 font-semibold text-slate-600">
+                          {reversal ? <span className="font-black text-rose-600">REVERSED</span> : (e.paymentMode || '—')}
+                          {e.reference && <span className="block text-[9px] font-medium text-slate-400">{e.reference}</span>}
+                          {e.notes && <span className="block text-[9px] font-medium text-slate-400">{e.notes}</span>}
+                        </td>
+                        <td className={cn('py-2 text-right font-black tabular-nums', reversal ? 'text-rose-600' : 'text-slate-900')}>
+                          {reversal ? '' : '+'}{compactRupees(amount)}
+                        </td>
+                        <td className="py-2 text-right font-semibold tabular-nums text-slate-500">
+                          {compactRupees(Number(e.totalAfter))}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" className="h-9 rounded-xl text-xs font-black" onClick={() => setLedgerBookingId('')}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

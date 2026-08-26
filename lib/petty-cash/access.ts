@@ -1,3 +1,4 @@
+import { canApproveFirstStage } from '@/lib/approvals/first-stage-approver'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { PgColumn } from 'drizzle-orm/pg-core'
@@ -94,7 +95,18 @@ export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined
   )
 }
 
-export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {
+/**
+ * @param scope the request's own brand + department. REQUIRED to judge the first stage, because who
+ *   owns it depends on the brand: KIA has an ED, every other brand routes to the Sales or Service
+ *   GSM instead. Omitting it fails the first stage CLOSED rather than falling back to 'ed' — a
+ *   silent fallback would hand every Hyundai and Platinum request straight back to a role those
+ *   brands do not have.
+ */
+export function canApprovePettyCashStage(
+  role: PettyCashRole | null | undefined,
+  stage: string,
+  scope?: { branchId?: string | null; department?: string | null },
+) {
   if (!role) return false
   const r = String(role).trim().toLowerCase()
   if (r === 'developer' || r === 'admin') return true
@@ -103,7 +115,10 @@ export function canApprovePettyCashStage(role: PettyCashRole | null | undefined,
 
   switch (stage) {
     case 'ed_approval':
-      return r === 'ed'
+      // The stage KEY stays 'ed_approval' across every brand — it is the first slot in the chain,
+      // not a claim about who fills it. See lib/approvals/first-stage-approver.ts.
+      if (!scope) return false
+      return canApproveFirstStage(r, scope.branchId, scope.department)
     case 'ea_approval':
       return r === 'ea' || r === 'eba'
     case 'md_approval':

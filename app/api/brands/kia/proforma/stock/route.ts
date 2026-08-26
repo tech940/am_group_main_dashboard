@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
+import { kiaDeliveredByUsSql } from '@/lib/kia/bookings'
 import { requirePermission } from '@/lib/permissions/service'
 import { KIA_HOLD_WINDOW_HOURS } from '@/lib/kia/bookings'
 
@@ -76,6 +77,7 @@ export async function GET(request: Request) {
     const showEveryStatus = dmsStatusSelected || status === 'All'
     const startDate = url.searchParams.get('start_date') || ''
     const endDate = url.searchParams.get('end_date') || ''
+
     const page = Number(url.searchParams.get('page') || 1)
     const pageSize = Number(url.searchParams.get('pageSize') || 10)
     const offset = (page - 1) * pageSize
@@ -133,6 +135,25 @@ export async function GET(request: Request) {
       )
     )`
     const dmsSoldExpr = dmsSoldFor('sm')
+    const deliveredByUsExpr = kiaDeliveredByUsSql('sm')
+
+    /*
+     * A vehicle that has left inventory. THREE independent signals, because no one of them catches
+     * everything: our own booking marked delivered, a local 'retail' status, or the DMS having sold
+     * it. Hoisted above the filter block on purpose — the DELIVERED view used to apply only the
+     * FIRST disjunct while the default list hid all three, so 2 cars were hidden from the list as
+     * delivered AND unreachable from the Delivered card. They existed in the data and appeared
+     * nowhere in the UI.
+     */
+    /*
+     * DELIVERED, as this dealership means it: a booking OUR people (CXM/CCM) marked delivered.
+     * No DMS signal — a car the DMS invoiced or shows as 'Allocated' is somebody else's commitment
+     * and is counted on the DMS Allocated card instead. Explicitly per the MD: "we have nothing to
+     * do with DMS".
+     */
+    const oursDeliveredExpr = 'dlv.id IS NOT NULL'
+
+    const deliveredExpr = `((va.id IS NOT NULL AND kb.status = 'delivered') OR (COALESCE(ls.local_status, '') = 'retail' AND COALESCE(kb.status, '') != 'ready_delivery') OR ${dmsSoldExpr})`
 
     // `stock_age` is a TEXT column straight from the DMS feed, so every comparison has to strip
     // non-digits before casting — a stray "d" or blank would abort the whole query on ::int.
@@ -160,7 +181,7 @@ export async function GET(request: Request) {
 
     if (status !== 'All') {
       if (status === 'AVAILABLE') {
-        filters.push(`va.id IS NULL AND vt.id IS NULL AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail') AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED') AND NOT ${dmsSoldExpr}`)
+        filters.push(`va.id IS NULL AND vt.id IS NULL AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail') AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED') AND NOT ${dmsSoldExpr} AND NOT ${deliveredByUsExpr}`)
       } else if (status === 'ALLOTTED' || status === 'PAYMENT_PENDING') {
         // Payment Pending means OUR allocation is waiting on the customer's money — so it requires an
         // app allocation row, full stop.
@@ -196,7 +217,10 @@ export async function GET(request: Request) {
       } else if (status === 'PAID_TO_DELIVER') {
         filters.push("va.id IS NOT NULL AND kb.status = 'ready_delivery'")
       } else if (status === 'DELIVERED') {
-        filters.push("va.id IS NOT NULL AND kb.status = 'delivered'")
+        // Lists exactly what the card counts, so the two can never disagree. The DMS-only rows that
+        // `deliveredExpr` would add are NOT orphaned by this: a DMS-'Allocated' car with no booking
+        // sits on the DMS Allocated card, and one still awaiting payment sits on Payment Pending.
+        filters.push(oursDeliveredExpr)
       } else if (status === 'TRANSFERRED') {
         // Kept only so `whereClause` stays valid if this branch is ever reused. The Transferred view
         // does NOT go through these filters — it reads kia_vehicle_transfers directly (see
@@ -217,10 +241,9 @@ export async function GET(request: Request) {
       )`)
     }
 
-    // Delivered vehicles have left inventory: hide them from the default stock
-    // list + Total Inventory. They remain reachable only via the explicit
-    // "Delivered" status filter.
-    const deliveredExpr = `((va.id IS NOT NULL AND kb.status = 'delivered') OR (COALESCE(ls.local_status, '') = 'retail' AND COALESCE(kb.status, '') != 'ready_delivery') OR ${dmsSoldExpr})`
+    // Delivered vehicles have left inventory: hide them from the default stock list + Total
+    // Inventory. They remain reachable via the explicit "Delivered" status filter, which uses this
+    // same expression. (Defined above, next to dmsSoldExpr.)
     // Skipped for an explicit dms_status: this guard contains dmsSoldExpr, which excludes every
     // stock_status='Invoice' row, so leaving it on made that option match 0 of its 2 rows.
     if (status !== 'DELIVERED' && !showEveryStatus) {
@@ -290,6 +313,7 @@ export async function GET(request: Request) {
     }
     const transfersCountSql = `(SELECT COUNT(*) FROM kia_vehicle_transfers t WHERE ${transferFilters.join(' AND ')})::int`
 
+
     // 1. Fetch metrics
     //
     // TOTAL VINS is now literally every vehicle in scope — it is the card that means "whole
@@ -310,6 +334,9 @@ export async function GET(request: Request) {
                 AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail')
                 AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED')
                 AND NOT ${dmsSoldExpr}
+                -- A car WE handed over is not available, whatever the DMS feed still says. Without
+                -- this, 7 delivered vehicles were counted here and offered with an Allot button.
+                AND NOT ${deliveredByUsExpr}
           THEN 1 END
         )::int AS available,
         -- Waiting on a customer's money against an allocation WE made. Requires va.id — see the
@@ -325,13 +352,39 @@ export async function GET(request: Request) {
                     AND NOT ${deliveredExpr} THEN 1 END)::int AS dms_allocated,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW() THEN 1 END)::int AS payment_overdue,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'ready_delivery' THEN 1 END)::int AS paid_to_deliver,
-        COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'delivered' THEN 1 END)::int AS delivered,
+        -- Counts the same rows the Delivered view lists, so card and list always agree.
+        COUNT(CASE WHEN ${oursDeliveredExpr} THEN 1 END)::int AS delivered,
         ${transfersCountSql} AS transfers
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
       LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
       LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+      /*
+       * "Did WE hand this car over?" -- deliberately SEPARATE from the va join above.
+       *
+       * va requires released_at IS NULL because every other bucket (Available, Payment Pending,
+       * DMS Allocated) means "live allocation". But an allocation is RELEASED once the car goes out,
+       * so asking the delivered question through va finds only 5 of the 12 delivered cars still in
+       * stock -- being released is a consequence of delivery, not evidence against it.
+       *
+       * NOTE: backticks are banned inside these SQL comments -- they terminate the template literal.
+       *
+       * LIMIT 1 keeps this one-row-per-vehicle: a VIN can carry several allocation rows for the same
+       * booking, which would otherwise duplicate the stock row and inflate every count on the page.
+       */
+      LEFT JOIN LATERAL (
+        SELECT dkb.id, dkb.delivered_at, dkb.booking_number, dkb.customer_name,
+               dkb.customer_phone, dkb.consultant_name, dkb.bank_name, dkb.status,
+               dkb.amount_received
+        FROM kia_vehicle_allocations dva
+        JOIN kia_bookings dkb ON dkb.id = dva.booking_id
+         AND dkb.deleted_at IS NULL
+         AND dkb.status = 'delivered'
+        WHERE UPPER(TRIM(dva.vin_number)) = UPPER(TRIM(sm.vin_number))
+        ORDER BY dkb.delivered_at DESC NULLS LAST
+        LIMIT 1
+      ) dlv ON TRUE
       WHERE ${scopeWhereClause}
     `))
 
@@ -404,6 +457,31 @@ export async function GET(request: Request) {
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
       LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
       LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+      /*
+       * "Did WE hand this car over?" -- deliberately SEPARATE from the va join above.
+       *
+       * va requires released_at IS NULL because every other bucket (Available, Payment Pending,
+       * DMS Allocated) means "live allocation". But an allocation is RELEASED once the car goes out,
+       * so asking the delivered question through va finds only 5 of the 12 delivered cars still in
+       * stock -- being released is a consequence of delivery, not evidence against it.
+       *
+       * NOTE: backticks are banned inside these SQL comments -- they terminate the template literal.
+       *
+       * LIMIT 1 keeps this one-row-per-vehicle: a VIN can carry several allocation rows for the same
+       * booking, which would otherwise duplicate the stock row and inflate every count on the page.
+       */
+      LEFT JOIN LATERAL (
+        SELECT dkb.id, dkb.delivered_at, dkb.booking_number, dkb.customer_name,
+               dkb.customer_phone, dkb.consultant_name, dkb.bank_name, dkb.status,
+               dkb.amount_received
+        FROM kia_vehicle_allocations dva
+        JOIN kia_bookings dkb ON dkb.id = dva.booking_id
+         AND dkb.deleted_at IS NULL
+         AND dkb.status = 'delivered'
+        WHERE UPPER(TRIM(dva.vin_number)) = UPPER(TRIM(sm.vin_number))
+        ORDER BY dkb.delivered_at DESC NULLS LAST
+        LIMIT 1
+      ) dlv ON TRUE
       WHERE ${whereClause}
     `))
     const totalRows = Number(totalCountResult[0]?.count || 0)
@@ -427,14 +505,21 @@ export async function GET(request: Request) {
         va.id as allocation_id,
         va.allocation_status,
         va.expires_at,
+        -- Part-payment state (migration 0048). payment_secured_at non-NULL means the reservation
+        -- clock is suspended and the expiry sweep will not release this vehicle.
+        va.payment_secured_at,
+        COALESCE(kb.amount_received, dlv.amount_received, 0)::float8 AS amount_received,
         va.created_at as allocated_at,
-        kb.id as booking_id,
-        kb.booking_number,
-        kb.customer_name,
-        kb.customer_phone,
-        kb.consultant_name,
-        kb.status as booking_status,
-        kb.bank_name,
+        -- COALESCE onto the delivered-booking lateral: a car handed over has its allocation
+        -- RELEASED, so kb (joined through the LIVE allocation) is NULL for it and the row would
+        -- otherwise render a delivered vehicle with a blank customer.
+        COALESCE(kb.id, dlv.id) as booking_id,
+        COALESCE(kb.booking_number, dlv.booking_number) as booking_number,
+        COALESCE(kb.customer_name, dlv.customer_name) as customer_name,
+        COALESCE(kb.customer_phone, dlv.customer_phone) as customer_phone,
+        COALESCE(kb.consultant_name, dlv.consultant_name) as consultant_name,
+        COALESCE(kb.status, dlv.status) as booking_status,
+        COALESCE(kb.bank_name, dlv.bank_name) as bank_name,
         kb.delivery_target_date as raw_delivery_target_date,
         COALESCE(kb.delivery_target_date::text, kb.metadata->>'expectedDeliveryDate') as booking_delivery_date,
         kb.metadata,
@@ -465,14 +550,21 @@ export async function GET(request: Request) {
         va.id as allocation_id,
         va.allocation_status,
         va.expires_at,
+        -- Part-payment state (migration 0048). payment_secured_at non-NULL means the reservation
+        -- clock is suspended and the expiry sweep will not release this vehicle.
+        va.payment_secured_at,
+        COALESCE(kb.amount_received, dlv.amount_received, 0)::float8 AS amount_received,
         va.created_at as allocated_at,
-        kb.id as booking_id,
-        kb.booking_number,
-        kb.customer_name,
-        kb.customer_phone,
-        kb.consultant_name,
-        kb.status as booking_status,
-        kb.bank_name,
+        -- COALESCE onto the delivered-booking lateral: a car handed over has its allocation
+        -- RELEASED, so kb (joined through the LIVE allocation) is NULL for it and the row would
+        -- otherwise render a delivered vehicle with a blank customer.
+        COALESCE(kb.id, dlv.id) as booking_id,
+        COALESCE(kb.booking_number, dlv.booking_number) as booking_number,
+        COALESCE(kb.customer_name, dlv.customer_name) as customer_name,
+        COALESCE(kb.customer_phone, dlv.customer_phone) as customer_phone,
+        COALESCE(kb.consultant_name, dlv.consultant_name) as consultant_name,
+        COALESCE(kb.status, dlv.status) as booking_status,
+        COALESCE(kb.bank_name, dlv.bank_name) as bank_name,
         kb.delivery_target_date as raw_delivery_target_date,
         COALESCE(kb.delivery_target_date::text, kb.metadata->>'expectedDeliveryDate') as booking_delivery_date,
         kb.metadata,
@@ -489,6 +581,31 @@ export async function GET(request: Request) {
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
       LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
       LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+      /*
+       * "Did WE hand this car over?" -- deliberately SEPARATE from the va join above.
+       *
+       * va requires released_at IS NULL because every other bucket (Available, Payment Pending,
+       * DMS Allocated) means "live allocation". But an allocation is RELEASED once the car goes out,
+       * so asking the delivered question through va finds only 5 of the 12 delivered cars still in
+       * stock -- being released is a consequence of delivery, not evidence against it.
+       *
+       * NOTE: backticks are banned inside these SQL comments -- they terminate the template literal.
+       *
+       * LIMIT 1 keeps this one-row-per-vehicle: a VIN can carry several allocation rows for the same
+       * booking, which would otherwise duplicate the stock row and inflate every count on the page.
+       */
+      LEFT JOIN LATERAL (
+        SELECT dkb.id, dkb.delivered_at, dkb.booking_number, dkb.customer_name,
+               dkb.customer_phone, dkb.consultant_name, dkb.bank_name, dkb.status,
+               dkb.amount_received
+        FROM kia_vehicle_allocations dva
+        JOIN kia_bookings dkb ON dkb.id = dva.booking_id
+         AND dkb.deleted_at IS NULL
+         AND dkb.status = 'delivered'
+        WHERE UPPER(TRIM(dva.vin_number)) = UPPER(TRIM(sm.vin_number))
+        ORDER BY dkb.delivered_at DESC NULLS LAST
+        LIMIT 1
+      ) dlv ON TRUE
       LEFT JOIN users u ON u.id = vt.requested_by
       /*
        * FIFO guard. For each vehicle, find how many OTHER allottable vehicles of the same

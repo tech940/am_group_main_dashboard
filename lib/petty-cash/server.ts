@@ -349,7 +349,13 @@ function pettyCashApprovalStatusesForRole(role: AppUser['role']): PettyCashReque
   const r = String(role).trim().toLowerCase()
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
 
-  if (r === 'ed') return [...PETTY_CASH_APPROVAL_STATUSES.ed_approval]
+  // ED (KIA) and the two GSMs (every other brand) all own the FIRST stage, so they queue on the same
+  // statuses. Which of their brand's requests they can actually action is decided per row by
+  // canApprovePettyCashStage — the queue is deliberately the wider of the two, because a GSM seeing
+  // a KIA row they cannot act on is a much smaller failure than a GSM seeing an empty queue.
+  if (r === 'ed' || r === 'general_manager' || r === 'service_general_manager') {
+    return [...PETTY_CASH_APPROVAL_STATUSES.ed_approval]
+  }
   if (r === 'ea') return [...PETTY_CASH_APPROVAL_STATUSES.ea_approval]
   if (r === 'md' || r === 'eba' || r === 'developer') {
     return [
@@ -1038,8 +1044,10 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
 
 export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: unknown) {
   const input = pettyCashWorkflowSchema.parse(rawInput)
-  if (!canApprovePettyCashStage(appUser.role, input.stage)) throw new Error('Forbidden')
 
+  // ⚠️ The row is loaded BEFORE the authorisation check, deliberately. Who may clear the first stage
+  // depends on the request's own brand and department (ED at KIA, the Sales or Service GSM
+  // everywhere else), so the check cannot be made from the role alone.
   const [request] = await db
     .select()
     .from(pettyCashRequests)
@@ -1047,6 +1055,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
     .limit(1)
 
   if (!request || !canReadPettyCashRequest(appUser, request)) throw new Error('Request not found')
+  if (!canApprovePettyCashStage(appUser.role, input.stage, request)) throw new Error('Forbidden')
 
   const now = new Date()
   let updateData: Partial<typeof pettyCashRequests.$inferInsert> = { updatedAt: now }
@@ -1246,6 +1255,10 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
             allocatedAmount: approvedAmount,
             purpose: request.purpose,
             stage: input.stage,
+            // Carries the brand + department so the email names the desk that actually acted:
+            // ED at KIA, the Sales or Service GSM everywhere else.
+            branchId: request.branchId,
+            department: request.department,
             action: input.action,
             approvedByName: appUser.fullName,
             approvedByRole: appUser.role,
@@ -1295,6 +1308,10 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
       allocatedAmount: updateData.allocatedAmount ? parseMoney(updateData.allocatedAmount) : (request.allocatedAmount ? parseMoney(request.allocatedAmount) : undefined),
       purpose: request.purpose,
       stage: input.stage,
+      // Carries the brand + department so the email names the desk that actually acted:
+      // ED at KIA, the Sales or Service GSM everywhere else.
+      branchId: request.branchId,
+      department: request.department,
       action: input.action,
       approvedByName: appUser.fullName,
       approvedByRole: appUser.role,
@@ -1309,8 +1326,8 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
 export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: unknown) {
   const input = pettyCashWorkflowSchema.parse(rawInput)
   if (input.action === 'hold') throw new Error('Expense hold is not used because expenses post directly to ledger')
-  if (!canApprovePettyCashStage(appUser.role, input.stage)) throw new Error('Forbidden')
 
+  // Loaded before the authorisation check for the same reason as the request workflow above.
   const [expense] = await db
     .select()
     .from(pettyCashExpenses)
@@ -1318,6 +1335,7 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
     .limit(1)
 
   if (!expense || !canReadPettyCashExpense(appUser, expense)) throw new Error('Expense not found')
+  if (!canApprovePettyCashStage(appUser.role, input.stage, expense)) throw new Error('Forbidden')
 
   const now = new Date()
   let updateData: Partial<typeof pettyCashExpenses.$inferInsert> = { updatedAt: now }

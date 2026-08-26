@@ -133,3 +133,19 @@ export function canViewAllKiaBookings(role?: string | null) {
     r === 'edp'
   )
 }
+
+/**
+ * Once a customer has paid MORE than this in total, the reservation clock stops and the vehicle is
+ * no longer auto-released back to free stock. It then waits indefinitely for Accounts to confirm the
+ * balance.
+ *
+ * STRICTLY greater than: exactly Rs 7,00,000 does not secure the vehicle.
+ *
+ * Cumulative across the booking, not per transfer - three payments of 3L + 2L + 3L secure it on the
+ * third. It is about how exposed the customer is, not how big one instalment was.
+ *
+ * Lives HERE, in the client-safe module, rather than in lib/kia/bookings.ts: the dialog warns with
+ * it and the server decides with it, and bookings.ts imports the postgres driver, so importing the
+ * number from there would drag the database client into the browser bundle.
+ */
+export const KIA_PAYMENT_SECURED_THRESHOLD = 700000

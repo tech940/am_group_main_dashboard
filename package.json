@@ -79,6 +79,7 @@
     "callyzer:backfill": "node scripts/callyzer-backfill.mjs",
     "callyzer:sync:scheduler": "node scripts/callyzer-sync-scheduler.mjs",
     "verify:restricted-analytics": "tsx scripts/verify-restricted-analytics.mjs",
+    "verify:first-stage": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-first-stage-approver.ts",
     "verify:md-targets": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-md-targets.ts",
     "verify:bank-sanctions": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-bank-sanctions.ts",
     "verify:md-branch-default": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-md-branch-default.ts",

@@ -1,3 +1,4 @@
+import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { sendApprovalDecisionEmail } from '@/lib/approvals/decision-emails'
@@ -163,7 +164,22 @@ export async function POST(request: Request) {
       // `isTester` (developer/admin) is retained on all stages as the support escape hatch.
       let isAuthorized = false
       if (activeStageKey === 'sales_manager') {
-        if (isServiceCategory) {
+        if (!brandHasEd(row.brand)) {
+        /*
+         * NON-KIA: there is no Executive Director at this brand, so the first stage belongs to the
+         * General Manager for the relevant side — Sales or Service. ED is not merely unauthorised
+         * here, it does not exist.
+         *
+         * The KIA branches below are deliberately left exactly as they were: this change is about
+         * the brands that have no ED, and narrowing KIA's existing approvers would break a working
+         * flow for the one brand that was never in question.
+         */
+        const allowedRoles = firstStageApproverRolesForTrack(
+          row.brand,
+          isServiceCategory ? 'service' : 'sales',
+        )
+        isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower)
+      } else if (isServiceCategory) {
           isAuthorized = appUser.role === 'ed' ? false : isTester || isVp || isSuperUser
         } else {
           isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser
@@ -282,7 +298,7 @@ export async function POST(request: Request) {
       // Build history entry
       const historyList = Array.isArray(row.history) ? [...row.history] : []
       const roleLabel = 
-        activeStageKey === 'sales_manager' ? 'ED' : 
+        activeStageKey === 'sales_manager' ? firstStageShortLabel(row.brand, null) : 
         activeStageKey === 'hr' ? 'HR' :
         activeStageKey === 'accounts' ? 'Accounts' : 
         'MD'

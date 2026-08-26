@@ -13,6 +13,7 @@ import {
   kiaProformas,
   kiaStockLocalStatuses,
   kiaVehicleAllocations,
+  kiaBookingPayments,
   kiaVehicleTransfers,
   kiaPriceDetails,
   users,
@@ -23,15 +24,14 @@ import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { normalizeBankName } from '@/lib/kia/bank-utils'
 import { canViewKiaCustomerPii, redactKiaBookingPii, stripKiaBookingPiiKeys } from '@/lib/kia/pii'
 import { cancelKiaBookingFollowups } from '@/lib/kia/lead-followups'
-import {
-  canAllotKiaVehicle,
+import { canAllotKiaVehicle,
   canConfirmKiaPayment,
   canDeliverKiaBooking,
   canTransferKiaVehicle,
   canAllotKiaVehicleToBooking,
   canVerifyKiaAccounts,
-  canViewAllKiaBookings,
-} from '@/lib/kia/workflow-access'
+  canViewAllKiaBookings, KIA_PAYMENT_SECURED_THRESHOLD } from '@/lib/kia/workflow-access'
+export { KIA_PAYMENT_SECURED_THRESHOLD }
 
 type JsonRecord = Record<string, unknown>
 export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -40,6 +40,7 @@ export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 // in lib/finance/finance-processing.ts for the separate finance SLA clock).
 export const TEMPORARY_ALLOCATION_HOURS = 72
 export const CSD_ALLOCATION_HOURS = 120 // CSD customers get a 5-day payment window
+
 
 /**
  * DMS stock_status literals from kia_stock_management, lower-cased.
@@ -251,6 +252,34 @@ async function nextBookingNumber(tx: DbTx, dealerCode: string) {
   return `KIA_${cleanDealer}_${new Date().getFullYear()}_${seq}`
 }
 
+/**
+ * SQL: has THIS dealership already handed this VIN over?
+ *
+ * ⚠️ Every other availability signal can miss a delivered car, and all of them did:
+ *   - the allocation is RELEASED at handover, so `va.id IS NULL` reads as free
+ *   - the DMS feed can still say 'Free Stock' for days afterwards
+ *   - `kia_stock_local_statuses.local_status = 'retail'` is only written on the
+ *     confirm-payment path, so cars delivered any other way never get it
+ *   - `kia_sales_report.delivery_date` only lands once the DMS exports the retail
+ *
+ * Measured 2026-08-26: 7 cars sat in the Available list and count having ALREADY been delivered to
+ * named customers, and readMatchingVehicle would have let a second customer be allotted one.
+ *
+ * OUR OWN booking status is the only signal that knows immediately, which is why this exists.
+ * Returns a bare SQL string so the raw-SQL stock route and the drizzle readers can share one rule.
+ */
+export function kiaDeliveredByUsSql(alias = 'sm') {
+  return `EXISTS (
+    SELECT 1
+    FROM kia_vehicle_allocations dlv_va
+    JOIN kia_bookings dlv_kb
+      ON dlv_kb.id = dlv_va.booking_id
+     AND dlv_kb.deleted_at IS NULL
+     AND dlv_kb.status = 'delivered'
+    WHERE UPPER(TRIM(dlv_va.vin_number)) = UPPER(TRIM(${alias}.vin_number))
+  )`
+}
+
 export async function expireKiaTemporaryAllocations() {
   await db.transaction(async (tx) => {
     // When the 72h/120h reservation window lapses with no payment, the vehicle RETURNS TO AVAILABLE
@@ -269,6 +298,12 @@ export async function expireKiaTemporaryAllocations() {
     //
     // Only 'temporary' rows are swept: a 'transferring' allocation has expires_at NULL (its clock
     // hasn't started) and is skipped by the `expires_at IS NOT NULL` predicate anyway.
+    //
+    // ⚠️ payment_secured_at IS NULL is the WHOLE of the MD's "without putting the vehicle back to
+    // free stock" rule. This sweep is the only AUTOMATIC writer of released_at (the other two,
+    // releaseKiaBookingVehicle and the transfer release, are human-initiated), so this single
+    // predicate is what protects a substantially-paid car. Deleting it silently re-arms the release
+    // for every secured vehicle, and nothing else in the codebase would notice.
     await tx.execute(sql`
       WITH expired AS (
         UPDATE kia_vehicle_allocations
@@ -280,6 +315,7 @@ export async function expireKiaTemporaryAllocations() {
           updated_at = now()
         WHERE released_at IS NULL
           AND payment_confirmed_at IS NULL
+          AND payment_secured_at IS NULL
           AND allocation_status = 'temporary'
           AND expires_at IS NOT NULL
           AND expires_at <= now()
@@ -368,6 +404,10 @@ export async function startKiaArrivedAllocationCountdowns() {
           AND va.expires_at IS NULL
           AND va.released_at IS NULL
           AND va.payment_confirmed_at IS NULL
+          -- ⚠️ A secured car must arrive WITHOUT a countdown. It still needs its booking moved into
+          -- the Accounts stage though, which is what securedArrivals below does — so this predicate
+          -- excludes it from the clock-opening path only, not from arrival handling altogether.
+          AND va.payment_secured_at IS NULL
           AND kb.deleted_at IS NULL
           AND kb.status NOT IN ('delivered', 'cancelled')
           AND EXISTS (
@@ -410,7 +450,74 @@ export async function startKiaArrivedAllocationCountdowns() {
       FROM moved_bookings
       RETURNING booking_id
     `)
-    return (res as unknown as Array<unknown>).length
+
+    /*
+     * SECURED arrivals — the same event, without a clock.
+     *
+     * A car can be paid for (over the threshold) while it is still on a truck. The query above
+     * deliberately skips those rows, but they still have to LEAVE the in-transit state when they
+     * land, or the booking sits in 'transferring' forever and never appears in the Accounts stage.
+     *
+     * So this is the identical arrival handling minus the one thing that must not happen: no
+     * expires_at is set. Kept as a second statement rather than more CTEs on an already-large query,
+     * because the difference between the two paths is exactly one assignment and that should be
+     * readable at a glance.
+     */
+    const securedRes = await tx.execute(sql`
+      WITH secured_arrivals AS (
+        SELECT va.id, va.booking_id, va.vin_number
+        FROM kia_vehicle_allocations va
+        JOIN kia_bookings kb ON kb.id = va.booking_id
+        WHERE va.allocation_status = 'transferring'
+          AND va.expires_at IS NULL
+          AND va.released_at IS NULL
+          AND va.payment_confirmed_at IS NULL
+          AND va.payment_secured_at IS NOT NULL
+          AND kb.deleted_at IS NULL
+          AND kb.status NOT IN ('delivered', 'cancelled')
+          AND EXISTS (
+            SELECT 1 FROM kia_stock_management sm
+            WHERE upper(trim(sm.vin_number)) = upper(trim(va.vin_number))
+              AND lower(trim(coalesce(sm.stock_status::text, ''))) = ${DMS_FREE_STOCK}
+          )
+      ),
+      opened AS (
+        UPDATE kia_vehicle_allocations va
+        SET
+          allocation_status = 'temporary',
+          -- expires_at stays NULL: this vehicle is secured and must never be auto-released.
+          stock_last_seen_at = now(),
+          updated_at = now()
+        FROM secured_arrivals a
+        WHERE va.id = a.id
+        RETURNING va.booking_id, va.vin_number
+      ),
+      moved_bookings AS (
+        UPDATE kia_bookings kb
+        SET status = 'vehicle_allocated', updated_at = now()
+        FROM opened o
+        WHERE kb.id = o.booking_id
+          AND kb.status = 'transferring'
+        RETURNING kb.id, o.vin_number
+      )
+      INSERT INTO kia_booking_activity (
+        booking_id, activity_type, title, description, actor_name, actor_role, after_value
+      )
+      SELECT
+        id,
+        'allocation',
+        'Vehicle arrived — payment already secured',
+        'VIN ' || vin_number || ' reached Free Stock. No payment countdown was started because the '
+          || 'customer has already paid more than the secured threshold; it waits for Accounts to '
+          || 'confirm the balance.',
+        'System',
+        'system',
+        jsonb_build_object('vinNumber', vin_number, 'secured', true, 'expiresAt', null)
+      FROM moved_bookings
+      RETURNING booking_id
+    `)
+
+    return (res as unknown as Array<unknown>).length + (securedRes as unknown as Array<unknown>).length
   })
 
   return started
@@ -1711,6 +1818,9 @@ async function readMatchingVehicle(vinNumber: string) {
       AND va.id IS NULL
       -- Not matchable if retailed or on hold (#12).
       AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+      -- ...nor if WE already delivered it. The two tests above both miss that case: the allocation
+      -- is released at handover and local_status is only written on one of several delivery paths.
+      AND NOT ${sql.raw(kiaDeliveredByUsSql('sm'))}
     ORDER BY sm.id DESC
     LIMIT 1
   `)
@@ -1780,6 +1890,10 @@ export async function getKiaBookingMatchingVehicles(id: string) {
       WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
         AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
         AND NOT EXISTS (SELECT 1 FROM active_allocations aa WHERE aa.vin_number = sm.vin_number)
+        -- ...and not a car we have already handed over. active_allocations cannot see those (the
+        -- allocation is released at handover) and local_status is only written on one delivery path,
+        -- so without this a delivered vehicle is offered as a match for the next customer.
+        AND NOT ${sql.raw(kiaDeliveredByUsSql('sm'))}
         AND (sm.model ILIKE ${modelPattern} OR ${text(booking.model)} ILIKE '%' || sm.model || '%')
         AND coalesce(sm.variant, '') <> ''
         AND coalesce(${text(booking.variant)}, '') <> ''
@@ -1964,6 +2078,15 @@ export async function allotKiaBookingVehicle(
       allocationStatus: inTransit ? 'transferring' : 'temporary',
       expiresAt: inTransit ? null : new Date(Date.now() + policyHours * 60 * 60 * 1000),
       paymentWindowHours: policyHours,
+      /*
+       * A customer who is ALREADY past the secured threshold stays secured on the new car.
+       *
+       * Below the threshold a lapsed reservation returns the vehicle to free stock while the money
+       * stays on the booking, so the customer can be re-allotted later with a large balance already
+       * paid. Without this the fresh allocation row would start at NULL and hand them a brand-new
+       * 72h countdown on money they paid weeks ago - and the sweep could take the second car too.
+       */
+      paymentSecuredAt: Number(booking.amountReceived) > KIA_PAYMENT_SECURED_THRESHOLD ? new Date() : null,
       allocatedBy: appUser.id,
     }).returning()
 
@@ -2356,6 +2479,223 @@ export async function allotKiaBbndVehicle(
   return allotKiaBookingVehicle(bookingId, vin, appUser, { skipRoleGate: true })
 }
 
+/** Statuses from which Accounts may record or confirm money. Mirrors verifyKiaAccountsPayment. */
+const PAYABLE_BOOKING_STATUSES = ['vehicle_allocated', 'transferring', 'transfer_requested', 'payment_confirmed']
+
+/** Rupee amounts arrive from a form as text with separators. One coercion, used by both writers. */
+function toPaymentAmount(value: unknown, label: string): number {
+  const parsed = Number(String(value ?? '').replace(/[,\s]/g, ''))
+  if (!Number.isFinite(parsed)) throw new Error(`${label} must be a number`)
+  if (parsed <= 0) throw new Error(`${label} must be greater than zero`)
+  // A cap, not a business rule: it catches a fat-fingered extra zero before it reaches the ledger,
+  // where the only remedy is a reversal row that then stays visible forever.
+  if (parsed > 100000000) throw new Error(`${label} looks wrong - it exceeds Rs 10 crore`)
+  return Math.round(parsed * 100) / 100
+}
+
+/**
+ * Re-evaluates whether an allocation is SECURED, given the booking's new running total.
+ *
+ * Called after every ledger write, in both directions:
+ *   - crossing above the threshold stamps payment_secured_at, which is what takes the vehicle out of
+ *     expireKiaTemporaryAllocations
+ *   - a reversal dropping back to or below it clears the stamp and RE-ARMS the clock
+ *
+ * The clock is re-armed as now() + payment_window_hours, NOT by restoring the old expires_at. A car
+ * secured for two weeks would otherwise come back already overdue and be swept within the hour - the
+ * customer would lose the vehicle as a direct result of someone correcting a typo.
+ */
+async function reconcileAllocationSecured(
+  tx: DbTx,
+  allocation: { id: string; expiresAt: Date | null; paymentWindowHours: number | null; paymentSecuredAt: Date | null },
+  booking: { metadata?: unknown },
+  totalReceived: number,
+) {
+  const shouldBeSecured = totalReceived > KIA_PAYMENT_SECURED_THRESHOLD
+  if (shouldBeSecured === Boolean(allocation.paymentSecuredAt)) return { changed: false, secured: shouldBeSecured }
+
+  if (shouldBeSecured) {
+    await tx.update(kiaVehicleAllocations)
+      .set({ paymentSecuredAt: new Date(), updatedAt: new Date() })
+      .where(eq(kiaVehicleAllocations.id, allocation.id))
+    return { changed: true, secured: true }
+  }
+
+  // Un-securing. Only re-arm a clock that was actually running: an in-transit allocation has
+  // expires_at NULL by design and must keep it, or the countdown starts while the car is still on a
+  // truck - the exact bug allotKiaBookingVehicle's in-transit branch exists to prevent.
+  const windowHours = allocation.paymentWindowHours ?? allocationHoursForBooking(booking)
+  await tx.update(kiaVehicleAllocations)
+    .set({
+      paymentSecuredAt: null,
+      ...(allocation.expiresAt ? { expiresAt: new Date(Date.now() + windowHours * 60 * 60 * 1000) } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(kiaVehicleAllocations.id, allocation.id))
+  return { changed: true, secured: false }
+}
+
+/**
+ * Records ONE part payment against a booking, WITHOUT advancing the workflow.
+ *
+ * This is the whole point of the feature: the money is recorded, the vehicle STAYS with Accounts, and
+ * they keep adding receipts until someone marks the balance received (confirmKiaBookingPayment).
+ * The booking status is deliberately never touched here.
+ *
+ * Crossing KIA_PAYMENT_SECURED_THRESHOLD stops the reservation clock - see reconcileAllocationSecured.
+ */
+export async function recordKiaBookingPartialPayment(
+  id: string,
+  input: {
+    amount: unknown
+    paymentMode?: string | null
+    reference?: string | null
+    receivedOn?: string | null
+    notes?: string | null
+  },
+  appUser: AppUser,
+) {
+  if (!canConfirmKiaPayment(appUser.role)) {
+    throw new Error('Only Accounts or an admin can record a payment.')
+  }
+  const amount = toPaymentAmount(input.amount, 'Amount')
+
+  return db.transaction(async (tx) => {
+    const [booking] = await tx.select().from(kiaBookings)
+      .where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
+    if (!booking) throw new Error('Booking not found')
+    if (!PAYABLE_BOOKING_STATUSES.includes(booking.status)) {
+      throw new Error(`This booking is '${booking.status}' - payments can only be recorded while it is awaiting payment.`)
+    }
+
+    const [allocation] = await tx.select().from(kiaVehicleAllocations)
+      .where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
+    if (!allocation) throw new Error('No active allocation found - allot a vehicle before recording payment.')
+
+    // Atomic increment, and the RETURNING is what makes it safe: two simultaneous submissions each
+    // read back their own post-increment total, so neither can overwrite the other with a stale sum.
+    const [updatedBooking] = await tx.update(kiaBookings)
+      .set({ amountReceived: sql`${kiaBookings.amountReceived} + ${amount.toFixed(2)}::numeric`, updatedAt: new Date() })
+      .where(eq(kiaBookings.id, id))
+      .returning({ amountReceived: kiaBookings.amountReceived })
+    const totalAfter = Number(updatedBooking.amountReceived)
+
+    const [entry] = await tx.insert(kiaBookingPayments).values({
+      bookingId: id,
+      allocationId: allocation.id,
+      vinNumber: allocation.vinNumber,
+      entryType: 'payment',
+      amount: amount.toFixed(2),
+      totalAfter: totalAfter.toFixed(2),
+      paymentMode: nullableText(input.paymentMode),
+      reference: nullableText(input.reference),
+      receivedOn: nullableText(input.receivedOn),
+      notes: nullableText(input.notes),
+      recordedBy: appUser.id,
+      recordedByName: appUser.fullName,
+    }).returning()
+
+    const secured = await reconcileAllocationSecured(tx, allocation, booking, totalAfter)
+
+    await addActivity(tx, {
+      bookingId: id,
+      type: 'payment',
+      title: 'Part payment recorded',
+      description: `Rs ${amount.toLocaleString('en-IN')} received`
+        + (input.paymentMode ? ` by ${input.paymentMode}` : '')
+        + (input.reference ? ` (ref ${input.reference})` : '')
+        + `. Total received so far Rs ${totalAfter.toLocaleString('en-IN')}.`
+        + (secured.changed && secured.secured ? ' Payment countdown stopped - the vehicle will no longer be auto-released.' : ''),
+      after: { amount, totalAfter, secured: secured.secured } as unknown as JsonRecord,
+      appUser,
+    })
+
+    return { entry, totalReceived: totalAfter, secured: secured.secured, securedChanged: secured.changed }
+  })
+}
+
+/**
+ * Reverses one previously recorded payment. Append-only: the original row is never edited or deleted,
+ * a mirrored negative row is added beside it. That is how a typo stays distinguishable from a genuine
+ * refund, which a destructive edit would erase.
+ */
+export async function reverseKiaBookingPayment(
+  id: string,
+  input: { paymentId: string; reason?: string | null },
+  appUser: AppUser,
+) {
+  if (!canConfirmKiaPayment(appUser.role)) {
+    throw new Error('Only Accounts or an admin can reverse a payment.')
+  }
+
+  return db.transaction(async (tx) => {
+    const [booking] = await tx.select().from(kiaBookings)
+      .where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
+    if (!booking) throw new Error('Booking not found')
+
+    const [original] = await tx.select().from(kiaBookingPayments)
+      .where(and(eq(kiaBookingPayments.id, input.paymentId), eq(kiaBookingPayments.bookingId, id))).limit(1)
+    if (!original) throw new Error('Payment not found on this booking')
+    if (original.entryType !== 'payment') throw new Error('Only a payment can be reversed, not a reversal')
+
+    // The DB has a partial unique index on reverses_id, so a double-click loses the race rather than
+    // halving the total twice. Checked here too, to fail with a sentence instead of a constraint name.
+    const [already] = await tx.select({ id: kiaBookingPayments.id }).from(kiaBookingPayments)
+      .where(eq(kiaBookingPayments.reversesId, original.id)).limit(1)
+    if (already) throw new Error('That payment has already been reversed')
+
+    const amount = Number(original.amount)
+    const [updatedBooking] = await tx.update(kiaBookings)
+      .set({ amountReceived: sql`${kiaBookings.amountReceived} - ${amount.toFixed(2)}::numeric`, updatedAt: new Date() })
+      .where(eq(kiaBookings.id, id))
+      .returning({ amountReceived: kiaBookings.amountReceived })
+    const totalAfter = Number(updatedBooking.amountReceived)
+
+    const [entry] = await tx.insert(kiaBookingPayments).values({
+      bookingId: id,
+      allocationId: original.allocationId,
+      vinNumber: original.vinNumber,
+      entryType: 'reversal',
+      amount: (-amount).toFixed(2),
+      reversesId: original.id,
+      totalAfter: totalAfter.toFixed(2),
+      notes: nullableText(input.reason),
+      recordedBy: appUser.id,
+      recordedByName: appUser.fullName,
+    }).returning()
+
+    // The allocation may have been released since the payment was taken; only reconcile a live one.
+    const [allocation] = await tx.select().from(kiaVehicleAllocations)
+      .where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
+    const secured = allocation
+      ? await reconcileAllocationSecured(tx, allocation, booking, totalAfter)
+      : { changed: false, secured: false }
+
+    await addActivity(tx, {
+      bookingId: id,
+      type: 'payment',
+      title: 'Payment reversed',
+      description: `Rs ${amount.toLocaleString('en-IN')} reversed`
+        + (input.reason ? `: ${input.reason}` : '')
+        + `. Total received now Rs ${totalAfter.toLocaleString('en-IN')}.`
+        + (secured.changed && !secured.secured ? ' The payment countdown has restarted.' : ''),
+      before: original as unknown as JsonRecord,
+      after: { totalAfter, secured: secured.secured } as unknown as JsonRecord,
+      appUser,
+    })
+
+    return { entry, totalReceived: totalAfter, secured: secured.secured, securedChanged: secured.changed }
+  })
+}
+
+/** The ledger for one booking, newest first. Read-only. */
+export async function getKiaBookingPayments(id: string) {
+  return db.select().from(kiaBookingPayments)
+    .where(eq(kiaBookingPayments.bookingId, id))
+    .orderBy(desc(kiaBookingPayments.createdAt))
+    .limit(100)
+}
+
 export async function confirmKiaBookingPayment(
   id: string,
   input: {
@@ -2375,6 +2715,13 @@ export async function confirmKiaBookingPayment(
     if (!booking) throw new Error('Booking not found')
     const [allocation] = await tx.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
     if (!allocation) throw new Error('No active allocation found')
+
+    // Status precondition, matching verifyKiaAccountsPayment. Without it a booking already in
+    // ready_delivery (or on_hold, or finance_pending) could be pushed through again purely because
+    // an unreleased allocation row still existed.
+    if (!PAYABLE_BOOKING_STATUSES.includes(booking.status)) {
+      throw new Error(`This booking is '${booking.status}' - payment can only be confirmed while it is awaiting payment.`)
+    }
 
     const [confirmed] = await tx.update(kiaVehicleAllocations).set({
       allocationStatus: 'final',

@@ -3,6 +3,7 @@ import 'server-only'
 import { and, desc, eq, gt, gte, ilike, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { kiaBookingActivity, kiaBookings, kiaLeadFollowups, users } from '@/lib/db/schema'
+import { canDeliverKiaBooking } from '@/lib/kia/workflow-access'
 import type { AppUser } from '@/lib/auth/app-user'
 import { canRevealKiaFollowupPhone } from '@/lib/kia/pii'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
@@ -931,6 +932,17 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
     }
 
     if (input.bookingStatus) {
+      /*
+       * A follow-up may nudge a booking along, but it may NOT declare the car delivered.
+       *
+       * Delivery is owned by CXM (with CCM as backup) and enforced in updateKiaBooking via
+       * canDeliverKiaBooking. This path wrote kia_bookings.status directly and so bypassed that gate
+       * entirely — which is how a CRE working their own follow-up queue moved vehicles into
+       * Delivered on the Bookings and Stock screens.
+       */
+      if (input.bookingStatus === 'delivered' && !canDeliverKiaBooking(appUser.role)) {
+        throw new Error('Only CXM or CCM can mark a vehicle delivered. Record the follow-up outcome and they will confirm it.')
+      }
       await tx.update(kiaBookings).set({
         status: input.bookingStatus,
         updatedBy: appUser.id,
@@ -960,8 +972,32 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
       actorRole: appUser.role,
     })
 
-    // If the outcome is converted (vehicle delivered), update the booking status to delivered
-    if (outcome === 'converted') {
+    /*
+     * 'converted' means the CRE believes the sale closed. It does NOT mean the vehicle is delivered.
+     *
+     * ⚠️ This branch used to set kia_bookings.status = 'delivered' for ANY role, bypassing
+     * canDeliverKiaBooking (which owns that decision and admits only CXM / CCM / admin / developer).
+     * Measured 2026-08-26: 29 of 60 delivered bookings had been marked by a CRE from the follow-up
+     * queue, and each one also minted a finance payout record. The follow-up section and the booking
+     * workflow are deliberately NOT the same thing — a CRE closing their own queue item must not move
+     * a vehicle on the Bookings and Stock boards.
+     *
+     * So the outcome is still recorded either way; only the delivery itself is gated.
+     */
+    if (outcome === 'converted' && !canDeliverKiaBooking(appUser.role)) {
+      await tx.insert(kiaBookingActivity).values({
+        bookingId: existing.bookingId,
+        activityType: 'followup_completed',
+        title: 'Follow-up converted — awaiting delivery confirmation',
+        description: `${appUser.fullName} recorded the sale as converted. The vehicle stays undelivered until CXM or CCM confirms it.`,
+        actorUserId: appUser.id,
+        actorName: appUser.fullName,
+        actorRole: appUser.role,
+      })
+    }
+
+    // Delivery proper — CXM / CCM / admin only, same rule the Bookings screen enforces.
+    if (outcome === 'converted' && canDeliverKiaBooking(appUser.role)) {
       const [before] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, existing.bookingId), isNull(kiaBookings.deletedAt))).limit(1)
       if (before) {
         const [booking] = await tx.update(kiaBookings).set({

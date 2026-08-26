@@ -1,3 +1,4 @@
+import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
@@ -126,7 +127,22 @@ export async function POST(
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
-      if (isServiceCategory) {
+      if (!brandHasEd(requestRow.brand)) {
+        /*
+         * NON-KIA: there is no Executive Director at this brand, so the first stage belongs to the
+         * General Manager for the relevant side — Sales or Service. ED is not merely unauthorised
+         * here, it does not exist.
+         *
+         * The KIA branches below are deliberately left exactly as they were: this change is about
+         * the brands that have no ED, and narrowing KIA's existing approvers would break a working
+         * flow for the one brand that was never in question.
+         */
+        const allowedRoles = firstStageApproverRolesForTrack(
+          requestRow.brand,
+          isServiceCategory ? 'service' : 'sales',
+        )
+        isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower)
+      } else if (isServiceCategory) {
         // SERVICE ORDER: ONLY VP, SuperUser, or Admin/Developer can approve
         // ED IS STRICTLY EXCLUDED!
         isAuthorized = appUser.role === 'ed' ? false : isTester || isVp || isSuperUser
@@ -328,7 +344,7 @@ export async function POST(
     // Build history entry
     const historyList = Array.isArray(requestRow.history) ? [...requestRow.history] : []
     const roleLabel = 
-      stage === 'sales_manager' ? 'ED' : 
+      stage === 'sales_manager' ? firstStageShortLabel(requestRow.brand, null) : 
       stage === 'hr' ? 'HR' :
       stage === 'accounts' ? 'Accounts (Invoice)' : 
       stage === 'ea' ? 'EA' : 

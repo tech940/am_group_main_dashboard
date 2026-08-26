@@ -1,3 +1,4 @@
+import { firstStageLabel } from '@/lib/approvals/first-stage-approver'
 import 'server-only'
 
 import { sendEmail } from '@/lib/email/email-service'
@@ -15,6 +16,9 @@ export type PettyCashApprovalEmailOptions = {
   allocatedAmount?: string | number | null
   purpose: string
   stage: 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'
+  /** The request's own brand + department — the first stage is ED at KIA and a GSM elsewhere. */
+  branchId?: string | null
+  department?: string | null
   action: 'approve' | 'hold' | 'reject'
   approvedByName: string
   approvedByRole: string
@@ -23,10 +27,19 @@ export type PettyCashApprovalEmailOptions = {
 }
 
 const STAGE_TITLE_MAP: Record<string, string> = {
-  ed_approval: 'ED Approval (Executive Director)',
   ea_approval: 'EA Approval (Executive Assistant)',
   md_approval: 'MD Approval (Managing Director)',
   accounts: 'Accounts Approval (Final)',
+}
+
+/**
+ * The first stage has no fixed name: it is the ED at KIA and the Sales or Service GSM everywhere
+ * else. Hardcoding 'ED Approval (Executive Director)' here told a Hyundai submitter their request
+ * had been signed off by a role their brand does not have.
+ */
+function stageTitle(opts: Pick<PettyCashApprovalEmailOptions, 'stage' | 'branchId' | 'department'>) {
+  if (opts.stage === 'ed_approval') return firstStageLabel(opts.branchId, opts.department)
+  return stageTitle(opts)
 }
 
 function formatAmount(value: string | number | null | undefined) {
@@ -47,7 +60,7 @@ export async function sendPettyCashApprovalEmail(opts: PettyCashApprovalEmailOpt
       return
     }
 
-    const stageLabel = STAGE_TITLE_MAP[opts.stage] || opts.stage
+    const stageLabel = stageTitle(opts)
     const isFinal = opts.stage === 'accounts' && opts.action === 'approve'
 
     const subject = isFinal

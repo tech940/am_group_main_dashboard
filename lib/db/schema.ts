@@ -1552,6 +1552,17 @@ export const kiaBookings = pgTable('kia_bookings', {
   financeRequired: boolean('finance_required').default(false).notNull(),
   bankName: text('bank_name'),
   loanAmount: decimal('loan_amount', { precision: 14, scale: 2 }).default('0').notNull(),
+  /**
+   * Running total of kia_booking_payments for this booking (migration 0048). Rupees.
+   *
+   * Stored rather than SUM-on-read: the stock list needs it on every one of up to 100 rows against a
+   * pooler that charges ~225ms per statement. Maintained with an atomic
+   * `amount_received + $x` inside the SAME transaction as the ledger insert — never recomputed.
+   *
+   * Goes DOWN on a reversal. Survives a lapsed allocation, so a customer's money follows them if the
+   * car is released and another is allotted.
+   */
+  amountReceived: decimal('amount_received', { precision: 14, scale: 2 }).default('0').notNull(),
   deliveryTargetDate: text('delivery_target_date'), // text date representation, e.g. YYYY-MM-DD
   deliveredAt: timestamp('delivered_at', { withTimezone: true }),
   proformaId: uuid('proforma_id').references(() => kiaProformas.id),
@@ -1772,6 +1783,20 @@ export const kiaVehicleAllocations = pgTable('kia_vehicle_allocations', {
   paymentConfirmedAt: timestamp('payment_confirmed_at', { withTimezone: true }),
   paymentConfirmedBy: uuid('payment_confirmed_by').references(() => users.id),
   paymentReference: text('payment_reference'),
+  /**
+   * The reservation clock is SUSPENDED while this is set (migration 0048).
+   *
+   * Stamped once the booking's cumulative payments cross KIA_PAYMENT_SECURED_THRESHOLD — the
+   * customer has enough money with us that auto-releasing the car back to free stock would be wrong.
+   *
+   * ⚠️ TWO raw-SQL sweeps in lib/kia/bookings.ts must both test it, and neither is type-checked:
+   *   - expireKiaTemporaryAllocations       — must not release a secured vehicle
+   *   - startKiaArrivedAllocationCountdowns — must not open a clock when a secured car arrives
+   *
+   * ⚠️ expires_at is deliberately LEFT IN PLACE rather than nulled, so the original deadline stays
+   * visible and a reversal that drops the total back below the threshold can re-arm the clock.
+   */
+  paymentSecuredAt: timestamp('payment_secured_at', { withTimezone: true }),
   allocatedBy: uuid('allocated_by').references(() => users.id).notNull(),
   allocatedAt: timestamp('allocated_at', { withTimezone: true }).defaultNow().notNull(),
   releasedBy: uuid('released_by').references(() => users.id),
@@ -2201,6 +2226,44 @@ export const delegationTaskActivity = pgTable('delegation_task_activity', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   delegationTaskActivityTaskIdx: index('delegation_task_activity_task_idx').on(table.taskId, table.createdAt),
+}))
+
+/**
+ * KIA part-payment ledger (migration 0048). APPEND-ONLY.
+ *
+ * One row per money movement against a booking. A mistyped amount is corrected by inserting a
+ * REVERSAL row that names the row it reverses — never by editing or deleting, so the trail always
+ * shows what actually happened. Two DB CHECK constraints enforce that shape (a 'payment' is positive
+ * with no parent; a 'reversal' is negative and must carry reverses_id), and a partial unique index
+ * allows only one reversal per original row.
+ *
+ * ⚠️ NOT the same thing as kia_receipt_report, which is the externally-ingested DMS receipts feed
+ * (lib/kia/receipt-report.ts). That table is READ-ONLY to this app. This one is ours.
+ *
+ * ⚠️ Keyed on the BOOKING, not the allocation. Below the secured threshold a lapsed reservation
+ * still returns the car to free stock, and the customer's money has to survive that; allocationId
+ * and vinNumber record which car it was taken against at the time, for provenance only.
+ */
+export const kiaBookingPayments = pgTable('kia_booking_payments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id, { onDelete: 'cascade' }).notNull(),
+  allocationId: uuid('allocation_id').references(() => kiaVehicleAllocations.id, { onDelete: 'set null' }),
+  vinNumber: text('vin_number'),
+  entryType: text('entry_type').notNull(), // 'payment' | 'reversal'
+  /** Rupees. NEGATIVE on a reversal — that sign is what makes the running total self-correcting. */
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  reversesId: uuid('reverses_id'),
+  /** Snapshot of the running total after this row. The authoritative figure is kiaBookings.amountReceived. */
+  totalAfter: decimal('total_after', { precision: 14, scale: 2 }).notNull(),
+  paymentMode: text('payment_mode'), // CASH | CHEQUE | UPI | NEFT | RTGS | BANK TRANSFER | DD | CARD | OTHER
+  reference: text('reference'),
+  receivedOn: date('received_on'),
+  notes: text('notes'),
+  recordedBy: uuid('recorded_by').references(() => users.id).notNull(),
+  recordedByName: text('recorded_by_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaBookingPaymentsBookingIdx: index('kia_booking_payments_booking_idx').on(table.bookingId, table.createdAt),
 }))
 
 // KIA Booking Discounts Table

@@ -21,6 +21,11 @@ type Row = {
   vin: string; model: string; variant: string; color: string; engineNo: string; stockSource: string
   /** From the booking's proforma. NULL when the booking has no proforma yet — not the same as 0. */
   bookingAmount: number | null
+  /** Part payments taken against THIS allocation (count + rupee total, reversals netted off). */
+  paymentCount: number
+  paymentTotal: number
+  bookingReceivedTotal: number
+  paymentSecuredAt: string | null
   allocatedBy: string; allocatedAt: string | null; expiresAt: string | null
   releasedBy: string | null; releasedAt: string | null; releaseReason: string | null
   paymentConfirmedAt: string | null; allocationStatus: string
@@ -123,7 +128,7 @@ export function AllocationHistoryPage({ embedded = false }: { embedded?: boolean
   const exportCsv = () => {
     if (typeof document === 'undefined' || !rows.length) return
     const head = ['Booking ID', 'Customer', 'Dealer', 'Model', 'Variant', 'Colour', 'VIN', 'Engine No',
-      'Booking Amount', 'Allocated By', 'Allocated At', 'Countdown Expiry', 'Released At', 'Released By', 'Reason', 'Held', 'Status']
+      'Booking Amount', 'Part Payments Total', 'Part Payments Count', 'Allocated By', 'Allocated At', 'Countdown Expiry', 'Released At', 'Released By', 'Reason', 'Held', 'Status']
     const esc = (v: string | number) => {
       const t = String(v ?? '')
       return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
@@ -132,6 +137,8 @@ export function AllocationHistoryPage({ embedded = false }: { embedded?: boolean
       r.bookingNumber, r.customerName, r.dealerCode, r.model, r.variant, r.color, r.vin, r.engineNo,
       // Raw number for the CSV (no ₹, no separators) so it lands in Excel as a number, not text.
       r.bookingAmount === null ? '' : r.bookingAmount,
+      r.paymentCount > 0 ? r.paymentTotal : '',
+      r.paymentCount,
       r.allocatedBy, fmt(r.allocatedAt), fmt(r.expiresAt), fmt(r.releasedAt), r.releasedBy || '',
       r.releaseReason || '', held(r.heldMinutes), r.outcome,
     ].map(esc).join(','))]
@@ -241,12 +248,12 @@ export function AllocationHistoryPage({ embedded = false }: { embedded?: boolean
             <table className="w-full text-[11px]">
               <thead className="bg-[#074e5b] text-white">
                 <tr>
-                  {['Booking', 'Customer', 'Vehicle', 'Booking amount', 'Allocated by', 'Allocated at', 'Countdown expiry',
+                  {['Booking', 'Customer', 'Vehicle', 'Booking amount', 'Part payments', 'Allocated by', 'Allocated at', 'Countdown expiry',
                     'Returned to free stock', 'Reason', 'Held', 'Status'].map((h) => (
                     <th
                       key={h}
                       scope="col"
-                      className={`whitespace-nowrap px-3.5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-100 ${h === 'Booking amount' ? 'text-right' : 'text-left'}`}
+                      className={`whitespace-nowrap px-3.5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-100 ${h === 'Booking amount' || h === 'Part payments' ? 'text-right' : 'text-left'}`}
                     >
                       {h}
                     </th>
@@ -255,11 +262,11 @@ export function AllocationHistoryPage({ embedded = false }: { embedded?: boolean
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {q.isLoading || q.isPlaceholderData ? (
-                  <tr><td colSpan={11} className="py-16 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-slate-300" /></td></tr>
+                  <tr><td colSpan={12} className="py-16 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-slate-300" /></td></tr>
                 ) : q.isError ? (
-                  <tr><td colSpan={11} className="py-16 text-center text-[12px] font-semibold text-rose-700">{(q.error as Error)?.message}</td></tr>
+                  <tr><td colSpan={12} className="py-16 text-center text-[12px] font-semibold text-rose-700">{(q.error as Error)?.message}</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={11} className="py-16 text-center text-[12px] font-semibold text-slate-400">No allocation events match this filter.</td></tr>
+                  <tr><td colSpan={12} className="py-16 text-center text-[12px] font-semibold text-slate-400">No allocation events match this filter.</td></tr>
                 ) : rows.map((r) => {
                   const isPaid = r.outcome === 'Payment confirmed'
                   const isActive = r.outcome === 'Awaiting payment'
@@ -338,7 +345,42 @@ export function AllocationHistoryPage({ embedded = false }: { embedded?: boolean
                         )}
                       </td>
 
-                      {/* 5. Allocated By */}
+                      {/*
+                        * 5. Part payments taken against this allocation.
+                        *
+                        * An em-dash when none were taken, never Rs0 — "nobody paid anything" and
+                        * "somebody paid zero" are different facts and this is an audit trail.
+                        * The SECURED badge is why a row can sit past its countdown without having
+                        * been returned to free stock, which is otherwise the trail's oddest sight.
+                        */}
+                      <td className="whitespace-nowrap px-3.5 py-3 text-right tabular-nums">
+                        {r.paymentCount > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-md border border-indigo-200/90 bg-indigo-50 px-2 py-0.5 text-[11.5px] font-bold tabular-nums text-indigo-800 shadow-xs"
+                            title={`${r.paymentCount} payment${r.paymentCount === 1 ? '' : 's'} recorded against this allocation`
+                              + (r.bookingReceivedTotal !== r.paymentTotal
+                                ? ` · ${money(r.bookingReceivedTotal)} received across the whole booking`
+                                : '')}
+                          >
+                            {money(r.paymentTotal)}
+                            <span className="text-[9px] font-black opacity-70">
+                              &times;{r.paymentCount}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="font-medium text-slate-400">&mdash;</span>
+                        )}
+                        {r.paymentSecuredAt && (
+                          <span
+                            className="mt-0.5 block text-[9px] font-black uppercase tracking-wider text-indigo-600"
+                            title="Past the secured threshold, so the reservation clock was suspended and this vehicle was not auto-released."
+                          >
+                            secured
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 6. Allocated By */}
                       <td className="px-3.5 py-3">
                         <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 text-sky-800 border border-sky-200/80 px-2 py-0.5 text-[10px] font-semibold">
                           {r.allocatedBy}

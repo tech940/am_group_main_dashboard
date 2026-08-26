@@ -40,6 +40,20 @@ export type AllocationHistoryRow = {
    * proforma column is itself '0', so a real 0 and a missing proforma are different facts.
    */
   bookingAmount: number | null
+  /**
+   * Part payments recorded against THIS allocation (migration 0048) — count and rupee total.
+   *
+   * Per-allocation, not per-booking, on purpose: the trail's job is to say what happened to THIS
+   * reservation of THIS vehicle. A customer whose first car lapsed and who was re-allotted has money
+   * against both rows, and rolling it up to the booking would show the same figure twice and make it
+   * look like they paid the total on each.
+   */
+  paymentCount: number
+  paymentTotal: number
+  /** The booking's running total across every allocation — what the secured test is actually made of. */
+  bookingReceivedTotal: number
+  /** Set while the reservation clock was suspended because the customer was past the threshold. */
+  paymentSecuredAt: string | null
   allocatedBy: string
   allocatedAt: string | null
   expiresAt: string | null
@@ -150,6 +164,12 @@ export async function getAllocationHistory(filters: AllocationHistoryFilters) {
       COALESCE(a.stock_source, '') AS stock_source,
       -- Deliberately NOT COALESCEd to 0: a missing proforma must stay NULL. See the type comment.
       p.booking_amount AS booking_amount,
+      -- Part payments taken against THIS allocation. Reversals carry a negative amount, so a plain
+      -- SUM self-corrects and a reversed payment stops inflating the trail.
+      COALESCE(pay.entries, 0)::int      AS payment_count,
+      COALESCE(pay.total, 0)::float8     AS payment_total,
+      COALESCE(b.amount_received, 0)::float8 AS booking_received_total,
+      a.payment_secured_at,
       COALESCE(u.full_name, u.email, 'Unknown') AS allocated_by,
       a.allocated_at, a.expires_at,
       COALESCE(r.full_name, r.email) AS released_by,
@@ -168,6 +188,14 @@ export async function getAllocationHistory(filters: AllocationHistoryFilters) {
     LEFT JOIN kia_proformas p ON p.id = b.proforma_id AND p.deleted_at IS NULL
     LEFT JOIN users u ON u.id = a.allocated_by
     LEFT JOIN users r ON r.id = a.released_by
+    -- One aggregate per allocation rather than a correlated subquery per column: this reader is
+    -- paginated and the pooler charges per statement, so the join is the cheap shape.
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*) FILTER (WHERE bp.entry_type = 'payment')::int AS entries,
+             COALESCE(SUM(bp.amount), 0) AS total
+      FROM kia_booking_payments bp
+      WHERE bp.allocation_id = a.id
+    ) pay ON TRUE
     WHERE ${where}
     ORDER BY a.allocated_at DESC NULLS LAST, a.id DESC
     LIMIT ${pageSize} OFFSET ${offset}
@@ -207,6 +235,10 @@ export async function getAllocationHistory(filters: AllocationHistoryFilters) {
       bookingAmount: r.booking_amount === null || r.booking_amount === undefined
         ? null
         : Number(r.booking_amount),
+      paymentCount: Number(r.payment_count || 0),
+      paymentTotal: Number(r.payment_total || 0),
+      bookingReceivedTotal: Number(r.booking_received_total || 0),
+      paymentSecuredAt: iso(r.payment_secured_at),
       allocatedBy: str(r.allocated_by),
       allocatedAt: iso(r.allocated_at),
       expiresAt,
