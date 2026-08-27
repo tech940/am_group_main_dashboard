@@ -664,6 +664,8 @@ export type KiaProfileVehicle = {
   serviceCount: number
   lastServiceDate: string | null
   services: {
+    roNo?: string | null
+    billNo?: string | null
     billDate: string | null
     roDate: string | null
     model: string | null
@@ -944,7 +946,7 @@ export async function getKiaCustomerProfile(
          * work_type is selected because NVI is our own pre-delivery inspection, not a customer
          * visit - see the note on nvi_only below.
          */
-        SELECT UPPER(BTRIM(vin)) AS vin, bill_date, ro_date, model, vehicle_reg_no,
+        SELECT UPPER(BTRIM(vin)) AS vin, ro_no, bill_no, bill_date, ro_date, model, vehicle_reg_no,
                work_type, service_advisor, bill_status,
                total_amt, labour_amt, part_amt, labour_tax, part_tax, total_disc
         FROM ro_billing_report
@@ -1117,6 +1119,8 @@ export async function getKiaCustomerProfile(
       // Every row is our own pre-delivery inspection: a service count with no real customer visit.
       nviOnly: services.length > 0 && services.every((s) => isNvi(str(s.work_type))),
       services: services.slice(0, 50).map((s) => ({
+        roNo: str(s.ro_no),
+        billNo: str(s.bill_no),
         billDate: dateStr(s.bill_date),
         roDate: dateStr(s.ro_date),
         model: str(s.model),

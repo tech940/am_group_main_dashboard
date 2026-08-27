@@ -90,6 +90,7 @@ export async function GET(request: NextRequest) {
         requestedBy: purchaseOrders.requestedBy,
         status: purchaseOrders.status,
         eaApprovedBy: purchaseOrders.eaApprovedBy,
+        department: purchaseOrders.department,
       })
       .from(purchaseOrders)
       .where(and(eq(purchaseOrders.id, orderId), isNull(purchaseOrders.deletedAt)))

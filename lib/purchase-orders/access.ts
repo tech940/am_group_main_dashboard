@@ -1,4 +1,4 @@
-import { and, eq, isNull, or } from 'drizzle-orm'
+import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { AppUser } from '@/lib/auth/app-user'
 import { hasAllBranchAccess } from '@/lib/branches'
@@ -52,7 +52,7 @@ export function canCreatePurchaseOrders(role: PurchaseOrderRole | null | undefin
 }
 
 export function canViewPurchaseOrderTable(role: PurchaseOrderRole | null | undefined) {
-  return role === 'purchase_manager'
+  return role === 'purchase_manager' || role === 'ed'
 }
 
 export function canSubmitVendorInformation(role: PurchaseOrderRole | null | undefined) {
@@ -106,6 +106,15 @@ export function getPurchaseOrderListVisibilityFilter(appUser: AppUser): SQL<unkn
     case 'eba':
     case 'ea':
       return and(...baseFilters)!
+    case 'ed':
+      // ED of Kia sees all branch orders no matter which branch or department, EXCEPT Kia Jammu Service
+      return and(
+        ...baseFilters,
+        sql`NOT (
+          LOWER(COALESCE(${purchaseOrders.brand}, 'kia')) = 'kia'
+          AND LOWER(COALESCE(${purchaseOrders.department}, '')) LIKE '%service%'
+        )`
+      )!
     case 'purchase_manager':
       return and(
         ...baseFilters,
@@ -135,7 +144,7 @@ export function getPurchaseOrderListVisibilityFilter(appUser: AppUser): SQL<unkn
 
 export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrderRecord,
   'brand' | 'createdBy' | 'assignedTo' | 'requestedBy' | 'status' | 'eaApprovedBy'
->) {
+> & { department?: string | null }) {
   if (appUser.role === 'admin' || appUser.role === 'developer') {
     return true
   }
@@ -151,6 +160,13 @@ export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrder
     case 'eba':
     case 'ea':
       return true
+    case 'ed': {
+      // ED sees all branch orders EXCEPT Kia Jammu Service
+      const isKia = !order.brand || order.brand.toLowerCase() === 'kia'
+      const dept = (order.department || '').toLowerCase()
+      if (isKia && dept.includes('service')) return false
+      return true
+    }
     case 'purchase_manager':
       return branchMatches
     case 'accounts':

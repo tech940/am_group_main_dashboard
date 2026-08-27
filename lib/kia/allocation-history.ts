@@ -83,7 +83,17 @@ export type AllocationHistoryRow = {
 export type AllocationHistoryFilters = {
   search?: string | null
   outcome?: string | null
+  /** A single dealer the USER chose. Narrowing only — never widens `allowedDealers`. */
   dealerCode?: string | null
+  /**
+   * The branches this user may see. NULL = unrestricted.
+   *
+   * ⚠️ Must be the FULL pinned list. The route used to collapse it to `allowed[0]`, which hard-
+   * pinned every two-branch user to whichever code happened to sort first: an IDT user pinned to
+   * 'JK501,JK402' saw 34 of 116 "Released — no payment" with no control to reach the other branch,
+   * while the Bookings tab beside it — scoped with inArray over the whole array — showed both.
+   */
+  allowedDealers?: string[] | null
   startDate?: string | null
   endDate?: string | null
   page?: number
@@ -109,6 +119,22 @@ function buildWhere(f: AllocationHistoryFilters): string {
       OR a.variant ILIKE '%${t}%'
       OR u.full_name ILIKE '%${t}%'
     )`)
+  }
+
+  /*
+   * Two independent things, applied in this order:
+   *   allowedDealers — the branch boundary. The user cannot widen it.
+   *   dealerCode     — a narrowing the user chose, only honoured if inside the boundary.
+   */
+  const allowed = (f.allowedDealers || [])
+    .map((d) => String(d || '').trim().toUpperCase())
+    .filter((d) => /^[A-Za-z0-9_-]{1,16}$/.test(d))
+  if (f.allowedDealers && allowed.length === 0) {
+    // Pinned, but to nothing valid here. Fail CLOSED — showing everything would be the inverse and
+    // far worse mistake.
+    c.push('1=0')
+  } else if (allowed.length) {
+    c.push(`UPPER(TRIM(COALESCE(a.dealer_code, ''))) IN (${allowed.map((d) => `'${esc(d)}'`).join(', ')})`)
   }
 
   const dealer = (f.dealerCode || '').trim()

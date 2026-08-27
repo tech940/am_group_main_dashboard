@@ -38,8 +38,16 @@ export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 // Exported so lib/kia/payment-window-requests.ts can compute the same policy default instead of
 // re-hardcoding 72/120 a fourth time (it already appears here, in the arrival-sweep SQL below, and
 // in lib/finance/finance-processing.ts for the separate finance SLA clock).
-export const TEMPORARY_ALLOCATION_HOURS = 72
-export const CSD_ALLOCATION_HOURS = 120 // CSD customers get a 5-day payment window
+/*
+ * The reservation window after a vehicle is allotted, before the expiry sweep returns it to free
+ * stock. Raised from 72h/120h to 120h/168h on the MD's instruction (2026-08-27).
+ *
+ * ⚠️ Changing these affects NEW allotments only: expires_at and payment_window_hours are STAMPED
+ * on the allocation row at allot time, and the sweep releases on the stored expires_at. Cars
+ * already on a clock keep the deadline they were allotted under.
+ */
+export const TEMPORARY_ALLOCATION_HOURS = 120 // 5 days
+export const CSD_ALLOCATION_HOURS = 168 // CSD customers get a 7-day payment window
 
 
 /**
@@ -89,7 +97,7 @@ async function resolveUserByPersonName(tx: DbTx, name: string) {
 }
 
 // The temporary-allocation payment window depends on the customer type captured
-// on the booking form: CSD → 5 days, everyone else → 72 hours.
+// on the booking form: CSD → 7 days, everyone else → 5 days.
 export function allocationHoursForBooking(booking: { metadata?: unknown } | null | undefined): number {
   const meta = (booking?.metadata || {}) as Record<string, unknown>
   const type = String(meta.customerType || '').trim().toLowerCase()
@@ -195,6 +203,113 @@ function nullableText(value: unknown) {
  * showed 1, because the second booking had already moved to vehicle_allocated. The card and the list
  * disagreeing is the visible symptom; the silent fallback is the cause.
  */
+/*
+ * ── IST DAY BOUNDARIES ────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ Every date filter in this module used to be written
+ *     (<date> AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'
+ * which runs the conversion BACKWARDS and puts the boundary 11 hours late.
+ *
+ * Postgres has two AT TIME ZONE overloads and `date` casts implicitly to BOTH timestamp and
+ * timestamptz, so it picks the timestamptz one. Measured:
+ *     pg_typeof('2026-08-01'::date AT TIME ZONE 'Asia/Kolkata') = timestamp WITHOUT time zone
+ *     ('2026-08-01'::date AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC' -> 2026-08-01 05:30+00
+ *     correct IST midnight                                                -> 2026-07-31 18:30+00
+ * That is not "IST midnight as an instant", it is "this instant read as an IST wall clock".
+ *
+ * The live symptom: the "Booked Today" card rendered 0 while two bookings existed today (10:29 and
+ * 10:34 IST) — the boundary had not been crossed yet at 12:32 IST.
+ *
+ * Casting to `timestamp` FIRST removes the ambiguity: there is only one overload for timestamp, and
+ * it means what we want. created_at is already timestamptz, so no trailing AT TIME ZONE is needed.
+ */
+const istDayStart = (ymd: string) => sql`((${ymd} || ' 00:00:00')::timestamp AT TIME ZONE 'Asia/Kolkata')`
+/** Exclusive upper bound: the START of the day AFTER `ymd`, so the whole end day is included. */
+/*
+ * ⚠️ `date + 1`, NOT `date + INTERVAL '1 day'`. Adding an interval promotes the result to a
+ * TIMESTAMP, so ::text already carries a time and appending ' 00:00:00' produced
+ * "2026-09-01 00:00:00 00:00:00" — a 22007 that aborted the whole query. Adding an integer to a
+ * date stays a date.
+ */
+const istDayEnd = (ymd: string) => sql`(((${ymd}::date + 1)::text || ' 00:00:00')::timestamp AT TIME ZONE 'Asia/Kolkata')`
+/** Midnight IST of the current Indian day, as an instant. */
+const istTodayStart = () => sql`((to_char(now() AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') || ' 00:00:00')::timestamp AT TIME ZONE 'Asia/Kolkata')`
+
+/**
+ * DMS stock statuses a vehicle can be allotted from.
+ *
+ * 'from other dealer' is included: those cars carry the RECEIVING outlet in order_dealer and were
+ * measured to have zero commitments (no allocation, transfer, hold, local retail or delivery), yet
+ * the Stock tab already labels them Available. Leaving them out of this list is what made 9
+ * bookings read "Not in stock" against cars the Stock tab was showing as available on the next tab.
+ *
+ * ⚠️ 'allocated' is deliberately NOT here. In this feed it means sold in the DMS by someone outside
+ * this dashboard — 10 rows, all carrying a DMS cust_name and booking_no, and 9 of the 10 match no
+ * booking in this system at all. Folding those into availability would offer other people's sold
+ * cars to new customers.
+ */
+const KIA_ALLOTTABLE_STOCK_STATUSES = ['free stock', 'in transit', 'from other dealer'] as const
+
+/**
+ * THE booking-to-stock match. One definition, six call sites.
+ *
+ * ⚠️ This predicate previously existed as FIVE hand-copied variants in three different strengths,
+ * and they disagreed with each other and with the Allot picker:
+ *   - four copies ignored COLOUR entirely and treated a blank stock variant as a wildcard, so a
+ *     booking for a WHITE Sonet counted as "in stock" against a RED one — 31 of 121 in-flight
+ *     bookings were wrongly shown as in-stock;
+ *   - a fifth (the in_stock tab filter) already checked colour, so the KPI card and the tab it
+ *     opens returned different sets — the card said 65, the tab listed 34;
+ *   - none of them modelled the picker's allocation rule, so tightening only model/variant/colour
+ *     would have swapped 20 wrong greens for 12 wrong reds instead of fixing the disagreement.
+ *
+ * Match is STRICT on all three attributes and requires both sides to be populated. Measured cost of
+ * the strictness: zero — 0 of 159 bookings and 0 of 72 allottable stock rows have a blank variant or
+ * colour, so the old wildcard branch was dead code.
+ *
+ * Bidirectional ILIKE on each attribute because the booking side may carry an extra token
+ * ('SONET PETROL' vs 'SONET'). Measured: 0 non-identical colour pairs match, so the bidirectional
+ * colour test creates no false positives.
+ *
+ * @param model   SQL expression for the booking's model, e.g. 'kb.model'
+ * @param variant SQL expression for the booking's variant
+ * @param color   SQL expression for the booking's colour
+ */
+const kiaMatchingStockExists = (model: string, variant: string, color: string) => sql`
+  EXISTS (
+    SELECT 1 FROM kia_stock_management sm
+    LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+    WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ${sql`(${sql.join(
+      KIA_ALLOTTABLE_STOCK_STATUSES.map((v) => sql`${v}`), sql`, `)})`}
+      AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+      AND (sm.model ILIKE '%' || ${sql.raw(model)} || '%' OR ${sql.raw(model)} ILIKE '%' || sm.model || '%')
+      AND coalesce(sm.variant, '') <> ''
+      AND coalesce(${sql.raw(variant)}, '') <> ''
+      AND (sm.variant ILIKE '%' || ${sql.raw(variant)} || '%' OR ${sql.raw(variant)} ILIKE '%' || sm.variant || '%')
+      AND coalesce(sm.exterior_color_name, '') <> ''
+      AND coalesce(${sql.raw(color)}, '') <> ''
+      AND (sm.exterior_color_name ILIKE '%' || ${sql.raw(color)} || '%'
+           OR ${sql.raw(color)} ILIKE '%' || sm.exterior_color_name || '%')
+      /*
+       * The SAME allocation rule the Allot picker uses (getKiaBookingMatchingVehicles). A lapsed
+       * unpaid hold is still offerable there, so a bare "released_at IS NULL" here would mark a
+       * booking "not in stock" against a car the picker would happily offer.
+       */
+      AND NOT EXISTS (
+        SELECT 1 FROM kia_vehicle_allocations aa
+        WHERE aa.vin_number = sm.vin_number
+          AND aa.released_at IS NULL
+          AND (aa.payment_confirmed_at IS NOT NULL OR aa.expires_at IS NULL OR aa.expires_at > now())
+      )
+      -- ...and not a car we have already handed over; the allocation is released at handover, so
+      -- nothing above can see it.
+      AND NOT ${sql.raw(kiaDeliveredByUsSql('sm'))}
+  )`
+
+/** A booking's colour, with the same column-then-metadata precedence every SQL site uses. */
+const bookingColorOf = (b: { color?: unknown; metadata?: unknown }) =>
+  text(b.color) || text((b.metadata as Record<string, unknown> | null | undefined)?.color)
+
 const PSEUDO_STATUS_FILTERS = new Set(['today', 'not_in_stock', 'in_stock', 'md_remarks'])
 
 function normalizeStatus(value: unknown): KiaBookingStatus {
@@ -282,7 +397,7 @@ export function kiaDeliveredByUsSql(alias = 'sm') {
 
 export async function expireKiaTemporaryAllocations() {
   await db.transaction(async (tx) => {
-    // When the 72h/120h reservation window lapses with no payment, the vehicle RETURNS TO AVAILABLE
+    // When the 5-day/7-day reservation window lapses with no payment, the vehicle RETURNS TO AVAILABLE
     // STOCK — released_at is stamped, so both availability rules (the matching-list CTE in
     // getKiaBookingMatchingVehicles and the LEFT JOIN in readMatchingVehicle) stop counting the VIN
     // as taken and another booking can have it.
@@ -319,6 +434,25 @@ export async function expireKiaTemporaryAllocations() {
           AND allocation_status = 'temporary'
           AND expires_at IS NOT NULL
           AND expires_at <= now()
+          /*
+           * ⚠️ A DELIVERED car must never be un-delivered by a cron.
+           *
+           * The updated_bookings CTE below rewrites the booking to 'proforma_generated' and this
+           * sweep returns the VIN to free stock. Nothing stopped that happening to a booking that
+           * was already delivered: the reservation is normally released at handover, but a delivery
+           * recorded while the allocation is still 'temporary' leaves the clock running, and the
+           * next cron tick then reverts the handover and re-offers a car that is with its owner.
+           *
+           * Found live on 2026-08-27: KIA_JK402_2026_120099 (LAL CHAND YADAV), delivered 2026-08-26,
+           * carried a temporary allocation expiring 2026-08-29 — two days from being silently
+           * un-delivered. 'cancelled' is included for the same reason: a cancelled booking has no
+           * handover to undo, and rewriting it to 'proforma_generated' would resurrect it.
+           */
+          AND NOT EXISTS (
+            SELECT 1 FROM kia_bookings kb
+            WHERE kb.id = kia_vehicle_allocations.booking_id
+              AND kb.status IN ('delivered', 'cancelled')
+          )
         RETURNING booking_id, vin_number
       ),
       updated_bookings AS (
@@ -358,7 +492,7 @@ export async function expireKiaTemporaryAllocations() {
  *
  * Scheduled sweep (POST /api/brands/kia/maintenance). Allotting an In-transit vehicle parks the
  * allocation as 'transferring' with expires_at NULL — no clock. This is the other half: when the DMS
- * feed flips that VIN to Free Stock, the 72h (120h CSD) window opens and the booking moves on to
+ * feed flips that VIN to Free Stock, the 5-day (7-day CSD) window opens and the booking moves on to
  * 'vehicle_allocated'.
  *
  * This is what "continuously monitor the vehicle status" resolves to. It cannot be event-driven —
@@ -676,13 +810,20 @@ function listFilters(input: BookingListInput) {
   }
 
   if (text(input.status) && text(input.status).toLowerCase() === 'today') {
-    filters.push(sql`kia_bookings.created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'`)
+    filters.push(sql`kia_bookings.created_at >= ${istTodayStart()}`)
   }
 
   if (text(input.status) && text(input.status).toLowerCase() === 'not_in_stock') {
     filters.push(sql`
       (
         kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
+        /*
+         * Same IDT exclusion the KPI subquery applies. A booking whose inter-dealer transfer is
+         * already settled ('arranged' / 'cannot_arrange') is no longer an open stock question.
+         * Without this the card and the tab it opens disagreed by 5 bookings.
+         */
+        AND (kia_bookings.metadata->'idtArrangement'->>'status' IS NULL
+             OR kia_bookings.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
         AND (
           (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
           OR
@@ -691,22 +832,11 @@ function listFilters(input: BookingListInput) {
               SELECT 1 FROM kia_vehicle_allocations va
               WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
             )
-            AND NOT EXISTS (
-              SELECT 1 FROM kia_stock_management sm
-              LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-              WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-                AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-                AND (sm.model ILIKE '%' || kia_bookings.model || '%' OR kia_bookings.model ILIKE '%' || sm.model || '%')
-                AND (
-                  coalesce(sm.variant, '') = ''
-                  OR sm.variant ILIKE '%' || kia_bookings.variant || '%'
-                  OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
-                )
-                AND NOT EXISTS (
-                  SELECT 1 FROM kia_vehicle_allocations aa
-                  WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
-                )
-            )
+            AND NOT ${kiaMatchingStockExists(
+              'kia_bookings.model',
+              'kia_bookings.variant',
+              "coalesce(kia_bookings.color, kia_bookings.metadata->>'color')",
+            )}
           )
         )
       )
@@ -715,6 +845,13 @@ function listFilters(input: BookingListInput) {
     filters.push(sql`
       (
         kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
+        /*
+         * Same IDT exclusion the KPI subquery applies. A booking whose inter-dealer transfer is
+         * already settled ('arranged' / 'cannot_arrange') is no longer an open stock question.
+         * Without this the card and the tab it opens disagreed by 5 bookings.
+         */
+        AND (kia_bookings.metadata->'idtArrangement'->>'status' IS NULL
+             OR kia_bookings.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
         AND NOT (
           (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
           OR
@@ -723,29 +860,11 @@ function listFilters(input: BookingListInput) {
               SELECT 1 FROM kia_vehicle_allocations va
               WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
             )
-            AND NOT EXISTS (
-              SELECT 1 FROM kia_stock_management sm
-              LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-              WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-                AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-                AND (sm.model ILIKE '%' || kia_bookings.model || '%' OR kia_bookings.model ILIKE '%' || sm.model || '%')
-                AND coalesce(sm.variant, '') <> ''
-                AND coalesce(kia_bookings.variant, '') <> ''
-                AND (
-                  sm.variant ILIKE '%' || kia_bookings.variant || '%'
-                  OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
-                )
-                AND coalesce(sm.exterior_color_name, '') <> ''
-                AND coalesce(kia_bookings.color, coalesce(kia_bookings.metadata->>'color', '')) <> ''
-                AND (
-                  sm.exterior_color_name ILIKE '%' || coalesce(kia_bookings.color, kia_bookings.metadata->>'color') || '%'
-                  OR coalesce(kia_bookings.color, kia_bookings.metadata->>'color') ILIKE '%' || sm.exterior_color_name || '%'
-                )
-                AND NOT EXISTS (
-                  SELECT 1 FROM kia_vehicle_allocations aa
-                  WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
-                )
-            )
+            AND NOT ${kiaMatchingStockExists(
+              'kia_bookings.model',
+              'kia_bookings.variant',
+              "coalesce(kia_bookings.color, kia_bookings.metadata->>'color')",
+            )}
           )
         )
       )
@@ -797,11 +916,27 @@ function listFilters(input: BookingListInput) {
     filters.push(ne(kiaBookings.status, 'delivered'))
   }
 
+  /*
+   * WHICH DATE the range applies to depends on what is being listed.
+   *
+   * ⚠️ For the Delivered view it is delivered_at, not created_at. "Delivered · August" means cars
+   * that went out in August, not bookings that were RAISED in August and have since been delivered.
+   * Measured: 11 vs 3 — and the Delivered CARD counts the former, so keying the list on created_at
+   * puts an 11 above a table of 3. That is the card/tab mismatch this module keeps regressing into.
+   *
+   * Everything else is a pipeline stage, where "when was this booked" is the right question.
+   */
+  const dateColumn = text(input.status).toLowerCase() === 'delivered'
+    ? sql`kia_bookings.delivered_at`
+    : sql`kia_bookings.created_at`
+
   if (text(input.startDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.startDate))) {
-    filters.push(sql`kia_bookings.created_at >= (${text(input.startDate)}::date AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'`)
+    filters.push(sql`${dateColumn} >= ${istDayStart(text(input.startDate))}`)
   }
   if (text(input.endDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.endDate))) {
-    filters.push(sql`kia_bookings.created_at <= ((${text(input.endDate)}::date + INTERVAL '1 day') AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'`)
+    // Strictly-less-than the next IST midnight — the old <= form double-counted a booking sitting
+    // exactly on the boundary instant into both adjacent ranges.
+    filters.push(sql`${dateColumn} < ${istDayEnd(text(input.endDate))}`)
   }
 
   if (text(input.consultant) && text(input.consultant).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.consultantName, text(input.consultant)))
@@ -864,9 +999,31 @@ export async function getKiaBookingsList(input: BookingListInput) {
     ? sql`AND kb.dealer_code IN ${input.allowedDealers}`
     : sql``
 
+  /*
+   * The same window, unaliased, for sub-selects that read kia_bookings directly rather than through
+   * a `kb` alias.
+   */
+  const dateScope = sql`
+    ${text(input.startDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.startDate)) ? sql`AND created_at >= ${istDayStart(text(input.startDate))}` : sql``}
+    ${text(input.endDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.endDate)) ? sql`AND created_at < ${istDayEnd(text(input.endDate))}` : sql``}
+  `
+
+  /**
+   * Delivered is windowed on WHEN THE CAR WENT OUT, never on when the booking was created.
+   *
+   * Measured for the current month: 11 cars were delivered, but only 3 of those bookings were
+   * CREATED this month — so a created_at window under-reports deliveries by 73% and is the reason
+   * the Delivered card and the Stock tab told different stories. delivered_at is populated on 33 of
+   * 33 delivered rows, so nothing is lost by keying on it.
+   */
+  const deliveredDateScope = sql`
+    ${text(input.startDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.startDate)) ? sql`AND delivered_at >= ${istDayStart(text(input.startDate))}` : sql``}
+    ${text(input.endDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.endDate)) ? sql`AND delivered_at < ${istDayEnd(text(input.endDate))}` : sql``}
+  `
+
   const dateScopeKb = sql`
-    ${text(input.startDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.startDate)) ? sql`AND kb.created_at >= (${text(input.startDate)}::date AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'` : sql``}
-    ${text(input.endDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.endDate)) ? sql`AND kb.created_at <= ((${text(input.endDate)}::date + INTERVAL '1 day') AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'` : sql``}
+    ${text(input.startDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.startDate)) ? sql`AND kb.created_at >= ${istDayStart(text(input.startDate))}` : sql``}
+    ${text(input.endDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.endDate)) ? sql`AND kb.created_at < ${istDayEnd(text(input.endDate))}` : sql``}
   `
 
   // Page load is dominated by pooler round-trip latency (~225ms/query), not the
@@ -883,9 +1040,26 @@ export async function getKiaBookingsList(input: BookingListInput) {
     ).limit(pageSize).offset(offset),
     db.execute(sql`
       SELECT
+        /*
+         * The pipeline cards follow the DATE RANGE the user has chosen, which on first load is the
+         * current month. They were lifetime totals sitting above a month-scoped table, which is the
+         * mismatch being reported.
+         *
+         * ⚠️ 'delivered' is deliberately EXCLUDED here and counted separately below. This is one
+         * GROUP BY over one window, so it can only key on created_at — and for deliveries that is
+         * the wrong column (3 vs a true 11 this month).
+         *
+         * ⚠️ These are WORK QUEUES as well as metrics. Narrowing the range genuinely hides live
+         * work: lifetime "Awaiting VIN" is 64 and the current month is 24, and those other 40 are
+         * real bookings sales is still chasing. That is what "month-wise" means and it is what was
+         * asked for — widen the range to see the rest.
+         */
         COALESCE((SELECT jsonb_object_agg(status, cnt) FROM (
-          SELECT status, count(*)::int AS cnt FROM kia_bookings WHERE deleted_at IS NULL ${dealerScope} GROUP BY status
+          SELECT status, count(*)::int AS cnt FROM kia_bookings
+          WHERE deleted_at IS NULL AND status <> 'delivered' ${dealerScope} ${dateScope} GROUP BY status
         ) s), '{}'::jsonb) AS status_counts,
+        (SELECT count(*)::int FROM kia_bookings
+          WHERE deleted_at IS NULL AND status = 'delivered' ${dealerScope} ${deliveredDateScope}) AS delivered_count,
         COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
           SELECT DISTINCT dealer_code AS value FROM kia_bookings WHERE deleted_at IS NULL AND dealer_code IS NOT NULL ${dealerScope}
         ) d), '[]'::jsonb) AS dealers,
@@ -895,7 +1069,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
         COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
           SELECT DISTINCT consultant_name AS value FROM kia_bookings WHERE deleted_at IS NULL AND consultant_name IS NOT NULL ${dealerScope}
         ) c), '[]'::jsonb) AS consultants,
-        (SELECT count(*)::int FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC' ${dealerScope}) AS today_count,
+        (SELECT count(*)::int FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= ${istTodayStart()} ${dealerScope}) AS today_count,
         -- #10 Summary: top models booked + allocation state across all (non-deleted) bookings.
         COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'count', cnt)) FROM (
           SELECT model, count(*)::int AS cnt FROM kia_bookings WHERE deleted_at IS NULL AND model IS NOT NULL ${dealerScope}
@@ -919,28 +1093,20 @@ export async function getKiaBookingsList(input: BookingListInput) {
                   SELECT 1 FROM kia_vehicle_allocations va
                   WHERE va.booking_id = kb.id AND va.released_at IS NULL
                 )
-                AND NOT EXISTS (
-                  SELECT 1 FROM kia_stock_management sm
-                  LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-                  WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-                    AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-                    -- Model match is BIDIRECTIONAL (like the variant match below): a booking model may
-                    -- carry an extra token vs the stock name (e.g. 'SONET PETROL'/'NEW SELTOS DIESEL'
-                    -- booking vs 'SONET'/'NEW SELTOS' stock), so match either way round.
-                    AND (sm.model ILIKE '%' || kb.model || '%' OR kb.model ILIKE '%' || sm.model || '%')
-                    AND (
-                      coalesce(sm.variant, '') = ''
-                      OR sm.variant ILIKE '%' || kb.variant || '%'
-                      OR kb.variant ILIKE '%' || sm.variant || '%'
-                    )
-                    AND NOT EXISTS (
-                      SELECT 1 FROM kia_vehicle_allocations aa
-                      WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
-                    )
-                )
+                AND NOT ${kiaMatchingStockExists(
+                  'kb.model', 'kb.variant', "coalesce(kb.color, kb.metadata->>'color')")}
               )
             )
-            ${dealerScopeKb}) AS not_in_stock_count,
+            /*
+             * ⚠️ dateScopeKb is REQUIRED here and was missing.
+             *
+             * eligible_count below carries the date scope, and the In Stock card is computed as
+             * eligible_count - not_in_stock_count. Subtracting a LIFETIME not-in-stock from a
+             * DATE-SCOPED eligible produced nonsense: on the default current-month load the card
+             * rendered "In Stock 5" above a tab that listed 16, and Math.max(0, ...) pinned it to
+             * zero on any narrow range.
+             */
+            ${dealerScopeKb} ${dateScopeKb}) AS not_in_stock_count,
         -- in_stock is the EXACT complement of not_in_stock within the in-flight set (the not-in-stock
         -- predicate is a total boolean per booking), so it is derived as eligible_count - not_in_stock_count
         -- in JS. Computing it here re-ran the whole bidirectional-ILIKE stock scan a second time for no
@@ -984,6 +1150,15 @@ export async function getKiaBookingsList(input: BookingListInput) {
         (SELECT count(*)::int FROM kia_bookings kb
           WHERE kb.deleted_at IS NULL
             AND kb.status NOT IN ('draft', 'delivered', 'cancelled')
+            /*
+             * The SAME IDT exclusion not_in_stock_count applies. The In Stock card is
+             * eligible_count - not_in_stock_count, so if this set is wider than the one the
+             * not-in-stock predicate runs over, the difference is inflated by exactly the bookings
+             * the other side excluded — measured at 5, which is why the card read 51 above a tab
+             * listing 46.
+             */
+            AND (kb.metadata->'idtArrangement'->>'status' IS NULL
+                 OR kb.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
             ${dealerScopeKb}
             ${dateScopeKb}) AS eligible_count,
         COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'variant', variant, 'color', coalesce(color, '—'), 'count', cnt) ORDER BY cnt DESC, model ASC, variant ASC, color ASC) FROM (
@@ -999,22 +1174,11 @@ export async function getKiaBookingsList(input: BookingListInput) {
                   SELECT 1 FROM kia_vehicle_allocations va
                   WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
                 )
-                AND NOT EXISTS (
-                  SELECT 1 FROM kia_stock_management sm
-                  LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-                  WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-                    AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-                    AND (sm.model ILIKE '%' || kia_bookings.model || '%' OR kia_bookings.model ILIKE '%' || sm.model || '%')
-                    AND (
-                      coalesce(sm.variant, '') = ''
-                      OR sm.variant ILIKE '%' || kia_bookings.variant || '%'
-                      OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
-                    )
-                    AND NOT EXISTS (
-                      SELECT 1 FROM kia_vehicle_allocations aa
-                      WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
-                    )
-                )
+                AND NOT ${kiaMatchingStockExists(
+                  'kia_bookings.model',
+                  'kia_bookings.variant',
+                  "coalesce(kia_bookings.color, kia_bookings.metadata->>'color')",
+                )}
               )
             )
             ${dealerScope}
@@ -1032,6 +1196,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
     model_counts: { model: string; count: number }[] | null
     active_allocations: number
     no_payment_count: number
+    delivered_count: number
     not_in_stock_count: number
     eligible_count: number
     md_remarks_count: number
@@ -1135,25 +1300,12 @@ export async function getKiaBookingsList(input: BookingListInput) {
     })(),
     (async () => {
       if (!flagCandidates.length) return
-      const tuples = flagCandidates.map((b) => sql`(${b.id}::uuid, ${text(b.model)}::text, ${text(b.variant)}::text)`)
+      const tuples = flagCandidates.map((b) => sql`(${b.id}::uuid, ${text(b.model)}::text, ${text(b.variant)}::text, ${bookingColorOf(b)}::text)`)
       const flagRows = await analyticsDb.execute(sql`
-      WITH wanted(id, model, variant) AS (VALUES ${sql.join(tuples, sql`, `)})
+      WITH wanted(id, model, variant, color) AS (VALUES ${sql.join(tuples, sql`, `)})
       SELECT w.id::text AS id,
         NOT EXISTS (SELECT 1 FROM kia_vehicle_allocations va WHERE va.booking_id = w.id AND va.released_at IS NULL) AS no_allocation,
-        EXISTS (
-          SELECT 1 FROM kia_stock_management sm
-          LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-          WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-            AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-            -- Bidirectional model match (booking model may carry a fuel suffix vs stock name).
-            AND (sm.model ILIKE '%' || w.model || '%' OR w.model ILIKE '%' || sm.model || '%')
-            AND (
-              coalesce(sm.variant, '') = ''
-              OR sm.variant ILIKE '%' || w.variant || '%'
-              OR w.variant ILIKE '%' || sm.variant || '%'
-            )
-            AND NOT EXISTS (SELECT 1 FROM kia_vehicle_allocations aa WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL)
-        ) AS has_matching_stock
+        ${kiaMatchingStockExists('w.model', 'w.variant', 'w.color')} AS has_matching_stock
       FROM wanted w
     `)
       for (const r of rows<{ id: string; no_allocation: boolean; has_matching_stock: boolean }>(flagRows)) {
@@ -1194,7 +1346,8 @@ export async function getKiaBookingsList(input: BookingListInput) {
       waitingAllocation: statusCounts.proforma_generated || 0,
       financePending: (statusCounts.vehicle_allocated || 0) + (statusCounts.transferring || 0),
       readyDelivery: statusCounts.ready_delivery || 0,
-      delivered: statusCounts.delivered || 0,
+      // From its own delivered_at-windowed count, not the created_at GROUP BY — see the note above.
+      delivered: Number(agg?.delivered_count || 0),
       cancelled: statusCounts.cancelled || 0,
       notInStock: Number(agg?.not_in_stock_count || 0),
       // Exact complement of not-in-stock within the in-flight set (see the SQL note above).
@@ -1204,7 +1357,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
     // #10 Bookings & vehicles summary — full status distribution, allocation state, and top models.
     summary: {
       totalBookings,
-      statusCounts: statusCounts as Record<string, number>,
+      statusCounts: { ...statusCounts, delivered: Number(agg?.delivered_count || 0) } as Record<string, number>,
       onHold: statusCounts.on_hold || 0,
       activeAllocations: Number(agg?.active_allocations || 0),
       noPayment: Number(agg?.no_payment_count || 0),
@@ -1887,7 +2040,10 @@ export async function getKiaBookingMatchingVehicles(id: string) {
         'dms'::text AS source
       FROM kia_stock_management sm
       LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-      WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
+      -- Same allowlist the badge/KPI predicate uses (KIA_ALLOTTABLE_STOCK_STATUSES). Keeping these
+      -- two in step is the whole point: a car the badge calls available must be offerable here.
+      WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ${sql`(${sql.join(
+        KIA_ALLOTTABLE_STOCK_STATUSES.map((v) => sql`${v}`), sql`, `)})`}
         AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
         AND NOT EXISTS (SELECT 1 FROM active_allocations aa WHERE aa.vin_number = sm.vin_number)
         -- ...and not a car we have already handed over. active_allocations cannot see those (the
@@ -2007,7 +2163,7 @@ function assertKiaVehicleMatchesBooking(vehicle: JsonRecord, wanted: { model: st
  * Allots a VIN to a booking.
  *
  * The payment countdown depends on where the vehicle physically is, per the DMS feed:
- *  - **Free Stock** → the 72h (120h CSD) window starts now; booking → 'vehicle_allocated'.
+ *  - **Free Stock** → the 5-day (7-day CSD) window starts now; booking → 'vehicle_allocated'.
  *  - **In transit** → NO countdown yet (expires_at stays NULL); booking → 'transferring'. The clock
  *    starts when the feed flips the VIN to Free Stock — see startKiaArrivedAllocationCountdowns().
  *    Previously the clock started immediately regardless, so a customer's payment window burned down
@@ -2017,7 +2173,7 @@ function assertKiaVehicleMatchesBooking(vehicle: JsonRecord, wanted: { model: st
  * role check — booking allotment is IDT-exclusive, BBND allot deliberately is not.
  *
  * `options.extraTime` records an OPTIONAL request for a longer payment window (1–15 days, reason
- * required). It deliberately does NOT change the window applied here — the standard 72h/120h still
+ * required). It deliberately does NOT change the window applied here — the standard 5-day/7-day still
  * takes effect immediately. The request only becomes real if the MD approves it, which is what
  * lib/kia/payment-window-requests.ts does. Creating it inside this transaction means an allotment
  * can never succeed while its extension request is lost.
@@ -2084,7 +2240,7 @@ export async function allotKiaBookingVehicle(
        * Below the threshold a lapsed reservation returns the vehicle to free stock while the money
        * stays on the booking, so the customer can be re-allotted later with a large balance already
        * paid. Without this the fresh allocation row would start at NULL and hand them a brand-new
-       * 72h countdown on money they paid weeks ago - and the sweep could take the second car too.
+       * 5-day countdown on money they paid weeks ago - and the sweep could take the second car too.
        */
       paymentSecuredAt: Number(booking.amountReceived) > KIA_PAYMENT_SECURED_THRESHOLD ? new Date() : null,
       allocatedBy: appUser.id,

@@ -1288,6 +1288,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   service_general_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['petty_cash'], ['view', 'create', 'edit', 'approve', 'audit']),
   ],
   sales_head: [
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1340,6 +1341,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
+    ...keysForGroups(['kia.approvals'], ['view', 'approve', 'audit']),
+    ...keysForGroups(['purchase_orders'], ['view', 'approve', 'audit']),
     ...keysForGroups(['am_finance'], ['view']),
     // ED owns the FIRST petty-cash approval stage: a submitted request lands on 'ed_pending'
     // (lib/petty-cash/constants.ts) and 'ed' is in PETTY_CASH_ALL_BRANCH_ROLES, so this desk sees

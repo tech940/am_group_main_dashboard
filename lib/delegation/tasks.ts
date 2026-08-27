@@ -39,7 +39,7 @@ export type CreateTaskInput = {
   externalContactPhone?: string | null
 }
 
-export type TaskAction = 'complete' | 'reopen' | 'cancel' | 'reassign' | 'edit' | 'comment' | 'remind' | 'md_remark'
+export type TaskAction = 'complete' | 'reopen' | 'cancel' | 'reassign' | 'edit' | 'comment' | 'remind' | 'md_remark' | 'chat_message'
 export type UpdateTaskInput = {
   completionRemark?: string | null
   assignedTo?: string | null
@@ -643,16 +643,64 @@ export async function updateDelegationTask(id: string, action: TaskAction, input
         const mdRemarkText = text(input.remark || input.completionRemark)
         if (!mdRemarkText) throw new Error('MD Remark content is required.')
         const existingMeta = (task.metadata as Record<string, unknown>) || {}
+        const existingThread = Array.isArray(existingMeta.thread) ? (existingMeta.thread as any[]) : []
+        const isActorMd = ['md', 'ceo'].includes(String(actor.role || '').trim().toLowerCase())
+        const isActorEa = ['ea', 'eba'].includes(String(actor.role || '').trim().toLowerCase())
+        const newMsg = {
+          id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          senderId: actor.id,
+          senderName: actor.fullName,
+          senderRole: actor.role,
+          text: mdRemarkText,
+          createdAt: new Date().toISOString(),
+          isMd: isActorMd,
+          isEa: isActorEa,
+        }
         updates.metadata = {
           ...existingMeta,
+          thread: [...existingThread, newMsg],
+          lastMessage: newMsg,
           mdRemark: mdRemarkText,
           mdRemarkBy: actor.id,
           mdRemarkByName: actor.fullName,
           mdRemarkByRole: actor.role,
-          mdRemarkAt: new Date().toISOString(),
+          mdRemarkAt: newMsg.createdAt,
         }
         activityType = 'md_remark'
         activityMessage = `MD Remark: ${mdRemarkText}`
+        break
+      }
+      case 'chat_message': {
+        const msgText = text(input.remark || input.completionRemark)
+        if (!msgText) throw new Error('Message cannot be empty.')
+        const existingMeta = (task.metadata as Record<string, unknown>) || {}
+        const existingThread = Array.isArray(existingMeta.thread) ? (existingMeta.thread as any[]) : []
+        const isActorMd = ['md', 'ceo'].includes(String(actor.role || '').trim().toLowerCase())
+        const isActorEa = ['ea', 'eba'].includes(String(actor.role || '').trim().toLowerCase())
+        const newMsg = {
+          id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          senderId: actor.id,
+          senderName: actor.fullName,
+          senderRole: actor.role,
+          text: msgText,
+          createdAt: new Date().toISOString(),
+          isMd: isActorMd,
+          isEa: isActorEa,
+        }
+        updates.metadata = {
+          ...existingMeta,
+          thread: [...existingThread, newMsg],
+          lastMessage: newMsg,
+          ...(isActorMd ? {
+            mdRemark: msgText,
+            mdRemarkBy: actor.id,
+            mdRemarkByName: actor.fullName,
+            mdRemarkByRole: actor.role,
+            mdRemarkAt: newMsg.createdAt,
+          } : {})
+        }
+        activityType = isActorMd ? 'md_message' : (isActorEa ? 'ea_reply' : 'chat_message')
+        activityMessage = `${actor.fullName} (${actor.role.toUpperCase()}): ${msgText}`
         break
       }
       default:

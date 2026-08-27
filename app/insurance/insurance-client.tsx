@@ -26,8 +26,6 @@ import {
   Calendar,
   X,
   PieChart as PieChartIcon,
-  Sparkles,
-  Zap,
   PhoneCall,
   Clock,
   UserCheck,
@@ -139,6 +137,44 @@ function normalizePolicyRow(p: any) {
     fuelType: p.fuel_type ?? p.fuelType ?? 'Petrol / Diesel',
     mfgYear: p.mfg_year ?? p.mfgYear ?? '—',
   }
+}
+
+export function getPolicyTypeBadge(type?: string | null) {
+  const norm = (type || '').toUpperCase().trim()
+  if (norm.includes('NEW')) {
+    return {
+      label: 'NEW',
+      className: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 font-semibold',
+      dotColor: 'bg-emerald-500',
+    }
+  }
+  if (norm.includes('RENEWAL')) {
+    return {
+      label: 'RENEWAL',
+      className: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 font-semibold',
+      dotColor: 'bg-slate-500',
+    }
+  }
+  if (norm.includes('ROLLOVER')) {
+    return {
+      label: 'ROLLOVER',
+      className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-semibold',
+      dotColor: 'bg-blue-500',
+    }
+  }
+  return {
+    label: type || 'Standard',
+    className: 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-700 font-medium',
+    dotColor: 'bg-slate-400',
+  }
+}
+
+export function getPolicyClassification(type?: string | null) {
+  const norm = (type || '').toUpperCase().trim()
+  if (norm.includes('NEW')) return 'New Vehicle Policy'
+  if (norm.includes('RENEWAL')) return 'Dealership Policy Renewal'
+  if (norm.includes('ROLLOVER')) return 'Rollover / Transferred Policy'
+  return 'Standard Comprehensive Cover'
 }
 
 type InsuranceType = 'hyundai' | 'platinum' | 'kia'
@@ -1319,7 +1355,150 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
               </CardContent>
             </Card>
 
-            {/* 2. Customer Lifetime Renewal Depth (1st Policy to 6th+ Renewal) */}
+            {/* 2. Customer Policy Classification: New vs Renewal vs Rollover */}
+            <Card className="rounded-2xl border-slate-200/90 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900">
+              <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-[var(--dashboard-primary)]" />
+                    Customer Policy Classification (New · Renewal · Rollover)
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
+                    Distribution of customer acquisition type. Click any category to inspect policy records.
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setActiveWorkspace('register')
+                      setAppliedPolicyType('all')
+                      setDraftPolicyType('all')
+                      setTablePage(1)
+                    }}
+                    className="h-7 text-xs font-semibold gap-1 rounded-xl cursor-pointer"
+                  >
+                    <span>View All in Register</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* NEW POLICIES CARD */}
+                  <div
+                    onClick={() => openDrilldown('Customer Policy Type: NEW', 'All customers with first-time new vehicle insurance policies', { policyType: 'NEW' })}
+                    className="group cursor-pointer rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-xs transition-all space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          New Policies
+                        </span>
+                      </div>
+                      <Badge variant="secondary" className="font-semibold text-[10px]">
+                        {kpis.total_policies > 0 ? formatPercent((kpis.new_count / kpis.total_policies) * 100) : '0%'}
+                      </Badge>
+                    </div>
+
+                    <div>
+                      <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                        {formatNumber(kpis.new_count || 0)}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        First-time buyers & new vehicle deliveries
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <span>Inspect Customers</span>
+                      <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+
+                  {/* RENEWAL POLICIES CARD */}
+                  <div
+                    onClick={() => openDrilldown('Customer Policy Type: RENEWAL', 'All returning customers with annual policy renewals', { policyType: 'RENEWAL' })}
+                    className="group cursor-pointer rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-xs transition-all space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-slate-500" />
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          Renewals
+                        </span>
+                      </div>
+                      <Badge variant="secondary" className="font-semibold text-[10px]">
+                        {kpis.total_policies > 0 ? formatPercent((kpis.renewal_count / kpis.total_policies) * 100) : '0%'}
+                      </Badge>
+                    </div>
+
+                    <div>
+                      <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                        {formatNumber(kpis.renewal_count || 0)}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Returning customers & annual renewals
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <span>Inspect Customers</span>
+                      <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+
+                  {/* ROLLOVER POLICIES CARD */}
+                  <div
+                    onClick={() => {
+                      if (capabilities.hasRollover !== false) {
+                        openDrilldown('Customer Policy Type: ROLLOVER', 'All customers with rollover and transferred insurance policies', { policyType: 'ROLLOVER' })
+                      }
+                    }}
+                    className={cn(
+                      "group rounded-2xl border p-4 transition-all space-y-3",
+                      capabilities.hasRollover !== false
+                        ? "cursor-pointer border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-xs"
+                        : "opacity-50 border-slate-200 bg-slate-50 dark:bg-slate-800/20 cursor-not-allowed"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-blue-500" />
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          Rollover Policies
+                        </span>
+                      </div>
+                      <Badge variant="secondary" className="font-semibold text-[10px]">
+                        {kpis.total_policies > 0 ? formatPercent(((kpis.rollover_count || 0) / kpis.total_policies) * 100) : '0%'}
+                      </Badge>
+                    </div>
+
+                    <div>
+                      <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                        {formatNumber(kpis.rollover_count || 0)}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {capabilities.hasRollover !== false
+                          ? 'Transferred & rollover policies from outside'
+                          : 'Not applicable for this brand feed'}
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <span>{capabilities.hasRollover !== false ? 'Inspect Customers' : 'Not Recorded'}</span>
+                      {capabilities.hasRollover !== false && (
+                        <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 3. Customer Lifetime Renewal Depth (1st Policy to 6th+ Renewal) */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               <Card className="lg:col-span-2 rounded-2xl border-slate-200/90 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900">
                 <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -1841,6 +2020,80 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                 </div>
               </CardHeader>
               <CardContent className="pt-3 space-y-4">
+                {/* Quick Policy Type Segment Pills */}
+                <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">Policy Type:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppliedPolicyType('all')
+                      setDraftPolicyType('all')
+                      setTablePage(1)
+                    }}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border",
+                      appliedPolicyType === 'all'
+                        ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100 shadow-2xs"
+                        : "bg-white dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
+                    )}
+                  >
+                    All Policies ({formatNumber(kpis.total_policies || 0)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppliedPolicyType('NEW')
+                      setDraftPolicyType('NEW')
+                      setTablePage(1)
+                    }}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border flex items-center gap-1.5",
+                      appliedPolicyType.toUpperCase() === 'NEW'
+                        ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100 shadow-2xs"
+                        : "bg-white dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
+                    )}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span>New ({formatNumber(kpis.new_count || 0)})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppliedPolicyType('RENEWAL')
+                      setDraftPolicyType('RENEWAL')
+                      setTablePage(1)
+                    }}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border flex items-center gap-1.5",
+                      appliedPolicyType.toUpperCase() === 'RENEWAL'
+                        ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100 shadow-2xs"
+                        : "bg-white dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
+                    )}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                    <span>Renewal ({formatNumber(kpis.renewal_count || 0)})</span>
+                  </button>
+                  {capabilities.hasRollover !== false && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAppliedPolicyType('ROLLOVER')
+                        setDraftPolicyType('ROLLOVER')
+                        setTablePage(1)
+                      }}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border flex items-center gap-1.5",
+                        appliedPolicyType.toUpperCase() === 'ROLLOVER'
+                          ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100 shadow-2xs"
+                          : "bg-white dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
+                      )}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                      <span>Rollover ({formatNumber(kpis.rollover_count || 0)})</span>
+                    </button>
+                  )}
+                </div>
+
                 {policiesQuery.isLoading ? (
                   <div className="flex min-h-60 items-center justify-center">
                     <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
@@ -1872,7 +2125,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                                 <div className="flex flex-col items-center justify-center space-y-2">
                                   <FileText className="h-7 w-7 text-slate-300 dark:text-slate-600" />
                                   <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No policies found matching current criteria</p>
-                                  <p className="text-[11px] text-slate-400">Try adjusting your search keywords, branch filters, or date range.</p>
+                                  <p className="text-[11px] text-slate-400">Try adjusting your search keywords, branch filters, or policy type.</p>
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -1880,6 +2133,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                         }
                         return rawList.map((raw: any) => {
                           const p = normalizePolicyRow(raw)
+                          const typeBadge = getPolicyTypeBadge(p.policyType)
                           return (
                             <TableRow
                               key={p.id || p.policyNo || p.chassisNo}
@@ -1907,8 +2161,9 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                                 {p.insuranceCompany}
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300">
-                                  {p.policyType}
+                                <Badge className={cn("text-[10px] flex items-center gap-1 border shadow-2xs font-black", typeBadge.className)}>
+                                  <span className={cn("h-1.5 w-1.5 rounded-full", typeBadge.dotColor)} />
+                                  <span>{typeBadge.label}</span>
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right font-black text-slate-900 dark:text-slate-100">
@@ -2074,8 +2329,8 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
     <Dialog open={drilldownModal.open} onOpenChange={(open) => setDrilldownModal((prev) => ({ ...prev, open }))}>
       <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto rounded-3xl p-6">
         <DialogHeader className="border-b border-slate-100 dark:border-slate-800 pb-3">
-          <DialogTitle className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Sparkles className="h-4.5 w-4.5 text-teal-600" />
+          <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <Layers className="h-4.5 w-4.5 text-[var(--dashboard-primary)]" />
             {drilldownModal.title}
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
@@ -2096,6 +2351,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                     <TableHead className="font-black">Date</TableHead>
                     <TableHead className="font-black">Policy #</TableHead>
                     <TableHead className="font-black">Customer</TableHead>
+                    <TableHead className="font-black">Type</TableHead>
                     <TableHead className="font-black">Model</TableHead>
                     <TableHead className="font-black">Insurer</TableHead>
                     <TableHead className="font-black text-right">Gross Premium</TableHead>
@@ -2107,7 +2363,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                     if (list.length === 0) {
                       return (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center py-6 text-slate-400">
+                          <TableCell colSpan={7} className="text-center py-6 text-slate-400">
                             No policies found in this drilldown.
                           </TableCell>
                         </TableRow>
@@ -2115,6 +2371,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                     }
                     return list.map((raw: any) => {
                       const p = normalizePolicyRow(raw)
+                      const typeBadge = getPolicyTypeBadge(p.policyType)
                       return (
                         <TableRow
                           key={p.id || p.policyNo || p.chassisNo}
@@ -2124,6 +2381,12 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                           <TableCell className="font-bold">{formatDate(p.policyIssueDate)}</TableCell>
                           <TableCell className="font-mono font-black">{p.policyNo || 'Pending'}</TableCell>
                           <TableCell className="font-bold">{p.customerName}</TableCell>
+                          <TableCell>
+                            <Badge className={cn("text-[10px] flex items-center gap-1 border shadow-2xs font-black w-fit", typeBadge.className)}>
+                              <span className={cn("h-1.5 w-1.5 rounded-full", typeBadge.dotColor)} />
+                              <span>{typeBadge.label}</span>
+                            </Badge>
+                          </TableCell>
                           <TableCell>{p.modelName}</TableCell>
                           <TableCell>{p.insuranceCompany}</TableCell>
                           <TableCell className="text-right font-black">{formatCurrency(p.grossPremium)}</TableCell>
@@ -2158,9 +2421,15 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Badge className="bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-300 font-black text-xs px-2.5 py-0.5">
-                {selectedPolicyRecord?.policyType || 'Comprehensive'}
-              </Badge>
+              {(() => {
+                const modalTypeBadge = getPolicyTypeBadge(selectedPolicyRecord?.policyType)
+                return (
+                  <Badge className={cn("font-black text-xs px-2.5 py-0.5 border shadow-2xs flex items-center gap-1.5", modalTypeBadge.className)}>
+                    <span className={cn("h-2 w-2 rounded-full", modalTypeBadge.dotColor)} />
+                    <span>{modalTypeBadge.label}</span>
+                  </Badge>
+                )
+              })()}
               {selectedPolicyRecord?.column64vbStatus === 'VERIFIED' ? (
                 <Badge className="bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 font-black text-xs px-2.5 py-0.5">
                   64VB Verified
@@ -2225,6 +2494,12 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                 <div className="space-y-1 text-[11px] text-slate-600 dark:text-slate-400 font-medium">
                   <p>Policy #: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{selectedPolicyRecord.policyNo || '—'}</span></p>
                   <p>Proposal #: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{selectedPolicyRecord.proposalNo || '—'}</span></p>
+                  <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-bold block">Policy Classification:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {getPolicyClassification(selectedPolicyRecord.policyType)}
+                    </span>
+                  </div>
                 </div>
               </div>
 

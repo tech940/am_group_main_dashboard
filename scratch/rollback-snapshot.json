@@ -1,0 +1,295 @@
+{
+ "bookings": [
+  {
+   "booking_number": "KIA_JK402_2026_120107",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEC813MTN061672",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:56.956358+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120106",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBGA814LSN236804",
+   "delivered_at": null,
+   "updated_at": "2026-08-14 08:00:03.68355+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120182",
+   "status": "proforma_generated",
+   "allocated_vin": null,
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:38.552663+00"
+  },
+  {
+   "booking_number": "KIA_JK501_2026_120127",
+   "status": "delivered",
+   "allocated_vin": "MZBGB814LTN344148",
+   "delivered_at": "2026-08-21 07:32:43.651+00",
+   "updated_at": "2026-08-21 07:32:43.651+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120166",
+   "status": "ready_delivery",
+   "allocated_vin": "MZBFB812LTN643024",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 12:46:38.409+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120176",
+   "status": "booking_created",
+   "allocated_vin": null,
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:39.660233+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120181",
+   "status": "vehicle_allocated",
+   "allocated_vin": "MZBEA812LTN073983",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 12:48:37.411+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120069",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEC813MTN081677",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:46.156041+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120046",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEA812LTN080287",
+   "delivered_at": null,
+   "updated_at": "2026-08-14 10:00:03.876633+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120110",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBFB812LTN665297",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:48.32773+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120190",
+   "status": "proforma_generated",
+   "allocated_vin": null,
+   "delivered_at": null,
+   "updated_at": "2026-08-25 09:57:37.804+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120100",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBFB813LTN662824",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:49.40824+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120137",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEA812LTN073983",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:51.559243+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120048",
+   "status": "booking_created",
+   "allocated_vin": "MZBEB812LTN080324",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:53.721808+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120102",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEA812LTN080631",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:48:00.166889+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120138",
+   "status": "proforma_generated",
+   "allocated_vin": null,
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:48:06.633923+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120036",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEB812TTN070112",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:48:07.716011+00"
+  },
+  {
+   "booking_number": "KIA_JK501_2026_120156",
+   "status": "delivered",
+   "allocated_vin": "MZBEB812LTN076936",
+   "delivered_at": "2026-08-23 08:59:51.377+00",
+   "updated_at": "2026-08-23 08:59:51.377+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120163",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBFB813LTN662824",
+   "delivered_at": null,
+   "updated_at": "2026-08-20 13:00:04.196936+00"
+  },
+  {
+   "booking_number": "KIA_JK501_2026_120141",
+   "status": "delivered",
+   "allocated_vin": "MZBEA812LTN086775",
+   "delivered_at": "2026-08-23 08:59:33.035+00",
+   "updated_at": "2026-08-27 10:10:20.263781+00"
+  },
+  {
+   "booking_number": "KIA_JK501_2026_120103",
+   "status": "delivered",
+   "allocated_vin": "MZBEA812LTN071187",
+   "delivered_at": "2026-08-23 09:00:15.467+00",
+   "updated_at": "2026-08-23 09:00:15.467+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120061",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBFB813LTN676244",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:54.794285+00"
+  },
+  {
+   "booking_number": "KIA_JK501_2026_120111",
+   "status": "delivered",
+   "allocated_vin": "MZBEB812LTN082914",
+   "delivered_at": "2026-08-21 07:31:26.678+00",
+   "updated_at": "2026-08-21 07:31:26.678+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120099",
+   "status": "vehicle_allocated",
+   "allocated_vin": "MZBGB814LTN328352",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 08:00:05.379134+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120147",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEA812LTN060801",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:55.877271+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120044",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEB812LTN083395",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:47.244175+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120101",
+   "status": "vehicle_allocated",
+   "allocated_vin": "MZBEB813LTN075420",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 06:00:05.30548+00"
+  },
+  {
+   "booking_number": "KIA_JK501_2026_120148",
+   "status": "proforma_generated",
+   "allocated_vin": null,
+   "delivered_at": null,
+   "updated_at": "2026-08-24 07:01:43.923+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120188",
+   "status": "proforma_generated",
+   "allocated_vin": null,
+   "delivered_at": null,
+   "updated_at": "2026-08-25 06:05:18.016+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120149",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEB812LTN082917",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:45.080909+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120066",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEA812LTN081166",
+   "delivered_at": null,
+   "updated_at": "2026-08-26 05:47:42.913266+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120034",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBEA812LTN060801",
+   "delivered_at": null,
+   "updated_at": "2026-08-27 05:00:02.457459+00"
+  },
+  {
+   "booking_number": "KIA_JK501_2026_120168",
+   "status": "proforma_generated",
+   "allocated_vin": "MZBFB812LTN684058",
+   "delivered_at": null,
+   "updated_at": "2026-08-27 05:00:02.457459+00"
+  },
+  {
+   "booking_number": "KIA_JK402_2026_120047",
+   "status": "proforma_generated",
+   "allocated_vin": null,
+   "delivered_at": null,
+   "updated_at": "2026-08-27 10:10:20.263781+00"
+  }
+ ],
+ "liveAllocations": [
+  {
+   "id": "8155df78-7bda-4e7a-8f93-a3dc3bc9f0fa",
+   "vin_number": "MZBFB812LTN643024",
+   "released_at": null,
+   "booking_number": "KIA_JK402_2026_120166"
+  },
+  {
+   "id": "14b228c5-ed33-4cd2-b217-04cfbb63245a",
+   "vin_number": "MZBEA812LTN073983",
+   "released_at": null,
+   "booking_number": "KIA_JK402_2026_120181"
+  },
+  {
+   "id": "220002f8-9387-40e2-90ba-52d55bcbe95d",
+   "vin_number": "MZBGB814LTN328352",
+   "released_at": null,
+   "booking_number": "KIA_JK402_2026_120099"
+  },
+  {
+   "id": "a0653a76-a85e-4728-b256-fc097677e9a2",
+   "vin_number": "MZBEB813LTN075420",
+   "released_at": null,
+   "booking_number": "KIA_JK402_2026_120101"
+  }
+ ],
+ "pendingFollowups": [
+  {
+   "id": "a36f55fb-5c68-41e3-8fe3-bf2416ced68f",
+   "status": "pending",
+   "booking_number": "KIA_JK402_2026_120034"
+  },
+  {
+   "id": "fe87b626-d91a-4107-a57e-10bf6219c051",
+   "status": "pending",
+   "booking_number": "KIA_JK402_2026_120099"
+  },
+  {
+   "id": "7287ef36-c3c8-4341-92d6-5e2bf579c588",
+   "status": "pending",
+   "booking_number": "KIA_JK501_2026_120148"
+  },
+  {
+   "id": "87efd1d9-b3fb-4f59-8dd7-8621ff4862db",
+   "status": "pending",
+   "booking_number": "KIA_JK501_2026_120168"
+  },
+  {
+   "id": "ca826835-82d4-47f9-a79e-30dc62986c82",
+   "status": "pending",
+   "booking_number": "KIA_JK402_2026_120101"
+  }
+ ]
+}

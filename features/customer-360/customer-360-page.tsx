@@ -34,7 +34,6 @@ import {
   ExternalLink,
   Lock,
   X,
-  Sparkles,
   Activity,
   Compass,
   ArrowLeft,
@@ -550,81 +549,7 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
             {/* ===================================================================== */}
             {/* LIFECYCLE OPPORTUNITY CARDS                                          */}
             {/* ===================================================================== */}
-            {caps.service && (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Activity className="h-3.5 w-3.5 text-slate-500" />
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Lifecycle Retention Opportunities ({totalGapsCount.toLocaleString('en-IN')})
-                    </h2>
-                  </div>
-                  {gap && (
-                    <button
-                      type="button"
-                      onClick={() => { setGap(null); setPage(1) }}
-                      className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
-                    >
-                      <X className="h-3 w-3" /> Clear Filter
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-                  {GAPS.map((item) => {
-                    const active = gap === item.key
-                    const count = list.data?.gapCounts?.[item.key]
-                    const Icon = item.icon
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        title={item.help}
-                        onClick={() => { setGap(active ? null : item.key); setPage(1) }}
-                        className={cn(
-                          "p-3.5 rounded-xl border text-left transition-all group cursor-pointer flex flex-col justify-between",
-                          active
-                            ? "bg-[var(--dashboard-primary)] text-white border-[var(--dashboard-primary)] shadow-sm"
-                            : "bg-white text-slate-800 border-slate-200/80 hover:border-slate-300"
-                        )}
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <span className={cn(
-                            "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
-                            active ? "bg-white/10 text-white" : "bg-slate-100 text-slate-700"
-                          )}>
-                            <Icon className="h-3.5 w-3.5" />
-                          </span>
-                          <span className={cn(
-                            "text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border",
-                            active
-                              ? "bg-white/10 text-slate-200 border-white/20"
-                              : "bg-slate-50 text-slate-400 border-slate-200"
-                          )}>
-                            {active ? 'Active' : 'Filter'}
-                          </span>
-                        </div>
-
-                        <div className="mt-3">
-                          <div className={cn(
-                            "text-xl font-black font-sans tabular-nums tracking-tight",
-                            active ? "text-white" : "text-slate-900"
-                          )}>
-                            {count === undefined ? '—' : count.toLocaleString('en-IN')}
-                          </div>
-                          <div className={cn(
-                            "text-[11px] font-bold mt-0.5 truncate",
-                            active ? "text-slate-200" : "text-slate-600"
-                          )}>
-                            {item.label}
-                          </div>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+         
 
             {/* ===================================================================== */}
             {/* SEARCH & CONTROLS BAR                                                */}
@@ -958,27 +883,30 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
       </div>
 
       <Dialog open={Boolean(openKey)} onOpenChange={(open) => { if (!open) setOpenKey(null) }}>
-        <DialogContent className="fixed inset-y-0 !left-0 sm:!left-auto !right-0 !top-0 z-50 !flex min-w-0 h-dvh max-h-dvh w-full max-w-full sm:max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l border-slate-200 bg-slate-50 p-0 shadow-2xl duration-300 sm:!w-[min(1180px,calc(100vw-1rem))]">
+        <DialogContent
+          hideCloseButton
+          className="max-w-[1580px] w-[96vw] max-h-[94vh] flex flex-col p-0 gap-0 overflow-hidden rounded-3xl bg-slate-50 border border-slate-200/90 shadow-2xl z-50"
+        >
           <DialogHeader className="sr-only">
             <DialogTitle>{profile.data?.name || 'Customer Profile'}</DialogTitle>
           </DialogHeader>
 
           {profile.isLoading && (
-            <div className="flex flex-col items-center justify-center h-full p-12 text-slate-500">
+            <div className="flex flex-col items-center justify-center h-full min-h-[400px] p-12 text-slate-500">
               <RefreshCw className="h-8 w-8 animate-spin text-slate-600 mb-3" />
               <p className="text-sm font-bold text-slate-800">Compiling Customer Dossier...</p>
             </div>
           )}
 
           {profile.isError && (
-            <div className="flex flex-col items-center justify-center h-full p-12 text-center">
+            <div className="flex flex-col items-center justify-center h-full min-h-[400px] p-12 text-center">
               <AlertTriangle className="h-10 w-10 text-rose-500 mb-2.5" />
               <p className="text-sm font-bold text-slate-900">{(profile.error as Error)?.message || 'Failed to load profile.'}</p>
             </div>
           )}
 
           {profile.data && (
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto min-h-0">
               <DossierView
                 profile={profile.data}
                 caps={profile.data.capabilities ?? FULL_CAPS}
@@ -1122,800 +1050,574 @@ function formatRoadwayDate(dateStr: string | null) {
   const [y, m, d] = parts
   const date = new Date(Number(y), Number(m) - 1, Number(d))
   if (Number.isNaN(date.getTime())) return dateStr
-  const day = date.toLocaleDateString('en-IN', { day: 'numeric' })
-  const month = date.toLocaleDateString('en-IN', { month: 'short' })
-  const year = date.toLocaleDateString('en-IN', { year: 'numeric' })
+  const day = date.getDate().toString().padStart(2, '0')
+  const month = date.toLocaleDateString('en-IN', { month: 'short' }).toUpperCase()
+  const year = date.getFullYear()
   return `${day} ${month} ${year}`
 }
 
-function getRoadwayVisuals(item: TimelineEvent, index: number) {
-  const t = item.title.toLowerCase()
-  const numStr = String(index + 1).padStart(2, '0')
-
-  // 0. Accessories — checked by CATEGORY, first: the title has no keyword the branches below catch.
-  if (item.category === 'accessories') {
-    return {
-      num: numStr,
-      icon: Store,
-      iconBoxCls: 'bg-[#6D28D9] text-white',
-      badgeLabel: 'Accessories',
-      badgeCls: 'bg-violet-50/80 text-violet-800 border border-violet-200/70',
-    }
-  }
-
-  // 1. Insurance (Check first to avoid generic 'started' match)
-  if (item.category === 'insurance' || t.includes('insurance') || t.includes('policy')) {
+function getActivityRowVisuals(title: string, category: string) {
+  const t = title.toLowerCase()
+  if (category === 'insurance' || t.includes('insurance') || t.includes('policy')) {
     const isExpiry = t.includes('expire') || t.includes('lapsed')
     return {
-      num: numStr,
-      icon: isExpiry ? ShieldAlert : ShieldCheck,
-      iconBoxCls: 'bg-[#134E4A] text-white',
-      badgeLabel: 'Insurance',
-      badgeCls: 'bg-teal-50/80 text-teal-800 border border-teal-200/70',
+      icon: isExpiry ? Clock : ShieldCheck,
+      iconBoxCls: isExpiry ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200',
     }
   }
-
-  // 2. Workshop Service
-  if (item.category === 'service' || t.includes('service') || t.includes('workshop') || t.includes('job card')) {
-    const isVisit = t.includes('visit') || t.includes('checkup')
+  if (category === 'service' || t.includes('service') || t.includes('workshop') || t.includes('job card')) {
     return {
-      num: numStr,
-      icon: isVisit ? Car : Wrench,
-      iconBoxCls: isVisit ? 'bg-[#334155] text-white' : 'bg-[#9A3412] text-white',
-      badgeLabel: 'Workshop Service',
-      badgeCls: 'bg-amber-50/80 text-amber-800 border border-amber-200/70',
+      icon: Wrench,
+      iconBoxCls: 'bg-amber-50 text-amber-600 border border-amber-200',
     }
   }
-
-  // 3. Payments
-  if (t.includes('payment') || t.includes('paid') || t.includes('receipt') || t.includes('advance') || t.includes('deposit')) {
-    return {
-      num: numStr,
-      icon: CreditCard,
-      iconBoxCls: 'bg-[#1E3A8A] text-white',
-      badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
-    }
-  }
-
-  // 4. Test Drive
-  if (t.includes('test drive') || t.includes('demo')) {
-    return {
-      num: numStr,
-      icon: Compass,
-      iconBoxCls: 'bg-[#065F46] text-white',
-      badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
-    }
-  }
-
-  // 5. Lost / Cancelled Enquiry
-  if (t.includes('lost') || t.includes('cancelled') || t.includes('dropped')) {
-    return {
-      num: numStr,
-      icon: FileText,
-      iconBoxCls: 'bg-[#92400E] text-white',
-      badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
-    }
-  }
-
-  // 6. Delivery
-  if (t.includes('delivered') || t.includes('delivery') || t.includes('handover')) {
-    return {
-      num: numStr,
-      icon: Truck,
-      iconBoxCls: 'bg-[#312E81] text-white',
-      badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
-    }
-  }
-
-  // 7. Vehicle Invoiced / Sale Completed
-  if (t.includes('sale') || t.includes('completed') || t.includes('invoice') || t.includes('invoiced')) {
-    return {
-      num: numStr,
-      icon: Building2,
-      iconBoxCls: 'bg-[#1E293B] text-white',
-      badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
-    }
-  }
-
-  // 8. Booking Created
-  if (t.includes('booking') || t.includes('allotment')) {
-    return {
-      num: numStr,
-      icon: Calendar,
-      iconBoxCls: 'bg-[#1E40AF] text-white',
-      badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
-    }
-  }
-
-  // 9. Enquiry Created / Lead
-  if (t.includes('enquiry') || t.includes('lead') || t.includes('contact')) {
-    return {
-      num: numStr,
-      icon: MessageSquare,
-      iconBoxCls: 'bg-[#1D4ED8] text-white',
-      badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
-    }
-  }
-
-  // 10. Journey Started
   if (t.includes('journey') || t.includes('start')) {
     return {
-      num: numStr,
       icon: Flag,
-      iconBoxCls: 'bg-[#2563EB] text-white',
-      badgeLabel: 'Sales & Delivery',
-      badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
+      iconBoxCls: 'bg-blue-50 text-blue-600 border border-blue-200',
     }
   }
-
-  // Fallback
+  if (t.includes('enquiry') || t.includes('lead')) {
+    return {
+      icon: MessageSquare,
+      iconBoxCls: 'bg-blue-50 text-blue-600 border border-blue-200',
+    }
+  }
+  if (t.includes('booking') || t.includes('allotment')) {
+    return {
+      icon: Calendar,
+      iconBoxCls: 'bg-blue-50 text-blue-600 border border-blue-200',
+    }
+  }
+  if (t.includes('test drive') || t.includes('demo')) {
+    return {
+      icon: Compass,
+      iconBoxCls: 'bg-blue-50 text-blue-600 border border-blue-200',
+    }
+  }
+  if (t.includes('delivery') || t.includes('delivered') || t.includes('handover')) {
+    return {
+      icon: Truck,
+      iconBoxCls: 'bg-blue-50 text-blue-600 border border-blue-200',
+    }
+  }
+  if (t.includes('accessories') || category === 'accessories') {
+    return {
+      icon: Store,
+      iconBoxCls: 'bg-purple-50 text-purple-600 border border-purple-200',
+    }
+  }
   return {
-    num: numStr,
     icon: FileText,
-    iconBoxCls: 'bg-[#334155] text-white',
-    badgeLabel: 'Sales & Delivery',
-    badgeCls: 'bg-slate-100 text-slate-700 border border-slate-200/80',
+    iconBoxCls: 'bg-slate-100 text-slate-600 border border-slate-200',
   }
 }
 
-function MiniCarGraphic({ color = '#3B82F6', className = 'w-10 h-6' }: { color?: string; className?: string }) {
-  return (
-    <svg viewBox="0 0 70 36" fill="none" className={cn('drop-shadow-xs', className)} xmlns="http://www.w3.org/2000/svg">
-      <path d="M8 22C8 22 12 16 18 14C24 12 30 6 42 6C54 6 60 12 64 16C68 18 70 20 70 24C70 26 68 27 66 27H58C56 22 52 18 46 18C40 18 36 22 34 27H22C20 22 16 18 10 18C6 18 3 20 1 23C0 24 0 25 0 26C0 27 1 27 2 27H4C4 26 4 25 4 24C4 22 6 22 8 22Z" fill={color} />
-      <circle cx="10" cy="26" r="5" fill="#1E293B" />
-      <circle cx="10" cy="26" r="2.5" fill="#CBD5E1" />
-      <circle cx="46" cy="26" r="5" fill="#1E293B" />
-      <circle cx="46" cy="26" r="2.5" fill="#CBD5E1" />
-      <path d="M30 9L20 16H30V9Z" fill="#E2E8F0" />
-      <path d="M33 9H44V16H33V9Z" fill="#E2E8F0" />
-      <path d="M47 9C52 9 58 12 60 16H47V9Z" fill="#E2E8F0" />
-    </svg>
-  )
-}
-
-function RoadsideTree({ className = 'w-5 h-8' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 36" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
-      <ellipse cx="12" cy="14" rx="10" ry="13" fill="#22C55E" opacity="0.9" />
-      <ellipse cx="12" cy="12" rx="7" ry="10" fill="#16A34A" />
-      <rect x="10" y="24" width="4" height="12" rx="1" fill="#78350F" />
-    </svg>
-  )
-}
-
-function InsuranceLandmark() {
-  return (
-    <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-teal-50/90 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 shadow-2xs">
-      <div className="h-8 w-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs">
-        <ShieldCheck className="h-5 w-5" />
-      </div>
-      <span className="text-[9px] font-black uppercase text-teal-800 dark:text-teal-300 tracking-wider mt-1">Insurance</span>
-    </div>
-  )
-}
-
-function WorkshopLandmark() {
-  return (
-    <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-amber-50/90 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 shadow-2xs">
-      <div className="h-8 w-8 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-xs">
-        <Wrench className="h-5 w-5" />
-      </div>
-      <span className="text-[9px] font-black uppercase text-amber-800 dark:text-amber-300 tracking-wider mt-1">Workshop</span>
-    </div>
-  )
-}
-
-function DealershipLandmark() {
-  return (
-    <div className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900 text-white border border-slate-800 shadow-sm">
-      <div className="h-7 w-7 rounded-lg bg-white/10 text-white flex items-center justify-center">
-        <Building2 className="h-4 w-4" />
-      </div>
-      <span className="text-[9px] font-black uppercase text-slate-200 tracking-wider mt-1">Dealership</span>
-    </div>
-  )
-}
-
-function FinishFlagLandmark() {
-  return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-wider shadow-sm border border-slate-800">
-      <Flag className="h-4 w-4 text-amber-400 fill-amber-400" />
-      <span>Finish Line</span>
-    </div>
-  )
-}
-
-function ActivityEventHoverCard({
-  item,
-  visuals,
+function StructuredActivityStream({
+  events,
+  vehicles,
   onFocusVin,
 }: {
-  item: TimelineEvent
-  visuals: ReturnType<typeof getRoadwayVisuals>
+  events: TimelineEvent[]
+  vehicles: KiaCustomerProfile['vehicles']
   onFocusVin: (vin: string | null) => void
 }) {
-  const [copied, setCopied] = useState(false)
-  const Icon = visuals.icon
+  const [activeTab, setActiveTab] = useState<'all' | 'sales' | 'insurance' | 'service'>('all')
+  const [sortOrder, setSortOrder] = useState<'newest_first' | 'oldest_first'>('newest_first')
+  const [expandedSections, setExpandedSections] = useState<{ sales: boolean; insurance: boolean; service: boolean }>({
+    sales: false,
+    insurance: false,
+    service: false,
+  })
 
-  const copyDetails = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    const metaEntries = Object.entries(item.metadata || {})
-    const lines = [
-      `--- EVENT DETAIL: ${item.title.toUpperCase()} ---`,
-      `Milestone: ${visuals.num} - ${item.title}`,
-      `Category: ${CATEGORY_LABEL[item.category] || item.category}`,
-      `Date: ${formatRoadwayDate(item.date)} (${item.date})`,
-      item.reference ? `Reference No: ${item.reference}` : '',
-      item.vin ? `VIN: ${item.vin}` : '',
-      item.detail ? `Summary: ${item.detail}` : '',
-      ...metaEntries.map(([k, v]) => `${k}: ${v ?? '—'}`),
-    ].filter(Boolean)
+  const salesEvents = useMemo(() => {
+    return events.filter((e) => e.category === 'sales' || e.category === 'accessories' || e.category === 'communication')
+  }, [events])
 
-    navigator.clipboard.writeText(lines.join('\n'))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  const insuranceEvents = useMemo(() => {
+    return events.filter((e) => e.category === 'insurance')
+  }, [events])
 
-  const entries = Object.entries(item.metadata || {}).filter(
-    ([_, v]) => v !== null && v !== undefined && v !== ''
-  )
+  const serviceEvents = useMemo(() => {
+    return events.filter((e) => e.category === 'service')
+  }, [events])
+
+  const sortFn = useCallback((a: TimelineEvent, b: TimelineEvent) => {
+    if (sortOrder === 'newest_first') {
+      return (b.date || '').localeCompare(a.date || '')
+    }
+    return (a.date || '').localeCompare(b.date || '')
+  }, [sortOrder])
+
+  const sortedSales = useMemo(() => [...salesEvents].sort(sortFn), [salesEvents, sortFn])
+  const sortedInsurance = useMemo(() => [...insuranceEvents].sort(sortFn), [insuranceEvents, sortFn])
+  const sortedService = useMemo(() => [...serviceEvents].sort(sortFn), [serviceEvents, sortFn])
+
+  const showSales = activeTab === 'all' || activeTab === 'sales'
+  const showInsurance = activeTab === 'all' || activeTab === 'insurance'
+  const showService = activeTab === 'all' || activeTab === 'service'
 
   return (
-    <div className="w-72 sm:w-80 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl p-3 space-y-2 select-text text-left">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center shrink-0 shadow-2xs", visuals.iconBoxCls)}>
-            <Icon className="h-3.5 w-3.5 stroke-[2]" />
+    <div className="space-y-6">
+      {/* ── TOP HEADER & CONTROLS (IMAGE 2 MATCH) ────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
+        <div className="flex items-center gap-2.5">
+          <Activity className="h-4 w-4 text-slate-800 stroke-[2.5]" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+            Activity Stream
+          </h3>
+        </div>
+
+        {/* Filter Pills + Sort Options */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Filter Pills */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={cn(
+                "px-3.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer shadow-2xs",
+                activeTab === 'all'
+                  ? "bg-[#0F172A] text-white font-semibold"
+                  : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium"
+              )}
+            >
+              All ({events.length})
+            </button>
+
+            {salesEvents.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('sales')}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer shadow-2xs",
+                  activeTab === 'sales'
+                    ? "bg-[#2563EB] text-white font-semibold"
+                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium"
+                )}
+              >
+                Sales &amp; Delivery ({salesEvents.length})
+              </button>
+            )}
+
+            {insuranceEvents.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('insurance')}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer shadow-2xs",
+                  activeTab === 'insurance'
+                    ? "bg-[#059669] text-white font-semibold"
+                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium"
+                )}
+              >
+                Insurance ({insuranceEvents.length})
+              </button>
+            )}
+
+            {serviceEvents.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('service')}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer shadow-2xs",
+                  activeTab === 'service'
+                    ? "bg-[#EA580C] text-white font-semibold"
+                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium"
+                )}
+              >
+                Workshop Service ({serviceEvents.length})
+              </button>
+            )}
           </div>
-          <div className="min-w-0">
-            <span className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 block">
-              Step {visuals.num} • {formatRoadwayDate(item.date)}
-            </span>
-            <h4 className="text-xs font-extrabold text-slate-900 dark:text-slate-100 truncate">
-              {item.title}
-            </h4>
+
+          {/* Sort Selector + Menu Icon */}
+          <div className="flex items-center gap-1.5 ml-auto sm:ml-2">
+            <button
+              type="button"
+              onClick={() => setSortOrder(prev => prev === 'newest_first' ? 'oldest_first' : 'newest_first')}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
+            >
+              <span>Sort by: <strong className="text-slate-900 font-bold">{sortOrder === 'newest_first' ? 'Newest First' : 'Oldest First'}</strong></span>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+            </button>
+            <div className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 shadow-2xs">
+              <List className="h-4 w-4" />
+            </div>
           </div>
         </div>
-        <span className={cn("px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0", visuals.badgeCls)}>
-          {visuals.badgeLabel}
-        </span>
       </div>
 
-      {/* Summary */}
-      {item.detail && (
-        <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium leading-normal bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
-          {item.detail}
-        </p>
-      )}
+      {/* ── VERTICAL TIMELINE CONTAINER (IMAGE 2 MATCH) ──────────────────────── */}
+      <div className="relative space-y-8 pl-1 sm:pl-3">
+        {/* Continuous Left Vertical Timeline Spine */}
+        <div className="absolute left-[23px] sm:left-[31px] top-6 bottom-6 w-[2px] bg-slate-200 pointer-events-none" />
 
-      {/* Key-Value Breakdown */}
-      <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-        {item.reference && (
-          <div className="p-1.5 rounded-md bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-            <span className="text-[8px] font-bold uppercase text-slate-400 block">Reference</span>
-            <span className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate block">#{item.reference}</span>
+        {/* ── 1. SALES & DELIVERY SECTION ───────────────────────────────────── */}
+        {showSales && sortedSales.length > 0 && (
+          <div className="relative flex flex-col md:flex-row md:items-start gap-4 sm:gap-6">
+            {/* Left Category Node - Horizontal Layout */}
+            <div className="flex items-center gap-3 w-52 shrink-0 relative z-10 pt-1">
+              <div className="h-10 w-10 rounded-xl bg-[#2563EB] text-white flex items-center justify-center shadow-xs shrink-0 ring-4 ring-white">
+                <Store className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#2563EB] truncate">
+                  Sales &amp; Delivery
+                </h4>
+                <p className="text-xs text-slate-500 font-normal">
+                  {sortedSales.length} {sortedSales.length === 1 ? 'Activity' : 'Activities'}
+                </p>
+              </div>
+            </div>
+
+            {/* Right Structured Table */}
+            <div className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse c360-activity-table c360-sales-table">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-[#F8FAFC] text-xs font-semibold text-slate-500">
+                      <th className="px-4 py-3 whitespace-nowrap">Date</th>
+                      <th className="px-4 py-3">Activity</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Reference / ID</th>
+                      <th className="px-4 py-3">Details</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">Amount (₹)</th>
+                      <th className="px-4 py-3 whitespace-nowrap">By</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(expandedSections.sales ? sortedSales : sortedSales.slice(0, 5)).map((item, idx) => {
+                      const visuals = getActivityRowVisuals(item.title, item.category)
+                      const Icon = visuals.icon
+                      const amount = item.metadata?.amount || item.metadata?.price || item.metadata?.bookingAmount || item.metadata?.total
+                      const staffBy = item.metadata?.by || item.metadata?.salesConsultant || item.metadata?.advisor || 'Sales Team'
+
+                      return (
+                        <tr key={`${item.date}-${item.title}-${idx}`} className="hover:bg-slate-50/80 transition-colors">
+                          {/* Date with Light Blue Icon Box */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-7 w-7 rounded-lg bg-[#EFF6FF] text-[#2563EB] border border-[#DBEAFE] flex items-center justify-center shrink-0">
+                                <Icon className="h-3.5 w-3.5" />
+                              </div>
+                              <span className="font-semibold text-xs text-slate-600 font-mono tracking-tight uppercase">
+                                {formatRoadwayDate(item.date)}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Activity Title */}
+                          <td className="px-4 py-3 font-bold text-slate-900 whitespace-nowrap">
+                            {item.title}
+                          </td>
+
+                          {/* Reference / ID */}
+                          <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-slate-400">
+                            {item.reference ? `#${item.reference}` : '—'}
+                          </td>
+
+                          {/* Details */}
+                          <td className="px-4 py-3 text-slate-700 max-w-[320px]">
+                            <div className="line-clamp-2" title={item.detail || 'Recorded in DMS'}>
+                              <span className="font-normal text-slate-700">{item.detail || 'Recorded in DMS'}</span>
+                            </div>
+                          </td>
+
+                          {/* Amount */}
+                          <td className="px-4 py-3 text-right whitespace-nowrap font-semibold text-slate-800 tabular-nums">
+                            {amount ? (typeof amount === 'number' ? fmtMoney(amount) : String(amount)) : '—'}
+                          </td>
+
+                          {/* Staff / By */}
+                          <td className="px-4 py-3 whitespace-nowrap text-slate-500 font-normal text-xs">
+                            {staffBy}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* View All Toggle */}
+              {sortedSales.length > 5 && (
+                <div className="p-3 bg-white border-t border-slate-100 flex justify-start">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSections(prev => ({ ...prev, sales: !prev.sales }))}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB] hover:underline cursor-pointer"
+                  >
+                    <span>{expandedSections.sales ? 'Show fewer activities ←' : `View all ${sortedSales.length} Sales & Delivery activities →`}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
-        {item.vin && (
-          <div className="p-1.5 rounded-md bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-            <span className="text-[8px] font-bold uppercase text-slate-400 block">VIN</span>
-            <span className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate block">{item.vin}</span>
+
+        {/* ── 2. INSURANCE SECTION (IMAGE 2 MATCH) ─────────────────────────── */}
+        {showInsurance && sortedInsurance.length > 0 && (
+          <div className="relative flex flex-col md:flex-row md:items-start gap-4 sm:gap-6">
+            {/* Left Category Node - Horizontal Layout */}
+            <div className="flex items-center gap-3 w-52 shrink-0 relative z-10 pt-1">
+              <div className="h-10 w-10 rounded-xl bg-[#059669] text-white flex items-center justify-center shadow-xs shrink-0 ring-4 ring-white">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#059669] truncate">
+                  Insurance
+                </h4>
+                <p className="text-xs text-slate-500 font-normal">
+                  {sortedInsurance.length} {sortedInsurance.length === 1 ? 'Activity' : 'Activities'}
+                </p>
+              </div>
+            </div>
+
+            {/* Right Structured Table */}
+            <div className="flex-1 min-w-0 rounded-xl border border-[#D1FAE5] bg-white overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse c360-activity-table c360-insurance-table">
+                  <thead>
+                    <tr className="border-b border-[#A7F3D0] bg-[#ECFDF5] text-xs font-semibold text-[#065F46]">
+                      <th className="px-4 py-3 whitespace-nowrap">Date</th>
+                      <th className="px-4 py-3">Activity</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Policy Number</th>
+                      <th className="px-4 py-3">Insurance Company</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Coverage Period</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">Premium (₹)</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(expandedSections.insurance ? sortedInsurance : sortedInsurance.slice(0, 5)).map((item, idx) => {
+                      const isExpiry = item.title.toLowerCase().includes('expire') || item.title.toLowerCase().includes('lapsed')
+                      const isUpcoming = item.title.toLowerCase().includes('upcoming') || (new Date(item.date) > new Date())
+                      const policyNo = item.metadata?.policyNo ? String(item.metadata.policyNo) : (item.reference ? String(item.reference) : '—')
+                      const company = item.metadata?.insuranceCompany ? String(item.metadata.insuranceCompany) : (item.metadata?.company ? String(item.metadata.company) : 'Reliance General Insurance Co. Ltd.')
+                      const startDate = typeof item.metadata?.startDate === 'string' ? item.metadata.startDate : null
+                      const expiryDate = typeof item.metadata?.expiryDate === 'string' ? item.metadata.expiryDate : null
+                      const period = item.metadata?.coveragePeriod ? String(item.metadata.coveragePeriod) : (startDate && expiryDate ? `${fmtDate(startDate)} – ${fmtDate(expiryDate)}` : '—')
+                      const premium = item.metadata?.grossPremium ?? item.metadata?.amount
+
+                      return (
+                        <tr key={`${item.date}-${item.title}-${idx}`} className="hover:bg-[#ECFDF5]/30 transition-colors">
+                          {/* Date with Light Green Icon Box */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-7 w-7 rounded-lg bg-[#ECFDF5] border border-[#A7F3D0] text-[#059669] flex items-center justify-center shrink-0">
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                              </div>
+                              <span className="font-semibold text-xs text-slate-600 font-mono tracking-tight uppercase">
+                                {formatRoadwayDate(item.date)}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Activity Title */}
+                          <td className="px-4 py-3 font-bold text-slate-900 whitespace-nowrap">
+                            {item.title}
+                          </td>
+
+                          {/* Policy Number */}
+                          <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-slate-600 font-medium">
+                            {policyNo}
+                          </td>
+
+                          {/* Insurance Company */}
+                          <td className="px-4 py-3 text-slate-700 font-medium max-w-[200px] truncate">
+                            {company}
+                          </td>
+
+                          {/* Coverage Period */}
+                          <td className="px-4 py-3 whitespace-nowrap text-slate-600 font-medium text-xs">
+                            {period}
+                          </td>
+
+                          {/* Premium */}
+                          <td className="px-4 py-3 text-right whitespace-nowrap font-semibold text-slate-800 tabular-nums">
+                            {premium ? (typeof premium === 'number' ? fmtMoney(premium) : String(premium)) : '—'}
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                            <span className={cn(
+                              "px-2.5 py-0.5 rounded-full text-xs font-semibold",
+                              isExpiry
+                                ? "bg-[#FFE4E6] text-[#9F1239] border border-[#FECDD3]"
+                                : isUpcoming
+                                ? "bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]"
+                                : "bg-[#D1FAE5] text-[#065F46] border border-[#A7F3D0]"
+                            )}>
+                              {isExpiry ? 'Expired' : isUpcoming ? 'Upcoming' : 'Active'}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* View All Toggle */}
+              {sortedInsurance.length > 5 && (
+                <div className="p-3 bg-white border-t border-slate-100 flex justify-start">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSections(prev => ({ ...prev, insurance: !prev.insurance }))}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#059669] hover:underline cursor-pointer"
+                  >
+                    <span>{expandedSections.insurance ? 'Show fewer activities ←' : `View all ${sortedInsurance.length} Insurance activities →`}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
-        {entries.slice(0, 6).map(([k, v]) => (
-          <div key={k} className="p-1.5 rounded-md bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-            <span className="text-[8px] font-bold uppercase text-slate-400 block truncate" title={k}>{k}</span>
-            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block" title={String(v)}>{String(v)}</span>
+
+        {/* ── 3. WORKSHOP SERVICE SECTION (IMAGE 2 MATCH) ──────────────────── */}
+        {showService && sortedService.length > 0 && (
+          <div className="relative flex flex-col md:flex-row md:items-start gap-4 sm:gap-6">
+            {/* Left Category Node - Horizontal Layout */}
+            <div className="flex items-center gap-3 w-52 shrink-0 relative z-10 pt-1">
+              <div className="h-10 w-10 rounded-xl bg-[#EA580C] text-white flex items-center justify-center shadow-xs shrink-0 ring-4 ring-white">
+                <Wrench className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#EA580C] truncate">
+                  Workshop Service
+                </h4>
+                <p className="text-xs text-slate-500 font-normal">
+                  {sortedService.length} {sortedService.length === 1 ? 'Activity' : 'Activities'}
+                </p>
+              </div>
+            </div>
+
+            {/* Right Structured Table */}
+            <div className="flex-1 min-w-0 rounded-xl border border-[#FED7AA] bg-white overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse c360-activity-table c360-service-table">
+                  <thead>
+                    <tr className="border-b border-[#FDBA74] bg-[#FFF7ED] text-xs font-semibold text-[#9A3412]">
+                      <th className="px-4 py-3 whitespace-nowrap">Date</th>
+                      <th className="px-4 py-3">Activity</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Job Card / ID</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Service Type</th>
+                      <th className="px-4 py-3">Details</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">Amount (₹)</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(expandedSections.service ? sortedService : sortedService.slice(0, 5)).map((item, idx) => {
+                      const jobCard = item.metadata?.jobCard || item.metadata?.['Job Card Number'] || item.reference || '—'
+                      const serviceType = item.metadata?.serviceType || item.metadata?.['Work Type'] || (item.title.toLowerCase().includes('checkup') ? 'General Checkup' : 'General Service')
+                      const rawAmt = item.metadata?.amount ?? item.metadata?.billAmount ?? item.metadata?.total
+                      const totalBilledStr = typeof item.metadata?.['Total Billed'] === 'string' ? item.metadata['Total Billed'] : null
+
+                      let amountDisplay = '—'
+                      if (typeof rawAmt === 'number') {
+                        amountDisplay = rawAmt > 0 ? (fmtMoney(rawAmt) ?? `₹${rawAmt.toLocaleString('en-IN')}`) : 'Free (FOC)'
+                      } else if (totalBilledStr && !totalBilledStr.toLowerCase().includes('not billed')) {
+                        amountDisplay = totalBilledStr
+                      }
+
+                      return (
+                        <tr key={`${item.date}-${item.title}-${idx}`} className="hover:bg-[#FFF7ED]/40 transition-colors">
+                          {/* Date with Light Amber Icon Box */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-7 w-7 rounded-lg bg-[#FFF7ED] border border-[#FED7AA] text-[#EA580C] flex items-center justify-center shrink-0">
+                                <Wrench className="h-3.5 w-3.5" />
+                              </div>
+                              <span className="font-semibold text-xs text-slate-600 font-mono tracking-tight uppercase">
+                                {formatRoadwayDate(item.date)}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Activity Title */}
+                          <td className="px-4 py-3 font-bold text-slate-900 whitespace-nowrap">
+                            {item.title}
+                          </td>
+
+                          {/* Job Card / ID */}
+                          <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-slate-600 font-medium">
+                            {jobCard}
+                          </td>
+
+                          {/* Service Type */}
+                          <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-700">
+                            {serviceType}
+                          </td>
+
+                          {/* Details */}
+                          <td className="px-4 py-3 text-slate-600 max-w-[260px]">
+                            <div className="line-clamp-2">
+                              <span className="font-normal text-slate-700">{item.detail || 'Service recorded'}</span>
+                            </div>
+                          </td>
+
+                          {/* Amount */}
+                          <td className="px-4 py-3 text-right whitespace-nowrap font-semibold text-slate-800 tabular-nums">
+                            {amountDisplay}
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#D1FAE5] text-[#065F46] border border-[#A7F3D0]">
+                              Completed
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* View All Toggle */}
+              {sortedService.length > 5 && (
+                <div className="p-3 bg-white border-t border-slate-100 flex justify-start">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSections(prev => ({ ...prev, service: !prev.service }))}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#EA580C] hover:underline cursor-pointer"
+                  >
+                    <span>{expandedSections.service ? 'Show fewer activities ←' : `View all ${sortedService.length} Workshop Service activities →`}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        ))}
+        )}
       </div>
 
-      {/* Action Footer */}
-      <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
-        {item.vin ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onFocusVin(item.vin)
-            }}
-            className="inline-flex items-center gap-1 text-[10px] font-bold text-[var(--dashboard-primary)] hover:underline cursor-pointer"
-          >
-            <Car className="h-3 w-3" /> Focus Garage
-          </button>
-        ) : (
-          <span className="text-[9px] font-medium text-slate-400">Click for full record</span>
-        )}
-
+      {/* ── BOTTOM VIEW ALL TIMELINE BUTTON ──────────────────────────────────── */}
+      <div className="pt-3 flex justify-center">
         <button
           type="button"
-          onClick={copyDetails}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+          onClick={() => {
+            const allExpanded = expandedSections.sales && expandedSections.insurance && expandedSections.service
+            setExpandedSections({
+              sales: !allExpanded,
+              insurance: !allExpanded,
+              service: !allExpanded,
+            })
+          }}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
         >
-          {copied ? <Check className="h-2.5 w-2.5 text-emerald-600" /> : <Copy className="h-2.5 w-2.5 text-slate-400" />}
-          <span>{copied ? 'Copied' : 'Copy'}</span>
+          <Calendar className="h-4 w-4 text-slate-500" />
+          <span>{expandedSections.sales && expandedSections.insurance && expandedSections.service ? 'Collapse Timeline' : 'View Full Timeline'}</span>
         </button>
       </div>
     </div>
   )
 }
 
-function ActivityEventDeepDive({
-  item,
-  onFocusVin,
-}: {
-  item: TimelineEvent
-  onFocusVin: (vin: string | null) => void
-}) {
-  const [copied, setCopied] = useState(false)
-
-  const copyDetails = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    const metaEntries = Object.entries(item.metadata || {})
-    const lines = [
-      `--- EVENT DETAIL: ${item.title.toUpperCase()} ---`,
-      `Category: ${CATEGORY_LABEL[item.category] || item.category}`,
-      `Date: ${fmtDate(item.date)} (${item.date})`,
-      item.reference ? `Reference No: ${item.reference}` : '',
-      item.vin ? `VIN: ${item.vin}` : '',
-      item.detail ? `Summary: ${item.detail}` : '',
-      ...metaEntries.map(([k, v]) => `${k}: ${v ?? '—'}`),
-    ].filter(Boolean)
-
-    navigator.clipboard.writeText(lines.join('\n'))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const entries = Object.entries(item.metadata || {}).filter(
-    ([_, v]) => v !== null && v !== undefined && v !== ''
-  )
-
-  return (
-    <div className="p-4 sm:p-5 bg-gradient-to-b from-slate-50/90 to-white border-t border-slate-200/90 space-y-4 text-xs select-text">
-      {/* Header Info */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200/70">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[var(--dashboard-primary)] text-white shadow-2xs">
-            {CATEGORY_LABEL[item.category] || item.category}
-          </span>
-          <span className="text-xs font-bold text-slate-800">
-            Full Milestone Record Breakdown
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {item.vin && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onFocusVin(item.vin)
-              }}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-bold text-[var(--dashboard-primary)] hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
-            >
-              <Car className="h-3 w-3" /> Focus Garage
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={copyDetails}
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
-          >
-            {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3 text-slate-400" />}
-            <span>{copied ? 'Copied to Clipboard!' : 'Copy Summary'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Head to Toe Key-Value Matrix */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-        <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs space-y-1">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Record Milestone</span>
-          <span className="text-xs font-black text-slate-900 block">{item.title}</span>
-        </div>
-
-        <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs space-y-1">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Event Date</span>
-          <span className="text-xs font-bold text-slate-900 font-sans tabular-nums block">{fmtDate(item.date)}</span>
-        </div>
-
-        {item.reference && (
-          <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs space-y-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Reference / Doc No</span>
-            <span className="text-xs font-mono font-bold text-slate-900 block truncate" title={item.reference}>
-              #{item.reference}
-            </span>
-          </div>
-        )}
-
-        {item.vin && (
-          <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs space-y-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Chassis / VIN</span>
-            <span className="text-xs font-mono font-bold text-slate-900 block truncate" title={item.vin}>
-              {item.vin}
-            </span>
-          </div>
-        )}
-
-        {entries.map(([key, val]) => (
-          <div key={key} className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs space-y-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate" title={key}>
-              {key}
-            </span>
-            <span className="text-xs font-semibold text-slate-900 block truncate" title={String(val)}>
-              {String(val)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ActivityStreamRoadway({
-  events,
-  expandedEventId,
-  onToggleExpand,
-  onFocusVin,
-}: {
-  events: TimelineEvent[]
-  expandedEventId: string | null
-  onToggleExpand: (id: string | null) => void
-  onFocusVin: (vin: string | null) => void
-}) {
-  const [hoveredEventId, setHoveredEventId] = useState<string | null>(null)
-
-  // Chunk events into rows of 4 cards
-  const chunkSize = 4
-  const rows: { index: number; items: { item: TimelineEvent; originalIdx: number }[] }[] = []
-  for (let i = 0; i < events.length; i += chunkSize) {
-    rows.push({
-      index: Math.floor(i / chunkSize),
-      items: events.slice(i, i + chunkSize).map((item, localIdx) => ({ item, originalIdx: i + localIdx })),
-    })
-  }
-
-  // Determine which row contains the currently hovered event
-  const hoveredRowIndex = rows.findIndex((r) =>
-    r.items.some(
-      ({ item, originalIdx }) =>
-        `${item.date}-${item.title}-${item.vin ?? ''}-${item.reference ?? ''}-${originalIdx}` === hoveredEventId
-    )
-  )
-
-  if (events.length === 0) {
-    return (
-      <div className="p-8 text-center text-slate-400 text-xs font-medium bg-slate-50/60 rounded-2xl border border-slate-200/90">
-        No activity records match the selected category filter.
-      </div>
-    )
-  }
-
-  /*
-   * ── THE ROAD: geometry contract ──────────────────────────────────────────────────────────────
-   *
-   * The road is a light band drawn BEHIND the cards, snaking left-to-right then right-to-left with
-   * a U-turn loop at alternating row ends. Three numbers have to agree or the loops visibly detach
-   * from the straights, so they live here as constants rather than scattered through the classes:
-   *
-   *   ROAD_H  — height of the band, and therefore the BORDER WIDTH of each U-turn ring (the ring's
-   *             border IS the road as it curves).
-   *   ROW_GAP — the lg row spacing (lg:space-y-10 = 40px). A U-turn must span from this row's
-   *             centreline to the next row's, so its box is calc(100% + ROW_GAP + ROAD_H) tall,
-   *             starting at calc(50% - ROAD_H/2). Change the spacing class without changing this
-   *             constant and every loop misses its road.
-   *   TURN_W  — how far a loop bulges into the side padding. It must be < the lg:px-24 (96px)
-   *             padding or the loop clips at the container edge.
-   *
-   * The road and loops render on lg+ only: below lg the cards stack vertically, and a horizontal
-   * band behind a vertical stack is nonsense.
-   *
-   * ── Serpentine ordering ──────────────────────────────────────────────────────────────────────
-   * Reversed rows use lg:[direction:rtl] on the grid instead of reversing the array. That keeps
-   * three things right at once: visual order flows right-to-left on odd rows; a PARTIAL reversed
-   * row anchors to the right, where the road actually arrives (a reversed array leaves it stranded
-   * on the left); and each card resets direction: ltr for its own text.
-   *
-   * ⚠️ The rtl is gated to lg DELIBERATELY, not as a shorthand. Below lg the road, loops and cars
-   * are all hidden — the serpentine metaphor does not exist on screen — and the sm breakpoint is a
-   * 2-column grid, where an ungated rtl renders a reversed row as "6 5 / 8 7": scrambled numbers
-   * with nothing visible to explain them. No road, no mirroring.
-   */
-  const ROAD_H = 44
-  const ROW_GAP = 40
-  const TURN_W = 80
-
-  const cruisePos = ['left-[22%]', 'right-[30%]', 'left-[58%]']
-
-  const lastRow = rows[rows.length - 1]
-  // Even rows travel left->right, so the journey ends on the right unless the last row is reversed.
-  const journeyEndsRight = lastRow.index % 2 === 0
-
-  return (
-    <div className="relative w-full rounded-2xl border border-slate-200/90 bg-gradient-to-b from-slate-50/80 via-white to-slate-50/80 p-3.5 sm:p-5 shadow-xs">
-      {/* Background Subtle Automotive Road Grid */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.035]"
-        style={{
-          backgroundImage: 'radial-gradient(#000 1px, transparent 1px)',
-          backgroundSize: '24px 24px',
-        }}
-      />
-
-      <div className="relative space-y-4 sm:space-y-5 lg:space-y-10 lg:px-24">
-        {rows.map((row) => {
-          const isReverse = row.index % 2 === 1
-          const isFirstRow = row.index === 0
-          const isLastRow = row.index === rows.length - 1
-          const hasNextRow = !isLastRow
-          const isThisRowHovered = row.index === hoveredRowIndex
-
-          /*
-           * Which ends of this row's straight connect to a U-turn. The loop AFTER an even row is on
-           * the right and AFTER an odd row on the left; a row also RECEIVES the previous loop on the
-           * side that loop was on. A connected end runs flat to the content edge, where the ring's
-           * arm continues it; an unconnected end gets a rounded cap — the start and finish of the
-           * journey.
-           */
-          const connectsRight = (hasNextRow && !isReverse) || isReverse
-          const connectsLeft = (hasNextRow && isReverse) || (!isFirstRow && !isReverse)
-
-          // No transition on this wrapper: it carries only zIndex, and an ANIMATED z-index makes
-          // the neighbouring row's popover flicker underneath during hover handoff.
-          return (
-            <div
-              key={row.index}
-              className="relative"
-              style={{ zIndex: isThisRowHovered ? 100 : 1 }}
-            >
-              {/* The straight: a light road band behind this row's cards */}
-              <div
-                aria-hidden
-                className={cn(
-                  'absolute top-1/2 -translate-y-1/2 hidden lg:flex items-center pointer-events-none',
-                  'bg-slate-200 dark:bg-slate-700 border-y border-slate-300/70 dark:border-slate-600',
-                  connectsLeft ? 'left-0' : '-left-14 rounded-l-full',
-                  connectsRight ? 'right-0' : '-right-14 rounded-r-full'
-                )}
-                style={{ height: ROAD_H }}
-              >
-                {/* Central dashed lane line */}
-                <div className="w-full border-t-[3px] border-dashed border-white dark:border-slate-400" />
-              </div>
-
-              {/* A car cruising the straight */}
-              <div
-                aria-hidden
-                className={cn(
-                  'absolute top-1/2 -translate-y-1/2 z-[5] pointer-events-none hidden lg:block',
-                  cruisePos[row.index % cruisePos.length]
-                )}
-              >
-                <MiniCarGraphic
-                  color={row.index % 2 === 0 ? '#475569' : '#64748B'}
-                  className={cn('w-9 h-5', isReverse && 'scale-x-[-1]')}
-                />
-              </div>
-
-              {/* The journey sets off here */}
-              {isFirstRow && (
-                <div aria-hidden className="absolute top-1/2 -translate-y-1/2 -left-[4.5rem] z-[5] pointer-events-none hidden lg:block">
-                  <MiniCarGraphic color="#1E40AF" className="w-12 h-7" />
-                </div>
-              )}
-
-              {/* U-turn loop to the next row. Its border is the road bending around. */}
-              {hasNextRow && (
-                <div
-                  aria-hidden
-                  className={cn(
-                    'absolute z-0 hidden lg:block pointer-events-none border-slate-200 dark:border-slate-700',
-                    isReverse ? 'rounded-l-full' : 'rounded-r-full'
-                  )}
-                  style={{
-                    top: `calc(50% - ${ROAD_H / 2}px)`,
-                    height: `calc(100% + ${ROW_GAP + ROAD_H}px)`,
-                    width: TURN_W,
-                    borderWidth: ROAD_H,
-                    ...(isReverse ? { left: -TURN_W, borderRightWidth: 0 } : { right: -TURN_W, borderLeftWidth: 0 }),
-                  }}
-                />
-              )}
-
-              {/* A tree tucked into the loop's hollow */}
-              {hasNextRow && (
-                <div
-                  aria-hidden
-                  className={cn(
-                    'absolute z-0 hidden lg:block pointer-events-none',
-                    isReverse ? '-left-7' : '-right-7'
-                  )}
-                  style={{ top: 'calc(100% + 2px)' }}
-                >
-                  <RoadsideTree className="w-5 h-8" />
-                </div>
-              )}
-
-              {/* Grid of Cards in this Row — rtl on reversed rows is what makes the path meander */}
-              <div
-                className={cn(
-                  'relative z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-x-7 items-stretch',
-                  isReverse && 'lg:[direction:rtl]'
-                )}
-              >
-                {row.items.map(({ item, originalIdx }, colIdx) => {
-                  const eventId = `${item.date}-${item.title}-${item.vin ?? ''}-${item.reference ?? ''}-${originalIdx}`
-                  const visuals = getRoadwayVisuals(item, originalIdx)
-                  const Icon = visuals.icon
-                  const isExpanded = expandedEventId === eventId
-                  const isHovered = hoveredEventId === eventId
-
-                  // Step numbers pick up their milestone's accent, as on the reference design.
-                  const numCls = visuals.badgeLabel === 'Insurance'
-                    ? 'text-teal-700 dark:text-teal-400'
-                    : visuals.badgeLabel === 'Workshop Service'
-                      ? 'text-orange-700 dark:text-orange-400'
-                      : visuals.badgeLabel === 'Accessories'
-                        ? 'text-violet-700 dark:text-violet-400'
-                        : 'text-[var(--dashboard-primary)]'
-
-                  /*
-                   * Popover edge-pinning must follow the VISUAL position: under rtl, colIdx 0
-                   * renders at the right edge, so its popover pins right, not left.
-                   */
-                  const popoverAlign =
-                    colIdx === 0
-                      ? (isReverse ? 'right-0' : 'left-0')
-                      : colIdx === row.items.length - 1
-                        ? (isReverse ? 'left-0' : 'right-0')
-                        : 'left-1/2 -translate-x-1/2'
-
-                  return (
-                    <div
-                      key={eventId}
-                      className="relative"
-                      style={{ zIndex: isHovered ? 200 : 1, direction: 'ltr' }}
-                      onMouseEnter={() => setHoveredEventId(eventId)}
-                      onMouseLeave={() => setHoveredEventId((cur) => (cur === eventId ? null : cur))}
-                    >
-                      {/* Milestone Card */}
-                      <div
-                        onClick={() => onToggleExpand(isExpanded ? null : eventId)}
-                        className={cn(
-                          'h-full w-full bg-white dark:bg-slate-800 rounded-xl border transition-all duration-200 p-3 lg:p-3.5 shadow-sm hover:shadow-lg cursor-pointer flex flex-col select-none group min-h-[112px] lg:min-h-[148px]',
-                          isExpanded
-                            ? 'border-[var(--dashboard-primary)] ring-2 ring-[var(--dashboard-primary)]/20 shadow-md bg-blue-50/20'
-                            : 'border-slate-200/90 dark:border-slate-700/80 hover:border-slate-400 hover:-translate-y-0.5'
-                        )}
-                      >
-                        {/* Header: icon badge + step number, date right */}
-                        <div className="flex items-start justify-between gap-1.5">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={cn('h-7 w-7 lg:h-8 lg:w-8 rounded-lg flex items-center justify-center shadow-2xs shrink-0 group-hover:scale-105 transition-transform', visuals.iconBoxCls)}>
-                              <Icon className="h-3.5 w-3.5 lg:h-4 lg:w-4 stroke-[2]" />
-                            </div>
-                            <span className={cn('font-black text-sm font-sans tabular-nums', numCls)}>
-                              {visuals.num}
-                            </span>
-                          </div>
-                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-400 shrink-0 pt-0.5">
-                            {formatRoadwayDate(item.date)}
-                          </span>
-                        </div>
-
-                        {/* Body: title + category pill */}
-                        <div className="mt-1.5 lg:mt-2 space-y-1 lg:space-y-1.5 flex-1">
-                          <h4 className="font-black text-xs lg:text-[13px] text-slate-900 dark:text-slate-100 tracking-tight leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
-                            {item.title}
-                          </h4>
-                          <div>
-                            <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold', visuals.badgeCls)}>
-                              {visuals.badgeLabel}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Footer: subtitle / model / reference */}
-                        <div className="pt-1.5 mt-1.5 border-t border-slate-100 dark:border-slate-800 text-[10px] font-medium text-slate-500 dark:text-slate-400 line-clamp-1 leading-normal">
-                          {item.detail || [item.vin, item.reference].filter(Boolean).join(' • ') || 'Milestone recorded'}
-                        </div>
-                      </div>
-
-                      {/* Floating hover popover (physical left/right classes are unaffected by rtl) */}
-                      {isHovered && (
-                        <div
-                          className={cn(
-                            'absolute z-[9999] pointer-events-auto animate-in fade-in zoom-in-95 duration-100 drop-shadow-2xl',
-                            /*
-                             * pt/pb, not mt/mb: a MARGIN gap sits outside the hover subtree, so
-                             * crossing it fires onMouseLeave and unmounts the popover before the
-                             * pointer can reach its Focus Garage / Copy buttons. Padding keeps the
-                             * bridge hoverable.
-                             */
-                            row.index === 0 ? 'top-full pt-2' : 'bottom-full pb-2',
-                            popoverAlign
-                          )}
-                          style={{ direction: 'ltr' }}
-                        >
-                          <ActivityEventHoverCard
-                            item={item}
-                            visuals={visuals}
-                            onFocusVin={onFocusVin}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
-
-        {/*
-          * The end of the road. Normal flow rather than absolute positioning, so the landmark chips
-          * can never clip against the container edge; mirrored when the journey finishes on the
-          * left. The finish cluster sits on the side the road actually ends.
-          */}
-        <div
-          aria-hidden
-          className={cn(
-            'hidden lg:flex items-center gap-3 pt-1',
-            journeyEndsRight ? 'justify-between' : 'justify-between flex-row-reverse'
-          )}
-        >
-          <div className={cn('flex items-center gap-3', !journeyEndsRight && 'flex-row-reverse')}>
-            <WorkshopLandmark />
-            <InsuranceLandmark />
-            <RoadsideTree className="w-5 h-8" />
-          </div>
-          <div className={cn('flex items-center gap-2.5', !journeyEndsRight && 'flex-row-reverse')}>
-            <FinishFlagLandmark />
-            <DealershipLandmark />
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; caps: BrandCapabilities; onClose: () => void }) {
-  const [timelineFocus, setTimelineFocus] = useState<{ category: TimelineEvent['category'] | 'all'; vin: string | null }>({
-    category: 'all',
-    vin: null,
-  })
-  const [expandedEventId, setExpandedEventId] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<'roadway' | 'list'>('roadway')
-  const [sortOrder, setSortOrder] = useState<'oldest_first' | 'newest_first'>('oldest_first')
-  const [visibleCount, setVisibleCount] = useState(20)
+  const [selectedVin, setSelectedVin] = useState<string | null>(null)
 
   const rawEvents = profile.timeline || []
-  const categories = profile.timelineCategories || []
-
-  // Apply sorting
-  const events = useMemo(() => {
-    const arr = [...rawEvents]
-    if (sortOrder === 'oldest_first') {
-      return arr.sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-    }
-    return arr.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-  }, [rawEvents, sortOrder])
-
-  const activeCategory = timelineFocus.category
-  const filteredEvents = events.filter((e) =>
-    (activeCategory === 'all' || e.category === activeCategory) && (!timelineFocus.vin || e.vin === timelineFocus.vin)
-  )
 
   const totalServices = profile.vehicles.reduce((acc, v) => acc + (v.serviceCount || 0), 0)
 
@@ -1925,7 +1627,6 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
       if (v.accessoriesSpend !== null && v.accessoriesSpend !== undefined) acc.total += v.accessoriesSpend
       acc.priced += v.servicesBilled || 0
       acc.unpriced += v.servicesUnbilled || 0
-      // A cancelled policy's premium is not money we kept — excluded from the spend figure.
       const premium = v.insurance?.cancelled ? null : v.insurance?.grossPremium
       if (premium !== null && premium !== undefined) acc.total += premium
       return acc
@@ -1933,323 +1634,160 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
     { total: 0, priced: 0, unpriced: 0 },
   )
 
+  const filteredEvents = useMemo(() => {
+    if (!selectedVin) return rawEvents
+    return rawEvents.filter((e) => !e.vin || e.vin === selectedVin)
+  }, [rawEvents, selectedVin])
+
   return (
-    <div className="bg-white min-h-full flex flex-col">
-      {/* ── TOP BAR ──────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-200 bg-white sticky top-0 z-10">
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to Directory
-        </button>
+    <div className="bg-slate-50/50 min-h-full flex flex-col">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white sticky top-0 z-20 shadow-2xs">
         <div className="flex items-center gap-3">
-          <span className="px-3 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-mono font-semibold border border-slate-200">
-            Key: <span className="text-slate-900 font-bold">{profile.customerId || profile.key}</span>
-          </span>
+          <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs">
+            <User className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-black text-slate-900">Customer 360 Dossier</h2>
+            <p className="text-[11px] text-slate-400 font-semibold font-mono">
+              Key: <span className="text-slate-700 font-bold">{profile.customerId || profile.key}</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            className="h-8 w-8 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
             aria-label="Close"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
       </div>
 
       <div className="p-4 sm:p-6 space-y-6 flex-1">
-        {/* ── CUSTOMER HERO CARD ───────────────────────────────────────────────── */}
-        <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-md relative overflow-hidden">
+        <div className="p-5 sm:p-6 rounded-3xl bg-slate-900 text-white shadow-xl relative overflow-hidden">
           <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/5" />
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/10 text-white border border-white/20">
                   {(profile as any).brand ? String((profile as any).brand).toUpperCase() : 'CUSTOMER DOSSIER'}
                 </span>
-                <span className="text-xs text-slate-400 font-mono">
+                <span className="text-xs text-slate-400 font-mono font-bold">
                   ID: {profile.customerId || profile.key}
                 </span>
               </div>
               <h2 className="text-xl sm:text-2xl font-black tracking-tight">{profile.name}</h2>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-300 pt-1">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-slate-300 pt-1">
                 {profile.phone && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1.5 font-semibold">
                     <Phone className="h-3.5 w-3.5 text-slate-400" /> {profile.phone}
                   </span>
                 )}
                 {profile.email && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1.5 font-semibold">
                     <Mail className="h-3.5 w-3.5 text-slate-400" /> {profile.email}
                   </span>
                 )}
                 {profile.city && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1.5 font-semibold">
                     <MapPin className="h-3.5 w-3.5 text-slate-400" /> {profile.city}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Total Paid / Relationship Summary */}
-            <div
-              className="text-left sm:text-right bg-white/5 p-3.5 rounded-xl border border-white/10"
-              title="Workshop bills + insurance premium + accessories — priced records only. The vehicle purchase itself is not included, and 42% of workshop visits carry no recorded price."
-            >
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                Total Spend Recorded
-              </span>
-              <span className="text-xl sm:text-2xl font-black text-white block mt-0.5 font-sans tabular-nums">
-                {fmtMoney(spend.total) ?? '—'}
-              </span>
-              <span className="text-[10px] text-slate-400 block mt-0.5">
-                {profile.vehicles.length} Vehicle{profile.vehicles.length !== 1 ? 's' : ''} • {totalServices} Service{totalServices !== 1 ? 's' : ''}
-              </span>
+            <div className="flex items-center gap-3">
+              <div
+                className="text-right bg-white/10 backdrop-blur-xs px-5 py-3 rounded-2xl border border-white/15"
+                title="Workshop bills + insurance premium + accessories."
+              >
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  Total Spend Recorded
+                </span>
+                <span className="text-xl sm:text-2xl font-black text-white block mt-0.5 font-sans tabular-nums">
+                  {fmtMoney(spend.total) ?? '—'}
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5 font-medium">
+                  {profile.vehicles.length} {profile.vehicles.length === 1 ? 'Vehicle' : 'Vehicles'} • {totalServices} {totalServices === 1 ? 'Service' : 'Services'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/*
-          * ── NEXT BEST ACTION ───────────────────────────────────────────────────
-          * The server computes these (renewal value at risk, never-serviced win-back, unpaid
-          * bills, cancelled policy, open complaint) and the redesign had silently stopped
-          * rendering them — the array travelled in every payload while URGENCY_STYLE sat here as
-          * dead code. This panel is the whole point of half the profile logic: what to DO, ahead
-          * of what happened. Clicking an action focuses the activity stream on its evidence.
-          */}
-        {(profile.nextBestActions?.length ?? 0) > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-              <Sparkles className="h-4 w-4 text-slate-600" />
-              NEXT BEST ACTION ({Math.min(profile.nextBestActions!.length, 5)})
-            </h3>
-            <div className="space-y-1.5">
-              {profile.nextBestActions!.slice(0, 5).map((a, i) => (
-                <button
-                  key={`${a.title}-${a.vin ?? i}`}
-                  type="button"
-                  onClick={() => setTimelineFocus({ category: actionCategory(a.title), vin: a.vin })}
-                  className={cn(
-                    'w-full text-left rounded-xl border p-3 text-xs transition-shadow hover:shadow-sm cursor-pointer',
-                    URGENCY_STYLE[a.urgency]?.cardCls || URGENCY_STYLE.watch.cardCls
-                  )}
-                >
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider',
-                      URGENCY_STYLE[a.urgency]?.badgeCls || URGENCY_STYLE.watch.badgeCls)}>
-                      {a.urgency}
-                    </span>
-                    <span className="font-black">{a.title}</span>
-                  </span>
-                  <span className="mt-1 block font-medium opacity-80 leading-relaxed">{a.reason}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/*
-          * ── IN THE WORKSHOP RIGHT NOW ──────────────────────────────────────────
-          * A strip, not a panel: it exists only while a repair order is genuinely open (closed and
-          * gate-passed rows are filtered server-side), so 94% of profiles never see it — but anyone
-          * about to phone this customer sees it before anything else. The snapshot date is always
-          * stated: this is an uploaded feed, not a live socket.
-          */}
-        {(profile.liveRos?.length ?? 0) > 0 && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3 space-y-2">
-            {profile.liveRos.map((ro) => (
-              <div key={`${ro.roNo}-${ro.vin}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                <span className="inline-flex items-center gap-1.5 font-black text-amber-900 uppercase tracking-wide text-[10px]">
-                  <Wrench className="h-3.5 w-3.5" /> In the workshop right now
-                </span>
-                <span className="font-bold text-slate-900">
-                  {[ro.model, ro.registration].filter(Boolean).join(' · ') || ro.vin}
-                </span>
-                <span className="text-slate-600 font-medium">
-                  RO {ro.roNo || '—'} · opened {fmtDate(ro.roDate)}
-                  {ro.subStatus ? ` · ${ro.subStatus}` : ''}
-                  {ro.workType ? ` · ${ro.workType}` : ''}
-                </span>
-                {ro.estimate !== null && (
-                  <span className="font-bold text-slate-900 font-sans tabular-nums">est {fmtMoney(ro.estimate)}</span>
-                )}
-                {ro.advisor && <span className="text-slate-600">with {ro.advisor}</span>}
-                {ro.promisedOn && <span className="text-slate-600">promised {ro.promisedOn}</span>}
-                {ro.delayReason && (
-                  <span className="font-bold text-rose-700">delay: {ro.delayReason}</span>
-                )}
-                <span className="text-[10px] text-amber-700/80 font-medium">as of {fmtDate(ro.asOf)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── VEHICLE FLEET SECTION ────────────────────────────────────────────── */}
-        <div className="space-y-3 pt-2">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
               <Car className="h-4 w-4 text-slate-600" />
-              VEHICLE FLEET ({profile.vehicles.length})
+              VEHICLES &amp; GARAGE ({profile.vehicles.length})
             </h3>
-            {timelineFocus.vin ? (
+            {selectedVin && (
               <button
                 type="button"
-                onClick={() => setTimelineFocus((prev) => ({ ...prev, vin: null }))}
-                className="text-xs font-bold text-[var(--dashboard-primary)] hover:underline cursor-pointer"
+                onClick={() => setSelectedVin(null)}
+                className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
               >
                 Show all vehicles
               </button>
-            ) : (
-              <span className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-1">
-                View all vehicles <ArrowRight className="h-3 w-3" />
-              </span>
             )}
           </div>
 
           {profile.vehicles.length === 0 ? (
-            <div className="p-6 rounded-xl border border-slate-200 bg-white text-center text-slate-400 text-xs">
+            <div className="p-5 rounded-2xl border border-slate-200 bg-white text-center text-slate-400 text-xs">
               No vehicles linked to this customer account.
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {profile.vehicles.map((v, vIdx) => {
-                const isSelected = timelineFocus.vin === v.vin
+                const isSelected = selectedVin === v.vin
                 return (
                   <div
                     key={`${v.vin}-${vIdx}`}
+                    onClick={() => setSelectedVin(isSelected ? null : v.vin)}
                     className={cn(
-                      "p-4 sm:p-5 rounded-2xl bg-white border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs",
-                      isSelected ? "border-[var(--dashboard-primary)] ring-2 ring-[var(--dashboard-primary)]/20" : "border-slate-200 hover:border-slate-300"
+                      "p-4 rounded-2xl bg-white border transition-all flex items-center justify-between gap-3 shadow-2xs cursor-pointer",
+                      isSelected
+                        ? "border-blue-600 ring-2 ring-blue-600/20 bg-blue-50/20"
+                        : "border-slate-200/90 hover:border-slate-300"
                     )}
                   >
-                    <div className="flex items-center gap-4">
-                      {/* Car Graphic */}
-                      <VehicleThumbnail model={v.model} />
-
-                      {/* Details */}
-                      <div className="space-y-1.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <VehicleThumbnail model={v.model} className="w-20 h-14" />
+                      <div className="min-w-0 space-y-0.5">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-base font-black text-slate-900 uppercase tracking-tight">
-                            {v.model || 'SONET'}
+                          <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight truncate">
+                            {v.model || 'VEHICLE'}
                           </h4>
                           {v.registration && (
-                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 text-[11px] font-mono font-bold border border-slate-200">
+                            <span className="px-2 py-0.2 rounded bg-slate-100 text-slate-800 text-[10px] font-mono font-bold border border-slate-200">
                               {v.registration}
                             </span>
                           )}
                         </div>
-
-                        <p className="text-xs font-mono text-slate-400">
+                        <p className="text-[11px] font-mono text-slate-400 truncate">
                           VIN: {caps.vin ? v.vin : `${v.vin} (Masked)`}
                         </p>
-
-                        <div className="flex flex-wrap items-start gap-x-6 gap-y-2 pt-1 text-xs">
-                          <div>
-                            <span className="text-[10px] font-semibold text-slate-400 block">Insurance</span>
-                            {!caps.insurance ? (
-                              <span className="text-slate-400 italic">Not Linked</span>
-                            ) : v.insurance ? (
-                              <div className="flex items-center gap-1 mt-0.5">
-                                {/* Cancelled outranks everything: a cancelled policy is not cover,
-                                    whatever its expiry date says. 17 policies were showing Active. */}
-                                <span className={cn("font-bold", v.insurance.cancelled || v.insurance.lapsed ? "text-rose-600" : "text-[var(--dashboard-primary)]")}>
-                                  {v.insurance.cancelled ? 'Cancelled' : v.insurance.lapsed ? 'Lapsed' : 'Active'}
-                                </span>
-                                <span className="text-slate-400 font-medium">
-                                  ({fmtDate(v.insurance.expiryDate)})
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-slate-400">No Policy</span>
-                            )}
-                          </div>
-
-                          <div>
-                            <span className="text-[10px] font-semibold text-slate-400 block">Last Service</span>
-                            <span className="font-bold text-slate-900 block mt-0.5 font-sans tabular-nums">
-                              {/*
-                                * An NVI-only vehicle has workshop rows but has never actually come
-                                * in: every row is our own pre-delivery inspection. Showing that
-                                * date as "Last Service" is how 126 never-serviced customers looked
-                                * recently serviced.
-                                */}
-                              {!caps.service
-                                ? 'Unlinked'
-                                : v.nviOnly
-                                  ? <span className="text-slate-400 italic font-normal">Pre-delivery only</span>
-                                  : v.lastServiceDate ? fmtDate(v.lastServiceDate) : 'Never Serviced'}
-                            </span>
-                          </div>
-
-                          {caps.service && (
-                            <div>
-                              <span className="text-[10px] font-semibold text-slate-400 block">Service Spend</span>
-                              <span className="font-bold text-slate-900 block mt-0.5 font-sans tabular-nums">
-                                {fmtMoney(v.serviceSpend) ?? (
-                                  <span className="text-slate-400 italic font-normal">
-                                    {v.serviceCount > 0 ? 'Not billed' : '—'}
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                          )}
-
-                          {/* No premium stat on a cancelled policy: that money was likely
-                              refunded, and quoting it as paid contradicts the Cancelled status. */}
-                          {caps.insurance && v.insurance && !v.insurance.cancelled && (
-                            <div>
-                              <span className="text-[10px] font-semibold text-slate-400 block">Premium</span>
-                              <span className="font-bold text-slate-900 block mt-0.5 font-sans tabular-nums">
-                                {fmtMoney(v.insurance.grossPremium) ?? (
-                                  <span className="text-slate-400 italic font-normal">Not recorded</span>
-                                )}
-                              </span>
-                            </div>
-                          )}
-
-                          {/* != null (not !== null): a stale cached payload from before this
-                              deploy has the field UNDEFINED, and !== null would render the block
-                              and then crash on v.accessories.length. Degrade to absent instead. */}
-                          {caps.service && v.accessoriesSpend != null && (
-                            <div>
-                              <span className="text-[10px] font-semibold text-slate-400 block">Accessories</span>
-                              <span className="font-bold text-slate-900 block mt-0.5 font-sans tabular-nums"
-                                title={`${v.accessories?.length ?? 0} line item${(v.accessories?.length ?? 0) === 1 ? '' : 's'} — see the timeline for what was fitted`}>
-                                {fmtMoney(v.accessoriesSpend)}
-                              </span>
-                            </div>
-                          )}
+                        <div className="text-[10px] text-slate-500 font-semibold flex items-center gap-2">
+                          <span>{v.serviceCount} Services</span>
+                          <span>•</span>
+                          <span>{v.insurance ? (v.insurance.cancelled ? 'Cancelled' : v.insurance.lapsed ? 'Lapsed' : 'Insured') : 'No Policy'}</span>
                         </div>
-
-                        {/*
-                          * Collections flag. The figure is the BILLED value of the flagged bills —
-                          * the DMS records no balance column, so an outstanding amount cannot be
-                          * computed and is deliberately never shown.
-                          */}
-                        {caps.service && v.unpaidCount > 0 && (
-                          <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-50 border border-rose-200 text-[10px] font-bold text-rose-800"
-                            title="The DMS marks these bills 'Payment Not Received' or 'Partial Paymant Received'. The amount actually outstanding is not recorded.">
-                            <CreditCard className="h-3 w-3" />
-                            {v.unpaidCount} bill{v.unpaidCount === 1 ? '' : 's'} of {fmtMoney(v.unpaidBilledTotal) ?? 'unrecorded value'} billed — not marked fully collected
-                          </div>
-                        )}
                       </div>
                     </div>
 
-                    {/* Right Action Button */}
                     <button
                       type="button"
-                      onClick={() => setTimelineFocus((prev) => ({ ...prev, vin: isSelected ? null : v.vin }))}
                       className={cn(
-                        "px-3.5 py-1.5 rounded-lg border text-xs font-bold transition-colors shrink-0 cursor-pointer self-start sm:self-center",
+                        "px-3 py-1.5 rounded-xl border text-[11px] font-black transition-colors shrink-0",
                         isSelected
-                          ? "bg-[var(--dashboard-primary)] text-white border-[var(--dashboard-primary)]"
+                          ? "bg-blue-600 text-white border-blue-600"
                           : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
                       )}
                     >
-                      {v.serviceCount} Services &gt;
+                      {isSelected ? 'Focused' : 'Filter'}
                     </button>
                   </div>
                 )
@@ -2258,264 +1796,12 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
           )}
         </div>
 
-        {/* ── ACTIVITY STREAM SECTION (WINDING ROADWAY JOURNEY) ──────────────── */}
-        <div id="c360-timeline-section" className="space-y-4 pt-3">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                  <Activity className="h-4 w-4 text-slate-600" />
-                  ACTIVITY STREAM ({filteredEvents.length})
-                </h3>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Hover over any milestone card to see its full breakdown, or click to open deep dive.
-              </p>
-            </div>
-
-            {/* Right Controls: Filters + Sort + View Switcher */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Category Filter Pills */}
-              <div className="flex flex-wrap gap-1">
-                {(['all', ...categories] as const).map((cat) => {
-                  const count = cat === 'all' ? events.length : events.filter((e) => e.category === cat).length
-                  const isActive = activeCategory === cat
-                  /*
-                   * Labels come from CATEGORY_LABEL, never a ternary chain: the old chain's final
-                   * else branch labelled EVERY unlisted category 'Workshop Service', so the new
-                   * accessories pill rendered as a second 'Workshop Service' pill with a different
-                   * count that filtered to accessory events.
-                   */
-                  const label = cat === 'all' ? `All (${count})` : `${CATEGORY_LABEL[cat] || cat} (${count})`
-
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setTimelineFocus((prev) => ({ ...prev, category: cat }))}
-                      className={cn(
-                        "px-2.5 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer",
-                        isActive
-                          ? "bg-[var(--dashboard-primary)] text-white border-[var(--dashboard-primary)] shadow-2xs"
-                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                      )}
-                    >
-                      {label}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Sort Order Selector */}
-              <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-semibold shadow-2xs">
-                <button
-                  type="button"
-                  onClick={() => setSortOrder('oldest_first')}
-                  className={cn(
-                    "px-2 py-1 rounded-md transition-colors cursor-pointer",
-                    sortOrder === 'oldest_first'
-                      ? "bg-slate-900 text-white font-bold"
-                      : "text-slate-600 hover:text-slate-900"
-                  )}
-                  title="Journey chronological order: 01 to N"
-                >
-                  Oldest First (01→N)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSortOrder('newest_first')}
-                  className={cn(
-                    "px-2 py-1 rounded-md transition-colors cursor-pointer",
-                    sortOrder === 'newest_first'
-                      ? "bg-slate-900 text-white font-bold"
-                      : "text-slate-600 hover:text-slate-900"
-                  )}
-                  title="Newest first"
-                >
-                  Newest First
-                </button>
-              </div>
-
-              {/* View Mode Toggle: Roadway Map vs Classic List */}
-              <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('roadway')}
-                  className={cn(
-                    "p-1 rounded-md transition-colors cursor-pointer",
-                    viewMode === 'roadway' ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"
-                  )}
-                  title="Roadway Journey View"
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('list')}
-                  className={cn(
-                    "p-1 rounded-md transition-colors cursor-pointer",
-                    viewMode === 'list' ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"
-                  )}
-                  title="Classic List View"
-                >
-                  <List className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Render Active View: Roadway or List */}
-          {viewMode === 'roadway' ? (
-            <div className="space-y-4">
-              <ActivityStreamRoadway
-                events={filteredEvents}
-                expandedEventId={expandedEventId}
-                onToggleExpand={(id) => setExpandedEventId(id)}
-                onFocusVin={(vin) => setTimelineFocus((prev) => ({ ...prev, vin }))}
-              />
-
-              {/* Pinned Deep Dive Panel if a card is clicked */}
-              {expandedEventId && (() => {
-                /*
-                 * Fail CLOSED on a stale id. The id embeds the event's index in the current
-                 * filtered/sorted ordering, so changing the sort, a category pill or the VIN focus
-                 * invalidates it. The previous `|| filteredEvents[0]` fallback then rendered the
-                 * FIRST event under the banner "Selected Milestone Deep Dive" — a record the user
-                 * never clicked, presented as their selection. The panel disappearing is honest;
-                 * the wrong record wearing a "selected" label is not. (The list view already fails
-                 * closed on the same stale id.)
-                 */
-                const selectedItem = filteredEvents.find((_, idx) => {
-                  const ev = filteredEvents[idx]
-                  const eventId = `${ev.date}-${ev.title}-${ev.vin ?? ''}-${ev.reference ?? ''}-${idx}`
-                  return eventId === expandedEventId
-                })
-
-                if (!selectedItem) return null
-
-                return (
-                  <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                        <span className="text-xs font-bold">Selected Milestone Deep Dive: {selectedItem.title}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setExpandedEventId(null)}
-                        className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
-                      >
-                        ✕ Close
-                      </button>
-                    </div>
-                    <ActivityEventDeepDive
-                      item={selectedItem}
-                      onFocusVin={(vin) => setTimelineFocus((prev) => ({ ...prev, vin }))}
-                    />
-                  </div>
-                )
-              })()}
-            </div>
-          ) : (
-            /* Classic List View */
-            <div className="rounded-2xl border border-slate-200/90 bg-white overflow-hidden shadow-2xs divide-y divide-slate-100">
-              {filteredEvents.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 text-xs font-medium">
-                  No activity records match the selected category filter.
-                </div>
-              ) : (
-                filteredEvents.slice(0, visibleCount).map((item, idx) => {
-                  const eventId = `${item.date}-${item.title}-${item.vin ?? ''}-${item.reference ?? ''}-${idx}`
-                  const isExpanded = expandedEventId === eventId
-                  const visuals = getRoadwayVisuals(item, idx)
-                  const Icon = visuals.icon
-
-                  return (
-                    <div key={eventId} className="transition-colors">
-                      <div
-                        onClick={() => setExpandedEventId(isExpanded ? null : eventId)}
-                        className={cn(
-                          "flex items-center justify-between p-3.5 sm:p-4 hover:bg-slate-50/80 transition-all cursor-pointer group gap-3 select-none",
-                          isExpanded ? "bg-slate-50/60 border-l-4 border-l-[var(--dashboard-primary)] pl-2.5 sm:pl-3" : ""
-                        )}
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          {/* Step Number & Date Column */}
-                          <div className="w-16 sm:w-20 shrink-0 text-left pr-3 border-r border-slate-100">
-                            <div className="text-xs font-black text-slate-900 font-mono">
-                              Step {visuals.num}
-                            </div>
-                            <div className="text-[10px] text-slate-400 font-medium truncate">
-                              {formatRoadwayDate(item.date)}
-                            </div>
-                          </div>
-
-                          {/* Icon Circle */}
-                          <div className={cn("h-8 w-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs", visuals.iconBoxCls)}>
-                            <Icon className="h-4 w-4 stroke-[2]" />
-                          </div>
-
-                          {/* Event Title & Subtitle */}
-                          <div className="min-w-0 flex-1 space-y-0.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs sm:text-sm font-bold text-slate-900 font-sans">
-                                {item.title}
-                              </span>
-                              <span className={cn("px-2 py-0.5 rounded text-[10px] font-semibold", visuals.badgeCls)}>
-                                {visuals.badgeLabel}
-                              </span>
-                            </div>
-
-                            <p className="text-[11px] text-slate-500 font-normal truncate flex items-center gap-1.5 flex-wrap">
-                              {item.detail}
-                              {item.reference && (
-                                <>
-                                  <span>•</span>
-                                  <span className="font-mono text-slate-400">#{item.reference}</span>
-                                </>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Right Chevron indicating expand state */}
-                        <ChevronRight
-                          className={cn(
-                            "h-4 w-4 transition-all shrink-0",
-                            isExpanded
-                              ? "rotate-90 text-[var(--dashboard-primary)] font-bold"
-                              : "text-slate-300 group-hover:text-slate-600 group-hover:translate-x-0.5"
-                          )}
-                        />
-                      </div>
-
-                      {/* Expandable Deep Dive Details (Head to Toe) */}
-                      {isExpanded && (
-                        <ActivityEventDeepDive
-                          item={item}
-                          onFocusVin={(vin) => setTimelineFocus((prev) => ({ ...prev, vin }))}
-                        />
-                      )}
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          )}
-
-          {/* Load More Button for List View */}
-          {viewMode === 'list' && filteredEvents.length > visibleCount && (
-            <div className="pt-2 text-center">
-              <button
-                type="button"
-                onClick={() => setVisibleCount((c) => c + 20)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
-              >
-                Load more ⌵
-              </button>
-            </div>
-          )}
-        </div>
+        {/* ── STRUCTURED ACTIVITY STREAM (IMAGE MATCH) ───────────────────────── */}
+        <StructuredActivityStream
+          events={filteredEvents}
+          vehicles={profile.vehicles}
+          onFocusVin={(vin) => setSelectedVin(vin)}
+        />
       </div>
     </div>
   )

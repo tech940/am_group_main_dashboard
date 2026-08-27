@@ -159,16 +159,18 @@ console.log(`
    */
   ok('branch_admin sees only their own', isPettyCashOwnSubmissionsOnlyRole('branch_admin'))
   ok('sales_manager sees only their own', isPettyCashOwnSubmissionsOnlyRole('sales_manager'))
-  for (const role of ['ea', 'ed', 'md', 'eba', 'accounts', 'developer', 'admin', 'manager', 'general_manager']) {
+  ok('general_manager sees only their own (GSM Sales)', isPettyCashOwnSubmissionsOnlyRole('general_manager'))
+  ok('service_general_manager sees only their own (GSM Service)', isPettyCashOwnSubmissionsOnlyRole('service_general_manager'))
+  for (const role of ['ea', 'ed', 'md', 'eba', 'accounts', 'developer', 'admin', 'manager']) {
     ok(`${role} is NOT restricted to own submissions (approver/supervisor)`, !isPettyCashOwnSubmissionsOnlyRole(role))
   }
   /*
    * ⚠️ NOT asserted: that this set equals the creator set. canCreatePettyCashRequest was widened to
    * every role, so an EA/MD may raise a request AND still see the whole branch — correct for a
-   * supervisor. Only that the two submitter roles can both create and are restricted to their own.
+   * supervisor. Only that the submitter roles can both create and are restricted to their own.
    */
-  ok('both submitter roles can create AND are restricted to their own',
-    ['branch_admin', 'sales_manager'].every((r) => canCreatePettyCashRequest(r) && isPettyCashOwnSubmissionsOnlyRole(r)))
+  ok('all submitter roles can create AND are restricted to their own',
+    ['branch_admin', 'sales_manager', 'general_manager', 'service_general_manager'].every((r) => canCreatePettyCashRequest(r) && isPettyCashOwnSubmissionsOnlyRole(r)))
 
   // The by-id read must agree with the list filter, or a submitter could open a row they cannot see.
   const mine = { id: 'me', email: 'me@x', role: 'branch_admin', brand: 'kia' } as never

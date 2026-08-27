@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Clock, ListChecks, Loader2, Plus, TriangleAlert, X, Check, MessageSquare, Mail, MessageCircle, Phone, UserPlus, Download, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CheckCircle2, Clock, ListChecks, Loader2, Plus, TriangleAlert, X, Check, MessageSquare, Mail, MessageCircle, Phone, UserPlus, Download, Trash2, ChevronLeft, ChevronRight, Send, CornerDownRight } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -669,8 +669,19 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                 {paginatedRows.map((r) => {
                   const waUrl = getWhatsAppLink(r)
                   const emailUrl = getEmailLink(r)
-                  const hasMdRemark = Boolean(r.metadata?.mdRemark)
-                  const mdRemarkText = typeof r.metadata?.mdRemark === 'string' ? r.metadata.mdRemark : null
+                  const thread = Array.isArray(r.metadata?.thread) ? (r.metadata.thread as any[]) : []
+                  const hasThread = thread.length > 0
+                  const lastMsg = hasThread
+                    ? thread[thread.length - 1]
+                    : (r.metadata?.mdRemark ? {
+                        text: String(r.metadata.mdRemark),
+                        senderName: String(r.metadata.mdRemarkByName || 'MD'),
+                        senderRole: String(r.metadata.mdRemarkByRole || 'md'),
+                        isMd: true,
+                      } : null)
+                  const isLastMsgMd = Boolean(lastMsg && (lastMsg.isMd || ['md', 'ceo'].includes(String(lastMsg.senderRole || '').toLowerCase())))
+                  const isLastMsgEa = Boolean(lastMsg && (lastMsg.isEa || ['ea', 'eba'].includes(String(lastMsg.senderRole || '').toLowerCase())))
+                  const hasMdRemark = Boolean(r.metadata?.mdRemark || isLastMsgMd)
 
                   return (
                     <tr
@@ -678,7 +689,7 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                       onClick={() => setOpenId(r.id)}
                       className={cn(
                         "cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50/70 transition-colors",
-                        hasMdRemark && "bg-rose-50/40 hover:bg-rose-50/60 border-l-4 border-l-rose-500"
+                        isLastMsgMd && "bg-rose-50/40 hover:bg-rose-50/60 border-l-4 border-l-rose-500"
                       )}
                     >
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -699,21 +710,15 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                       <td className="px-4 py-3 max-w-[260px] lg:max-w-[320px] xl:max-w-[380px]">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <p className="font-bold text-slate-800 line-clamp-1">{r.title}</p>
-                          {hasMdRemark && (
+                          {isLastMsgMd && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider shadow-2xs shrink-0 animate-pulse">
-                              <TriangleAlert className="h-2.5 w-2.5" /> MD Remark
+                              <TriangleAlert className="h-2.5 w-2.5" /> MD Query
                             </span>
                           )}
                           {groupWide && r.brand && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">{r.brand}</span>}
                           {r.mdUserName && <span className="shrink-0 rounded bg-indigo-50 border border-indigo-100/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">MD: {r.mdUserName}</span>}
                         </div>
                         {r.description && <p className="line-clamp-1 text-xs text-slate-400 mt-0.5">{r.description}</p>}
-                        {hasMdRemark && mdRemarkText && (
-                          <div className="mt-1.5 flex items-start gap-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs shadow-2xs">
-                            <span className="font-black text-rose-700 uppercase text-[9px] shrink-0 mt-0.5">MD Directive:</span>
-                            <span className="font-bold line-clamp-2">{mdRemarkText}</span>
-                          </div>
-                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {r.assignedPhone
@@ -727,27 +732,6 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                       <td className="px-4 py-3 text-slate-700 whitespace-nowrap text-[15px] font-bold">{fmtDate(r.followUpAt)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5 flex-nowrap">
-                          {/* MD Remark button */}
-                          {isLeadershipOrMd && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setMdRemarkTaskId(r.id)
-                                setMdRemarkTaskInitial(typeof r.metadata?.mdRemark === 'string' ? r.metadata.mdRemark : '')
-                              }}
-                              className={cn(
-                                "h-8 gap-1.5 rounded-xl font-black text-xs px-3 shadow-xs border transition-colors",
-                                hasMdRemark
-                                  ? "bg-rose-600 text-white hover:bg-rose-700 border-rose-600 shadow-sm"
-                                  : "bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200/80"
-                              )}
-                              title={hasMdRemark ? "Edit MD Remark" : "Add MD Remark"}
-                            >
-                              <TriangleAlert className="h-3.5 w-3.5" />
-                              <span>{hasMdRemark ? 'MD Remark' : '+ MD Remark'}</span>
-                            </Button>
-                          )}
                           {/* WhatsApp button */}
                           <a href={waUrl} target="_blank" rel="noopener noreferrer" title="WhatsApp Assignee"
                             className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-emerald-50 px-3 text-xs font-black text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 transition shadow-xs border border-emerald-100/80">
@@ -1049,7 +1033,11 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
 }) {
   const queryClient = useQueryClient()
   const isLeadershipOrMd = ['md', 'ceo', 'ea', 'eba', 'admin', 'developer'].includes(String(currentUserRole || '').trim().toLowerCase())
+  const isMdUser = ['md', 'ceo'].includes(String(currentUserRole || '').trim().toLowerCase())
+  const isEaUser = ['ea', 'eba'].includes(String(currentUserRole || '').trim().toLowerCase())
   const [showMdRemarkModal, setShowMdRemarkModal] = useState(false)
+  const [drawerInputMsg, setDrawerInputMsg] = useState('')
+  const [drawerMsgSending, setDrawerMsgSending] = useState(false)
   const [remark, setRemark] = useState('')
   const [reassignTo, setReassignTo] = useState('')
   const [searchEmp, setSearchEmp] = useState('')
@@ -1095,6 +1083,42 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
   const task = detailQuery.data?.task
   const isOpen = task && (task.status === 'assigned' || task.status === 'in_progress')
 
+  const rawDrawerThread = (task?.metadata as any)?.thread
+  const drawerThread: any[] = Array.isArray(rawDrawerThread) && rawDrawerThread.length > 0
+    ? rawDrawerThread
+    : (task?.metadata?.mdRemark ? [{
+        id: 'legacy-md',
+        senderId: String(task.metadata.mdRemarkBy || ''),
+        senderName: String(task.metadata.mdRemarkByName || 'MD'),
+        senderRole: String(task.metadata.mdRemarkByRole || 'md'),
+        text: String(task.metadata.mdRemark),
+        createdAt: String(task.metadata.mdRemarkAt || task.updatedAt || task.createdAt),
+        isMd: true,
+        isEa: false,
+      }] : [])
+
+  const handleDrawerSend = async () => {
+    if (!drawerInputMsg.trim() || drawerMsgSending) return
+    setDrawerMsgSending(true)
+    try {
+      await fetchJson(`/api/delegation-tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'chat_message',
+          remark: drawerInputMsg.trim(),
+        }),
+      })
+      setDrawerInputMsg('')
+      queryClient.invalidateQueries({ queryKey: ['delegation-task', taskId] })
+      onChanged()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setDrawerMsgSending(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-slate-900/30" />
@@ -1113,30 +1137,6 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
               <span className={cn('rounded-md px-2 py-0.5 text-[11px] font-bold', STATUS_STYLE[task.status])}>{STATUS_LABEL[task.status]}</span>
             </div>
 
-            {/* MD Directive Red Alert Banner */}
-            {Boolean(task.metadata?.mdRemark) && (
-              <div className="mt-3 rounded-2xl border-2 border-rose-500 bg-rose-50/90 p-3.5 shadow-xs space-y-1.5 animate-in fade-in">
-                <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider shadow-2xs">
-                    <TriangleAlert className="h-3 w-3" /> Executive MD Remark
-                  </span>
-                  {Boolean(task.metadata.mdRemarkAt) && (
-                    <span className="text-[10px] font-bold text-rose-600">
-                      {fmtDateTime(String(task.metadata.mdRemarkAt))}
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm font-black text-rose-950 whitespace-pre-line leading-relaxed pt-1">
-                  {String(task.metadata.mdRemark)}
-                </p>
-                {Boolean(task.metadata.mdRemarkByName) && (
-                  <p className="text-[11px] font-bold text-rose-700">
-                    Added by: {String(task.metadata.mdRemarkByName)} ({String(task.metadata.mdRemarkByRole || 'MD')})
-                  </p>
-                )}
-              </div>
-            )}
-
             {task.description && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{task.description}</p>}
 
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -1152,22 +1152,98 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
               </div>
             )}
 
-            {/* Actions */}
-            <div className="mt-5 space-y-3">
-              {/* MD Remark Action */}
-              {isLeadershipOrMd && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">MD Directive</p>
-                  <Button
-                    onClick={() => setShowMdRemarkModal(true)}
-                    className="mt-2 w-full rounded-xl bg-rose-600 text-white hover:bg-rose-700 font-black text-xs shadow-xs gap-1.5"
-                  >
-                    <TriangleAlert className="h-4 w-4" />
-                    <span>{task.metadata?.mdRemark ? 'Edit MD Remark' : 'Add MD Remark (Red Alert)'}</span>
-                  </Button>
+            {/* MD & EA Interactive Discussion Thread */}
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-indigo-600" />
+                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-700">Discussion &amp; Directives</p>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">
+                  {drawerThread.length} {drawerThread.length === 1 ? 'message' : 'messages'}
+                </span>
+              </div>
+
+              {drawerThread.length === 0 ? (
+                <div className="py-4 text-center rounded-xl bg-white border border-slate-100 p-3">
+                  <p className="text-xs font-semibold text-slate-600">No discussion messages yet.</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">MD can post questions or directives, and EA / Assignees can reply below.</p>
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                  {drawerThread.map((msg, idx) => {
+                    const isSenderMd = msg.isMd || ['md', 'ceo'].includes(String(msg.senderRole || '').toLowerCase())
+                    const isSenderEa = msg.isEa || ['ea', 'eba'].includes(String(msg.senderRole || '').toLowerCase())
+
+                    return (
+                      <div
+                        key={msg.id || idx}
+                        className={cn(
+                          "rounded-xl p-3 border text-xs text-left shadow-2xs space-y-1",
+                          isSenderMd
+                            ? "bg-rose-50/80 border-rose-200 text-rose-950 ml-0 mr-3"
+                            : isSenderEa
+                            ? "bg-emerald-50/80 border-emerald-200 text-emerald-950 ml-3 mr-0"
+                            : "bg-white border-slate-200 text-slate-800 ml-1.5 mr-1.5"
+                        )}
+                      >
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn(
+                              "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider",
+                              isSenderMd
+                                ? "bg-rose-600 text-white"
+                                : isSenderEa
+                                ? "bg-emerald-600 text-white"
+                                : "bg-slate-200 text-slate-700"
+                            )}>
+                              {isSenderMd ? '👑 MD Query' : isSenderEa ? '⚡ EA Reply' : msg.senderRole || 'Note'}
+                            </span>
+                            <span className="font-bold text-slate-800">{msg.senderName}</span>
+                          </div>
+                          <span>{fmtDateTime(msg.createdAt)}</span>
+                        </div>
+                        <p className="font-semibold text-slate-900 whitespace-pre-wrap pt-0.5 leading-relaxed">{msg.text}</p>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
+              {/* Quick reply bar */}
+              <div className="flex items-center gap-2 pt-1">
+                <Input
+                  value={drawerInputMsg}
+                  onChange={(e) => setDrawerInputMsg(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleDrawerSend()
+                    }
+                  }}
+                  placeholder={
+                    isMdUser
+                      ? "Ask EA / add executive directive (Press Enter)..."
+                      : isEaUser
+                      ? "Reply to MD / add task update (Press Enter)..."
+                      : "Type a message / note (Press Enter)..."
+                  }
+                  className="h-9 rounded-xl bg-white border-slate-200 text-xs font-medium focus:ring-slate-900"
+                />
+                <Button
+                  size="sm"
+                  disabled={drawerMsgSending || !drawerInputMsg.trim()}
+                  onClick={handleDrawerSend}
+                  className="h-9 px-3 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-bold text-xs shrink-0 flex items-center gap-1 shadow-xs"
+                >
+                  {drawerMsgSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  <span className="hidden sm:inline">Send</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="mt-5 space-y-3">
               {task.viewerIsEa && isOpen && (
                 <div className="rounded-xl border border-slate-200 p-3">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Complete task</p>

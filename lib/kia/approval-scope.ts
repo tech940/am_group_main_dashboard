@@ -26,6 +26,41 @@ export type ApprovalScopeRow = {
   brand: string | null
   dealerCode: string | null
   location?: string | null
+  department?: string | null
+  approvalType?: string | null
+}
+
+/**
+ * Detects whether an approval row belongs to Kia Jammu Service.
+ * Enforces the policy: ED of Kia sees all branch orders no matter which branch or department
+ * EXCEPT Kia Jammu Service.
+ */
+export function isKiaJammuServiceApproval(row: ApprovalScopeRow): boolean {
+  const brand = String(row.brand || 'kia').toLowerCase().trim()
+  if (brand !== 'kia') return false
+
+  const dept = String(row.department || '').toUpperCase().trim()
+  const approvalType = String(row.approvalType || '').toUpperCase().trim()
+
+  const isServiceDept = 
+    dept === 'SERVICE' || 
+    dept.includes('SERVICE') || 
+    dept.includes('PARTS') || 
+    dept.includes('BODY') || 
+    dept.includes('LABOUR') ||
+    approvalType.includes('PARTS') ||
+    approvalType.includes('WORKSHOP') ||
+    approvalType.includes('LABOUR') ||
+    approvalType.includes('MAINTENANCE') ||
+    approvalType.includes('SERVICE')
+
+  if (!isServiceDept) return false
+
+  const code = String(row.dealerCode || '').toUpperCase().trim()
+  const loc = String(row.location || '').toUpperCase().trim()
+
+  // JK402 / KIA-JM / JAMMU or missing dealer code on a Kia Service row
+  return code === 'JK402' || code === 'KIA-JM' || loc === 'JAMMU' || (!code && !loc)
 }
 
 /**
@@ -108,6 +143,12 @@ function resolveApprovalBranchPins(rowBrand: string, dealers: string | null | un
  */
 export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeRow): boolean {
   if (!appUser) return false
+
+  // ED of Kia sees all branch orders no matter which branch or department, EXCEPT Kia Jammu Service
+  if (appUser.role === 'ed') {
+    return !isKiaJammuServiceApproval(row)
+  }
+
   if (canSeeAllApprovals(appUser)) return true
 
   const rowBrand = (row.brand || 'kia').toLowerCase() as BranchValue
@@ -168,7 +209,7 @@ export function applyApprovalBrandDefault<T extends ApprovalScopeRow>(
   if (!appUser) return rows
   // Everyone else is already narrowed by isApprovalVisibleTo; narrowing again could only hide rows
   // they legitimately hold.
-  if (!canSeeAllApprovals(appUser)) return rows
+  if (!canSeeAllApprovals(appUser) && appUser.role !== 'ed') return rows
 
   const scope = resolveBranchScope(appUser.brand, requestedBrand)
   if (scope === 'all') return rows
@@ -178,6 +219,10 @@ export function applyApprovalBrandDefault<T extends ApprovalScopeRow>(
 
 /** Filter a page of requests down to the ones `appUser` may see. */
 export function filterVisibleApprovals<T extends ApprovalScopeRow>(appUser: AppUser | null, rows: T[]): T[] {
+  if (!appUser) return []
+  if (appUser.role === 'ed') {
+    return rows.filter((row) => isApprovalVisibleTo(appUser, row))
+  }
   if (canSeeAllApprovals(appUser)) return rows
   return rows.filter((row) => isApprovalVisibleTo(appUser, row))
 }

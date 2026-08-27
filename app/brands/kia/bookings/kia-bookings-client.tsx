@@ -124,19 +124,31 @@ import {
   getKiaBankOptions,
   getBranchesForBank,
 } from '@/lib/kia-proforma/pricing'
+import { getIndiaYmd } from '@/lib/date-time'
+
+/*
+ * The default range is the current INDIAN month.
+ *
+ * ⚠️ These used to read the LOCAL clock (new Date().getFullYear() / getMonth()). This component is
+ * server-rendered and then hydrated, so those ran once on the server (UTC on Vercel) and again in
+ * the browser (the viewer's zone). Between 00:00 and 05:30 IST on the 1st of a month the two
+ * disagree about which month it is — the page opens on the wrong default AND the markup mismatches
+ * on hydration. getIndiaYmd pins both to Asia/Kolkata, so they always agree.
+ */
+const istMonthParts = () => {
+  const [year, month] = getIndiaYmd().split('-')
+  return { year, month }
+}
 
 const getCurrentMonthStartDate = () => {
-  const d = new Date()
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const { year, month } = istMonthParts()
   return `${year}-${month}-01`
 }
 
 const getCurrentMonthEndDate = () => {
-  const d = new Date()
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const lastDay = new Date(year, d.getMonth() + 1, 0).getDate()
+  const { year, month } = istMonthParts()
+  // Day 0 of the NEXT month is the last day of this one. Built in UTC so no local offset creeps in.
+  const lastDay = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate()
   return `${year}-${month}-${String(lastDay).padStart(2, '0')}`
 }
 
@@ -4116,11 +4128,11 @@ export function KiaBookingsClient({
 
       <Dialog open={Boolean(allotDialogVehicle)} onOpenChange={(open) => !open && setAllotDialogVehicle(null)}>
         <DialogContent className="kia-premium flex flex-col max-h-[90dvh] w-[calc(100vw-0.75rem)] max-w-2xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_25px_70px_rgba(15,23,42,0.2)]">
-          <LoaderOverlay show={actionMutation.isPending} variant="vin-match" label="Allocating VIN…" sublabel="Reserving the unit for 72 hours" />
+          <LoaderOverlay show={actionMutation.isPending} variant="vin-match" label="Allocating VIN…" sublabel="Reserving the unit for 5 days" />
           <DialogHeader className="border-b border-slate-100 bg-[linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-5">
             <DialogTitle className="text-lg font-black tracking-tight text-slate-950">Allot this car</DialogTitle>
             <DialogDescription className="mt-1 max-w-xl text-xs font-semibold leading-5 text-slate-500">
-              Link this VIN to the selected approved booking. Customer details are pulled from the booking and the 72-hour payment clock starts immediately after allotment.
+              Link this VIN to the selected approved booking. Customer details are pulled from the booking and the 5-day payment clock starts immediately after allotment.
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
@@ -5425,7 +5437,7 @@ function CreateBookingDialog({
                         <option value="Firm">Firm</option>
                       </select>
                       {form.customerType === 'CSD' && (
-                        <p className="mt-1.5 text-[11px] font-bold text-[var(--dashboard-action-bg)]">CSD bookings get a 5-day payment window after allotment (instead of 72 hours).</p>
+                        <p className="mt-1.5 text-[11px] font-bold text-[var(--dashboard-action-bg)]">CSD bookings get a 7-day payment window after allotment (instead of 5 days).</p>
                       )}
                     </Field>
                   </div>
@@ -6084,7 +6096,7 @@ function BookingDrawer({
       return {
         label: 'Stage 4 · Accounts',
         title: 'Payment & invoice pending',
-        body: 'The VIN is reserved for 72 hours. Accounts confirms the payment release, records the invoice number, and uploads the invoice PDF; otherwise release the reservation.',
+        body: 'The VIN is reserved for 5 days. Accounts confirms the payment release, records the invoice number, and uploads the invoice PDF; otherwise release the reservation.',
         actionLabel: canActAsAccountsVerify ? 'Confirm Payment & Invoice' : null,
         onAction: canActAsAccountsVerify ? () => onAction('accounts') : null,
       }

@@ -20,7 +20,7 @@ import {
 /**
  * MD-approved extensions to a KIA allocation's payment window.
  *
- * The standard window is 72h (120h for CSD), fixed at allotment. A consultant can ask for 1–15 days
+ * The standard window is 5 days (7 days for CSD), fixed at allotment. A consultant can ask for 1–15 days
  * instead, with a reason. The allotment still proceeds on the DEFAULT window — the request changes
  * nothing until the MD approves it.
  *

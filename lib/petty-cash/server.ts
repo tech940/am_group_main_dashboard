@@ -30,6 +30,7 @@ import {
   canViewPettyCashBranch,
   hasPettyCashAllBranchAccess,
   getPettyCashAllocationVisibilityFilter,
+  getPettyCashApproverRequestVisibilityFilter,
   getPettyCashExpenseVisibilityFilter,
   getPettyCashRequestVisibilityFilter,
   pettyCashBranchScope,
@@ -248,7 +249,7 @@ function filterDashboardRequests(appUser: AppUser, requests: Array<Record<string
     return requests.filter((request) => ['accounts_pending', 'accounts_on_hold'].includes(String(request.status || '')))
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'sales_manager') {
+  if (appUser.role === 'admin' || isPettyCashOwnSubmissionsOnlyRole(appUser.role)) {
     return requests.filter((request) => (
       String(request.createdBy || '') === appUser.id
       && CREATOR_REQUEST_QUEUE_STATUSES.has(String(request.status || ''))
@@ -259,10 +260,10 @@ function filterDashboardRequests(appUser: AppUser, requests: Array<Record<string
 }
 
 function filterDashboardExpenses(appUser: AppUser, expenses: Array<Record<string, unknown>>) {
-  // Only the Branch Admin (the submitter) is limited to their own expenses.
+  // Only submitters (branch admins, GSMs, sales managers) are limited to their own expenses.
   // Admin / MD / EA / Accounts / super admin see the full (branch-scoped) feed so
   // they can review and filter location-wise.
-  if (appUser.role === 'branch_admin' || appUser.role === 'sales_manager') {
+  if (isPettyCashOwnSubmissionsOnlyRole(appUser.role)) {
     return expenses.filter((expense) => String(expense.createdBy || '') === appUser.id)
   }
 
@@ -386,7 +387,7 @@ export async function getPettyCashApprovalQueue(appUser: AppUser, opts?: { searc
   const statuses = pettyCashApprovalStatusesForRole(appUser.role)
   if (statuses.length === 0) return { count: 0, requests: [] as Array<Record<string, unknown>> }
 
-  const filters = [getPettyCashRequestVisibilityFilter(appUser), inArray(pettyCashRequests.status, statuses)]
+  const filters = [getPettyCashApproverRequestVisibilityFilter(appUser), inArray(pettyCashRequests.status, statuses)]
 
   {
     const scope = pettyCashRequestedBranchScope(appUser, pettyCashRequests.branchId, opts?.branchId)
@@ -474,7 +475,7 @@ export async function getPettyCashApprovalCount(appUser: AppUser) {
   const [{ total }] = await db
     .select({ total: count() })
     .from(pettyCashRequests)
-    .where(and(getPettyCashRequestVisibilityFilter(appUser), inArray(pettyCashRequests.status, statuses)))
+    .where(and(getPettyCashApproverRequestVisibilityFilter(appUser), inArray(pettyCashRequests.status, statuses)))
   return Number(total) || 0
 }
 
@@ -596,7 +597,7 @@ export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?:
     filters.push(eq(pettyCashAllocations.branchId, branchId))
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'sales_manager') {
+  if (appUser.role === 'admin' || isPettyCashOwnSubmissionsOnlyRole(appUser.role)) {
     filters.push(eq(pettyCashAllocations.allocatedTo, appUser.id))
   }
 

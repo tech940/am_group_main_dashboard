@@ -70,6 +70,7 @@ export function canCreatePettyCashRequest(role: PettyCashRole | null | undefined
     r === 'admin' ||
     r === 'manager' ||
     r === 'general_manager' ||
+    r === 'service_general_manager' ||
     r === 'md' ||
     r === 'accounts' ||
     r === 'ea' ||
@@ -87,6 +88,7 @@ export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined
     r === 'admin' ||
     r === 'manager' ||
     r === 'general_manager' ||
+    r === 'service_general_manager' ||
     r === 'md' ||
     r === 'accounts' ||
     r === 'ea' ||
@@ -251,6 +253,14 @@ export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unkno
   return and(...baseFilters, eq(pettyCashExpenses.createdBy, appUser.id))!
 }
 
+export function getPettyCashApproverRequestVisibilityFilter(appUser: AppUser): SQL<unknown> {
+  const baseFilters: SQL<unknown>[] = [isNull(pettyCashRequests.deletedAt)]
+  if (hasPettyCashAllBranchAccess(appUser)) {
+    return and(...baseFilters)!
+  }
+  return and(...baseFilters, pettyCashBranchScope(pettyCashRequests.branchId, brandsOf(appUser)))!
+}
+
 /**
  * `includeInactive` widens the filter to closed/cancelled allocations as well.
  *
@@ -275,7 +285,7 @@ export function getPettyCashAllocationVisibilityFilter(
     return and(...activeOnly, sql`true`)!
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'sales_manager') {
+  if (appUser.role === 'admin' || isPettyCashOwnSubmissionsOnlyRole(appUser.role)) {
     return and(
       ...activeOnly,
       eq(pettyCashAllocations.allocatedTo, appUser.id),

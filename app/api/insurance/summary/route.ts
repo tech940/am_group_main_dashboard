@@ -101,7 +101,11 @@ export async function GET(request: Request) {
       if (!supported.has(param)) continue
       const value = searchParams.get(param)
       if (!value || value === 'all') continue
-      whereConditions.push(`${C(key)} = '${esc(value)}'`)
+      if (param === 'policyType') {
+        whereConditions.push(`UPPER(${C(key)}) = '${esc(value.toUpperCase())}'`)
+      } else {
+        whereConditions.push(`${C(key)} = '${esc(value)}'`)
+      }
     }
 
     const whereClause = whereConditions.join(' AND ')

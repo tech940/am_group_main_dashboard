@@ -34,7 +34,19 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
 import { getBranchLabel } from '@/lib/branches'
-import { getAllPettyCashLocationOptions, getPettyCashBrandStatus, getPettyCashConfiguredBranches, getPettyCashLocationOptions, getPettyCashUserBrands, PETTY_CASH_DEPARTMENT_OPTIONS, PETTY_CASH_TOP_UP_THRESHOLD, getPettyCashTopUpThreshold, isPettyCashAllBranchRole, isPettyCashConfiguredForBranch } from '@/lib/petty-cash/constants'
+import {
+  getAllPettyCashLocationOptions,
+  getPettyCashBrandStatus,
+  getPettyCashConfiguredBranches,
+  getPettyCashLocationOptions,
+  getPettyCashUserBrands,
+  PETTY_CASH_DEPARTMENT_OPTIONS,
+  PETTY_CASH_TOP_UP_THRESHOLD,
+  getPettyCashTopUpThreshold,
+  isPettyCashAllBranchRole,
+  isPettyCashConfiguredForBranch,
+  isPettyCashOwnSubmissionsOnlyRole,
+} from '@/lib/petty-cash/constants'
 import { toast } from '@/hooks/use-toast'
 import { formatWaitingDuration } from '@/lib/petty-cash/status-tracking'
 import { cn } from '@/lib/utils'
@@ -114,8 +126,20 @@ const formatSpendDate = (value?: string | null) => {
   return new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short' }).format(date)
 }
 
-const isCreatorRole = (role: string) => role === 'sales_manager'
-const isApproverRole = (role: string) => role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts' || role === 'ed' || role === 'admin' || role === 'branch_admin' || role === 'developer' || role === 'manager' || role === 'general_manager'
+const isCreatorRole = (role: string) =>
+  role === 'sales_manager' ||
+  role === 'branch_admin' ||
+  role === 'general_manager' ||
+  role === 'service_general_manager'
+const isApproverRole = (role: string) =>
+  role === 'ea' ||
+  role === 'md' ||
+  role === 'eba' ||
+  role === 'accounts' ||
+  role === 'ed' ||
+  role === 'admin' ||
+  role === 'developer' ||
+  role === 'manager'
 
 const PENDING_STATUSES = ['submitted', 'ed_pending', 'ed_on_hold', 'ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold']
 const OPEN_REQUEST_STATUSES = ['draft', 'submitted', ...PENDING_STATUSES]
@@ -399,9 +423,10 @@ export function PettyCashWorkspace() {
   const spendPercentage = allocationAmount > 0 ? Math.min(100, Math.round((spentAmount / allocationAmount) * 100)) : 0
   const userRole = payload?.user.role || ''
   const currentBranchId = payload?.user.brand || ''
-  const isSuperAdmin = userRole === 'developer' || userRole === 'admin' || userRole === 'branch_admin' || userRole === 'manager' || userRole === 'general_manager'
+  const isSuperAdmin = userRole === 'developer' || userRole === 'admin' || userRole === 'manager'
+  const isOwnSubmissionsOnly = isPettyCashOwnSubmissionsOnlyRole(userRole)
   const canCreate = isCreatorRole(userRole) || isSuperAdmin || userRole === 'md' || userRole === 'accounts'
-  const canReviewQueue = isApproverRole(userRole) || isSuperAdmin
+  const canReviewQueue = !isOwnSubmissionsOnly && (isApproverRole(userRole) || isSuperAdmin)
   const canRequestTopUp = summary?.canRequestTopUp ?? true
   const canSubmitExpense = summary?.canSubmitExpense ?? true
   const topUpReason = summary?.topUpReason || ''
@@ -446,7 +471,7 @@ export function PettyCashWorkspace() {
     brandViewRef.current = MY_BRANCHES
     setBrandView(MY_BRANCHES)
   }, [isAllBranchViewer, brandView, currentBranchId])
-  const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'eba', 'developer', 'manager', 'general_manager'].includes(userRole)
+  const canFilterExpensesByLocation = !isOwnSubmissionsOnly && ['admin', 'md', 'ea', 'eba', 'developer', 'manager'].includes(userRole)
 
   const seededLocationOptions = useMemo(
     () => (isAllBranchViewer && (!brandView || brandView === 'all')

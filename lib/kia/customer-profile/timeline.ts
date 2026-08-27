@@ -273,21 +273,25 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
        * is 0 on every one of the 5,711 rows.
        */
       const priced = s.amount !== null && s.amount !== undefined
+      const jobCardRef = s.roNo || s.billNo || null
       push(out, s.billDate || s.roDate, 'service', 'Service visit',
-        [s.model, s.registration].filter(Boolean).join(' · ') || label, v.vin, null, {
+        [s.model, s.registration].filter(Boolean).join(' · ') || label, v.vin, jobCardRef, {
+          jobCard: jobCardRef,
+          serviceType: s.workType || 'General Service',
+          amount: s.amount,
+          billAmount: s.amount,
+          labour: s.labour,
+          parts: s.parts,
+          tax: s.tax,
+          advisor: s.advisor,
           'Record Type': isNviVisit(s.workType)
             ? 'Pre-Delivery Inspection (NVI) — not a customer visit'
             : 'Workshop Repair Order (RO)',
+          'Job Card Number': jobCardRef,
           'Work Type': s.workType,
           'Total Billed': s.billStatus === 'Cancel'
             ? `${rupees(s.amount)} — bill cancelled, excluded from totals`
             : rupees(s.amount),
-          /*
-           * The DMS collection status, verbatim (its own misspelling included — correcting it would
-           * match nothing). Only the statuses that SAY something are surfaced; 'Full Payment
-           * Received' and the unbilled 'No Payment' are the quiet norm. There is no balance column
-           * anywhere in the feed, so this must never be turned into an amount owed.
-           */
           ...(s.billStatus === 'Payment Not Received' || s.billStatus === 'Partial Paymant Received'
             ? { 'Payment Status': `Marked '${s.billStatus}' in the DMS — outstanding amount not recorded` }
             : {}),
@@ -322,14 +326,17 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
       const total = bill.items.map((a) => a.amount).filter((x): x is number => x !== null).reduce((a, b) => a + b, 0)
       const names = bill.items.map((a) => a.description).filter(Boolean) as string[]
       const shown = names.slice(0, 8)
+      const itemsSummary = shown.join(', ') + (names.length > shown.length ? ` +${names.length - shown.length} more` : '')
       push(out, bill.billDate, 'accessories', 'Accessories purchased',
-        `${bill.items.length} item${bill.items.length === 1 ? '' : 's'} · ${rupees(total, 'amount not recorded')}`,
+        itemsSummary || `${bill.items.length} item${bill.items.length === 1 ? '' : 's'}`,
         v.vin, bill.items[0]?.billNo || null, {
+          amount: total > 0 ? total : null,
+          items: itemsSummary,
           'Record Type': 'Accessory Counter Sale',
           // Only a REAL bill number is labelled as one — the grouping key falls back to the date,
           // and a date wearing a 'Bill No' label is a fabricated document reference.
           ...(bill.items[0]?.billNo ? { 'Bill No': bill.items[0].billNo } : {}),
-          'Items': shown.join(', ') + (names.length > shown.length ? ` +${names.length - shown.length} more` : ''),
+          'Items': itemsSummary,
           'Total (incl. tax)': rupees(total, 'Not recorded'),
           'Vehicle Model': v.model,
           'Registration Number': v.registration,

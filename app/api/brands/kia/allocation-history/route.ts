@@ -23,17 +23,28 @@ export async function GET(request: Request) {
 
     // Branch-scoped like the rest of KIA: a manager pinned to one dealer sees only that dealer's
     // allocations. Super-admins and unpinned roles see everything.
-    let dealerCode = searchParams.get('dealerCode')
+    /*
+     * ⚠️ Pass the WHOLE pinned list, not allowed[0].
+     *
+     * Collapsing it to the first element hard-pinned every user entitled to two branches: an IDT
+     * user pinned to 'JK501,JK402' saw 34 of 116 "Released — no payment", with no UI control to
+     * reach the rest, while the Bookings tab on the same page shell showed both branches (it scopes
+     * with inArray over the full array). That is one tab disagreeing with its neighbour, not a
+     * privacy boundary. Measured after this change: the same user sees all 116, and a genuinely
+     * single-branch user still sees only their own 34.
+     */
     const allowed = getUserDealerScope(appUser, 'kia')
-    if (allowed && allowed.length > 0) {
-      const requested = (dealerCode || '').trim().toUpperCase()
-      dealerCode = requested && allowed.includes(requested) ? requested : allowed[0]
-    }
+    const requested = (searchParams.get('dealerCode') || '').trim().toUpperCase()
+    // An explicit choice is honoured only when it is inside the boundary; otherwise ignored.
+    const dealerCode = requested && (!allowed || allowed.some((d) => d.toUpperCase() === requested))
+      ? requested
+      : null
 
     const filters = {
       search: searchParams.get('search'),
       outcome: searchParams.get('outcome'),
       dealerCode,
+      allowedDealers: allowed,
       startDate: searchParams.get('startDate'),
       endDate: searchParams.get('endDate'),
       page: Number(searchParams.get('page')) || 1,

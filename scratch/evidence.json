@@ -1,0 +1,1997 @@
+[
+ {
+  "sheetRow": 1,
+  "sheet": {
+   "row": 1,
+   "vin": "MZBEA812LTN080624",
+   "name": "THE AREA MANAGER CANTEEN STORES DEPARTMENT",
+   "dealer": "JK501",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-21",
+   "invoice": "2026-03-10",
+   "dmsBooking": "B202600266",
+   "phone4": "5477"
+  },
+  "isCsdRegistration": true,
+  "candidates": [
+   {
+    "booking": "KIA_JK501_2026_120144",
+    "customer": "Anish Kumar",
+    "status": "proforma_generated",
+    "dealer": "JK501",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEA812LTN080624",
+    "liveAllocationVins": null,
+    "customerType": "CSD",
+    "created": "2026-08-04",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "5474",
+    "phoneLast4Sheet": "5477",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 2,
+  "sheet": {
+   "row": 2,
+   "vin": "MZBFB812LTN655474",
+   "name": "ASHWANI GUPTA",
+   "dealer": "JK402",
+   "model": "SONET",
+   "variant": "Sonet G1.2 5MT HTK Plus",
+   "color": "GRAVITY GREY",
+   "delivery": "2026-08-12",
+   "invoice": "2026-08-12",
+   "dmsBooking": "B202600945",
+   "phone4": "4578"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120110",
+    "customer": "ASHWANI KUMAR",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "SONET PETROL",
+    "variant": "Sonet G1.2 5MT HTK Plus",
+    "color": "GRAVITY GREY",
+    "vinOnBooking": "MZBFB812LTN665297",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-30",
+    "deliveredAt": null,
+    "matchedBy": [
+     "phone"
+    ],
+    "phoneLast4Booking": "4578",
+    "phoneLast4Sheet": "4578",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 3,
+  "sheet": {
+   "row": 3,
+   "vin": "MZBEB812LTN080323",
+   "name": "IMRAN HAFIZ FAKTOO",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTK (O)",
+   "color": "MORNING HAZE",
+   "delivery": "2026-08-07",
+   "invoice": "2026-07-30",
+   "dmsBooking": "B202600946",
+   "phone4": "9938"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120138",
+    "customer": "Imran hafiz faktoo",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTK (O)",
+    "color": "Morning Haze",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-01",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "9938",
+    "phoneLast4Sheet": "9938",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 4,
+  "sheet": {
+   "row": 4,
+   "vin": "MZBEA812LTN083201",
+   "name": "AMJAD ALI",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-19",
+   "invoice": "2026-08-14",
+   "dmsBooking": "B202600951",
+   "phone4": "5554"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120137",
+    "customer": "Amjad ali",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEA812LTN073983",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-01",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "5554",
+    "phoneLast4Sheet": "5554",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 5,
+  "sheet": {
+   "row": 5,
+   "vin": "MZBEA812LTN086775",
+   "name": "THE AREA MANAGER CANTEEN STORES DEPARTMENT",
+   "dealer": "JK501",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "MORNING HAZE",
+   "delivery": "2026-08-21",
+   "invoice": "2026-08-09",
+   "dmsBooking": "B202600375",
+   "phone4": "5013"
+  },
+  "isCsdRegistration": true,
+  "candidates": [
+   {
+    "booking": "KIA_JK501_2026_120141",
+    "customer": "Govind dabi",
+    "status": "delivered",
+    "dealer": "JK501",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEA812LTN086775",
+    "liveAllocationVins": null,
+    "customerType": "CSD",
+    "created": "2026-08-04",
+    "deliveredAt": "2026-08-23",
+    "matchedBy": [
+     "vin",
+     "phone"
+    ],
+    "phoneLast4Booking": "5013",
+    "phoneLast4Sheet": "5013",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": false
+   }
+  ],
+  "whoElseClaimsThisVin": [
+   {
+    "kind": "local_status",
+    "ref": "KIA_JK501_2026_120141",
+    "who": "Govind dabi",
+    "extra": "retail"
+   }
+  ]
+ },
+ {
+  "sheetRow": 6,
+  "sheet": {
+   "row": 6,
+   "vin": "MZBEA812LTN081370",
+   "name": "THE AREA MANAGER CANTEEN STORES DEPARTMENT",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "MORNING HAZE",
+   "delivery": "2026-08-14",
+   "invoice": "2026-08-14",
+   "dmsBooking": "B202600953",
+   "phone4": "2580"
+  },
+  "isCsdRegistration": true,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120147",
+    "customer": "Vikramjeet singh",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEA812LTN060801",
+    "liveAllocationVins": null,
+    "customerType": "CSD",
+    "created": "2026-08-05",
+    "deliveredAt": null,
+    "matchedBy": [
+     "phone"
+    ],
+    "phoneLast4Booking": "2580",
+    "phoneLast4Sheet": "2580",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": false
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 7,
+  "sheet": {
+   "row": 7,
+   "vin": "MZBEB812LTN036352",
+   "name": "Sunil Kumar Kashyap",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTK (O)",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-14",
+   "invoice": "2026-08-14",
+   "dmsBooking": "B202600958",
+   "phone4": "7814"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK501_2026_120195",
+    "customer": "Sunil kumar",
+    "status": "booking_created",
+    "dealer": "JK501",
+    "model": "NEW SELTOS PETROL",
+    "variant": "SELTOS G1.5 6MT HTE",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": "CSD",
+    "created": "2026-08-27",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name"
+    ],
+    "phoneLast4Booking": "9437",
+    "phoneLast4Sheet": "7814",
+    "phoneAgrees": false,
+    "dealerAgrees": false,
+    "modelAgrees": true,
+    "variantAgrees": false,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK402_2026_120149",
+    "customer": "SUNIL KUMAR KASHYAP",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTK (O)",
+    "color": "Glacier white pearl",
+    "vinOnBooking": "MZBEB812LTN082917",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-06",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "7814",
+    "phoneLast4Sheet": "7814",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": [
+   {
+    "kind": "local_status",
+    "ref": "KIA_JK402_2026_120041",
+    "who": "Seema Gupta",
+    "extra": "retail"
+   }
+  ]
+ },
+ {
+  "sheetRow": 8,
+  "sheet": {
+   "row": 8,
+   "vin": "MZBEB812TTN072253",
+   "name": "JK CORPORATE SOLUTIONS PRIVATE LIMITED",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 IVT HTK (O)",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-14",
+   "invoice": "2026-08-06",
+   "dmsBooking": "B202600957",
+   "phone4": "5745"
+  },
+  "isCsdRegistration": false,
+  "candidates": [],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 9,
+  "sheet": {
+   "row": 9,
+   "vin": "MZBB681BUTN000242",
+   "name": "PLATINUM AUTOMOBILES PVT LTD UNIT II",
+   "dealer": "JK402",
+   "model": "SYROS EV",
+   "variant": "Syros EV ER HTX Plus",
+   "color": "IVORY SILVER MATT",
+   "delivery": "2026-08-26",
+   "invoice": "2026-08-07",
+   "dmsBooking": "B202600960",
+   "phone4": "1128"
+  },
+  "isCsdRegistration": false,
+  "candidates": [],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 10,
+  "sheet": {
+   "row": 10,
+   "vin": "MZBEB812LTN076936",
+   "name": "ARUN VERMA",
+   "dealer": "JK501",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTK (O)",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-19",
+   "invoice": "2026-08-19",
+   "dmsBooking": "B202600385",
+   "phone4": "1435"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK501_2026_120156",
+    "customer": "Arun verma",
+    "status": "delivered",
+    "dealer": "JK501",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTK (O)",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEB812LTN076936",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-10",
+    "deliveredAt": "2026-08-23",
+    "matchedBy": [
+     "name",
+     "vin",
+     "phone"
+    ],
+    "phoneLast4Booking": "1435",
+    "phoneLast4Sheet": "1435",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 11,
+  "sheet": {
+   "row": 11,
+   "vin": "MZBFB813LTN662824",
+   "name": "SHEIKH ADIL BASHIR",
+   "dealer": "JK402",
+   "model": "SONET",
+   "variant": "Sonet D1.5 6MT HTK (O)",
+   "color": "MAGMA RED",
+   "delivery": "2026-08-21",
+   "invoice": "2026-08-12",
+   "dmsBooking": "B202600966",
+   "phone4": "0486"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120163",
+    "customer": "SHEIKH ADIL BASHIR",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "SONET DIESEL",
+    "variant": "Sonet D1.5 6MT HTK (O)",
+    "color": "Magma Red",
+    "vinOnBooking": "MZBFB813LTN662824",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-12",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "vin"
+    ],
+    "phoneLast4Booking": "5079",
+    "phoneLast4Sheet": "0486",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK402_2026_120100",
+    "customer": "RAJESH KUMAR SYAL",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "SONET DIESEL",
+    "variant": "Sonet D1.5 6MT HTK Plus",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBFB813LTN662824",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-20",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "3442",
+    "phoneLast4Sheet": "0486",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": false,
+    "colorAgrees": false
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 12,
+  "sheet": {
+   "row": 12,
+   "vin": "MZBFB812LTN672884",
+   "name": "MADAN LAL",
+   "dealer": "JK501",
+   "model": "SONET",
+   "variant": "Sonet G1.2 5MT HTK Plus",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-23",
+   "invoice": "2026-08-12",
+   "dmsBooking": "B202600388",
+   "phone4": "5807"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK501_2026_120168",
+    "customer": "Madan lal",
+    "status": "proforma_generated",
+    "dealer": "JK501",
+    "model": "SONET PETROL",
+    "variant": "Sonet G1.2 5MT HTK Plus",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBFB812LTN684058",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-14",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "5807",
+    "phoneLast4Sheet": "5807",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 13,
+  "sheet": {
+   "row": 13,
+   "vin": "MZBFB812LTN675478",
+   "name": "DAL SINGH",
+   "dealer": "JK402",
+   "model": "SONET",
+   "variant": "Sonet G1.2 5MT HTK (O)",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-19",
+   "invoice": "2026-08-19",
+   "dmsBooking": "B202600967",
+   "phone4": "9531"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120166",
+    "customer": "Dal singh",
+    "status": "ready_delivery",
+    "dealer": "JK402",
+    "model": "SONET PETROL",
+    "variant": "Sonet G1.2 5MT HTK (O)",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBFB812LTN643024",
+    "liveAllocationVins": "MZBFB812LTN643024",
+    "customerType": "Regular",
+    "created": "2026-08-13",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "9531",
+    "phoneLast4Sheet": "9531",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK402_2026_120139",
+    "customer": "Jagdish singh",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "SONET PETROL",
+    "variant": "Sonet G1.2 5MT HTK (O)",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBFB812LTN675478",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-03",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "7583",
+    "phoneLast4Sheet": "9531",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 14,
+  "sheet": {
+   "row": 14,
+   "vin": "MZBFB812LTN615926",
+   "name": "SAHIL SHARMA",
+   "dealer": "JK402",
+   "model": "SONET",
+   "variant": "Sonet G1.2 5MT HTK Plus",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-20",
+   "invoice": "2026-08-19",
+   "dmsBooking": "B202600976",
+   "phone4": "6651"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120106",
+    "customer": "Sahil Sharma",
+    "status": "proforma_generated",
+    "dealer": "JK501",
+    "model": "CARENS",
+    "variant": "Carens G1.5 6MT MDrive7",
+    "color": "CLEAR WHITE",
+    "vinOnBooking": "MZBGA814LSN236804",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-22",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name"
+    ],
+    "phoneLast4Booking": "9248",
+    "phoneLast4Sheet": "6651",
+    "phoneAgrees": false,
+    "dealerAgrees": false,
+    "modelAgrees": false,
+    "variantAgrees": false,
+    "colorAgrees": false
+   },
+   {
+    "booking": "KIA_JK402_2026_120176",
+    "customer": "Sahil sharma",
+    "status": "booking_created",
+    "dealer": "JK402",
+    "model": "SONET PETROL",
+    "variant": "Sonet G1.2 5MT HTK Plus",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-18",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "6651",
+    "phoneLast4Sheet": "6651",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 15,
+  "sheet": {
+   "row": 15,
+   "vin": "MZBEA812LTN086145",
+   "name": "RAKESH BHAGAT",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-25",
+   "invoice": "2026-08-20",
+   "dmsBooking": "B202600980",
+   "phone4": "2669"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120181",
+    "customer": "Rakesh bhagat",
+    "status": "vehicle_allocated",
+    "dealer": "JK402",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEA812LTN073983",
+    "liveAllocationVins": "MZBEA812LTN073983",
+    "customerType": "Regular",
+    "created": "2026-08-20",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "2669",
+    "phoneLast4Sheet": "2669",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK501_2026_120080",
+    "customer": "Amarjit Singh",
+    "status": "delivered",
+    "dealer": "JK501",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEA812LTN086145",
+    "liveAllocationVins": "MZBEA812LTN086145",
+    "customerType": "Regular",
+    "created": "2026-07-16",
+    "deliveredAt": "2026-08-26",
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "2442",
+    "phoneLast4Sheet": "2669",
+    "phoneAgrees": false,
+    "dealerAgrees": false,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": [
+   {
+    "kind": "local_status",
+    "ref": "KIA_JK501_2026_120080",
+    "who": "Amarjit Singh",
+    "extra": "retail"
+   }
+  ]
+ },
+ {
+  "sheetRow": 16,
+  "sheet": {
+   "row": 16,
+   "vin": "MZBB6811VSN020439",
+   "name": "RAJESH KAPOOR",
+   "dealer": "JK402",
+   "model": "SYROS",
+   "variant": "Syros G1.0T 7DCT HTX",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-23",
+   "invoice": "2026-08-21",
+   "dmsBooking": "B202600981",
+   "phone4": "0003"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120182",
+    "customer": "RAJESH KAPOOR",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "SYROS PETROL",
+    "variant": "Syros G1.0T 7DCT HTX",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-21",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name"
+    ],
+    "phoneLast4Booking": "7567",
+    "phoneLast4Sheet": "0003",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": [
+   {
+    "kind": "local_status",
+    "ref": "KIA_JK402_2026_120033",
+    "who": "SANJEEV KOUL",
+    "extra": "retail"
+   }
+  ]
+ },
+ {
+  "sheetRow": 17,
+  "sheet": {
+   "row": 17,
+   "vin": "MZBEC813MTN061672",
+   "name": "RAHEEL MURTAZA NAZIR",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos D1.5 6AT GTX (A)",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-26",
+   "invoice": "2026-08-25",
+   "dmsBooking": "B202600984",
+   "phone4": "6058"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120188",
+    "customer": "Raheel murtaza nazir",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "NEW SELTOS DIESEL",
+    "variant": "Seltos D1.5 6AT GTX (A)",
+    "color": "Aurora black pearl",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-24",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "6058",
+    "phoneLast4Sheet": "6058",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK402_2026_120107",
+    "customer": "Kanav raina",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Diesel",
+    "variant": "Seltos D1.5 6AT GTX (A)",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEC813MTN061672",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-24",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "2984",
+    "phoneLast4Sheet": "6058",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 18,
+  "sheet": {
+   "row": 18,
+   "vin": "MZBFB812LTN669900",
+   "name": "NIPUN SUDAN",
+   "dealer": "JK501",
+   "model": "SONET",
+   "variant": "Sonet G1.2 5MT HTK Plus",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-25",
+   "invoice": "2026-08-25",
+   "dmsBooking": "B202600398",
+   "phone4": "3118"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120031",
+    "customer": "Chaman lal",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "SONET PETROL",
+    "variant": "Sonet G1.2 5MT HTK Plus",
+    "color": "Aurora black pearl",
+    "vinOnBooking": "MZBFB812LTN669900",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-10",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "4720",
+    "phoneLast4Sheet": "3118",
+    "phoneAgrees": false,
+    "dealerAgrees": false,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 19,
+  "sheet": {
+   "row": 19,
+   "vin": "MZBEC813MTN060569",
+   "name": "KANAV RAINA",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos D1.5 6AT GTX (A)",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-14",
+   "invoice": "2026-08-14",
+   "dmsBooking": "B202600939",
+   "phone4": "2984"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120107",
+    "customer": "Kanav raina",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Diesel",
+    "variant": "Seltos D1.5 6AT GTX (A)",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEC813MTN061672",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-24",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "2984",
+    "phoneLast4Sheet": "2984",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 20,
+  "sheet": {
+   "row": 20,
+   "vin": "MZBFB813LTN686808",
+   "name": "RAJESH KUMAR SYAL",
+   "dealer": "JK402",
+   "model": "SONET",
+   "variant": "Sonet D1.5 6MT HTK Plus",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-14",
+   "invoice": "2026-07-23",
+   "dmsBooking": "B202600936",
+   "phone4": "3442"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120100",
+    "customer": "RAJESH KUMAR SYAL",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "SONET DIESEL",
+    "variant": "Sonet D1.5 6MT HTK Plus",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBFB813LTN662824",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-20",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "3442",
+    "phoneLast4Sheet": "3442",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 21,
+  "sheet": {
+   "row": 21,
+   "vin": "MZBEB812LTN082914",
+   "name": "THE AREA MANAGER CANTEEN STORES DEPARTMENT",
+   "dealer": "JK501",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTK",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-16",
+   "invoice": "2026-05-19",
+   "dmsBooking": "B202600314",
+   "phone4": "2845"
+  },
+  "isCsdRegistration": true,
+  "candidates": [
+   {
+    "booking": "KIA_JK501_2026_120111",
+    "customer": "Binay Kumar",
+    "status": "delivered",
+    "dealer": "JK501",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTK",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEB812LTN082914",
+    "liveAllocationVins": null,
+    "customerType": "CSD",
+    "created": "2026-07-30",
+    "deliveredAt": "2026-08-21",
+    "matchedBy": [
+     "vin",
+     "phone"
+    ],
+    "phoneLast4Booking": "2845",
+    "phoneLast4Sheet": "2845",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 22,
+  "sheet": {
+   "row": 22,
+   "vin": "MZBEA812LTN080810",
+   "name": "TARUN JAMWAL",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "IVORY SILVER GLOSS",
+   "delivery": "2026-08-18",
+   "invoice": "2026-06-09",
+   "dmsBooking": "B202600859",
+   "phone4": "7431"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120047",
+    "customer": "TARUN JAMWAL",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "Ivory Silver gloss",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": null,
+    "created": "2026-06-08",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "7431",
+    "phoneLast4Sheet": "7431",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 23,
+  "sheet": {
+   "row": 23,
+   "vin": "MZBGB814LTN339931",
+   "name": "THE AREA MANAGER CANTEEN STORES DEPARTMENT",
+   "dealer": "JK501",
+   "model": "CARENS",
+   "variant": "Carens Clavis G1.5 6MT HTE7",
+   "color": "CLEAR WHITE",
+   "delivery": "2026-08-13",
+   "invoice": "2026-08-12",
+   "dmsBooking": "B202600329",
+   "phone4": "0114"
+  },
+  "isCsdRegistration": true,
+  "candidates": [
+   {
+    "booking": "KIA_JK501_2026_120127",
+    "customer": "Sanjeet singh",
+    "status": "delivered",
+    "dealer": "JK501",
+    "model": "CARENS",
+    "variant": "Carens Clavis G1.5 6MT HTE7",
+    "color": "Aurora black pearl",
+    "vinOnBooking": "MZBGB814LTN344148",
+    "liveAllocationVins": null,
+    "customerType": "CSD",
+    "created": "2026-07-30",
+    "deliveredAt": "2026-08-21",
+    "matchedBy": [
+     "phone"
+    ],
+    "phoneLast4Booking": "0114",
+    "phoneLast4Sheet": "0114",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": false
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 24,
+  "sheet": {
+   "row": 24,
+   "vin": "MZBEB812LTN082929",
+   "name": "SUMAYA FATIMA SHAD",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTK",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-18",
+   "invoice": "2026-07-17",
+   "dmsBooking": "B202600863",
+   "phone4": "5909"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120044",
+    "customer": "Sumaya Fatima Shad",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTK",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEB812LTN083395",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-06-10",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name"
+    ],
+    "phoneLast4Booking": "0570",
+    "phoneLast4Sheet": "5909",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 25,
+  "sheet": {
+   "row": 25,
+   "vin": "MZBEB812LTN080324",
+   "name": "NITESHWAR MANHAS",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTK (O)",
+   "color": "MORNING HAZE",
+   "delivery": "2026-08-12",
+   "invoice": "2026-08-12",
+   "dmsBooking": "B202600879",
+   "phone4": "9702"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120048",
+    "customer": "Niteshwar manhas",
+    "status": "booking_created",
+    "dealer": "JK402",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTK (O)",
+    "color": "Morning Haze",
+    "vinOnBooking": "MZBEB812LTN080324",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-06-20",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "vin",
+     "phone"
+    ],
+    "phoneLast4Booking": "9702",
+    "phoneLast4Sheet": "9702",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 26,
+  "sheet": {
+   "row": 26,
+   "vin": "MZBEA812LTN080290",
+   "name": "BHAGAT RAM",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-11",
+   "invoice": "2026-08-10",
+   "dmsBooking": "B202600882",
+   "phone4": "2190"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120046",
+    "customer": "Bhagat Ram",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEA812LTN080287",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-06-22",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "2190",
+    "phoneLast4Sheet": "2190",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK402_2026_120050",
+    "customer": "Mukesh Kumar",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEA812LTN080290",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-06-22",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "9505",
+    "phoneLast4Sheet": "2190",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 27,
+  "sheet": {
+   "row": 27,
+   "vin": "MZBEB812LTN087740",
+   "name": "MOHD TOHEED",
+   "dealer": "JK501",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTK",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-23",
+   "invoice": "2026-06-25",
+   "dmsBooking": "B202600340",
+   "phone4": "9173"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK501_2026_120148",
+    "customer": "Mohd toheed",
+    "status": "proforma_generated",
+    "dealer": "JK501",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTK",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-06",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name"
+    ],
+    "phoneLast4Booking": "2009",
+    "phoneLast4Sheet": "9173",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 28,
+  "sheet": {
+   "row": 28,
+   "vin": "MZBFB813LTN676244",
+   "name": "TUSHITA",
+   "dealer": "JK402",
+   "model": "SONET",
+   "variant": "Sonet D1.5 6MT HTK (O)",
+   "color": "CLEAR WHITE",
+   "delivery": "2026-08-13",
+   "invoice": "2026-08-13",
+   "dmsBooking": "B202600911",
+   "phone4": "6978"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120061",
+    "customer": "Tushita",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "SONET",
+    "variant": "Sonet D1.5 6MT HTK (O)",
+    "color": "CLEAR WHITE",
+    "vinOnBooking": "MZBFB813LTN676244",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-02",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "vin",
+     "phone"
+    ],
+    "phoneLast4Booking": "6978",
+    "phoneLast4Sheet": "6978",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 29,
+  "sheet": {
+   "row": 29,
+   "vin": "MZBEA812LTN081166",
+   "name": "THE AREA MANGER CANTEEN STORES DEPARTMENT",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-19",
+   "invoice": "2026-07-06",
+   "dmsBooking": "B202600919",
+   "phone4": "1339"
+  },
+  "isCsdRegistration": true,
+  "candidates": [
+   {
+    "booking": "KIA_JK501_2026_120095",
+    "customer": "Atul saini",
+    "status": "delivered",
+    "dealer": "JK501",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEA812LTN081166",
+    "liveAllocationVins": null,
+    "customerType": "CSD",
+    "created": "2026-07-18",
+    "deliveredAt": "2026-08-11",
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "2542",
+    "phoneLast4Sheet": "1339",
+    "phoneAgrees": false,
+    "dealerAgrees": false,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK402_2026_120066",
+    "customer": "SAHIL CHOUDHARY",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEA812LTN081166",
+    "liveAllocationVins": null,
+    "customerType": null,
+    "created": "2026-07-06",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin",
+     "phone"
+    ],
+    "phoneLast4Booking": "1339",
+    "phoneLast4Sheet": "1339",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 30,
+  "sheet": {
+   "row": 30,
+   "vin": "MZBEC813MTN081677",
+   "name": "FIRDOUS AHMAD BABA",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos D1.5 6AT GTX (A)",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-17",
+   "invoice": "2026-08-17",
+   "dmsBooking": "B202600923",
+   "phone4": "5419"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120069",
+    "customer": "Firdous Ahmad baba",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "NEW SELTOS DIESEL",
+    "variant": "Seltos D1.5 6AT GTX (A)",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEC813MTN081677",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-08",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "vin"
+    ],
+    "phoneLast4Booking": "5729",
+    "phoneLast4Sheet": "5419",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK402_2026_120040",
+    "customer": "Shagun Sharma",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Diesel",
+    "variant": "Seltos D1.5 6AT GTX (A)",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEC813MTN081677",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-04-20",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "6800",
+    "phoneLast4Sheet": "5419",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 31,
+  "sheet": {
+   "row": 31,
+   "vin": "MZBEB813LTN075420",
+   "name": "VISHWA MITTER",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos D1.5 6MT HTK (O)",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-10",
+   "invoice": "2026-08-07",
+   "dmsBooking": "B202600924",
+   "phone4": "6903"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120074",
+    "customer": "VISHWA MITTER",
+    "status": "booking_created",
+    "dealer": "JK402",
+    "model": "New Seltos Diesel",
+    "variant": "Seltos D1.5 6MT HTK (O)",
+    "color": "Morning Haze",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": null,
+    "created": "2026-07-09",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name"
+    ],
+    "phoneLast4Booking": "2146",
+    "phoneLast4Sheet": "6903",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": false
+   },
+   {
+    "booking": "KIA_JK402_2026_120101",
+    "customer": "Vishwa Mitter",
+    "status": "vehicle_allocated",
+    "dealer": "JK402",
+    "model": "New Seltos Diesel",
+    "variant": "Seltos D1.5 6MT HTK (O)",
+    "color": "Morning Haze",
+    "vinOnBooking": "MZBEB813LTN075420",
+    "liveAllocationVins": "MZBEB813LTN075420",
+    "customerType": "Regular",
+    "created": "2026-07-20",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "vin"
+    ],
+    "phoneLast4Booking": "2146",
+    "phoneLast4Sheet": "6903",
+    "phoneAgrees": false,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": false
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 32,
+  "sheet": {
+   "row": 32,
+   "vin": "MZBEA812LTN068544",
+   "name": "ADITYA KUMAR",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "GLACIER WHITE PEARL",
+   "delivery": "2026-08-19",
+   "invoice": "2026-07-13",
+   "dmsBooking": "B202600929",
+   "phone4": "5473"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120085",
+    "customer": "Aditya kumar",
+    "status": "repeated_booking",
+    "dealer": "JK402",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "CLEAR WHITE",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-17",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "5473",
+    "phoneLast4Sheet": "5473",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": false
+   },
+   {
+    "booking": "KIA_JK402_2026_120034",
+    "customer": "Aditya kumar",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "GLACIER WHITE PEARL",
+    "vinOnBooking": "MZBEA812LTN060801",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-13",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "5473",
+    "phoneLast4Sheet": "5473",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 33,
+  "sheet": {
+   "row": 33,
+   "vin": "MZBEB812TTN067134",
+   "name": "JUNAID BASHIR",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 IVT HTK (O)",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-06",
+   "invoice": "2026-08-06",
+   "dmsBooking": "B202600930",
+   "phone4": "7413"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120036",
+    "customer": "Junaid Bashir",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 IVT HTK (O)",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEB812TTN070112",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-14",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "7413",
+    "phoneLast4Sheet": "7413",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 34,
+  "sheet": {
+   "row": 34,
+   "vin": "MZBEA812LTN080631",
+   "name": "MANPREET SINGH",
+   "dealer": "JK402",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "IVORY SILVER GLOSS",
+   "delivery": "2026-08-10",
+   "invoice": "2026-08-10",
+   "dmsBooking": "B202600933",
+   "phone4": "5565"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120102",
+    "customer": "Manpreet Singh",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "NEW SELTOS PETROL",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "Ivory Silver gloss",
+    "vinOnBooking": "MZBEA812LTN080631",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-20",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "vin",
+     "phone"
+    ],
+    "phoneLast4Booking": "5565",
+    "phoneLast4Sheet": "5565",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 35,
+  "sheet": {
+   "row": 35,
+   "vin": "MZBEA812LTN080287",
+   "name": "THE AREA MANAGER CANTEEN STORES DEPARTMENT",
+   "dealer": "JK501",
+   "model": "NEW SELTOS",
+   "variant": "Seltos G1.5 6MT HTE",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-17",
+   "invoice": "2026-08-17",
+   "dmsBooking": "B202600368",
+   "phone4": "0944"
+  },
+  "isCsdRegistration": true,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120046",
+    "customer": "Bhagat Ram",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEA812LTN080287",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-06-22",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin"
+    ],
+    "phoneLast4Booking": "2190",
+    "phoneLast4Sheet": "0944",
+    "phoneAgrees": false,
+    "dealerAgrees": false,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK501_2026_120103",
+    "customer": "Jeet Singh",
+    "status": "delivered",
+    "dealer": "JK501",
+    "model": "New Seltos Petrol",
+    "variant": "Seltos G1.5 6MT HTE",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBEA812LTN071187",
+    "liveAllocationVins": null,
+    "customerType": "CSD",
+    "created": "2026-07-22",
+    "deliveredAt": "2026-08-23",
+    "matchedBy": [
+     "phone"
+    ],
+    "phoneLast4Booking": "0944",
+    "phoneLast4Sheet": "0944",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 36,
+  "sheet": {
+   "row": 36,
+   "vin": "MZBGB814LTN328352",
+   "name": "THE AREA MANAGER CANTEEN STORES DEPARTMENT",
+   "dealer": "JK402",
+   "model": "CARENS",
+   "variant": "Carens G1.5 6MT Premium (O) 7",
+   "color": "AURORA BLACK PEARL",
+   "delivery": "2026-08-26",
+   "invoice": "2026-08-26",
+   "dmsBooking": "B202600935",
+   "phone4": "0313"
+  },
+  "isCsdRegistration": true,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120099",
+    "customer": "LAL CHAND YADAV",
+    "status": "vehicle_allocated",
+    "dealer": "JK402",
+    "model": "CARENS",
+    "variant": "Carens G1.5 6MT Premium (O) 7",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": "MZBGB814LTN328352",
+    "liveAllocationVins": "MZBGB814LTN328352",
+    "customerType": "CSD",
+    "created": "2026-07-20",
+    "deliveredAt": null,
+    "matchedBy": [
+     "vin",
+     "phone"
+    ],
+    "phoneLast4Booking": "0313",
+    "phoneLast4Sheet": "0313",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 37,
+  "sheet": {
+   "row": 37,
+   "vin": "MZBGA814LSN236804",
+   "name": "SAHIL SHARMA",
+   "dealer": "JK501",
+   "model": "CARENS",
+   "variant": "Carens G1.5 6MT MDrive7",
+   "color": "CLEAR WHITE",
+   "delivery": "2026-08-09",
+   "invoice": "2026-08-08",
+   "dmsBooking": "B202600370",
+   "phone4": "9248"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120106",
+    "customer": "Sahil Sharma",
+    "status": "proforma_generated",
+    "dealer": "JK501",
+    "model": "CARENS",
+    "variant": "Carens G1.5 6MT MDrive7",
+    "color": "CLEAR WHITE",
+    "vinOnBooking": "MZBGA814LSN236804",
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-07-22",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "vin",
+     "phone"
+    ],
+    "phoneLast4Booking": "9248",
+    "phoneLast4Sheet": "9248",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   },
+   {
+    "booking": "KIA_JK402_2026_120176",
+    "customer": "Sahil sharma",
+    "status": "booking_created",
+    "dealer": "JK402",
+    "model": "SONET PETROL",
+    "variant": "Sonet G1.2 5MT HTK Plus",
+    "color": "AURORA BLACK PEARL",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-18",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name"
+    ],
+    "phoneLast4Booking": "6651",
+    "phoneLast4Sheet": "9248",
+    "phoneAgrees": false,
+    "dealerAgrees": false,
+    "modelAgrees": false,
+    "variantAgrees": false,
+    "colorAgrees": false
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ },
+ {
+  "sheetRow": 38,
+  "sheet": {
+   "row": 38,
+   "vin": "MZBFB812LTN671614",
+   "name": "SWARAN SINGH",
+   "dealer": "JK402",
+   "model": "SONET",
+   "variant": "Sonet G1.2 5MT HTK (O)",
+   "color": "CLEAR WHITE",
+   "delivery": "2026-08-25",
+   "invoice": "2026-08-25",
+   "dmsBooking": "B202600988",
+   "phone4": "3399"
+  },
+  "isCsdRegistration": false,
+  "candidates": [
+   {
+    "booking": "KIA_JK402_2026_120190",
+    "customer": "Swaran singh",
+    "status": "proforma_generated",
+    "dealer": "JK402",
+    "model": "SONET PETROL",
+    "variant": "SONET G1.2 5MT HTK (O)",
+    "color": "CLEAR WHITE",
+    "vinOnBooking": null,
+    "liveAllocationVins": null,
+    "customerType": "Regular",
+    "created": "2026-08-25",
+    "deliveredAt": null,
+    "matchedBy": [
+     "name",
+     "phone"
+    ],
+    "phoneLast4Booking": "3399",
+    "phoneLast4Sheet": "3399",
+    "phoneAgrees": true,
+    "dealerAgrees": true,
+    "modelAgrees": true,
+    "variantAgrees": true,
+    "colorAgrees": true
+   }
+  ],
+  "whoElseClaimsThisVin": []
+ }
+]

@@ -919,7 +919,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
      * Secured takes precedence over every countdown branch below.
      *
      * It must render something explicit rather than falling through: an expires_at that is still set
-     * would otherwise show a normal green "72h to pay" on a car the sweep can no longer touch, and a
+     * would otherwise show a normal green "time to pay" countdown on a car the sweep can no longer touch, and a
      * secured in-transit car (expires_at NULL) would show the grey dash that already means "no
      * allocation". Both would be actively misleading.
      */
@@ -971,9 +971,15 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     // Each state gets a distinct tone so Available / Allotted / Paid / Delivered
     // / Transferred never read as the same colour. Active allocation states take
     // precedence; an unallocated VIN with a transfer record reads as Transferred.
+    /*
+     * Delivered is tested BEFORE allocation_id. The Delivered view is rooted at kia_bookings now,
+     * so 13 of 33 delivered cars arrive with no allocation row and no DMS stock row at all — under
+     * the old order they fell through every branch to the default "Available" chip, which would
+     * label a handed-over car as available to sell.
+     */
+    if (row.booking_status === 'delivered') return <Chip tone="blue">Delivered</Chip>
     if (row.allocation_id) {
       if (row.booking_status === 'ready_delivery') return <Chip tone="violet">Paid · To Deliver</Chip>
-      if (row.booking_status === 'delivered') return <Chip tone="blue">Delivered</Chip>
       // Part paid: still Accounts' job, so it stays in the Payment Pending bucket and keeps an
       // amber-family tone. The amount is on the chip because "how much have they actually paid" is
       // the first question anyone asks about one of these rows.
@@ -1026,6 +1032,15 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const filteredStockRows = useMemo(() => {
     const rows = data?.rows || []
     if (!startDate && !endDate) return rows
+    /*
+     * ⚠️ DELIVERED is filtered SERVER-side on kb.delivered_at, so it must not be re-filtered here.
+     *
+     * This memo re-filters a single server-PAGINATED page, which is the "never filter a paginated
+     * result client-side" failure: the pager reports the server's count while the table silently
+     * shows fewer rows. It is inert for most views only because their date fields are null; the
+     * booking-rooted Delivered view populates allocated_at, which would activate it.
+     */
+    if (status === 'DELIVERED') return rows
 
     const start = startDate ? new Date(`${startDate}T00:00:00`).getTime() : 0
     const end = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : Infinity
@@ -1046,7 +1061,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       if (isNaN(time)) return true
       return time >= start && time <= end
     })
-  }, [data?.rows, startDate, endDate])
+  }, [data?.rows, startDate, endDate, status])
 
   const getShareText = () => {
     if (!filteredStockRows || filteredStockRows.length === 0) return ''
@@ -1432,7 +1447,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                       key={row.id}
                       className="cursor-pointer border-b"
                       style={{ borderColor: 'var(--kia-hairline)' }}
-                      onClick={() => setJourneyVin(row.vin_number)}
+                      // 13 delivered bookings carry no VIN at all, so the journey drawer has
+                      // nothing to open — don't make the row look clickable when it isn't.
+                      onClick={() => { if (row.vin_number) setJourneyVin(row.vin_number) }}
                     >
                       {/* STATUS */}
                       <TableCell className="px-2 py-2 align-middle whitespace-nowrap">{renderStatus(row)}</TableCell>
@@ -1485,7 +1502,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                       {/* VIN / CHASSIS */}
                       <TableCell className="px-2 py-2 align-middle whitespace-nowrap">
                         <span className="inline-flex items-center rounded-lg bg-indigo-50 border border-indigo-200 px-2.5 py-1 font-mono text-[10.5px] font-extrabold tracking-wider text-indigo-700 shadow-xs dark:bg-indigo-950/40 dark:border-indigo-900/50 dark:text-indigo-400">
-                          {row.vin_number}
+                          {row.vin_number || 'NO VIN ON BOOKING'}
                         </span>
                       </TableCell>
 
@@ -3122,7 +3139,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                 <span className="text-[11px] font-black uppercase tracking-[0.12em] text-rose-800">No Payment Received</span>
                 <span className="rounded-full bg-rose-200 px-2 py-0.5 text-[10px] font-black text-rose-800">{data.noPayment.length}</span>
               </div>
-              <span className="text-[10px] font-semibold text-rose-700">Held after the 72h / 5-day reservation window lapsed with no payment. Follow up or release.</span>
+              <span className="text-[10px] font-semibold text-rose-700">Held after the 5-day / 7-day reservation window lapsed with no payment. Follow up or release.</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-[10px]">

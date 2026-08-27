@@ -41,6 +41,24 @@ export async function GET(request: Request) {
     // Branch boundary: a dealer-scoped user only ever sees their own branch's vehicles (#10c).
     // MD/Developer/global users are unrestricted (getUserDealerScope returns null). Dealer codes
     // are validated against the registry, so they are safe to inline.
+    /*
+     * ── THE DELIVERED WINDOW ──────────────────────────────────────────────────────────────────
+     *
+     * Delivered defaults to the CURRENT INDIAN MONTH. Every other view on this board describes
+     * stock as it stands today, so it needs no window; Delivered is a historical record that only
+     * grows, and lifetime it is a list of every car the dealership has ever handed over — 33 rows
+     * reaching back months, which is not what someone opening the stock board is asking.
+     *
+     * An explicit range from the filter bar overrides it, so the history is still reachable.
+     *
+     * ⚠️ Built as a SQL fragment used by the card count AND the row query. They must never be
+     * allowed to drift: a Delivered card that disagrees with the rows it opens is precisely the
+     * defect this view was just rebuilt to fix.
+     *
+     * ⚠️ The month boundary is computed in Asia/Kolkata, not on the server clock — the server is
+     * UTC in production, so a UTC month boundary is 5h30m adrift and would misfile deliveries on
+     * the first and last day of every month.
+     */
     const dealerScope = getUserDealerScope(auth.appUser, 'kia')
     const dealerScopeClause = dealerScope && dealerScope.length
       ? `sm.order_dealer IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''")}'`).join(', ')})`
@@ -77,6 +95,22 @@ export async function GET(request: Request) {
     const showEveryStatus = dmsStatusSelected || status === 'All'
     const startDate = url.searchParams.get('start_date') || ''
     const endDate = url.searchParams.get('end_date') || ''
+
+    /**
+     * @param alias the kia_bookings alias in the query being built.
+     */
+    const deliveredWindowSql = (alias: string) => {
+      if (startDate || endDate) {
+        return `
+        ${startDate ? `AND ${alias}.delivered_at >= '${startDate.replace(/'/g, "''")}'::date` : ''}
+        ${endDate ? `AND ${alias}.delivered_at < ('${endDate.replace(/'/g, "''")}'::date + 1)` : ''}`
+      }
+      // No explicit range: the current Indian month.
+      return `
+        AND ${alias}.delivered_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata')
+        AND ${alias}.delivered_at < date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') + INTERVAL '1 month'`
+    }
+
 
     const page = Number(url.searchParams.get('page') || 1)
     const pageSize = Number(url.searchParams.get('pageSize') || 10)
@@ -159,24 +193,22 @@ export async function GET(request: Request) {
     // non-digits before casting — a stray "d" or blank would abort the whole query on ::int.
     const ageInt = (alias: string) => `COALESCE(NULLIF(regexp_replace(COALESCE(${alias}.stock_age, ''), '[^0-9]', '', 'g'), ''), '0')::int`
 
-    // In-transit vehicles are not sellable stock — the car is still on a truck — so they are kept
-    // out of this surface: the list, every KPI, and the FIFO ageing comparison.
-    //
-    // The one exception is an in-transit car that ALREADY carries a live allocation. That vehicle
-    // is committed to a real customer and is mid-workflow (booking status 'transferring', payment
-    // clock deliberately deferred until it arrives). Dropping it unconditionally removed it from
-    // Payment Pending — the count fell 8 → 7 — and hid an active booking's vehicle from the board.
-    // It is not offerable stock, but it very much still needs watching.
-    //
-    // Applied to both `filters` (rows) and `scopeFilters` (metrics) so the cards can never disagree
-    // with the table beneath them.
-    //
-    // ⚠️ An explicit `dms_status` choice OVERRIDES this guard. Asking for "In transit" and being shown
-    // 1 of the 9 in-transit cars because a guard silently dropped the rest is worse than useless — the
-    // whole point of that filter is to see them. Same reasoning applies to the delivered/sold guard
-    // below, which hides both 'Invoice' cars and would have made that option permanently empty.
-    const notInTransit = `NOT (UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'IN TRANSIT' AND va.id IS NULL)`
-    if (!showEveryStatus) filters.push(notInTransit)
+    /*
+     * In-transit vehicles ARE part of this surface.
+     *
+     * They used to be excluded from the list, every KPI and the ageing comparison on the grounds
+     * that "the car is still on a truck". That contradicted the rest of the system: the Allot
+     * picker offers in-transit cars (they are in KIA_ALLOTTABLE_STOCK_STATUSES), and the allot flow
+     * models them explicitly — booking status 'transferring', payment clock deliberately deferred
+     * until the car lands. So the dashboard was hiding 13 of 90 VINs that it would happily allot,
+     * and those 13 belonged to no KPI card at all: the six cards summed to 77 of 90.
+     *
+     * ⚠️ DMS 'Allocated' is a DIFFERENT case and stays OUT of Available. In this feed it means sold
+     * in the DMS by someone outside this dashboard — 10 rows, every one carrying a DMS cust_name
+     * and booking_no, and 9 of the 10 matching no booking in this system. They keep their own
+     * "Allocated (DMS)" card. Folding them into Available would offer other people's sold cars to
+     * new customers.
+     */
     if (dmsStatusClause) filters.push(dmsStatusClause)
 
     if (status !== 'All') {
@@ -261,10 +293,9 @@ export async function GET(request: Request) {
     // would be the "sidebar says 205, page says 0" class of bug all over again.
     // The dms_status clause is mirrored here so the cards describe exactly the set the table shows.
     //
-    // notInTransit is deliberately NOT applied at this level any more: it would cap total_vins below
-    // the real inventory. It moves into each bucket's own CASE below instead, which leaves all six
-    // bucket counts byte-identical (every bucket either requires va.id IS NOT NULL, for which the
-    // guard is vacuously true, or already excludes in-transit stock by other means).
+    // The in-transit exclusion is gone entirely (see the note where it used to be defined): those
+    // cars are allottable and now belong to Available, so nothing caps total_vins below the real
+    // inventory and the six bucket counts finally sum to it.
     if (dmsStatusClause) scopeFilters.push(dmsStatusClause)
     if (dealerScopeClause) scopeFilters.push(dealerScopeClause)
     if (startDate) {
@@ -330,7 +361,6 @@ export async function GET(request: Request) {
         COUNT(
           CASE WHEN va.id IS NULL
                 AND vt.id IS NULL
-                AND ${notInTransit}
                 AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail')
                 AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED')
                 AND NOT ${dmsSoldExpr}
@@ -352,8 +382,18 @@ export async function GET(request: Request) {
                     AND NOT ${deliveredExpr} THEN 1 END)::int AS dms_allocated,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW() THEN 1 END)::int AS payment_overdue,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'ready_delivery' THEN 1 END)::int AS paid_to_deliver,
-        -- Counts the same rows the Delivered view lists, so card and list always agree.
-        COUNT(CASE WHEN ${oursDeliveredExpr} THEN 1 END)::int AS delivered,
+        /*
+         * Counts the same set the Delivered VIEW lists, so card and list always agree — and that
+         * view is rooted at kia_bookings, not here. A CASE over kia_stock_management can only ever
+         * see the delivered cars still present in today's DMS snapshot (6 of 33 measured), which is
+         * why the card and the Booking CRM disagreed. Scoped on kb.dealer_code to match the view.
+         */
+        (SELECT COUNT(DISTINCT dkb.id)::int FROM kia_bookings dkb
+          WHERE dkb.deleted_at IS NULL AND dkb.status = 'delivered'
+          ${dealerScope && dealerScope.length
+            ? `AND UPPER(TRIM(COALESCE(dkb.dealer_code, ''))) IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''").toUpperCase()}'`).join(', ')})`
+            : ''}
+          ${deliveredWindowSql('dkb')}) AS delivered,
         ${transfersCountSql} AS transfers
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
@@ -444,11 +484,79 @@ export async function GET(request: Request) {
       LEFT JOIN kia_bookings kb ON kb.id = vt.booking_id AND kb.deleted_at IS NULL
       LEFT JOIN kia_vehicle_allocations va ON va.booking_id = vt.booking_id AND va.released_at IS NULL
       LEFT JOIN users u ON u.id = vt.requested_by
+      -- The delivered-booking fallback the row projection COALESCEs onto. The projection references
+      -- dlv.* , and this fragment is the ONLY FROM it ever runs against - omitting the lateral here
+      -- is exactly the bug that took the whole Transferred tab down with
+      -- 'missing FROM-clause entry for table dlv'. The count query shares this fragment; a
+      -- LEFT JOIN LATERAL with LIMIT 1 cannot change its row count.
+      LEFT JOIN LATERAL (
+        SELECT dkb.id, dkb.delivered_at, dkb.booking_number, dkb.customer_name,
+               dkb.customer_phone, dkb.consultant_name, dkb.bank_name, dkb.status,
+               dkb.amount_received
+        FROM kia_vehicle_allocations dva
+        JOIN kia_bookings dkb ON dkb.id = dva.booking_id
+         AND dkb.deleted_at IS NULL
+         AND dkb.status = 'delivered'
+        WHERE UPPER(TRIM(dva.vin_number)) = UPPER(TRIM(vt.vin_number))
+        ORDER BY dkb.delivered_at DESC NULLS LAST
+        LIMIT 1
+      ) dlv ON TRUE
       WHERE ${transferredWhere}`
+    /*
+     * ── DELIVERED, ROOTED AT THE BOOKING ─────────────────────────────────────────────────────
+     *
+     * Every other view on this page is rooted at kia_stock_management, and for stock that is right.
+     * Delivered is not a stock question — it is a BOOKING outcome, and a delivered car has usually
+     * left the DMS feed. Measured: of 33 delivered bookings only 6 were reachable from the stock
+     * table (13 have no allocation row at all, 14 had their VIN leave the feed), so the tab showed
+     * 6 and the Booking CRM showed the rest. That is the exact complaint: three delivered customers
+     * visible in the CRM and absent here.
+     *
+     * TRANSFERRED already had this treatment; DELIVERED never did. Same shape, same reasoning.
+     *
+     * Notes on the joins:
+     *  - the allocation join deliberately does NOT require released_at IS NULL: an allocation is
+     *    released at handover, so requiring it live would hide every delivered car;
+     *  - DISTINCT ON (kb.id) is required, not cosmetic — 33 bookings produce 43 join rows and one
+     *    booking carries 4 allocation rows;
+     *  - vehicle fields fall back sm -> allocation snapshot -> the booking itself, because for the
+     *    13 VIN-less deliveries the booking is the only source (measured: model and colour are
+     *    populated on 13 of 13);
+     *  - branch scoping moves to kb.dealer_code, since there may be no sm row to scope on.
+     */
+    const isDeliveredView = status === 'DELIVERED'
+    const deliveredScope = dealerScope && dealerScope.length
+      ? `AND UPPER(TRIM(COALESCE(kb.dealer_code, ''))) IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''").toUpperCase()}'`).join(', ')})`
+      : ''
+    const deliveredSearch = search
+      ? `AND (kb.customer_name ILIKE '%${search.replace(/'/g, "''")}%'
+             OR kb.booking_number ILIKE '%${search.replace(/'/g, "''")}%'
+             OR COALESCE(NULLIF(BTRIM(kb.allocated_vin), ''), CASE WHEN va.released_at IS NULL THEN va.vin_number END, '') ILIKE '%${search.replace(/'/g, "''")}%')`
+      : ''
+    const deliveredFrom = `
+      FROM kia_bookings kb
+      LEFT JOIN kia_vehicle_allocations va ON va.booking_id = kb.id
+      LEFT JOIN kia_stock_management sm ON UPPER(TRIM(sm.vin_number)) = UPPER(TRIM(va.vin_number))
+      LEFT JOIN users u ON u.id = kb.updated_by
+      WHERE kb.deleted_at IS NULL
+        AND kb.status = 'delivered'
+        ${deliveredScope}
+        ${deliveredSearch}
+        /*
+         * The window applies to WHEN THE CAR WAS DELIVERED — the only date that means anything for
+         * this view, and the one the dashboard's own on-screen note already promises. Filtering
+         * here, server-side, is also what keeps the client's date memo out of it: that memo
+         * re-filters a single PAGINATED page, so a row the server counted could vanish from the
+         * table while the pager still counted it.
+         */
+        ${deliveredWindowSql('kb')}`
+
     const isTransferredView = status === 'TRANSFERRED'
 
     // 2. Fetch total count for pagination (join transfers and local statuses too)
-    const totalCountResult = isTransferredView
+    const totalCountResult = isDeliveredView
+      ? await db.execute(sql.raw(`SELECT COUNT(DISTINCT kb.id)::int as count ${deliveredFrom}`))
+      : isTransferredView
       ? await db.execute(sql.raw(`SELECT COUNT(*)::int as count ${transferredFrom}`))
       : await db.execute(sql.raw(`
       SELECT COUNT(*)::int as count
@@ -488,7 +596,79 @@ export async function GET(request: Request) {
     const totalPages = Math.max(1, Math.ceil(totalRows / pageSize))
 
     // 3. Fetch data rows
-    const rows = isTransferredView
+    const rows = isDeliveredView
+      ? await db.execute(sql.raw(`
+      /*
+       * DISTINCT ON forces its own ORDER BY (kb.id first), which is not a useful display order, so
+       * the de-duplication happens in the inner query and the presentation order + pagination are
+       * applied outside it. Without the outer LIMIT the tab returned every delivered booking on one
+       * page while the pager still claimed to be paginating.
+       */
+      SELECT * FROM (
+      SELECT DISTINCT ON (kb.id)
+        kb.id::text AS id,
+        /*
+         * ⚠️ allocated_vin FIRST, the allocation only as a fallback.
+         *
+         * The join above deliberately does not filter released_at IS NULL (a delivered car's
+         * reservation is released at handover, so filtering would lose the VIN entirely). But that
+         * also means a booking whose allocation LAPSED — the customer never paid, the car went to
+         * someone else — still drags that stranger's chassis along.
+         *
+         * Reading the allocation first put ONE chassis on TWO delivered customers: Atul saini's row
+         * showed the car that was actually sold to Sahil Choudhary, and Amarjit Singh's the one sold
+         * to Rakesh bhagat. allocated_vin is the reconciled, authoritative value, so it wins.
+         *
+         * A RELEASED allocation never speaks for a delivery. Measured over all 66 delivered
+         * bookings: 56 carry their own chassis, 8 have no allocation at all and already render
+         * blank, and the only 2 reaching this fallback were those same two rows — both released
+         * because the car went to somebody else. The fallback had no legitimate user, so it is
+         * narrowed to a LIVE reservation rather than removed, which keeps it correct for a delivery
+         * recorded before its allocation is closed.
+         */
+        COALESCE(
+          NULLIF(BTRIM(kb.allocated_vin), ''),
+          CASE WHEN va.released_at IS NULL THEN va.vin_number END
+        ) AS vin_number,
+        COALESCE(sm.model, va.vehicle_snapshot->>'model', kb.model) AS model,
+        COALESCE(sm.variant, va.vehicle_snapshot->>'variant', kb.variant) AS variant,
+        COALESCE(sm.exterior_color_name, va.vehicle_snapshot->>'exterior_color_name', kb.color) AS color,
+        COALESCE(sm.stock_age, va.vehicle_snapshot->>'stock_age') AS stock_age,
+        'Delivered' AS stock_status,
+        COALESCE(kb.dealer_code, sm.order_dealer) AS dealer_code,
+        COALESCE(sm.engine_no, va.vehicle_snapshot->>'engine_no') AS engine_no,
+        va.id AS allocation_id,
+        va.allocation_status,
+        va.expires_at,
+        va.payment_secured_at,
+        COALESCE(kb.amount_received, 0)::float8 AS amount_received,
+        va.created_at AS allocated_at,
+        kb.id AS booking_id,
+        kb.booking_number,
+        kb.customer_name,
+        kb.customer_phone,
+        kb.consultant_name,
+        kb.status AS booking_status,
+        kb.bank_name,
+        kb.delivery_target_date AS raw_delivery_target_date,
+        COALESCE(kb.delivered_at::text, kb.delivery_target_date::text) AS booking_delivery_date,
+        kb.metadata,
+        NULL AS transfer_id,
+        NULL AS transfer_status,
+        NULL AS to_dealer_code,
+        NULL AS transfer_requested_at,
+        u.full_name AS transfer_requester_name,
+        -- A handed-over car is not allottable stock, so the FIFO ageing comparison is meaningless.
+        0 AS older_count,
+        NULL AS oldest_alternative_vin,
+        NULL AS oldest_alternative_age
+      ${deliveredFrom}
+      ORDER BY kb.id, va.created_at DESC NULLS LAST
+      ) d
+      ORDER BY d.booking_delivery_date DESC NULLS LAST, d.booking_number DESC
+      ${limitOffsetClause}
+    `))
+      : isTransferredView
       ? await db.execute(sql.raw(`
       SELECT
         vt.id::text AS id,

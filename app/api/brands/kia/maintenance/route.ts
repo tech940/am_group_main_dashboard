@@ -22,7 +22,7 @@ export const maxDuration = 60
  * notably markKiaSoldAllocations() writes the `metadata.vehicleNotInStock` flag that drives the CRM
  * "NOT IN STOCK" badge/filter (the standalone scripts/kia-detect-sold-allocations.mjs does NOT).
  *
- * Run it at least every few minutes: allocation reservations (72h/CSD-120h) and unpaid dealer holds (48h)
+ * Run it at least every few minutes: allocation reservations (5 days / CSD 7 days) and unpaid dealer holds (48h)
  * only lapse when this runs.
  */
 export async function POST(request: Request) {

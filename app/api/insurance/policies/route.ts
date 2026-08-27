@@ -127,6 +127,8 @@ export async function GET(request: Request) {
         whereConditions.push(`(${col(brand, key)} IS NULL OR ${col(brand, key)} = '')`)
       } else if (param === 'addonOpted') {
         whereConditions.push(`${col(brand, key)} LIKE '%${esc(value)}%'`)
+      } else if (param === 'policyType') {
+        whereConditions.push(`UPPER(${col(brand, key)}) = '${esc(value.toUpperCase())}'`)
       } else {
         whereConditions.push(`${col(brand, key)} = '${esc(value)}'`)
       }

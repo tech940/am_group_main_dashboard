@@ -206,7 +206,12 @@ export function getPettyCashConfiguredBranches() {
  * supervisor. "May create" and "sees only what they created" are genuinely different questions;
  * keep the two lists independent rather than deriving one from the other.
  */
-export const PETTY_CASH_OWN_SUBMISSIONS_ONLY_ROLES = ['branch_admin', 'sales_manager'] as const
+export const PETTY_CASH_OWN_SUBMISSIONS_ONLY_ROLES = [
+  'branch_admin',
+  'sales_manager',
+  'general_manager',
+  'service_general_manager',
+] as const
 
 export function isPettyCashOwnSubmissionsOnlyRole(role: string | null | undefined): boolean {
   return (PETTY_CASH_OWN_SUBMISSIONS_ONLY_ROLES as readonly string[])
