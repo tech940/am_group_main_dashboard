@@ -18,7 +18,7 @@
  * two-role test — the API is never protected by the UI gate alone.
  */
 
-export const RESTRICTED_ANALYTICS_ROLES = ['md', 'developer', 'assistant_manager'] as const
+export const RESTRICTED_ANALYTICS_ROLES = ['md', 'developer', 'assistant_manager', 'ea', 'eba'] as const
 
 /** Section hrefs behind this gate. Anything added here is hidden from every other role everywhere. */
 export const RESTRICTED_ANALYTICS_HREFS = ['/call-analysis', '/insurance'] as const
