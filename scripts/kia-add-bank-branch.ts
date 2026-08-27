@@ -17,9 +17,23 @@
  * `/api/brands/kia/proforma/options`, so a single row appears in both. There is nothing else to
  * update — no enum, no hardcoded list.
  *
- * ⚠️ That endpoint is cached in Redis for 30 MINUTES under `kia:proforma:options:data`. Insert
- * without invalidating and the bank is simply absent for half an hour, which reads exactly like a
- * failed write. This script always invalidates after a successful insert.
+ * ── ⚠️ CACHING: WHY THE BANK CAN STILL BE MISSING AFTER THIS SCRIPT SUCCEEDS ──────────────────
+ * There are TWO cache tiers, and this script can only reach one of them.
+ *
+ *   Redis  — shared. `kia:proforma:options:data` (KIA) and `finance:bank-options` (Finance).
+ *            This script clears both. 30-minute TTL.
+ *   L1     — an in-PROCESS Map inside getCachedData (lib/redis/cache-utils.ts), checked BEFORE
+ *            Redis and never consulted again while fresh. Fresh for the full 30-minute TTL, and
+ *            servable stale for a further 2 hours.
+ *
+ * `invalidateCache` deletes the L1 entry belonging to WHOEVER CALLS IT. This script is its own
+ * Node process, so it clears its own (empty) L1 and the shared Redis — and the running web server
+ * keeps serving the old list from its own memory for up to half an hour. The write is correct and
+ * the screen is stale, which is indistinguishable from a failed write.
+ *
+ * To make it live immediately, invalidation must run INSIDE the server process:
+ *     POST /api/admin/bust-bank-cache      (admin / developer / md / ea / eba / ceo)
+ * Restarting the server works too, since L1 dies with the process.
  *
  * ── Names are normalised on read, not on write ────────────────────────────────────────────────
  * The route passes every name through `normalizeBankName`, so 'INDIAN BANK', 'Indian Bank' and
@@ -35,6 +49,22 @@ import { db } from '../lib/db'
 import { kiaPriceDetails } from '../lib/db/schema'
 import { normalizeBankName } from '../lib/kia/bank-utils'
 import { invalidateCache } from '../lib/redis/cache-utils'
+
+/**
+ * BOTH keys. The KIA proforma/booking dropdowns read the first; the Finance module reads the
+ * second. Clearing only the KIA one leaves Finance showing a different bank list to the same user.
+ */
+const BANK_CACHE_KEYS = ['kia:proforma:options:data', 'finance:bank-options']
+
+function cacheAdvice() {
+  console.log('\n⚠️  Redis is cleared, but each RUNNING server process also holds an in-memory (L1)')
+  console.log('    copy of this list, fresh for up to 30 minutes. This script cannot reach another')
+  console.log('    process\'s memory, so the bank may not appear on screen yet.')
+  console.log('\n    To make it live immediately, run this in the browser console while signed in')
+  console.log('    as admin / developer / md / ea / eba / ceo:')
+  console.log("\n      await fetch('/api/admin/bust-bank-cache', { method: 'POST' }).then(r => r.json())")
+  console.log('\n    Restarting the server also works — L1 dies with the process.')
+}
 
 const APPLY = process.argv.includes('--apply')
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'))
@@ -68,8 +98,9 @@ async function main() {
     for (const e of existing) console.log(`   ${e.model} | ${e.bank_name} | ${e.bank_branch}`)
     console.log('\nNothing to add. Re-run with --apply to refresh the cache anyway.')
     if (!APPLY) process.exit(0)
-    await invalidateCache('kia:proforma:options:data')
-    console.log('Cache invalidated.')
+    await Promise.all(BANK_CACHE_KEYS.map((k) => invalidateCache(k)))
+    console.log(`Redis caches cleared: ${BANK_CACHE_KEYS.join(', ')}`)
+    cacheAdvice()
     process.exit(0)
   }
 
@@ -97,12 +128,14 @@ async function main() {
     metadata: { lookupType: 'bank_branch', sourceSheet: 'manual', addedAt: new Date().toISOString() },
   })
 
-  await invalidateCache('kia:proforma:options:data')
+  await Promise.all(BANK_CACHE_KEYS.map((k) => invalidateCache(k)))
 
   const [check] = rowsOf<{ n: number }>(await db.execute(sql`
     SELECT COUNT(*)::int AS n FROM kia_price_details
     WHERE model = '__BANK_OPTION__' AND bank_name = ${BANK} AND bank_branch = ${BRANCH}`))
-  console.log(`written: ${check.n} row. Cache invalidated — it is live on the booking form and the proforma.`)
+  console.log(`\nwritten: ${check.n} row in the database.`)
+  console.log(`Redis caches cleared: ${BANK_CACHE_KEYS.join(', ')}`)
+  cacheAdvice()
   process.exit(0)
 }
 

@@ -102,7 +102,8 @@
     "verify:scrap-calculations": "tsx scripts/verify-scrap-calculations.ts",
     "verify:scrap-roundtrip": "tsx scripts/verify-scrap-entry-roundtrip.ts",
     "verify:syros-ev": "tsx scripts/verify-syros-ev-prices.ts",
-    "seed:syros-ev": "tsx scripts/seed-syros-ev-prices.ts"
+    "seed:syros-ev": "tsx scripts/seed-syros-ev-prices.ts",
+    "verify:proforma-gate": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-proforma-approval-gate.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

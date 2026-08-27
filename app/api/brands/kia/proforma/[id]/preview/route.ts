@@ -7,6 +7,7 @@ import { kiaProformas } from '@/lib/db/schema'
 import { canApproveKiaProformaForUser } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 import { buildKiaProformaPdf } from '@/lib/kia-proforma/invoice'
+import { kiaApprovalStage, pendingStageOf, kiaStageActorLabel } from '@/lib/kia-proforma/approval'
 import { requirePermission } from '@/lib/permissions/service'
 
 export const dynamic = 'force-dynamic'
@@ -38,11 +39,50 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const pdf = buildKiaProformaPdf(row)
+  /*
+   * ── AN UNAPPROVED PROFORMA MUST LOOK UNAPPROVED ─────────────────────────────────────────────
+   *
+   * This route rendered the identical document at every stage of the chain. A PENDING proforma came
+   * out byte-for-byte the same as the Finance-signed one the customer is mailed: same "PROFORMA
+   * INVOICE" heading, same numbers, no marking of any kind. The Bookings screen links straight here
+   * from a control commented "Direct Download Button (Always Visible)", so any consultant handling
+   * the customer could pull a finished-looking invoice before the Sales Manager had seen it, let
+   * alone Finance, and forward it.
+   *
+   * ⚠️ The fix is to MARK it, not to block it. The approvers have to read the document in order to
+   * approve it — gating this route on approval would break the very chain it is meant to protect.
+   * So the PDF stays available to staff at every stage and simply tells the truth about itself.
+   *
+   * buildKiaProformaPdf already honours documentTitle and disclaimerLines (invoice.ts:457 and
+   * 460-466); they were dead code here only because they are not columns on kia_proformas, so they
+   * were always undefined. The quote PDF uses the same pattern for its "not valid for bank purpose"
+   * box. No rendering code changes.
+   */
+  const stage = kiaApprovalStage(row.approvalStatus)
+  const isFullyApproved = stage === 'approved'
+  const awaiting = kiaStageActorLabel(pendingStageOf(row.approvalStatus))
+
+  const pdf = buildKiaProformaPdf(isFullyApproved ? row : {
+    ...row,
+    documentTitle: stage === 'declined'
+      ? 'PROFORMA INVOICE — NOT APPROVED'
+      : 'PROFORMA INVOICE — DRAFT, NOT APPROVED',
+    disclaimerLines: [
+      'NOT APPROVED. Internal review copy — not valid for the customer or for bank purposes.',
+      awaiting ? `Awaiting ${awaiting} approval.` : 'This proforma was declined and must be revised.',
+      'The approved copy is emailed to the customer by Finance once the chain completes.',
+    ],
+  })
+
+  // A forwarded file should identify itself from its NAME too, before anyone opens it.
+  const filename = isFullyApproved
+    ? `kia-proforma-${row.id.slice(0, 8)}.pdf`
+    : `kia-proforma-${row.id.slice(0, 8)}-DRAFT-NOT-APPROVED.pdf`
+
   return new NextResponse(new Uint8Array(pdf), {
     headers: {
       'content-type': 'application/pdf',
-      'content-disposition': `inline; filename="kia-proforma-${row.id.slice(0, 8)}.pdf"`,
+      'content-disposition': `inline; filename="${filename}"`,
       'cache-control': 'private, no-store',
     },
   })

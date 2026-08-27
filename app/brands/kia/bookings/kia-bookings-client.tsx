@@ -916,14 +916,25 @@ function BookingMobileCard({
                 Proforma Ready
               </span>
             )}
+{/*
+             * The PDF itself is now self-identifying: an unapproved proforma renders headed
+             * "DRAFT, NOT APPROVED" with a disclaimer (see the preview route). This says so BEFORE
+             * the click too, so nobody pulls a draft believing it is the customer's copy.
+             *
+             * Deliberately still DOWNLOADABLE at every stage — the approvers have to read the
+             * document in order to approve it, so blocking here would break the chain this is
+             * meant to protect.
+             */}
             <a
               href={`/api/brands/kia/proforma/${row.proformaId}/preview`}
               target="_blank"
               rel="noopener noreferrer"
-              download={`Kia-Proforma-${row.proformaNumber}.pdf`}
+              download={`Kia-Proforma-${row.proformaNumber}${String(row.proformaApprovalStatus || '').toUpperCase() === 'APPROVED' ? '' : '-DRAFT'}.pdf`}
               className="inline-flex h-9 w-9 items-center justify-center rounded-xl border text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--dashboard-action-bg)] shrink-0"
               style={toneSoftStyle('accent')}
-              title="Download Proforma PDF"
+              title={String(row.proformaApprovalStatus || '').toUpperCase() === 'APPROVED'
+                ? 'Download Proforma PDF (approved)'
+                : 'Download DRAFT — not approved yet, not for the customer'}
             >
               <Download className="h-4 w-4" />
             </a>
@@ -3704,13 +3715,23 @@ export function KiaBookingsClient({
                           )}
                           {row.proformaNumber ? (
                             <div className="flex items-center gap-1">
-                              {/* Direct Download Button (Always Visible) */}
+                              {/*
+                               * Direct download — visible at every stage ON PURPOSE, because the
+                               * approvers must read the proforma to approve it. What changed is
+                               * that an unapproved one now announces itself: the PDF is headed
+                               * "DRAFT, NOT APPROVED" with a disclaimer, the filename carries
+                               * -DRAFT, and so does this tooltip. Previously a PENDING proforma
+                               * downloaded from here was byte-for-byte the document Finance
+                               * eventually mails the customer.
+                               */}
                               <a
                                 href={`/api/brands/kia/proforma/${row.proformaId}/preview`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                download={`Kia-Proforma-${row.proformaNumber}.pdf`}
-                                title="Download Proforma PDF"
+                                download={`Kia-Proforma-${row.proformaNumber}${String(row.proformaApprovalStatus || '').toUpperCase() === 'APPROVED' ? '' : '-DRAFT'}.pdf`}
+                                title={String(row.proformaApprovalStatus || '').toUpperCase() === 'APPROVED'
+                                  ? 'Download Proforma PDF (approved)'
+                                  : 'Download DRAFT — not approved yet, not for the customer'}
                                 className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--dashboard-action-bg)]"
                               >
                                 <Download className="h-4 w-4" />

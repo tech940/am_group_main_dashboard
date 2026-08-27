@@ -93,6 +93,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const action = text(body.action)
     const updates: Record<string, unknown> = { updatedAt: new Date() }
     let isApproved = false
+    /*
+     * Which template the customer eventually gets. A proforma the GM revised is still a REVISION
+     * when it finally clears Finance, so the customer should be told that rather than receiving a
+     * bare "approved" mail for a document they have seen before.
+     */
+    let customerCopyKind: 'approved' | 'updated' = 'approved'
     let approvalStageActed: string | null = null
     let approvalDeclined = false
     // Non-empty customer-document fields the GM edited, to sync onto the linked booking's metadata.
@@ -160,6 +166,17 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           isApproved = true
           const pdfUrl = await saveKiaProformaPdf(row)
           updates.linkPreview = pdfUrl || row.linkPreview || `/api/brands/kia/proforma/${id}/preview`
+          /*
+           * Finance has now cleared it, so the customer copy is finally owed. If the GM revised this
+           * proforma at any point since its last approval, send the REVISED wording -- the customer
+           * is receiving a second, different document and a plain "approved" mail would not say so.
+           * The marker is cleared in the same write, so a later re-approval reverts to 'approved'.
+           */
+          const meta = (row.importMetadata || {}) as Record<string, unknown>
+          if (meta.revisedSinceApproval) {
+            customerCopyKind = 'updated'
+            updates.importMetadata = { ...meta, revisedSinceApproval: null }
+          }
         }
       }
       updates.approvedBy = profile.consultantName || appUser.fullName || appUser.email
@@ -219,11 +236,28 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       }
       updates.importMetadata = { ...(row.importMetadata || {}), customerDocuments }
       bookingDocPatch = Object.fromEntries(Object.entries(customerDocuments).filter(([, v]) => v !== null && v !== ''))
-      // Reset approval so the edited proforma goes back through the approval chain.
+      /*
+       * Reset approval so the edited proforma goes back through the approval chain.
+       *
+       * ⚠️ AND THE CUSTOMER IS NOT MAILED HERE. This block used to fall through to
+       * emailCustomerProforma('updated') at the end of the handler, which sent the revised PDF the
+       * instant the GM pressed Save -- to a proforma these three lines had just reset to PENDING.
+       * The customer received a quotation with NO approval behind it: not Finance's, not even the
+       * Sales Manager's. Measured on live data: all 7 revised proformas ever mailed went out at the
+       * exact second of the edit, one of them (KIA_JK402_2026_120203) was never approved at all and
+       * still sits PENDING, and one booking's customer received three different proformas inside
+       * six minutes as the GM edited repeatedly.
+       *
+       * The revision is remembered instead, and posted once Finance finalises it below.
+       */
       updates.approvalStatus = 'PENDING'
       updates.approvedBy = null
       updates.linkPreview = null
       approvalStageActed = 'edit'
+      updates.importMetadata = {
+        ...(updates.importMetadata as Record<string, unknown> || row.importMetadata || {}),
+        revisedSinceApproval: new Date().toISOString(),
+      }
     } else if (action === 'settings') {
       if (!ownsRow && !isApprover) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       return NextResponse.json({ error: 'Use profile settings endpoint' }, { status: 400 })
@@ -304,11 +338,21 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       }
     }
 
-    // Email the customer their proforma PDF (with the fixed CC list) on two triggers:
-    //   'approved' — FINAL approval (Pending → Approved).
-    //   'updated'  — a General (Sales) Manager EDITED the proforma; the customer gets the revised copy.
-    // Fire-and-forget — sendTrackedEmail logs the outcome and never throws, so a mail failure can
-    // never break the approval/edit workflow.
+    /*
+     * Email the customer their proforma PDF (with the fixed CC list).
+     *
+     * ⚠️ THERE IS EXACTLY ONE TRIGGER: FINAL approval by Finance. Nothing a Sales Manager or a
+     * General Manager does on its own reaches the customer -- not stage-1 approval, and not an
+     * edit. The 'updated' variant only changes the WORDING of that one mail, for a proforma the GM
+     * revised somewhere along the way; it is not a second trigger.
+     *
+     * Do not add another call site. The rule this module exists to enforce is that a customer never
+     * holds a proforma Finance has not signed off, and the only way to keep that true is for the
+     * send to live behind the finalised flag.
+     *
+     * Fire-and-forget -- sendTrackedEmail logs the outcome and never throws, so a mail failure can
+     * never break the approval workflow.
+     */
     const emailCustomerProforma = async (kind: 'approved' | 'updated') => {
       const customerEmail = text(updated.customerEmail)
       if (!customerEmail) return
@@ -358,7 +402,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     if (isApproved) {
-      await emailCustomerProforma('approved')
+      await emailCustomerProforma(customerCopyKind)
       // On FINAL finance approval, open the Finance Processing record (idempotent). Best-effort — a
       // failure here must never break the approval response; it can be created on a later read/retry.
       try {
@@ -370,8 +414,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       } catch (financeError) {
         console.error('Failed to open finance processing record:', financeError)
       }
-    } else if (approvalStageActed === 'edit') {
-      await emailCustomerProforma('updated')
     }
 
     return NextResponse.json({ row: serialize(updated as Record<string, unknown>) })
