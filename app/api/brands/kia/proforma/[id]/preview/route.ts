@@ -8,6 +8,7 @@ import { canApproveKiaProformaForUser } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 import { buildKiaProformaPdf } from '@/lib/kia-proforma/invoice'
 import { kiaApprovalStage, pendingStageOf, kiaStageActorLabel } from '@/lib/kia-proforma/approval'
+import { proformaContentDisposition } from '@/lib/kia-proforma/pdf-filename'
 import { requirePermission } from '@/lib/permissions/service'
 
 export const dynamic = 'force-dynamic'
@@ -74,15 +75,25 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     ],
   })
 
-  // A forwarded file should identify itself from its NAME too, before anyone opens it.
-  const filename = isFullyApproved
-    ? `kia-proforma-${row.id.slice(0, 8)}.pdf`
-    : `kia-proforma-${row.id.slice(0, 8)}-DRAFT-NOT-APPROVED.pdf`
-
+  /*
+   * Named after the CUSTOMER, not the row id — "Govind Dabi.pdf" rather than
+   * "kia-proforma-22e3fe5e.pdf". A folder of proformas is otherwise unsearchable.
+   *
+   * Set here as well as on the link's `download` attribute because the two win in different
+   * situations: the attribute for a same-origin click, this header when the URL is opened directly.
+   * Both call the same helper so they cannot disagree.
+   *
+   * A forwarded draft still identifies itself from its NAME, before anyone opens it.
+   */
   return new NextResponse(new Uint8Array(pdf), {
     headers: {
       'content-type': 'application/pdf',
-      'content-disposition': `inline; filename="${filename}"`,
+      'content-disposition': proformaContentDisposition(
+        'inline',
+        row.customerName,
+        row.id,
+        isFullyApproved ? '' : ' - DRAFT NOT APPROVED',
+      ),
       'cache-control': 'private, no-store',
     },
   })

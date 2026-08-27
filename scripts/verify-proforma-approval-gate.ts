@@ -234,10 +234,44 @@ async function draftsAreMarked() {
     'the preview route branches on the row approval status')
 }
 
+/**
+ * The Bookings list must not offer the PDF until Finance approves.
+ *
+ * Both download controls rendered on `row.proformaNumber` alone — one of them literally commented
+ * "Direct Download Button (Always Visible)" — so the moment a proforma existed anyone on that screen
+ * could pull a complete PROFORMA INVOICE and forward it. Measured: shown on all 103 bookings with a
+ * proforma; only 96 of those are approved.
+ *
+ * ⚠️ Hiding it does NOT stall the chain: the approvers review the record in ProformaPreviewDrawer on
+ * the Proforma page, which never touches this route.
+ */
+function bookingsDownloadGate() {
+  console.log('\n5) The Bookings list hides the proforma download until Finance approves')
+  const src = fs.readFileSync('app/brands/kia/bookings/kia-bookings-client.tsx', 'utf8')
+  const lines = src.split(/\r?\n/)
+
+  const hrefLines = lines
+    .map((l, i) => ({ i, l }))
+    .filter(({ l }) => /\/api\/brands\/kia\/proforma\/.+\/preview/.test(l))
+  console.log(`   links to the proforma PDF route: ${hrefLines.length}`)
+  check(hrefLines.length > 0, 'the download links are still present for approved proformas')
+
+  for (const { i } of hrefLines) {
+    // The guard must sit within the few lines that open this element.
+    const ctx = lines.slice(Math.max(0, i - 12), i).join('\n')
+    const gated = /proformaApprovalStatus[^\n]*APPROVED/.test(ctx)
+    console.log(`      line ${i + 1}: gated on APPROVED = ${gated}`)
+    check(gated, `the download link at line ${i + 1} is gated on the proforma being APPROVED`)
+  }
+
+  check(!/Always Visible/.test(src), 'no download control is still marked "Always Visible"')
+}
+
 async function main() {
   sourceGate()
   chainRouting()
   await draftsAreMarked()
+  bookingsDownloadGate()
   await dataGate()
   console.log(failures === 0 ? '\n=== ALL CHECKS PASSED ===' : `\n=== ${failures} FAILURE(S) ===`)
   process.exit(failures === 0 ? 0 : 1)
