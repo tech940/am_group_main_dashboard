@@ -810,7 +810,20 @@ function listFilters(input: BookingListInput) {
   }
 
   if (text(input.status) && text(input.status).toLowerCase() === 'today') {
+    /*
+     * ⚠️ 'today' is in PSEUDO_STATUS_FILTERS, so it falls through EVERY branch of the else-if chain
+     * further down — including the final one that applies ne(status,'delivered') to the active list.
+     * The result: Booked Today was the one view in the module with no status exclusion at all, and
+     * a booking created and delivered on the same day sat in a work queue with nothing left to do.
+     *
+     * It surfaced when four August retail sales were backfilled as bookings: created today, already
+     * delivered, and every one of them landed in Booked Today.
+     *
+     * Cancelled is excluded on the same reasoning. The KPI count below carries an identical pair of
+     * exclusions — if these two ever disagree the card and the tab disagree.
+     */
     filters.push(sql`kia_bookings.created_at >= ${istTodayStart()}`)
+    filters.push(sql`kia_bookings.status NOT IN ('delivered', 'cancelled')`)
   }
 
   if (text(input.status) && text(input.status).toLowerCase() === 'not_in_stock') {
@@ -1069,7 +1082,9 @@ export async function getKiaBookingsList(input: BookingListInput) {
         COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
           SELECT DISTINCT consultant_name AS value FROM kia_bookings WHERE deleted_at IS NULL AND consultant_name IS NOT NULL ${dealerScope}
         ) c), '[]'::jsonb) AS consultants,
-        (SELECT count(*)::int FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= ${istTodayStart()} ${dealerScope}) AS today_count,
+        -- Exclusions mirror the 'today' list filter exactly — see the note there.
+        (SELECT count(*)::int FROM kia_bookings WHERE deleted_at IS NULL
+           AND created_at >= ${istTodayStart()} AND status NOT IN ('delivered', 'cancelled') ${dealerScope}) AS today_count,
         -- #10 Summary: top models booked + allocation state across all (non-deleted) bookings.
         COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'count', cnt)) FROM (
           SELECT model, count(*)::int AS cnt FROM kia_bookings WHERE deleted_at IS NULL AND model IS NOT NULL ${dealerScope}

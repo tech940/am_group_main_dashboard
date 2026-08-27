@@ -250,6 +250,58 @@ async function deliveredLeavesTheMoneyBuckets() {
   check(Number(risk.n) === 0, 'the expiry cron cannot un-deliver a delivered booking')
 }
 
+/**
+ * The four Stock-board defects fixed 2026-08-27.
+ *
+ * All four are the same shape: a number on a card that does not describe the rows behind it, or a
+ * state the data records but no view can reach.
+ */
+async function stockBoardBuckets() {
+  console.log('\n8) On Hold is reachable, Transfers does not double-count, Booked Today is a queue')
+  const FROM = `FROM kia_stock_management sm
+    LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
+    LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred','requested')
+    LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number`
+  const HOLD = "COALESCE(ls.local_status, '') IN ('hold_customer', 'hold_dealer')"
+
+  // A hold writes to kia_stock_local_statuses and drops out of Available. Before the ON_HOLD filter
+  // existed it then matched NO bucket, so pressing Hold made the car vanish instead of marking it.
+  const [card] = await analyticsExecute<{ n: number }>(sql.raw(`SELECT COUNT(CASE WHEN ${HOLD} THEN 1 END)::int AS n ${FROM}`))
+  const held = await analyticsExecute<{ vin_number: string }>(sql.raw(`SELECT sm.vin_number ${FROM} WHERE ${HOLD}`))
+  console.log(`   On Hold: card ${card.n}, tab ${held.length}`)
+  check(Number(card.n) === held.length, 'the On Hold card equals the rows it opens')
+
+  const [overlap] = await analyticsExecute<{ n: number }>(sql.raw(`
+    SELECT COUNT(*)::int AS n ${FROM}
+    WHERE ${HOLD} AND va.id IS NULL AND vt.id IS NULL
+      AND COALESCE(ls.local_status,'') NOT IN ('hold_customer','hold_dealer','retail')`))
+  check(Number(overlap.n) === 0, 'no held vehicle is simultaneously offered as Available')
+
+  /*
+   * transfer_missing counts the SAME table with the SAME statuses plus `stock_missing_at IS NOT
+   * NULL` — a strict subset. The card added the two and read 31 above a tab listing 16.
+   */
+  const [tr] = await analyticsExecute<{ total: number; missing: number; outside: number }>(sql`
+    SELECT COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE stock_missing_at IS NOT NULL)::int AS missing,
+           COUNT(*) FILTER (WHERE stock_missing_at IS NOT NULL AND LOWER(COALESCE(transfer_status,'')) NOT IN ('transferred','requested'))::int AS outside
+    FROM kia_vehicle_transfers WHERE LOWER(transfer_status) IN ('transferred', 'requested')`)
+  console.log(`   Transfers: ${tr.total} total, ${tr.missing} VIN-missing (subset), ${tr.outside} outside the status filter`)
+  check(Number(tr.missing) <= Number(tr.total), 'transfer_missing is a subset of transfers, so it must never be added to it')
+  check(Number(tr.outside) === 0, 'every transfer_missing row is inside the transfers population')
+
+  // 'today' sits in PSEUDO_STATUS_FILTERS and falls through every else-if, so it had NO status
+  // exclusion — a same-day booking that was already delivered sat in the work queue.
+  const [today] = await analyticsExecute<{ queue: number; all: number }>(sql`
+    SELECT COUNT(*) FILTER (WHERE status NOT IN ('delivered','cancelled'))::int AS queue,
+           COUNT(*)::int AS all
+    FROM kia_bookings WHERE deleted_at IS NULL
+      AND created_at >= ((to_char(now() AT TIME ZONE 'Asia/Kolkata','YYYY-MM-DD')||' 00:00:00')::timestamp AT TIME ZONE 'Asia/Kolkata')`)
+  console.log(`   Booked Today: ${today.queue} in the queue, ${today.all} created today in any state`)
+  check(Number(today.queue) === Number(today.all),
+    'no delivered or cancelled booking is dated today (a backfilled sale must carry its sale date)')
+}
+
 async function main() {
   await stockMatching()
   await monthCardsAndIst()
@@ -257,6 +309,7 @@ async function main() {
   await allocationScope()
   await deliveredReachability()
   await deliveredLeavesTheMoneyBuckets()
+  await stockBoardBuckets()
   console.log(failures === 0 ? '\n=== ALL CHECKS PASSED ===' : `\n=== ${failures} FAILURE(S) ===`)
   process.exit(failures === 0 ? 0 : 1)
 }

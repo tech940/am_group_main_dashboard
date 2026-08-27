@@ -14,7 +14,7 @@ import {
   Car, Plus, Search, RefreshCw, Loader2, ShieldCheck, FileText, 
   CheckCircle2, XCircle, Truck, WalletCards, BadgeIndianRupee, 
   Calendar, ChevronRight, AlertTriangle, AlertCircle, Share2, ClipboardList,
-  ChevronDown, X, Users, Clock, Lock
+  ChevronDown, X, Users, Clock, Lock, PauseCircle
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -68,6 +68,14 @@ type StockRow = {
   amount_received?: number | null
   /** Non-null means the reservation clock is suspended and the sweep will not release this car. */
   payment_secured_at?: string | null
+  /** #12 'hold_customer' | 'hold_dealer' | 'retail' | null — the app-owned status, not the DMS one. */
+  local_status?: string | null
+  /** Why the vehicle is held - the dealer it is for. Required by the hold dialog. */
+  hold_notes?: string | null
+  hold_marked_at?: string | null
+  hold_by?: string | null
+  hold_expires_at?: string | null
+  hold_paid?: boolean | null
   allocated_at: string | null
   booking_id: string | null
   booking_number: string | null
@@ -161,6 +169,8 @@ type StockPayload = {
     no_payment?: number
     transfer_missing?: number
     held?: number
+    /** #12 Held vehicles, counted with the SAME predicate the ON_HOLD tab filters on. */
+    on_hold?: number
   }
   rows: StockRow[]
   soldMissing?: SoldMissingRow[]
@@ -871,6 +881,27 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   }
 
   const formatClock = (row: StockRow) => {
+    /*
+     * The hold's own 48h window, BEFORE the no-booking guard below - a held vehicle has no booking,
+     * so it always fell straight to the grey dash. That dash reads as "no clock running", which is
+     * the opposite of the truth: an unpaid hold auto-releases and the car returns to free stock.
+     */
+    const heldStatus = String(row.local_status || '')
+    if ((heldStatus === 'hold_dealer' || heldStatus === 'hold_customer') && !row.allocation_id) {
+      if (row.hold_paid === true) {
+        return <span className="inline-flex items-center rounded-xl border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-black text-violet-700">paid · hold confirmed</span>
+      }
+      const expiry = row.hold_expires_at ? new Date(row.hold_expires_at).getTime() : NaN
+      if (!Number.isNaN(expiry)) {
+        const hrs = Math.round((expiry - Date.now()) / 3600000)
+        if (hrs <= 0) return <span className="inline-flex items-center rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-700">hold LAPSED</span>
+        return (
+          <span className={`inline-flex items-center rounded-xl border px-2.5 py-1 text-xs font-black ${hrs <= 6 ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+            hold · {hrs}h left
+          </span>
+        )
+      }
+    }
     if (!row.booking_id || row.booking_status === 'delivered') return <span className="text-slate-400 font-semibold">-</span>
 
     if (row.booking_status === 'ready_delivery') {
@@ -1007,6 +1038,47 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     // table claimed 7 cars were available while the card counted 0 of them.
     // Neutral, not rose: the car is still allottable from here (readMatchingVehicle ignores
     // stock_status), so this is provenance, not a block.
+    /*
+     * #12 ON HOLD.
+     *
+     * A hold carries no allocation row (holdKiaStockVehicle refuses a VIN that has one), so a held
+     * car reached this function with allocation_id null and no transfer, and fell through to the
+     * green "Available" chip -- pressing Hold looked like it had done nothing while the row went on
+     * inviting someone to allot the car.
+     *
+     * WARNING: this sits ABOVE the DMS-Allocated label, not below it. A hold is OUR decision about
+     * the car; 'ALLOCATED' is only what the DMS feed reports. Placed below, a held car whose feed
+     * status happens to be Allocated rendered "DMS Allocated" and the hold vanished from its own
+     * tab -- seen live on MZBEA813LTN087680. It stays BELOW the allocation and transfer branches so
+     * a real money state always wins.
+     *
+     * The REASON rides under the chip. It is required at hold time and names the dealer the car is
+     * being kept for, which is the first thing anyone asks about a held vehicle; without it the row
+     * says a car is reserved and offers no way to find out for whom.
+     */
+    const heldFor = String(row.local_status || '')
+    if (heldFor === 'hold_dealer' || heldFor === 'hold_customer') {
+      const paid = row.hold_paid === true
+      const why = String(row.hold_notes || '').trim()
+      const heldBy = String(row.hold_by || '').trim()
+      return (
+        <div className="flex flex-col items-start gap-0.5">
+          <Chip tone={paid ? 'violet' : 'amber'}>
+            On Hold{heldFor === 'hold_dealer' ? ' · Dealer' : ' · Customer'}{paid ? ' · Paid' : ''}
+          </Chip>
+          {why ? (
+            <span
+              className="max-w-[200px] truncate text-[10px] font-semibold leading-tight text-slate-500"
+              title={heldBy ? `On hold: ${why} (held by ${heldBy})` : `On hold: ${why}`}
+            >
+              {why}
+            </span>
+          ) : (
+            <span className="text-[10px] font-semibold italic leading-tight text-slate-400">no reason recorded</span>
+          )}
+        </div>
+      )
+    }
     if (String(row.stock_status || '').trim().toUpperCase() === 'ALLOCATED') {
       return <Chip tone="neutral">DMS Allocated</Chip>
     }
@@ -1040,7 +1112,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
      * shows fewer rows. It is inert for most views only because their date fields are null; the
      * booking-rooted Delivered view populates allocated_at, which would activate it.
      */
-    if (status === 'DELIVERED') return rows
+    // ON_HOLD joins it: a hold is a CURRENT state with no date on the row the server filtered by,
+    // so re-filtering here could only drop rows the ON_HOLD card still counts.
+    if (status === 'DELIVERED' || status === 'ON_HOLD') return rows
 
     const start = startDate ? new Date(`${startDate}T00:00:00`).getTime() : 0
     const end = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : Infinity
@@ -1184,7 +1258,16 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
              * delivered cars still sitting in stock and made this card read 5.
              */
             { key: 'DELIVERED', label: 'Delivered', value: data.metrics.delivered, icon: Truck, tone: 'teal' as Tone, hint: 'Marked delivered by us' },
-            { key: 'TRANSFERRED', label: 'Transfers', value: (data.metrics.transfers || 0) + (data.metrics.transfer_missing || 0), icon: RefreshCw, tone: 'sky' as Tone, hint: 'Inter-outlet' },
+            /*
+             * ⚠️ transfer_missing is a strict SUBSET of transfers, not a separate population: both
+             * count kia_vehicle_transfers with the same statuses, and transfer_missing merely adds
+             * `stock_missing_at IS NOT NULL` (the VIN has left the DMS feed). Adding them counted
+             * those rows TWICE -- the card read 31 above a tab listing 16. The tab reads the
+             * transfers table directly and already includes the missing ones via their retained
+             * vehicle_snapshot, so `transfers` alone is the whole population.
+             */
+            { key: 'TRANSFERRED', label: 'Transfers', value: data.metrics.transfers || 0, icon: RefreshCw, tone: 'sky' as Tone, hint: 'Inter-outlet' },
+            { key: 'ON_HOLD', label: 'On Hold', value: data.metrics.on_hold || 0, icon: PauseCircle, tone: 'amber' as Tone, hint: 'Reserved for a dealer or customer' },
           ] as (KpiDatum & { active?: boolean })[]).map((item) => ({ ...item, active: status === item.key }))}
           onSelect={selectStatusImmediately}
         />
@@ -1277,6 +1360,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                     allottable and keep their Allot button. */}
                 <SelectItem value="ALLOCATED_DMS" className="text-xs font-bold cursor-pointer">Allocated (DMS)</SelectItem>
                 <SelectItem value="PAID_TO_DELIVER" className="text-xs font-bold cursor-pointer">Paid - To Deliver</SelectItem>
+                <SelectItem value="ON_HOLD" className="text-xs font-bold cursor-pointer">On Hold</SelectItem>
                 <SelectItem value="DELIVERED" className="text-xs font-bold cursor-pointer">Delivered</SelectItem>
                 <SelectItem value="TRANSFERRED" className="text-xs font-bold cursor-pointer">Transferred</SelectItem>
               </SelectContent>
@@ -1564,6 +1648,41 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                                 onClick={() => releaseTransferMutation.mutate(row.vin_number)}
                               >
                                 {releaseTransferMutation.isPending ? 'Releasing...' : 'Release'}
+                              </Button>
+                            </>
+                          ) : (String(row.local_status || '') === 'hold_dealer' || String(row.local_status || '') === 'hold_customer') && !row.allocation_id ? (
+                            /*
+                             * A held vehicle offered Allot / Transfer / Hold / BBND, because a hold
+                             * has no allocation row and so fell into the generic free-stock branch
+                             * below. Every one of those is wrong: Allot fails server-side
+                             * (readMatchingVehicle excludes held VINs), BBND throws "This vehicle is
+                             * on hold", and Hold re-holds a car that is already held -- silently
+                             * restarting its 48h clock.
+                             *
+                             * The two actions that DO apply were reachable only from the Dealer
+                             * Holds panel, which lives inside #printable-stock-report ("hidden
+                             * print:block") -- so on screen there was no way to end a hold at all;
+                             * it could only lapse. They belong on the row.
+                             */
+                            <>
+                              <Button
+                                size="sm"
+                                className="h-7 rounded-lg bg-emerald-700 px-2.5 text-[10px] font-black text-white hover:bg-emerald-800"
+                                disabled={holdPaymentMutation.isPending || row.hold_paid === true}
+                                title={row.hold_paid === true ? 'Payment already recorded against this hold' : 'Record payment - the hold stops auto-releasing'}
+                                onClick={() => holdPaymentMutation.mutate(row.vin_number)}
+                              >
+                                {row.hold_paid === true ? 'Paid' : 'Payment'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 rounded-lg border-rose-200 px-2 text-[10px] font-black text-rose-700 hover:bg-rose-50"
+                                disabled={releaseHoldMutation.isPending}
+                                title="Release the hold and return this vehicle to free stock"
+                                onClick={() => releaseHoldMutation.mutate(row.vin_number)}
+                              >
+                                {releaseHoldMutation.isPending ? 'Releasing...' : 'Release'}
                               </Button>
                             </>
                           ) : !row.allocation_id ? (

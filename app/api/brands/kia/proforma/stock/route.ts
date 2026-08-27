@@ -246,6 +246,24 @@ export async function GET(request: Request) {
         // Transfers. Without it, a car we allotted that the DMS feed later also reports as
         // 'Allocated' would be counted twice and the cards would stop summing to Total VINs.
         filters.push("UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'ALLOCATED' AND va.id IS NULL AND vt.id IS NULL")
+      } else if (status === 'ON_HOLD') {
+        /*
+         * #12 Vehicles held for a dealer or a customer, reserved outside the allocation workflow.
+         *
+         * The hold itself always worked -- kia_stock_local_statuses gets its 'hold_dealer' row -- but
+         * a held car had nowhere to BE. It drops out of Available (that filter excludes both hold
+         * statuses) and matched no other bucket, so from the user's seat holding a vehicle made it
+         * vanish rather than marking it held. The only surface showing holds was a separate overlay
+         * panel far down the page, which is not where someone who just pressed Hold looks.
+         *
+         * Rooted at kia_stock_management like AVAILABLE and PAYMENT_PENDING, NOT at the local-status
+         * table the way TRANSFERRED reads the transfers table. That is safe because a held car is by
+         * definition still in stock -- holdKiaStockVehicle refuses a VIN with a live allocation and
+         * refuses one already retailed, and the DMS feed still carries it. Measured: 2 of 2 current
+         * holds are present in the feed. The metrics count below uses this identical predicate, so
+         * the card can never disagree with the tab it opens.
+         */
+        filters.push("COALESCE(ls.local_status, '') IN ('hold_customer', 'hold_dealer')")
       } else if (status === 'PAID_TO_DELIVER') {
         filters.push("va.id IS NOT NULL AND kb.status = 'ready_delivery'")
       } else if (status === 'DELIVERED') {
@@ -331,6 +349,18 @@ export async function GET(request: Request) {
     // sm.uploaded_at, which is when the stock feed last touched the row and says nothing about when
     // a transfer happened — which is why narrowing the dates never changed this number either.
     const transferFilters: string[] = ["LOWER(t.transfer_status) IN ('transferred', 'requested')"]
+    /*
+     * ⚠️ dealerScope is the user's PINNED branches; dealerCode is the dropdown they picked. Every
+     * other bucket in this file scopes by the former, and this count did not -- so a branch-pinned
+     * user (an IDT on JK501,JK402) was counting inter-outlet moves belonging to outlets they cannot
+     * otherwise see. It happens to read the same today because every live transfer originates at
+     * JK402, which is exactly why it went unnoticed; the first transfer between two other outlets
+     * would have exposed it.
+     */
+    if (dealerScope && dealerScope.length) {
+      const scoped = dealerScope.map((d) => `'${d.replace(/'/g, "''").toUpperCase()}'`).join(', ')
+      transferFilters.push(`(UPPER(TRIM(COALESCE(t.from_dealer_code, ''))) IN (${scoped}) OR UPPER(TRIM(COALESCE(t.to_dealer_code, ''))) IN (${scoped}))`)
+    }
     if (dealerCode !== 'All') {
       const escapedDealer = dealerCode.replace(/'/g, "''")
       // Either direction: an inter-outlet move involves this dealer whether it sent or received.
@@ -369,6 +399,8 @@ export async function GET(request: Request) {
                 AND NOT ${deliveredByUsExpr}
           THEN 1 END
         )::int AS available,
+        -- #12 Holds. The SAME predicate the ON_HOLD filter uses, so card and tab cannot drift.
+        COUNT(CASE WHEN COALESCE(ls.local_status, '') IN ('hold_customer', 'hold_dealer') THEN 1 END)::int AS on_hold,
         -- Waiting on a customer's money against an allocation WE made. Requires va.id — see the
         -- PAYMENT_PENDING filter above for why the DMS-'ALLOCATED' disjunct was removed (it inflated
         -- this from a true 1 to 8).
@@ -635,6 +667,9 @@ export async function GET(request: Request) {
         COALESCE(sm.exterior_color_name, va.vehicle_snapshot->>'exterior_color_name', kb.color) AS color,
         COALESCE(sm.stock_age, va.vehicle_snapshot->>'stock_age') AS stock_age,
         'Delivered' AS stock_status,
+        -- Shape parity with the main projection; a delivered car is not on hold.
+        NULL AS local_status, NULL AS hold_notes, NULL AS hold_marked_at, NULL AS hold_by,
+        NULL AS hold_expires_at, FALSE AS hold_paid,
         COALESCE(kb.dealer_code, sm.order_dealer) AS dealer_code,
         COALESCE(sm.engine_no, va.vehicle_snapshot->>'engine_no') AS engine_no,
         va.id AS allocation_id,
@@ -680,6 +715,9 @@ export async function GET(request: Request) {
         COALESCE(sm.stock_age, vt.vehicle_snapshot->>'stock_age') AS stock_age,
         -- The row's own status IS the transfer state; the DMS status is meaningless once it's gone.
         COALESCE(vt.transfer_status, 'Transferred') AS stock_status,
+        -- Shape parity with the main projection; a transferred car is not on hold.
+        NULL AS local_status, NULL AS hold_notes, NULL AS hold_marked_at, NULL AS hold_by,
+        NULL AS hold_expires_at, FALSE AS hold_paid,
         COALESCE(vt.from_dealer_code, sm.order_dealer, vt.vehicle_snapshot->>'order_dealer') AS dealer_code,
         COALESCE(sm.engine_no, vt.vehicle_snapshot->>'engine_no') AS engine_no,
         va.id as allocation_id,
@@ -725,6 +763,21 @@ export async function GET(request: Request) {
         sm.exterior_color_name as color,
         sm.stock_age,
         sm.stock_status,
+        /*
+         * #12 The hold, carried onto the ROW.
+         *
+         * ls was joined here only to be filtered against; local_status was never projected, so no
+         * row could ever render an "ON HOLD" badge however correct the underlying data was. That is
+         * why holding a vehicle appeared to do nothing.
+         */
+        ls.local_status,
+        -- WHY the car is held. Captured by the dialog (which requires it) and stored all along, but
+        -- never projected -- so the board showed a held vehicle with no way to see who it is for.
+        ls.notes AS hold_notes,
+        ls.marked_at AS hold_marked_at,
+        ls.marked_by_name AS hold_by,
+        (ls.marked_at + interval '${KIA_HOLD_WINDOW_HOURS} hours') AS hold_expires_at,
+        (COALESCE(ls.stock_status_at_mark, '') = 'PAID') AS hold_paid,
         sm.order_dealer as dealer_code,
         sm.engine_no,
         va.id as allocation_id,
