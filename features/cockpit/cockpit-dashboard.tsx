@@ -51,7 +51,25 @@ async function fetchCockpit(): Promise<Cockpit> {
 }
 
 export function CockpitDashboard() {
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<Cockpit>({ queryKey: ['cockpit'], queryFn: fetchCockpit })
+  /*
+   * ⚠️ retry is set EXPLICITLY here because the global query config sets `retry: false`, and this is
+   * the one endpoint in the app that legitimately takes seconds: a cold build fans out to every
+   * brand's canonical aggregation. Under the global setting a single blip — a cold start, a dropped
+   * connection, a gateway hiccup — pinned the section on "Failed to load cockpit" until the user
+   * noticed the retry button. That is the "sometimes it does not load at all" report.
+   *
+   * Two retries with backoff, and NOT on a 401/403: an auth or permission failure is a real answer,
+   * and retrying it just delays telling the user.
+   */
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<Cockpit>({
+    queryKey: ['cockpit'],
+    queryFn: fetchCockpit,
+    retry: (failureCount, err) => {
+      if (/\b(401|403|Unauthorized|Forbidden)\b/i.test((err as Error)?.message || '')) return false
+      return failureCount < 2
+    },
+    retryDelay: (attempt) => Math.min(1500 * 2 ** attempt, 6000),
+  })
 
   if (isLoading) {
     return (

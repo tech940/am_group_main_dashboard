@@ -63,10 +63,30 @@ export async function getBrandSalesSnapshot(
   const src = getSalesStockSource(brand)
   if (!src) return emptySales(brand, brand)
   if (src.brand === 'kia' && src.readerImplemented) {
-    const p = await getKiaSalesPerformance({
-      year: input?.year,
-      month: input?.month,
-    })
+    /*
+     * ⚠️ BOTH MONTHS AT ONCE, not one then the other.
+     *
+     * The target fallback below needs last month's actuals, and the comment there records that NO
+     * month has ever had configured targets — so that branch fires every time and the previous month
+     * was always fetched, just serially, after this one had finished. Two sequential runs of the
+     * heaviest reader in the app: measured at 2.2s + 0.7s, and on a cold database slow enough to
+     * blow the cockpit's 25s budget for this source and drop the sales card entirely.
+     *
+     * Racing them costs one extra query in the rare month that HAS targets, and halves the latency
+     * in every month that does not. `.catch(() => null)` keeps a missing previous month harmless.
+     */
+    const prevMonthInput = (() => {
+      const y = input?.year
+      const m = input?.month
+      if (!y || !m) return null
+      return previousMonth(y, m)
+    })()
+    const [p, lmRaw] = await Promise.all([
+      getKiaSalesPerformance({ year: input?.year, month: input?.month }),
+      prevMonthInput
+        ? getKiaSalesPerformance({ year: prevMonthInput.year, month: prevMonthInput.month }).catch(() => null)
+        : Promise.resolve(null),
+    ])
 
     // Configured targets (kia_sales_targets) win. When a month has none — which was every month so
     // far, so the card read "target 0 · —" — derive each missing target as LAST MONTH'S ACTUAL
@@ -76,7 +96,11 @@ export async function getBrandSalesSnapshot(
     let targetBasis: BrandSalesSnapshot['targetBasis'] = 'configured'
     if (bookingTarget <= 0 || deliveryTarget <= 0) {
       const prev = previousMonth(p.context.year, p.context.month)
-      const lm = await getKiaSalesPerformance({ year: prev.year, month: prev.month }).catch(() => null)
+      // The speculative fetch above is only usable when it covers the month we actually need — the
+      // caller may have passed no month at all, in which case the reader resolved its own default.
+      const lm = lmRaw && lmRaw.context.year === prev.year && lmRaw.context.month === prev.month
+        ? lmRaw
+        : await getKiaSalesPerformance({ year: prev.year, month: prev.month }).catch(() => null)
       if (lm) {
         if (bookingTarget <= 0 && lm.summary.bookings > 0) {
           bookingTarget = Math.ceil(lm.summary.bookings * 1.1)

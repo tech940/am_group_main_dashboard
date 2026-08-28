@@ -73,7 +73,7 @@ export const createPettyCashExpenseSchema = z.object({
   expenseForm: z.record(z.string(), z.unknown()).default({}),
   billFiles: z
     .array(z.string().trim().min(1, 'Bill file URL cannot be empty.'))
-    .min(1, 'Please upload at least one bill image or PDF.'),
+    .default([]),
 })
 
 export const pettyCashWorkflowSchema = z.object({

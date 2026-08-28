@@ -140,8 +140,7 @@ export function ExpenseFormDialog({
               {/* A <span>, not <Label>: the drop-zone <label> below owns the association, and a second
                   <label> pointing at no control is a dangling one. */}
               <span className="block text-[11px] font-black uppercase tracking-wider text-slate-600">
-                Upload Bill <span className="text-rose-600" aria-hidden>*</span>
-                <span className="sr-only"> (required)</span>
+                Upload Bill <span className="text-slate-400 font-normal normal-case">(optional)</span>
               </span>
               {/*
                 * sr-only, NOT hidden.

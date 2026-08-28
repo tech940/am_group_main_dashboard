@@ -7,6 +7,8 @@ import { kiaSalesTargets } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { getSalesStockSource } from '@/lib/brands/sales-stock-sources'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 
 // Sales actuals table from the brand sales/stock registry (single source of truth). KIA is guaranteed.
 const SALES_TABLE = getSalesStockSource('kia')!.tables.sales
@@ -65,7 +67,25 @@ async function readAvailableMonths(): Promise<{ year: number; month: number; lab
   return result.map((r) => ({ year: num(r.year), month: num(r.month), label: monthLabel(num(r.year), num(r.month)) }))
 }
 
+/**
+ * ⚠️ CACHED WRAPPER — call this, not buildKiaSalesPerformance.
+ *
+ * This reader is the heaviest in the module: it probes every distinct month in the feed (a DISTINCT
+ * over two full-table scans), then pulls ROW-LEVEL bookings, deliveries and consultants and
+ * deduplicates them in JavaScript. It was entirely uncached while serving BOTH the Sales Performance
+ * page and the Group Cockpit, so every cockpit build -- and the cockpit asks for two months -- paid
+ * the whole cost again. Measured at 2.2s warm, and slow enough on a cold database to blow the
+ * cockpit's 25s budget for that source and drop the sales card off the page.
+ *
+ * SHORT ttl: this is an operational figure people expect to move during the day, and getCachedData
+ * serves the stale entry while refreshing behind it, so the wait is paid once rather than per view.
+ */
 export async function getKiaSalesPerformance(input: { year?: number | null; month?: number | null; dealerCode?: string | null }): Promise<KiaSalesPerformancePayload> {
+  const key = `kia:sales-performance:v1:${input.year ?? 'auto'}:${input.month ?? 'auto'}:${normalizeKiaDealerCode(input.dealerCode) || 'all'}`
+  return getCachedData(key, () => buildKiaSalesPerformance(input), CACHE_TTL.SHORT)
+}
+
+async function buildKiaSalesPerformance(input: { year?: number | null; month?: number | null; dealerCode?: string | null }): Promise<KiaSalesPerformancePayload> {
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
   const months = await readAvailableMonths()
   const fallback = months[0] || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 }

@@ -10,22 +10,28 @@ if (!connectionString) {
   process.exit(1)
 }
 
-const sql = postgres(connectionString)
+const sql = postgres(connectionString, {
+  connect_timeout: 30,
+  idle_timeout: 20,
+  max: 1,
+})
+
+function generateNumber(prefix: string) {
+  const now = new Date()
+  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '')
+  const rand = Math.floor(1000 + Math.random() * 9000)
+  return `${prefix}-${dateStr}-${rand}`
+}
 
 async function main() {
-  const eaUsers = await sql`
-    SELECT id, email, full_name, role::text, brand, is_active
-    FROM users 
-    WHERE role::text = 'ea' OR role::text = 'eba' OR email ILIKE '%ea%'
+  const result = await sql`
+    SELECT a.id, a.allocation_number, a.branch_id, a.allocated_amount, a.spent_amount, a.status, a.notes,
+           u.full_name, u.email, u.role::text, u.dealers, u.department
+    FROM petty_cash_allocations a
+    JOIN users u ON a.allocated_to = u.id
+    WHERE a.allocated_to = '39744825-3f88-4f4e-a3c8-6eccfce57571'
   `
-  console.log('EA Users:\n', eaUsers)
-
-  for (const u of eaUsers) {
-    const overrides = await sql`
-      SELECT * FROM user_permission_overrides WHERE user_id = ${u.id}
-    `
-    console.log(`Overrides for ${u.email} (${u.role}):\n`, overrides)
-  }
+  console.log('Verified Allocation for Malik Sharma:\n', result)
 
   await sql.end()
 }

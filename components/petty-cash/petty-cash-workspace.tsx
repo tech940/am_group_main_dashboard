@@ -811,7 +811,6 @@ export function PettyCashWorkspace() {
     if (!location) { setFormError('Please select the location where the money was spent.'); return }
     if (!Number.isFinite(amount) || amount <= 0) { setFormError('Enter a valid amount greater than 0.'); return }
     if (purpose.length < 5) { setFormError('Purpose must be at least 5 characters.'); return }
-    if (expenseFiles.length === 0) { setFormError('Please upload at least one bill image or PDF.'); return }
 
     setSubmitting(true)
     setError(null); setFormError(null)

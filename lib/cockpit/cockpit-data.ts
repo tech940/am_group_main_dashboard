@@ -194,10 +194,30 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
   // decides the set, so a new brand joins automatically once it flips to available.
   const salesStockBrands = availableSalesStockBrands()
 
-  // Coverage first: each brand's service window depends on how far its own feed reaches, so this one
-  // cheap aggregate probe has to land before the (expensive) per-brand billing queries fan out.
-  // Deadline-guarded: if the probe stalls, every brand simply loses its lagging-window refinement
-  // rather than the whole page failing. `?? {}` keeps the existing "no coverage" shape.
+  /*
+   * ── EVERYTHING THAT DOES NOT NEED COVERAGE STARTS NOW ──────────────────────────────────────
+   *
+   * Coverage used to be awaited BEFORE the whole fan-out, so cash, sales and stock — none of which
+   * look at it — sat idle behind a probe they have no relationship with. Measured: the probe costs
+   * ~2.5s in-request (three MAX() aggregates over the RO feeds; each is only ~35ms of real work and
+   * ~200ms of pooler round trip, the rest is first-connection setup), and the cold build was 7.8s.
+   *
+   * Only the three SERVICE queries consume the windows coverage produces. So those three wait; the
+   * rest are kicked off first and overlap the probe entirely.
+   *
+   * ⚠️ Starting a promise before awaiting it is safe here ONLY because withDeadline already swallows
+   * rejections (`work.catch(() => null)`). A bare promise started early and awaited late would be an
+   * unhandled rejection in between. Do not remove that catch.
+   */
+  const cashPromise = withDeadline('approved cash', getCaBranchSummary({ from: null, to: null }), BUDGET.headline)
+  // Per brand, not per batch: one slow brand must not take the others' cards with it.
+  const salesPromise = Promise.all(salesStockBrands.map((s) => withDeadline(`${s.brand} sales`, getBrandSalesSnapshot(s.brand, { year: ey, month: em }), BUDGET.secondary)))
+  const stockPromise = Promise.all(salesStockBrands.map((s) => withDeadline(`${s.brand} stock`, getBrandStockSnapshot(s.brand), BUDGET.secondary)))
+
+  // Coverage: each brand's service window depends on how far its own feed reaches, so this probe has
+  // to land before the per-brand billing queries fan out. Deadline-guarded: if it stalls, every brand
+  // simply loses its lagging-window refinement rather than the whole page failing. `?? {}` keeps the
+  // existing "no coverage" shape.
   const coverage = (await withDeadline('feed coverage', fetchFeedCoverage(win.monthStart, win.end), BUDGET.coverage)) ?? ({} as Awaited<ReturnType<typeof fetchFeedCoverage>>)
   const kiaWin = brandWindows(win, coverage.kia?.lastBillDate ?? null)
   const hyWin = brandWindows(win, coverage.hyundai?.lastBillDate ?? null)
@@ -209,10 +229,9 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
     withDeadline('platinum ro billing', fetchCanonicalRoBillingMetrics({ cyStart: plWin.cyStart, cyEnd: plWin.cyEnd, lyStart: plWin.lyStart, lyEnd: plWin.lyEnd }), BUDGET.headline),
     // Cash is the CUMULATIVE approved book (no date filter) — a running commitment/spend total that an
     // exec/CA wants in full, and unlike MTD it is always populated. Service revenue stays month-to-date.
-    withDeadline('approved cash', getCaBranchSummary({ from: null, to: null }), BUDGET.headline),
-    // Per brand, not per batch: one slow brand must not take the others' cards with it.
-    Promise.all(salesStockBrands.map((s) => withDeadline(`${s.brand} sales`, getBrandSalesSnapshot(s.brand, { year: ey, month: em }), BUDGET.secondary))),
-    Promise.all(salesStockBrands.map((s) => withDeadline(`${s.brand} stock`, getBrandStockSnapshot(s.brand), BUDGET.secondary))),
+    cashPromise,
+    salesPromise,
+    stockPromise,
   ])
   const salesSnaps = salesSnapsRaw ?? []
   const stockSnaps = stockSnapsRaw ?? []
