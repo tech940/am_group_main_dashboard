@@ -1,4 +1,4 @@
-import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
@@ -15,6 +15,13 @@ import { createResubmitToken } from '@/lib/kia/approval-resubmit'
 /**
  * Human labels for the workflow stage that sent a request back, so the email can say WHICH stage
  * returned it rather than leaking the internal key.
+ */
+/*
+ * ⚠️ Keyed by STAGE, and the first stage's key is 'sales_manager', not 'ed'. The 'ed' entry below
+ * therefore never matched, and a send-back from that stage fell through to `stage.toUpperCase()` —
+ * emailing the submitter that their request was returned by "SALES_MANAGER". The first stage is
+ * resolved through firstStageShortLabel instead, because its name is brand-dependent; the entry is
+ * kept only so the map still reads as the full list of stages.
  */
 const SEND_BACK_STAGE_LABELS: Record<string, string> = {
   ed: 'ED',
@@ -100,20 +107,9 @@ export async function POST(
       ['hr', 'hr_head', 'hr_team', 'hr_manager'].includes(appUser.role) ||
       userRoleLower.includes('hr')
 
-    const deptNorm = (requestRow.department || '').trim().toUpperCase()
-    const approvalTypeNorm = (requestRow.approvalType || '').trim().toUpperCase()
-
-    const isServiceCategory = 
-      deptNorm === 'SERVICE' || 
-      deptNorm.includes('SERVICE') || 
-      deptNorm.includes('PARTS') || 
-      deptNorm.includes('BODY') || 
-      deptNorm.includes('LABOUR') ||
-      approvalTypeNorm.includes('PARTS') ||
-      approvalTypeNorm.includes('WORKSHOP') ||
-      approvalTypeNorm.includes('LABOUR') ||
-      approvalTypeNorm.includes('MAINTENANCE') ||
-      approvalTypeNorm.includes('SERVICE')
+    // One definition, shared with the bulk route, the screen and the visibility rule — see
+    // isServiceApproval in lib/approvals/first-stage-approver.ts.
+    const isServiceCategory = isServiceApproval(requestRow.department, requestRow.approvalType)
 
     const isGeneralSalesManager = 
       ['gsm', 'general_sales_manager', 'sales_manager', 'sales_head', 'general_manager'].includes(userRoleLower) ||
@@ -192,24 +188,32 @@ export async function POST(
 
 
     // Check steps order
-    // Flow: 1: ED -> 2: HR (if required for Salary/PF/Incentive/Training/Uniform/ESI) -> 3: EA (optional) -> 4: MD -> 5: Accounts
+    // Flow: 1: first stage -> 2: HR (if required for Salary/PF/Incentive/Training/Uniform/ESI)
+    //       -> 3: EA (optional) -> 4: MD -> 5: Accounts
+    //
+    // The ORDER is the same for every brand; only the name of stage 1 differs — ED at KIA, the sales
+    // GSM or the Group Service Manager elsewhere. These messages all said "ED approval is pending" on
+    // brands that have no ED, telling a Hyundai EA to wait for a desk that does not exist.
     if (action !== 'SEND_BACK') {
       const requiresHr = isHrApprovalRequired(requestRow.approvalType)
+      const firstStageName = firstStageShortLabel(
+        requestRow.brand, requestRow.department, requestRow.approvalType,
+      )
 
       if (stage === 'hr' && !isTester && !isSuperUser) {
         if (requestRow.vpApproval !== 'APPROVED') {
-          return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
+          return NextResponse.json({ error: `${firstStageName} approval is pending.` }, { status: 400 })
         }
       } else if (stage === 'ea' && !isTester && !isSuperUser) {
         if (requestRow.vpApproval !== 'APPROVED') {
-          return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
+          return NextResponse.json({ error: `${firstStageName} approval is pending.` }, { status: 400 })
         }
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval is pending.' }, { status: 400 })
         }
       } else if (stage === 'md' && !isTester) {
         if (requestRow.vpApproval !== 'APPROVED') {
-          return NextResponse.json({ error: 'ED approval must be completed first.' }, { status: 400 })
+          return NextResponse.json({ error: `${firstStageName} approval must be completed first.` }, { status: 400 })
         }
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval must be completed first for Salary/PF/Incentive/Training/Uniform/ESI requests.' }, { status: 400 })
@@ -245,7 +249,9 @@ export async function POST(
       // Send email to submitter in background
       try {
         const senderName = appUser.fullName || 'An approver'
-        const senderStage = SEND_BACK_STAGE_LABELS[stage] || stage.toUpperCase()
+        const senderStage = stage === 'sales_manager'
+          ? firstStageShortLabel(requestRow.brand, requestRow.department, requestRow.approvalType)
+          : (SEND_BACK_STAGE_LABELS[stage] || stage.toUpperCase())
         const vendorLabel = (requestRow.vendorName || '').trim()
         const resubmitUrl = `${getAppBaseUrl()}/brands/kia/payment-approvals/submit?resubmit=${createResubmitToken(requestRow.id)}`
 
@@ -358,7 +364,7 @@ export async function POST(
     // Build history entry
     const historyList = Array.isArray(requestRow.history) ? [...requestRow.history] : []
     const roleLabel = 
-      stage === 'sales_manager' ? firstStageShortLabel(requestRow.brand, null) : 
+      stage === 'sales_manager' ? firstStageShortLabel(requestRow.brand, requestRow.department, requestRow.approvalType) : 
       stage === 'hr' ? 'HR' :
       stage === 'accounts' ? 'Accounts (Invoice)' : 
       stage === 'ea' ? 'EA' : 
@@ -431,6 +437,9 @@ export async function POST(
           vendorName: requestRow.vendorName,
           requestNo: requestRow.requestNo,
           brand: requestRow.brand,
+          // Needed to name the first-stage desk correctly — see DecisionRecipient.
+          department: requestRow.department,
+          approvalType: requestRow.approvalType,
         }, {
           stage,
           senderName: appUser.fullName || 'An approver',

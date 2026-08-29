@@ -5,8 +5,13 @@
  * Only KIA has an Executive Director. Every other brand routes that same first stage to the
  * General Manager for the relevant side of the business:
  *
- *   KIA         submitted → ED  → EA → MD → Accounts
- *   all others  submitted → GSM → EA → MD → Accounts     (GSM = Sales or Service, per department)
+ *   KIA                submitted → ED  → EA → MD → Accounts
+ *   Hyundai/Platinum   submitted → sales GSM, or the GROUP SERVICE MANAGER on service → EA → MD → …
+ *   all others         submitted → GSM → EA → MD → Accounts     (GSM = Sales or Service, per department)
+ *
+ * Hyundai and Platinum are two legal entities but ONE service operation, so a single
+ * `group_service_manager` owns the service side of that stage across both — their own service GSMs
+ * no longer hold it. Sales at those brands is untouched, and so is every other brand.
  *
  * ── Why this reuses the existing stage rather than adding one ─────────────────────────────────
  * The first stage slot already exists in both workflows (`ed_approval` in petty cash,
@@ -45,6 +50,47 @@ export function usesGroupServiceManager(brand: unknown): boolean {
 export type FirstStageTrack = 'sales' | 'service' | 'unknown'
 
 const norm = (value: unknown) => String(value ?? '').trim().toLowerCase()
+
+/**
+ * Is this request SERVICE work? The one definition, for every surface.
+ *
+ * ── Why it moved here ─────────────────────────────────────────────────────────────────────────
+ * This predicate existed in FOUR places — the action route, the bulk-action route, the approvals
+ * screen and lib/kia/approval-scope.ts — and the screen's copy had already drifted: it tested the
+ * department for 'SPARE' where the two servers tested for 'PARTS'. A department of 'PARTS' would
+ * therefore have shown the service approver no buttons while the API accepted their approval, and a
+ * 'SPARE' department the exact reverse — the screen offering a button the server would 403. That is
+ * the same class of desync that made a VP the visible approver on Hyundai rows the server had
+ * already reassigned.
+ *
+ * The list below is the UNION of the four, so no surface loses a classification it already made.
+ * Measured before merging: every one of the 168 live requests carries department 'SALES', 'Sales'
+ * or 'SERVICE', and none contains 'SPARE' or 'PARTS' — so the union changes no existing row's track
+ * and only closes the gap for departments not yet typed.
+ *
+ * ⚠️ Substring matching on free text is deliberate. `department` and `approval_type` are typed into
+ * a public form, so 'Service', 'SERVICE' and 'Body Shop' all occur; an exact match would silently
+ * drop a service request onto the sales approver.
+ *
+ * ⚠️ The callers treat this as BINARY — not-service means sales, never 'unknown'. A blank department
+ * therefore routes to the sales GSM, which is the behaviour that already shipped. Returning
+ * 'unknown' here instead would widen the approver set for every blank-department row, so callers
+ * keep their own `isServiceApproval(...) ? 'service' : 'sales'`.
+ */
+const SERVICE_DEPARTMENT_MARKERS = ['service', 'parts', 'spare', 'body', 'labour']
+const SERVICE_TYPE_MARKERS = ['parts', 'workshop', 'labour', 'maintenance', 'service']
+
+export function isServiceApproval(department: unknown, approvalType: unknown): boolean {
+  const d = norm(department)
+  const a = norm(approvalType)
+  return SERVICE_DEPARTMENT_MARKERS.some((m) => d.includes(m))
+    || SERVICE_TYPE_MARKERS.some((m) => a.includes(m))
+}
+
+/** The track a request belongs to, as every approvals surface resolves it. */
+export function approvalTrackFor(department: unknown, approvalType: unknown): FirstStageTrack {
+  return isServiceApproval(department, approvalType) ? 'service' : 'sales'
+}
 
 /** Does this brand have an ED to approve the first stage? */
 export function brandHasEd(brand: unknown): boolean {
@@ -126,7 +172,28 @@ export function firstStageLabel(brand: unknown, department: unknown): string {
   }
 }
 
-/** Short form for a chip or a history row. */
-export function firstStageShortLabel(brand: unknown, department: unknown): string {
-  return brandHasEd(brand) ? 'ED' : 'GSM'
+/**
+ * Short form for a chip, a history row or a decision email.
+ *
+ * ⚠️ This is not merely a rendered label — the action routes write it into the `history` jsonb, so
+ * whatever it returns is the permanent audit record of WHICH DESK signed off. It ignored its
+ * `department` argument entirely and every caller passed `null` for it, so a Hyundai or Platinum
+ * service approval was recorded as a bare 'GSM' — indistinguishable from the sales GSM, who is a
+ * different person and cannot act on that stage at all.
+ *
+ * ⚠️ Safe to change the wording: the screen finds the first-stage history entry by `roleKey ===
+ * 'sales_manager'` (written as the stage key, not this label), so the `role?.includes('gsm')`
+ * fallback beside it is belt-and-braces rather than load-bearing. Existing rows keep whatever they
+ * were written with.
+ *
+ * ⚠️ KIA still returns 'ED' on every track, including service — where the approver is actually the
+ * VP. That is a pre-existing inaccuracy in KIA's own audit trail, left alone deliberately: it is not
+ * what this change is about and correcting it would alter KIA rows nobody asked to alter.
+ */
+export function firstStageShortLabel(brand: unknown, department: unknown, approvalType?: unknown): string {
+  if (brandHasEd(brand)) return 'ED'
+  if (usesGroupServiceManager(brand) && isServiceApproval(department, approvalType)) {
+    return 'Group Service Manager'
+  }
+  return 'GSM'
 }

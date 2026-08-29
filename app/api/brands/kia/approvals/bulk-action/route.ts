@@ -1,4 +1,4 @@
-import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { sendApprovalDecisionEmail } from '@/lib/approvals/decision-emails'
@@ -125,20 +125,9 @@ export async function POST(request: Request) {
         ['hr', 'hr_head', 'hr_team', 'hr_manager'].includes(appUser.role) ||
         userRoleLower.includes('hr')
 
-      const deptNorm = (row.department || '').trim().toUpperCase()
-      const approvalTypeNorm = (row.approvalType || '').trim().toUpperCase()
-
-      const isServiceCategory = 
-        deptNorm === 'SERVICE' || 
-        deptNorm.includes('SERVICE') || 
-        deptNorm.includes('PARTS') || 
-        deptNorm.includes('BODY') || 
-        deptNorm.includes('LABOUR') ||
-        approvalTypeNorm.includes('PARTS') ||
-        approvalTypeNorm.includes('WORKSHOP') ||
-        approvalTypeNorm.includes('LABOUR') ||
-        approvalTypeNorm.includes('MAINTENANCE') ||
-        approvalTypeNorm.includes('SERVICE')
+      // Must stay identical to the single-row route and the screen — one definition, in
+      // lib/approvals/first-stage-approver.ts.
+      const isServiceCategory = isServiceApproval(row.department, row.approvalType)
 
       const isGeneralSalesManager = 
         ['gsm', 'general_sales_manager', 'sales_manager', 'sales_head', 'general_manager'].includes(userRoleLower) ||
@@ -300,7 +289,7 @@ export async function POST(request: Request) {
       // Build history entry
       const historyList = Array.isArray(row.history) ? [...row.history] : []
       const roleLabel = 
-        activeStageKey === 'sales_manager' ? firstStageShortLabel(row.brand, null) : 
+        activeStageKey === 'sales_manager' ? firstStageShortLabel(row.brand, row.department, row.approvalType) : 
         activeStageKey === 'hr' ? 'HR' :
         activeStageKey === 'accounts' ? 'Accounts' : 
         'MD'

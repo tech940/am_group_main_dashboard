@@ -4,6 +4,7 @@ import type { AppUser } from '@/lib/auth/app-user'
 import { canAccessBrand } from '@/lib/auth/brand-access'
 import { parseUserDealers } from '@/lib/dealers/registry'
 import { approvalBranchTokens, expandBranchSynonyms } from '@/lib/kia/approval-branches'
+import { isServiceApproval, usesGroupServiceManager } from '@/lib/approvals/first-stage-approver'
 import { isSuperAdminRole } from '@/lib/auth/roles'
 import { resolveBranchScope } from '@/lib/auth/default-branch-scope'
 import { hasAllBranchAccess, type BranchValue } from '@/lib/branches'
@@ -39,22 +40,8 @@ export function isKiaJammuServiceApproval(row: ApprovalScopeRow): boolean {
   const brand = String(row.brand || 'kia').toLowerCase().trim()
   if (brand !== 'kia') return false
 
-  const dept = String(row.department || '').toUpperCase().trim()
-  const approvalType = String(row.approvalType || '').toUpperCase().trim()
-
-  const isServiceDept = 
-    dept === 'SERVICE' || 
-    dept.includes('SERVICE') || 
-    dept.includes('PARTS') || 
-    dept.includes('BODY') || 
-    dept.includes('LABOUR') ||
-    approvalType.includes('PARTS') ||
-    approvalType.includes('WORKSHOP') ||
-    approvalType.includes('LABOUR') ||
-    approvalType.includes('MAINTENANCE') ||
-    approvalType.includes('SERVICE')
-
-  if (!isServiceDept) return false
+  // Shared with the action routes and the screen — see isServiceApproval for why it has one home.
+  if (!isServiceApproval(row.department, row.approvalType)) return false
 
   const code = String(row.dealerCode || '').toUpperCase().trim()
   const loc = String(row.location || '').toUpperCase().trim()
@@ -204,7 +191,34 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
    * This also removes the pin requirement for them, which is what left 6 of 8 Accounts logins
    * looking at an empty section.
    */
-  if (BRAND_WIDE_APPROVAL_ROLES.has(String(appUser.role || '').trim().toLowerCase())) return true
+  const role = String(appUser.role || '').trim().toLowerCase()
+  if (BRAND_WIDE_APPROVAL_ROLES.has(role)) return true
+
+  /*
+   * The GROUP SERVICE MANAGER owns the service approval stage for Hyundai and Platinum together, so
+   * he sees every service request of the brands he holds — and no sales request at all.
+   *
+   * ── Why not simply pin him to the branches ───────────────────────────────────────────────────
+   * Because he is a FUNCTION across two brands, not a branch. Pinning would mean listing all nine
+   * Hyundai and Platinum branch codes on one login and re-editing it every time a branch opens or
+   * somebody types a new spelling into the public form — the failure that hid a Rs2,47,605 bill from
+   * KIA Accounts, silently, for weeks. Measured here: he holds brand='platinum,hyundai' with NO pin,
+   * so `allowed.size === 0` below and he saw 0 of the 11 service requests waiting on him.
+   *
+   * ⚠️ SERVICE ONLY, and that is the difference from Accounts above. Hyundai and Platinum keep their
+   * own sales GSMs (Adil, Charanpreet), who own the sales side of this very stage. This mirrors
+   * exactly what he may ACT on — firstStageApproverRolesForTrack gives the sales track to
+   * `general_manager` alone — so what he can see and what he can approve are the same set. Both
+   * questions are answered by the same predicate for that reason.
+   *
+   * ⚠️ Still gated by canAccessBrand above, so this is TWO brands, not the group. A KIA service
+   * request is not his.
+   */
+  if (role === 'group_service_manager'
+    && usesGroupServiceManager(rowBrand)
+    && isServiceApproval(row.department, row.approvalType)) {
+    return true
+  }
 
   /*
    * `dealer_code` is not reliably a code — one live row holds the literal 'JAMMU' rather than

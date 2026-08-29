@@ -42,7 +42,7 @@ const STAGE_LABELS: Record<string, string> = {
  * is resolved from the BRAND instead: 'ED' at KIA, 'GSM' everywhere else.
  */
 export function stageLabelFor(row: DecisionRecipient, stage: string): string {
-  if (stage === 'sales_manager') return firstStageShortLabel(row.brand, null)
+  if (stage === 'sales_manager') return firstStageShortLabel(row.brand, row.department, row.approvalType)
   return STAGE_LABELS[stage] || stage.toUpperCase()
 }
 
@@ -73,6 +73,15 @@ export type DecisionRecipient = {
   requestNo?: string | null
   /** Decides what the first approval stage is CALLED — 'ED' at KIA, 'GSM' at every other brand. */
   brand?: string | null
+  /*
+   * ...and these two decide it on the SERVICE side, where Hyundai and Platinum share one Group
+   * Service Manager. Without them the email tells a service submitter their request was decided by
+   * the 'GSM' — which at those brands is the sales GSM, a different person who could not have acted
+   * on it. Optional so a caller that has no row handy still compiles; the label then degrades to
+   * 'GSM' rather than being wrong in a new way.
+   */
+  department?: string | null
+  approvalType?: string | null
 }
 
 type DecisionContext = {

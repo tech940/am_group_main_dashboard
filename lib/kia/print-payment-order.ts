@@ -7,6 +7,8 @@
 //  - the document is fully inline (no external CSS/images) so it prints identically everywhere.
 // Client-safe: no server imports; call it from any onClick.
 
+import { firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
+
 export type PrintablePaymentOrder = {
   id: string
   createdAt: string
@@ -17,6 +19,13 @@ export type PrintablePaymentOrder = {
   dealerName: string | null
   department: string | null
   approvalType: string | null
+  /*
+   * Only used to NAME the first approval column. The voucher hardcoded 'VP', which is a KIA-service
+   * role: a Hyundai or Platinum service order printed a signature box for a desk that brand does not
+   * have, while the person who actually signed it — the Group Service Manager — appeared nowhere on
+   * the document. Optional, so an older caller still compiles and simply falls back to 'GSM'.
+   */
+  brand?: string | null
   vendorName: string | null
   amount: string
   typeOfPayment: string | null
@@ -200,7 +209,7 @@ export function buildPaymentOrderHtml(order: PrintablePaymentOrder): string {
   </div>
 
   <table class="appr"><tr>
-    ${approvalCell('VP', order.vpApproval)}
+    ${approvalCell(firstStageShortLabel(order.brand, order.department, order.approvalType), order.vpApproval)}
     ${approvalCell('Accounts', order.accountApproval)}
     ${approvalCell('HR', order.hrApproval)}
     ${approvalCell('EA', order.eaApproval)}

@@ -65,7 +65,7 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
-import { brandHasEd, firstStageApproverRolesForTrack } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, firstStageApproverRolesForTrack, isServiceApproval, usesGroupServiceManager } from '@/lib/approvals/first-stage-approver'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
 /*
@@ -1225,23 +1225,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
 
 
-  const isServiceCategory = (department?: string | null, approvalType?: string | null) => {
-    const d = (department || '').trim().toUpperCase()
-    const a = (approvalType || '').trim().toUpperCase()
-
-    return (
-      d === 'SERVICE' ||
-      d.includes('SERVICE') ||
-      d.includes('SPARE') ||
-      d.includes('BODY') ||
-      d.includes('LABOUR') ||
-      a.includes('PARTS') ||
-      a.includes('WORKSHOP') ||
-      a.includes('LABOUR') ||
-      a.includes('MAINTENANCE') ||
-      a.includes('SERVICE')
-    )
-  }
+  /*
+   * ⚠️ This USED to be a local copy, and it had already drifted from the server's: it tested the
+   * department for 'SPARE' where both approvals routes tested for 'PARTS'. Whichever way a
+   * department fell through that gap, the screen and the API disagreed about who the approver was —
+   * a button offered and then 403'd, or an approver shown nothing they were authorised for. It now
+   * comes from the shared module the routes use.
+   */
+  const isServiceCategory = (department?: string | null, approvalType?: string | null) =>
+    isServiceApproval(department, approvalType)
 
   const isGeneralSalesManagerRole = (role?: string | null) => {
     if (!role) return false
@@ -1280,7 +1272,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
    */
   const firstStageDisplayLabel = (req?: ApprovalRequest | null): string => {
     const isService = req ? isServiceCategory(req.department, req.approvalType) : false
-    if (req && !brandHasEd(req.brand)) return isService ? 'GSM (Service)' : 'GSM (Sales)'
+    if (req && !brandHasEd(req.brand)) {
+      // Hyundai and Platinum service is owned by ONE person across both brands, so naming the
+      // brand's own "GSM (Service)" would point the submitter at the wrong desk.
+      if (isService) return usesGroupServiceManager(req.brand) ? 'Group Service Manager' : 'GSM (Service)'
+      return 'GSM (Sales)'
+    }
     return isService ? 'VP' : 'ED / GSM (Sales)'
   }
 
@@ -4660,10 +4657,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
             const renderNewWorkflowStepper = (req: ApprovalRequest) => {
               const isService = isServiceCategory(req.department, req.approvalType)
-              // Brand-aware: VP is a KIA-service role, every other brand signs off at the GSM.
+              /*
+               * Brand-aware: VP is a KIA-service role, every other brand signs off at the GSM — and
+               * Hyundai/Platinum service at the ONE Group Service Manager who covers both. Must
+               * agree with firstStageDisplayLabel above; the same drawer previously called this desk
+               * 'GSM (Service)' here and named it correctly a few lines away.
+               */
               const firstStageLabel = brandHasEd(req.brand)
                 ? (isService ? 'VP Approval' : 'ED / GSM')
-                : (isService ? 'GSM (Service)' : 'GSM (Sales)')
+                : (isService
+                  ? (usesGroupServiceManager(req.brand) ? 'Group Service Mgr' : 'GSM (Service)')
+                  : 'GSM (Sales)')
               const requiresHrStage = isHrApprovalRequired(req.approvalType)
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
