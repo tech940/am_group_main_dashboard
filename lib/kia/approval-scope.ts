@@ -152,6 +152,37 @@ function resolveApprovalBranchPins(rowBrand: string, dealers: string | null | un
  * skipped the branch gate entirely and the request was visible company-wide. One such row exists
  * today; a submitter who leaves the field empty should not be able to broadcast a payment request.
  */
+/**
+ * Roles that see EVERY request in their brand, whatever branch it came from.
+ *
+ * ── Why Accounts is not branch-scoped ─────────────────────────────────────────────────────────
+ * Accounts pays the brand's bills. There is one Accounts function per brand, not one per showroom,
+ * so branch-scoping it does not describe how the work is actually done — it just hides invoices from
+ * the only person who can pay them. Measured before this: KIA Accounts could see 15 of the brand's
+ * 17 waiting requests only because a synonym map had just been added, and Hyundai Accounts (no pin)
+ * could see 0 of the 2 waiting on them. Every branch spelling that gets invented in the form is
+ * another chance to hide money from the payer.
+ *
+ * ⚠️ Brand-wide, NOT group-wide. `canAccessBrand` still runs first, so a KIA Accounts login sees
+ * every KIA branch and no Hyundai row. That boundary is the one that matters: approvals carry vendor
+ * names and amounts, and the earlier incident was nine roles silently seeing the whole group.
+ *
+ * ⚠️ Deliberately NARROWER than the accounts-stage actor list in the action route, which also admits
+ * `assistant_manager` and `manager`. Those are branch roles that happen to be allowed to click the
+ * button; they are not the brand's payer, and widening their VIEW would be a real change in who sees
+ * the group's money. Only the finance-function roles are listed here.
+ *
+ * (`accounts_head` / `accounts_team` appear in that actor list but are NOT in the role enum — they
+ * are dead strings. Listed anyway so this set stays correct if they are ever added.)
+ */
+const BRAND_WIDE_APPROVAL_ROLES = new Set([
+  'accounts',
+  'accounts_head',
+  'accounts_team',
+  'finance_head',
+  'finance_team',
+])
+
 export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeRow): boolean {
   if (!appUser) return false
 
@@ -164,6 +195,16 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
 
   const rowBrand = (row.brand || 'kia').toLowerCase() as BranchValue
   if (!canAccessBrand(appUser, rowBrand)) return false
+
+  /*
+   * The brand's payer sees the whole brand. The branch gate below is skipped ENTIRELY — not widened
+   * with another alias — because no list of branch spellings can be kept complete, and the failure
+   * is silent: an Accounts user cannot tell "nothing to pay" from "cannot see what is waiting".
+   *
+   * This also removes the pin requirement for them, which is what left 6 of 8 Accounts logins
+   * looking at an empty section.
+   */
+  if (BRAND_WIDE_APPROVAL_ROLES.has(String(appUser.role || '').trim().toLowerCase())) return true
 
   /*
    * `dealer_code` is not reliably a code — one live row holds the literal 'JAMMU' rather than

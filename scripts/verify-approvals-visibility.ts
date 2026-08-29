@@ -99,10 +99,58 @@ async function main() {
     if (visible.length === 0) blind++
     console.log(`   ${String(u.full_name).padEnd(22)} brand=${String(u.brand || '-').padEnd(9)} ${pin.padEnd(13)} sees ${String(visible.length).padStart(2)}/${waiting.length}  Rs${value.toLocaleString('en-IN')}${visible.length === 0 ? '  <- SEES NOTHING' : ''}`)
   }
-  console.log(`\n   ${blind} of ${users.length} Accounts users can action nothing.`)
-  console.log('   Fail-closed-when-unpinned is deliberate (approvals carry vendor names and amounts),')
-  console.log('   so this is an Access Map action, not a code fix. Reported because an empty Approvals')
-  console.log('   screen looks exactly like a broken one.')
+  console.log(`\n   ${blind} of ${users.length} Accounts users see nothing — but check WHY before acting:`)
+  console.log('   a brand with no waiting requests is not the same as a user who cannot see them.')
+
+  console.log('\n4) Accounts sees its WHOLE brand — every branch, pin or no pin')
+  /*
+   * The rule: a brand's Accounts user sees every request of that brand regardless of branch, and
+   * regardless of whether anyone remembered to pin them. Asserted against the real queue AND
+   * against branch spellings nobody has invented yet, because the entire point is that a new
+   * spelling can never hide an invoice from the payer again.
+   */
+  const byBrand = new Map<string, ReqRow[]>()
+  const everything = await analyticsExecute<ReqRow>(sql`
+    SELECT request_no, brand, dealer_code, location, amount::text,
+           account_approval, ea_approval, management_approval
+    FROM kia_approval_requests`)
+  for (const r of everything) {
+    const b = String(r.brand || 'kia').toLowerCase()
+    byBrand.set(b, [...(byBrand.get(b) || []), r])
+  }
+
+  for (const u of users) {
+    const brand = String(u.brand || '').toLowerCase()
+    const own = byBrand.get(brand)
+    if (!own?.length) continue // nothing filed for that brand — nothing to assert
+    const seen = own.filter((r) => isApprovalVisibleTo(asAppUser(u), {
+      brand: r.brand, dealerCode: r.dealer_code, location: r.location,
+      department: null, approvalType: null,
+    } as Parameters<typeof isApprovalVisibleTo>[1]))
+    console.log(`   ${String(u.full_name).padEnd(22)} pin=${String(u.dealers || 'none').padEnd(13)} sees ${seen.length}/${own.length} of ${brand}`)
+    check(seen.length === own.length, `${u.full_name} sees EVERY ${brand} request`)
+  }
+
+  // A branch spelling that does not exist yet must not hide anything.
+  const kiaPayers = users.filter((u) => String(u.brand || '').toLowerCase() === 'kia')
+  for (const u of kiaPayers) {
+    for (const code of ['JK402', 'KIA-JM', 'BANIHAL', 'JK999', 'SOME-NEW-BRANCH', '']) {
+      const ok = isApprovalVisibleTo(asAppUser(u), {
+        brand: 'kia', dealerCode: code, location: '', department: null, approvalType: null,
+      } as Parameters<typeof isApprovalVisibleTo>[1])
+      check(ok, `${u.full_name} sees a KIA row coded "${code || '(blank)'}"`)
+    }
+  }
+
+  // …and the brand boundary still holds. This is the line that must NOT move.
+  for (const u of kiaPayers) {
+    for (const other of ['hyundai', 'platinum', 'tata']) {
+      const leak = isApprovalVisibleTo(asAppUser(u), {
+        brand: other, dealerCode: 'JAMMU', location: 'JAMMU', department: null, approvalType: null,
+      } as Parameters<typeof isApprovalVisibleTo>[1])
+      check(!leak, `${u.full_name} still cannot see ${other} — the brand boundary holds`)
+    }
+  }
   /*
    * NOT a failure: fail-closed-when-unpinned is deliberate (approvals carry vendor names and
    * amounts). It is reported because an admin has to act on it in the Access Map, and because an
