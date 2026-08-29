@@ -49,7 +49,9 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // resolveEffectiveSnapshot). ⚠️ THE BUMP IS LOAD-BEARING, not decoration: every logged-in user
 // holds a snapshot computed by the OLD rules for up to the 75-minute TTL, so without it the people
 // this fixes stay locked out for another hour and it reads as "the fix did not work".
-const PERMISSION_CACHE_VERSION = 'v30'
+// v31: adds the group_service_manager role. A new role changes every snapshot's shape, so a
+// stale v30 entry would resolve it as having no template at all.
+const PERMISSION_CACHE_VERSION = 'v31'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

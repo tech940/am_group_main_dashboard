@@ -1,3 +1,4 @@
+import { brandHasEd } from '@/lib/approvals/first-stage-approver'
 export const PETTY_CASH_REQUEST_STATUSES = [
   'draft',
   'submitted',
@@ -118,6 +119,7 @@ const PETTY_CASH_BRANCH_LOCATIONS: Record<string, PettyCashBranchConfig> = {
   hyundai: {
     dealers: () => HYUNDAI_BRANCH_DEALERS.map((branch) => branch.label),
     stripPrefix: 'Hyundai',
+    extraLocations: ['Supwal', 'R S Pura'],
   },
   platinum: {
     dealers: () => PLATINUM_BRANCH_DEALERS.map((branch) => branch.label),
@@ -298,3 +300,35 @@ import { PLATINUM_BRANCH_DEALERS } from '@/lib/platinum/dealer-branch'
 // lib/branches.ts is a pure constants module (no 'server-only', no db imports), so importing it
 // here keeps this file safe for the 'use client' workspace that already consumes it.
 import { isBranchValue } from '@/lib/branches'
+
+/**
+ * PETTY CASH SKIPS THE FIRST APPROVAL STAGE OUTSIDE KIA.
+ *
+ *     KIA          submitted -> ED  -> EA -> MD -> Accounts
+ *     every other  submitted ->        EA -> MD -> Accounts
+ *
+ * ⚠️ This is a PETTY CASH rule and deliberately does NOT live in
+ * lib/approvals/first-stage-approver.ts, which is shared with Vendor Payment Approvals. Approvals
+ * still routes its first stage to a GSM outside KIA — changing the shared module would silently
+ * remove that gate from vendor payments too, which is a different decision about different money.
+ *
+ * ⚠️ Nothing is added to the status enums. Non-KIA requests simply OPEN at the EA stage, using
+ * values that already exist. A missing ALTER TYPE on a Postgres enum has taken this app down once
+ * already, so a flow change that needs no migration is worth the small asymmetry.
+ *
+ * The GSM stage is removed from APPROVING, not from participating: both GSM roles remain in
+ * canCreatePettyCashRequest and may still raise a request like anyone else.
+ */
+export function pettyCashHasFirstStage(branchId: string | null | undefined): boolean {
+  return brandHasEd(branchId)
+}
+
+/** The status a newly submitted request opens at, for this brand. */
+export function pettyCashInitialStatus(branchId: string | null | undefined): 'ed_pending' | 'ea_pending' {
+  return pettyCashHasFirstStage(branchId) ? 'ed_pending' : 'ea_pending'
+}
+
+/** The stage a newly submitted request opens at, for this brand. */
+export function pettyCashInitialStage(branchId: string | null | undefined): 'ed_approval' | 'ea_approval' {
+  return pettyCashHasFirstStage(branchId) ? 'ed_approval' : 'ea_approval'
+}

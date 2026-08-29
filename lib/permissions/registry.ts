@@ -1039,6 +1039,7 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   service_manager: 'Service Manager',
   general_manager: 'General Sales Manager',
   service_general_manager: 'General Service Manager',
+  group_service_manager: 'Group Service Manager',
   sales_head: 'Sales Head',
   sales_executive: 'Sales Executive',
   sales_manager: 'Sales Manager',
@@ -1291,6 +1292,27 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'create', 'edit', 'approve', 'audit']),
+  ],
+  /*
+   * Group Service Manager — owns the SERVICE approval stage for Hyundai and Platinum together.
+   *
+   * The distinction from service_general_manager is SCOPE, not seniority: that role is KIA's, this
+   * one spans the two Hyundai entities. Both sit on TIER.HEAD / track 'service'.
+   *
+   * ⚠️ `kia.approvals` is NOT a mistake and must not be "corrected" to a hyundai/platinum key. That
+   * legacy key gates the ALL-BRAND Approvals section for every brand — renaming it would silently
+   * kill every existing grant. Without it this role cannot open the section it exists to work in.
+   *
+   * approve + audit are granted on hyundai/platinum so the first stage can actually be actioned;
+   * petty_cash is view+create only, because outside KIA petty cash no longer HAS a first stage
+   * (see pettyCashHasFirstStage) — this role raises requests there, it does not approve them.
+   */
+  group_service_manager: [
+    ...keysForGroups(['hyundai', 'hyundai.service', 'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.repair_orders'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['platinum', 'platinum.service', 'platinum.business_excellence', 'platinum.service_appointment'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia.approvals'], ['view']),
+    ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['petty_cash'], ['view', 'create']),
   ],
   sales_head: [
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),

@@ -44,6 +44,7 @@ import {
   isPettyCashOwnSubmissionsOnlyRole,
 } from './constants'
 import { sendPettyCashApprovalEmail } from './emails'
+import { pettyCashInitialStatus, pettyCashInitialStage } from '@/lib/petty-cash/constants'
 
 type PettyCashAllocationRecord = typeof pettyCashAllocations.$inferSelect
 
@@ -70,6 +71,7 @@ export const createPettyCashExpenseSchema = z.object({
   purpose: z.string().trim().min(2).max(2000),
   // Location the money was spent for (tracked per expense; stored inside expenseForm.location).
   location: optionalText,
+  department: optionalText,
   expenseForm: z.record(z.string(), z.unknown()).default({}),
   billFiles: z
     .array(z.string().trim().min(1, 'Bill file URL cannot be empty.'))
@@ -694,7 +696,7 @@ export async function listPettyCashAllocations(
   const rows = await db
     .select({
       allocation: pettyCashAllocations,
-      location: sql<string | null>`${pettyCashRequests.requestForm} ->> 'location'`,
+      location: sql<string | null>`COALESCE(${pettyCashRequests.requestForm} ->> 'location', split_part(${users.dealers}, ',', 1))`,
       department: pettyCashRequests.department,
       allocatedToName: users.fullName,
       allocatedByName: allocatedByUser.fullName,
@@ -908,8 +910,12 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
     throw new Error(topUpStatus.topUpReason)
   }
 
-  const status = input.status === 'draft' ? 'draft' : 'ed_pending'
-  const currentStage = input.status === 'draft' ? 'draft' : 'ed_approval'
+  /*
+   * Outside KIA there is no first (ED/GSM) stage at all — the request opens directly at EA.
+   * See pettyCashInitialStatus for why this is a petty-cash-only rule and needs no enum change.
+   */
+  const status = input.status === 'draft' ? 'draft' : pettyCashInitialStatus(branchId)
+  const currentStage = input.status === 'draft' ? 'draft' : pettyCashInitialStage(branchId)
 
   const [request] = await db
     .insert(pettyCashRequests)
@@ -1000,14 +1006,18 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
       currentStage: 'ledger',
       expenseDate: input.expenseDate,
       particulars: input.purpose,
-      department: appUser.department || null,
+      department: input.department || appUser.department || null,
       categoryId: input.categoryId || null,
       amount: toMoney(input.amount),
       vendorName: input.vendorName || null,
       receivedBy: input.receivedBy || null,
       purpose: input.purpose,
-      // Persist the per-expense location in the form JSON (mirrors requestForm.location).
-      expenseForm: { ...input.expenseForm, location: input.location || null },
+      // Persist the per-expense location and department in the form JSON (mirrors requestForm).
+      expenseForm: {
+        ...input.expenseForm,
+        location: input.location || null,
+        department: input.department || appUser.department || null,
+      },
       billFiles: input.billFiles,
       createdBy: appUser.id,
       submittedAt: now,

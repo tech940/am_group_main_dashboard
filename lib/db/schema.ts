@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed', 'vp', 'assistant_manager', 'process_coordinator', 'hr'])
+export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed', 'vp', 'assistant_manager', 'process_coordinator', 'hr', 'group_service_manager'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -549,6 +549,7 @@ export type PettyCashExpenseFormData = {
   // Per-expense location: the location the money was actually spent for (may differ from the
   // originating allocation/request location). Captured on the expense form for spend tracking.
   location?: string | null
+  department?: string | null
   uploadBillUrls?: string[]
 }
 

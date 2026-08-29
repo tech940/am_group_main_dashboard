@@ -103,7 +103,10 @@
     "verify:scrap-roundtrip": "tsx scripts/verify-scrap-entry-roundtrip.ts",
     "verify:syros-ev": "tsx scripts/verify-syros-ev-prices.ts",
     "seed:syros-ev": "tsx scripts/seed-syros-ev-prices.ts",
-    "verify:proforma-gate": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-proforma-approval-gate.ts"
+    "verify:proforma-gate": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-proforma-approval-gate.ts",
+    "verify:approvals-visibility": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approvals-visibility.ts",
+    "verify:petty-cash-flow": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-petty-cash-flow.ts",
+    "verify:group-service-manager": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-group-service-manager.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

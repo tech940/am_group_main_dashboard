@@ -941,7 +941,22 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
     setForm((current) => {
       const result = calculateKiaProformaPricing(current, options.prices, options.banks)
       if (!current.bankName.trim()) return current
-      if (!result.bankIsValid) return { ...current, bankName: '', bankBranch: '' }
+      /*
+       * ⚠️ DO NOT blank the field here. This used to `return { ...current, bankName: '',
+       * bankBranch: '' }` when the bank was not in the loaded options — so leaving the Bank field
+       * silently ERASED what the user had just typed, and the "Select a valid bank" message at the
+       * validation step below then appeared over an empty box. From the GM's side the edit simply
+       * did not save.
+       *
+       * It bites hardest exactly when it is least deserved: the options list is cached for 30
+       * minutes, so a bank added today is unrecognised by a browser holding the older list, and
+       * choosing it wipes it.
+       *
+       * The branch field one function down already had the right answer — "Manual entry is allowed:
+       * a typed branch that isn't in the DB list is KEPT as-is". Banks now behave the same: keep the
+       * input, let validation report it, and let the user decide.
+       */
+      if (!result.bankIsValid) return current
       return {
         ...current,
         bankName: result.canonicalBank,

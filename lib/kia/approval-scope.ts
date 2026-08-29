@@ -3,7 +3,7 @@ import 'server-only'
 import type { AppUser } from '@/lib/auth/app-user'
 import { canAccessBrand } from '@/lib/auth/brand-access'
 import { parseUserDealers } from '@/lib/dealers/registry'
-import { approvalBranchTokens } from '@/lib/kia/approval-branches'
+import { approvalBranchTokens, expandBranchSynonyms } from '@/lib/kia/approval-branches'
 import { isSuperAdminRole } from '@/lib/auth/roles'
 import { resolveBranchScope } from '@/lib/auth/default-branch-scope'
 import { hasAllBranchAccess, type BranchValue } from '@/lib/branches'
@@ -125,7 +125,18 @@ function resolveApprovalBranchPins(rowBrand: string, dealers: string | null | un
       }
     }
   }
-  return allowed
+
+  /*
+   * Finally, admit every OTHER spelling of the branches this pin already opens.
+   *
+   * Without this the pin matched one spelling only: KIA Accounts pinned to JK402,JK501 could not see
+   * the 15 requests filed as KIA-JM / KIA-UD, one of them a Rs2,47,605 bill fully approved and
+   * waiting on Accounts. See APPROVAL_BRANCH_SYNONYMS for the measured spread.
+   *
+   * ⚠️ Grants nothing new: each group is one physical branch. And it runs on the ROW's brand, after
+   * the brand gate, so the JAMMU that KIA, Platinum and Hyundai each use stays three separate things.
+   */
+  return expandBranchSynonyms(rowBrand, allowed)
 }
 
 /**

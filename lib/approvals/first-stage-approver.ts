@@ -22,6 +22,26 @@
 /** The only brand with an Executive Director. Everything else uses a GSM. */
 export const ED_BRANDS = ['kia'] as const
 
+/**
+ * Brands whose SERVICE approvals belong to the Group Service Manager.
+ *
+ * Hyundai and Platinum are two legal entities but one service operation, so their service approvals
+ * are owned together by `group_service_manager` rather than by each brand's own GSM. Sales at those
+ * brands is unaffected and still routes to the sales GSM.
+ *
+ * ⚠️ This governs the APPROVALS (vendor payment) chain only. Petty cash outside KIA has no first
+ * stage at all — see pettyCashHasFirstStage in lib/petty-cash/constants.ts. The two workflows share
+ * this module, so a change here that ignores that distinction silently re-adds a gate the MD asked
+ * to remove.
+ */
+export const GROUP_SERVICE_BRANDS = ['hyundai', 'platinum'] as const
+
+/** Does this brand's SERVICE side route to the Group Service Manager? */
+export function usesGroupServiceManager(brand: unknown): boolean {
+  const b = norm(brand)
+  return (GROUP_SERVICE_BRANDS as readonly string[]).some((known) => b === known || b.startsWith(known))
+}
+
 export type FirstStageTrack = 'sales' | 'service' | 'unknown'
 
 const norm = (value: unknown) => String(value ?? '').trim().toLowerCase()
@@ -58,10 +78,12 @@ export function trackForDepartment(department: unknown): FirstStageTrack {
  */
 export function firstStageApproverRoles(brand: unknown, department: unknown): string[] {
   if (brandHasEd(brand)) return ['ed']
+  const serviceRole = usesGroupServiceManager(brand) ? 'group_service_manager' : 'service_general_manager'
   switch (trackForDepartment(department)) {
     case 'sales': return ['general_manager']
-    case 'service': return ['service_general_manager']
-    default: return ['general_manager', 'service_general_manager']
+    case 'service': return [serviceRole]
+    // An unknown department returns BOTH sides rather than guessing — see the note above.
+    default: return ['general_manager', serviceRole]
   }
 }
 
@@ -75,10 +97,11 @@ export function firstStageApproverRoles(brand: unknown, department: unknown): st
  */
 export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStageTrack): string[] {
   if (brandHasEd(brand)) return ['ed']
+  const serviceRole = usesGroupServiceManager(brand) ? 'group_service_manager' : 'service_general_manager'
   switch (track) {
     case 'sales': return ['general_manager']
-    case 'service': return ['service_general_manager']
-    default: return ['general_manager', 'service_general_manager']
+    case 'service': return [serviceRole]
+    default: return ['general_manager', serviceRole]
   }
 }
 
@@ -98,7 +121,7 @@ export function firstStageLabel(brand: unknown, department: unknown): string {
   if (brandHasEd(brand)) return 'ED Approval'
   switch (trackForDepartment(department)) {
     case 'sales': return 'GSM Approval (Sales)'
-    case 'service': return 'GSM Approval (Service)'
+    case 'service': return usesGroupServiceManager(brand) ? 'Group Service Manager Approval' : 'GSM Approval (Service)'
     default: return 'GSM Approval'
   }
 }

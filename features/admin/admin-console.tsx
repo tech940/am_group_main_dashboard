@@ -391,10 +391,20 @@ function BranchSelector({
 
   const toggleBranch = (branchVal: string) => {
     if (branchVal === 'all') {
-      onChange('all');
+      /*
+       * A REAL toggle. This used to `onChange('all')` unconditionally, so the box could be ticked
+       * but never unticked — and since every individual branch is disabled while it is on, checking
+       * "All Branches" left no way back to a specific branch. The control was a one-way trap, which
+       * is exactly what blocks pinning a user to their own branch.
+       *
+       * Unchecking clears the selection to '' — no branch — which is the honest intermediate state
+       * while the admin picks the ones they want.
+       */
+      onChange(isAll ? '' : 'all');
       return;
     }
 
+    // From "all", clicking a single branch NARROWS to just that one rather than doing nothing.
     let nextValues = isAll ? [] : [...currentValues];
     if (nextValues.includes(branchVal)) {
       nextValues = nextValues.filter((v) => v !== branchVal);
@@ -432,7 +442,11 @@ function BranchSelector({
                 type="checkbox"
                 id={`branch-${branch.value}`}
                 checked={checked}
-                disabled={isAll}
+                /*
+                 * Deliberately NOT disabled while "All Branches" is on. Disabling them is what made
+                 * the trap above inescapable, and the narrowing branch in toggleBranch was written
+                 * for exactly this click — it was unreachable dead code.
+                 */
                 onChange={() => toggleBranch(branch.value)}
                 className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
               />

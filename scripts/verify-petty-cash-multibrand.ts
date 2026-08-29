@@ -138,7 +138,7 @@ console.log(`
   // The registry must keep producing the outlets the removed hardcoded list did, or real users
   // silently lose locations.
   const expected: Record<string, string[]> = {
-    hyundai: ['Jammu', 'Akhnoor', 'Kathua', 'RS Pura', 'Vijaypur', 'Billawar'],
+    hyundai: ['Jammu', 'Akhnoor', 'Kathua', 'RS Pura', 'Vijaypur', 'Billawar', 'Supwal', 'R S Pura'],
     platinum: ['Jammu', 'Rajouri', 'Poonch'],
     kia: ['Jammu', 'Udhampur', 'Banihal'],
   }

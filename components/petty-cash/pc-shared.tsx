@@ -67,8 +67,19 @@ export function ledgerBalanceAfter(entry: PettyCashLedgerEntry) {
   return entry.balanceAfter || entry.balance_after || '0'
 }
 
+export function toTitleCase(value?: string | null): string {
+  if (!value) return ''
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
 export function requestedByName(request: PettyCashRequest) {
-  return request.requestedByName || request.requested_by_name || '—'
+  const name = request.requestedByName || request.requested_by_name
+  if (!name) return '—'
+  return toTitleCase(name)
 }
 
 export function requestedAmount(request: PettyCashRequest) {

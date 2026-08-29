@@ -1,6 +1,6 @@
 'use client'
 
-import { FileText, Loader2, MapPin, ReceiptText, UploadCloud, X, AlertCircle} from 'lucide-react'
+import { FileText, Loader2, MapPin, ReceiptText, UploadCloud, X, AlertCircle, Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -121,6 +121,17 @@ export function ExpenseFormDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {locationOptions.map((location) => <SelectItem key={location} value={location}>{location}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Department" required>
+                <Select value={form.department} onValueChange={(value) => onChange('department', value)}>
+                  <SelectTrigger className="h-11 rounded-xl border-slate-200 font-bold">
+                    <div className="flex min-w-0 items-center gap-2"><Building2 className="h-4 w-4 shrink-0 text-slate-500" /><SelectValue placeholder="Select Department" /></div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Sales">Sales</SelectItem>
+                    <SelectItem value="Service">Service</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>

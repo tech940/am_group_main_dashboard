@@ -8,6 +8,7 @@ import { pettyCashAllocations, pettyCashExpenses, pettyCashRequests } from '@/li
 import { isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
 import { defaultBranchScopeFor } from '@/lib/auth/default-branch-scope'
 import { getPettyCashUserBrands, isPettyCashAllBranchRole, isPettyCashOwnSubmissionsOnlyRole } from './constants'
+import { pettyCashHasFirstStage } from '@/lib/petty-cash/constants'
 
 type PettyCashRole = AppUser['role']
 type PettyCashRequestRecord = typeof pettyCashRequests.$inferSelect
@@ -120,6 +121,12 @@ export function canApprovePettyCashStage(
       // The stage KEY stays 'ed_approval' across every brand — it is the first slot in the chain,
       // not a claim about who fills it. See lib/approvals/first-stage-approver.ts.
       if (!scope) return false
+      /*
+       * Outside KIA petty cash has NO first stage, so nobody may act on one. Without this the GSM
+       * roles would still be able to clear a legacy request sitting at ed_approval, which is the
+       * gate the MD asked to remove. New requests never reach this stage at all.
+       */
+      if (!pettyCashHasFirstStage(scope.branchId)) return false
       return canApproveFirstStage(r, scope.branchId, scope.department)
     case 'ea_approval':
       return r === 'ea' || r === 'eba'

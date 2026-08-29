@@ -75,6 +75,7 @@ import {
   normalizeSpentAmount,
   requestedAmount,
   requestedByName,
+  toTitleCase,
   canDeletePettyCashRequestOnClient,
   getLocationBadge,
 } from './pc-shared'
@@ -807,8 +808,10 @@ export function PettyCashWorkspace() {
     const amount = Number(expenseForm.amount)
     const purpose = expenseForm.purpose.trim()
     const location = expenseForm.location.trim()
+    const department = expenseForm.department.trim()
     if (!currentAllocation) { setFormError('No active allocation to post against.'); return }
     if (!location) { setFormError('Please select the location where the money was spent.'); return }
+    if (!department) { setFormError('Please select whether this expense is for Sales or Service.'); return }
     if (!Number.isFinite(amount) || amount <= 0) { setFormError('Enter a valid amount greater than 0.'); return }
     if (purpose.length < 5) { setFormError('Purpose must be at least 5 characters.'); return }
 
@@ -827,12 +830,14 @@ export function PettyCashWorkspace() {
           receivedBy: expenseForm.receivedBy || null,
           purpose,
           location,
+          department,
           expenseForm: {
             date: expenseForm.expenseDate,
             vendorName: expenseForm.vendorName || null,
             receivedBy: expenseForm.receivedBy || null,
             purposeOfExpense: purpose,
             location,
+            department,
             uploadBillUrls: expenseFiles,
           },
           billFiles: expenseFiles,
@@ -1910,7 +1915,7 @@ export function PettyCashWorkspace() {
               onRowClick={(allocation) => setSpendAllocationId(allocation.id)}
               empty={<EmptyState icon={Banknote} title="No allocations" description="Allocations across branches and dealerships will appear here." />}
               columns={[
-                { header: 'Allocated To', cell: (allocation) => <span className="font-semibold text-xs text-slate-900 dark:text-slate-100">{allocation.allocatedToName || '—'}</span> },
+                { header: 'Allocated To', cell: (allocation) => <span className="font-semibold text-xs text-slate-900 dark:text-slate-100">{toTitleCase(allocation.allocatedToName) || '—'}</span> },
                 { header: 'Allocated On', cell: (allocation) => (
                   <span className="whitespace-nowrap text-xs font-medium text-slate-600 dark:text-slate-400">
                     {formatDateTime(allocation.allocatedAt || allocation.allocated_at || allocation.createdAt || allocation.created_at)}

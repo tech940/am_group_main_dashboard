@@ -1,4 +1,8 @@
 import type { NextConfig } from "next";
+import dns from "node:dns";
+
+// Prevent Node.js connect timeouts caused by unroutable IPv6 / NAT64 DNS addresses
+dns.setDefaultResultOrder("ipv4first");
 
 const nextConfig: NextConfig = {
   compress: true,

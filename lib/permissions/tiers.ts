@@ -61,6 +61,9 @@ export const ROLE_PROFILE: Record<PermissionRole, RoleProfile> = {
   sales_head: { tier: TIER.HEAD, family: 'tracked', track: 'sales' },
   service_manager: { tier: TIER.HEAD, family: 'tracked', track: 'service' },
   service_general_manager: { tier: TIER.HEAD, family: 'tracked', track: 'service' }, // "General Service Manager"
+  // Same rung as the GSM above; the difference is SCOPE (Hyundai + Platinum, not KIA), which
+  // users.brand enforces — not seniority, so it must not sit higher.
+  group_service_manager: { tier: TIER.HEAD, family: 'tracked', track: 'service' }, // "Group Service Manager"
   // Manager
   manager: { tier: TIER.MANAGER, family: 'tracked', track: 'branch' }, // generalist branch manager
   // Supervisor rung on the generalist track, so its bundle is the union of BRANCH-track roles at
