@@ -41,6 +41,13 @@ export type VendorPaymentStageInput = {
   managementApproval?: string | null
   accountApproval?: string | null
   approvalType?: string | null
+  /*
+   * Needed in practice even though it is optional in the type: HR is a KIA-only stage, so without
+   * the brand this resolver parks a Hyundai or Platinum payroll request on an HR desk that brand
+   * does not have. Optional only because a blank brand already means KIA everywhere else against
+   * this table — see brandHasHrStage.
+   */
+  brand?: string | null
 }
 
 /** '' and null are indistinguishable in meaning here: nobody has acted on this stage yet. */
@@ -62,12 +69,12 @@ function needsAction(value: string | null | undefined): boolean {
 
 /**
  * The stage this request is currently waiting on — strict ordering:
- * ED → HR (conditional) → EA → MD → Accounts.
+ * first stage → HR (KIA only, and only for payroll types) → EA → MD → Accounts.
  *
  * EA approval is strictly required before a request reaches the MD stage.
  */
 export function vendorPaymentActiveStage(row: VendorPaymentStageInput): VendorPaymentStageKey {
-  const requiresHr = vendorPaymentRequiresHr(row.approvalType)
+  const requiresHr = vendorPaymentRequiresHr(row.approvalType, row.brand)
 
   if (needsAction(row.vpApproval)) return 'sales_manager'
 

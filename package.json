@@ -107,7 +107,8 @@
     "verify:approvals-visibility": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approvals-visibility.ts",
     "verify:petty-cash-flow": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-petty-cash-flow.ts",
     "verify:group-service-manager": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-group-service-manager.ts",
-    "verify:group-service-approvals": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-group-service-approvals.ts"
+    "verify:group-service-approvals": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-group-service-approvals.ts",
+    "verify:hr-stage": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-hr-stage-kia-only.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

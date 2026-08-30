@@ -57,6 +57,25 @@ async function main() {
   for (const h of holders) {
     console.log(`   ${h.full_name}  brand=${h.brand || '-'}  pin=${h.dealers || 'NONE'}`)
   }
+  if (!holders.length) {
+    /*
+     * Name the likely cause instead of just failing. This has already happened once: the holder's
+     * role was edited to 'vp' in Admin while his `department` still read "Group Service manager".
+     * VP has NO standing outside KIA — a deliberate rule, asserted in verify-first-stage — so that
+     * single edit silently took away both his visibility and his authority over every Hyundai and
+     * Platinum service request. Nothing in the UI says so; his queue simply empties.
+     */
+    const nearby = await analyticsExecute<UserRow & { department: string | null; is_active: boolean }>(sql`
+      SELECT id::text, full_name, role::text AS role, brand, dealers, department, is_active
+      FROM public.users
+      WHERE department ILIKE '%group service%' OR full_name ILIKE '%group service%'`)
+    console.log('   NOBODY holds it. Candidates whose department says otherwise:')
+    for (const n of nearby) {
+      console.log(`      ${n.full_name} — role is "${n.role}", department "${n.department}", active=${n.is_active}`)
+    }
+    console.log('   FIX: in Admin, set that user\'s ROLE to "Group Service Manager".')
+    console.log('   Until then Hyundai and Platinum SERVICE approvals have no approver at all.')
+  }
   check(holders.length > 0, 'somebody active holds the role')
   /*
    * Asserted because an unpinned holder is the NORMAL case for this role and must keep working. If
@@ -64,6 +83,22 @@ async function main() {
    */
   check(holders.some((h) => !String(h.dealers || '').trim()),
     'at least one holder has NO branch pin — the rule must not depend on one')
+
+  /*
+   * The CODE rules below must be asserted whether or not anybody holds the role right now.
+   *
+   * Driving them from live `holders` alone means a staffing lapse silently switches the whole test
+   * off — the run goes green with sections 3-6 EMPTY, which is exactly backwards: that is the moment
+   * you most want to know the rules still hold. So when nobody holds it they run against a synthetic
+   * holder carrying the shape the role is created with: both brands, NO pin.
+   */
+  const SYNTHETIC: UserRow = {
+    id: '00000000-0000-0000-0000-000000000000',
+    full_name: '(synthetic holder — nobody holds the role right now)',
+    role: ROLE, brand: 'platinum,hyundai', dealers: null,
+  }
+  const subjects = holders.length ? holders : [SYNTHETIC]
+  if (!holders.length) console.log('   ...asserting the RULES against a synthetic holder so they stay covered.')
 
   const all = await analyticsExecute<ReqRow>(sql`
     SELECT request_no, brand, dealer_code, location, department, approval_type,
@@ -82,7 +117,7 @@ async function main() {
   }
 
   console.log('\n3) He sees every service request of his brands — and no sales request')
-  for (const h of holders) {
+  for (const h of subjects) {
     const u = asAppUser(h)
     const seenService = service.filter((r) => isApprovalVisibleTo(u, scopeRow(r)))
     const seenSales = sales.filter((r) => isApprovalVisibleTo(u, scopeRow(r)))
@@ -102,7 +137,7 @@ async function main() {
    * dead button, and a row he can action but not see is money moving off-screen. Asserted over
    * every request in the table, not just his brands.
    */
-  for (const h of holders) {
+  for (const h of subjects) {
     const u = asAppUser(h)
     const mismatched = all.filter((r) => isApprovalVisibleTo(u, scopeRow(r)) !== mayApproveFirstStage(ROLE, r))
     for (const r of mismatched.slice(0, 10)) {
@@ -117,7 +152,7 @@ async function main() {
    * The whole reason this is a role rule and not a branch pin. Most of these codes are not on any
    * pin; if any of them hides a row, somebody has reintroduced the branch gate for this role.
    */
-  for (const h of holders) {
+  for (const h of subjects) {
     const u = asAppUser(h)
     for (const brand of ['hyundai', 'platinum']) {
       for (const code of ['N5216', 'KATHUA', 'N6250', 'SOME-NEW-BRANCH', '']) {
@@ -130,7 +165,7 @@ async function main() {
   }
 
   console.log('\n6) The boundary holds — KIA is not his, and neither is anyone else')
-  for (const h of holders) {
+  for (const h of subjects) {
     const u = asAppUser(h)
     for (const brand of ['kia', 'tata', 'honda']) {
       const leak = isApprovalVisibleTo(u, scopeRow({

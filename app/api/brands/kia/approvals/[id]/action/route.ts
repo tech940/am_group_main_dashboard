@@ -9,14 +9,13 @@ import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout } from '@/lib/email/templates/layout'
 import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
 import { sendApprovalDecisionEmail } from '@/lib/approvals/decision-emails'
-import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
+import { brandHasHrStage, isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 import { createResubmitToken } from '@/lib/kia/approval-resubmit'
 
 /**
  * Human labels for the workflow stage that sent a request back, so the email can say WHICH stage
  * returned it rather than leaking the internal key.
- */
-/*
+ *
  * ⚠️ Keyed by STAGE, and the first stage's key is 'sales_manager', not 'ed'. The 'ed' entry below
  * therefore never matched, and a send-back from that stage fell through to `stage.toUpperCase()` —
  * emailing the submitter that their request was returned by "SALES_MANAGER". The first stage is
@@ -148,7 +147,13 @@ export async function POST(
         isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser
       }
     } else if (stage === 'hr') {
-      isAuthorized = isTester || isHrUser || isSuperUser
+      /*
+       * Outside KIA there is no HR stage, so nobody may act on one — not even HR. Without this an HR
+       * user could still push a Hyundai or Platinum request through a stage its chain does not have,
+       * writing an hr_approval that no longer means anything and moving money by a route the MD
+       * removed. New requests never reach this stage at all; this covers the ones already filed.
+       */
+      isAuthorized = brandHasHrStage(requestRow.brand) && (isTester || isHrUser || isSuperUser)
     } else if (stage === 'accounts') {
       // SEPARATION OF DUTIES — `isSuperUser` (ceo/md) is DELIBERATELY EXCLUDED here.
       // Only Accounts may release money. developer/admin (`isTester`) stay for support only.
@@ -195,7 +200,7 @@ export async function POST(
     // GSM or the Group Service Manager elsewhere. These messages all said "ED approval is pending" on
     // brands that have no ED, telling a Hyundai EA to wait for a desk that does not exist.
     if (action !== 'SEND_BACK') {
-      const requiresHr = isHrApprovalRequired(requestRow.approvalType)
+      const requiresHr = isHrApprovalRequired(requestRow.approvalType, requestRow.brand)
       const firstStageName = firstStageShortLabel(
         requestRow.brand, requestRow.department, requestRow.approvalType,
       )

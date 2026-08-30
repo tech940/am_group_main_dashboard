@@ -76,7 +76,46 @@ async function main() {
     }
   }
 
-  // Reload PostgREST
+  // Fix security_definer_view: v_upgrade_tenure_pool and any other views in public schema
+  console.log('\n--- Securing Views (security_invoker = on) ---')
+  try {
+    await sql.unsafe(`ALTER VIEW IF EXISTS public.v_upgrade_tenure_pool SET (security_invoker = on);`)
+    console.log('✔ Secured view public.v_upgrade_tenure_pool with security_invoker = on')
+  } catch (err: any) {
+    console.error('Failed to update v_upgrade_tenure_pool view:', err.message)
+  }
+
+  // Check all views in public schema
+  const views = await sql`
+    SELECT c.relname as viewname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind IN ('v');
+  `
+  for (const v of views) {
+    try {
+      await sql.unsafe(`ALTER VIEW public."${v.viewname}" SET (security_invoker = on);`)
+      console.log(`✔ Set security_invoker = on on public.${v.viewname}`)
+    } catch (e: any) {
+      console.log(`Notice on view ${v.viewname}:`, e.message)
+    }
+  }
+
+  // Verification: Check if any public tables still have rowsecurity = false
+  const remainingUnsecureTables = await sql`
+    SELECT tablename 
+    FROM pg_tables 
+    WHERE schemaname = 'public' 
+      AND rowsecurity = false;
+  `
+  console.log('\n--- Verification: Unsecured public tables remaining ---', remainingUnsecureTables.length)
+  if (remainingUnsecureTables.length > 0) {
+    console.warn('Still unsecure:', remainingUnsecureTables.map(r => r.tablename))
+  } else {
+    console.log('✔ All public tables now have Row Level Security enabled!')
+  }
+
+  // Reload PostgREST schema cache
   try {
     await sql`NOTIFY pgrst, 'reload schema';`
     console.log('✔ Reloaded PostgREST schema cache')
@@ -85,7 +124,7 @@ async function main() {
   }
 
   await sql.end({ timeout: 5 })
-  console.log('Done! All Supabase security linter errors cleared.')
+  console.log('\nDone! All Supabase security linter errors cleared.')
 }
 
 main().then(() => process.exit(0)).catch(err => {

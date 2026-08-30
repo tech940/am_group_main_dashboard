@@ -6,7 +6,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests } from '@/lib/db/schema'
 import { eq, inArray } from 'drizzle-orm'
-import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
+import { brandHasHrStage, isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
 
 export const dynamic = 'force-dynamic'
@@ -95,7 +95,7 @@ export async function POST(request: Request) {
       const accApp = row.accountApproval
       const mdApp = row.managementApproval
 
-      const requiresHr = isHrApprovalRequired(row.approvalType)
+      const requiresHr = isHrApprovalRequired(row.approvalType, row.brand)
 
       // Determine what stage this request is currently in
       if (!vpApp || vpApp === 'HELD' || vpApp === 'NOT APPROVED') {

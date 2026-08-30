@@ -56,7 +56,40 @@ const HR_PATTERN = new RegExp(
   'i',
 )
 
-export function isHrApprovalRequired(approvalType?: string | null): boolean {
+/**
+ * Brands that HAVE an HR approval stage at all.
+ *
+ * ⚠️ HR IS KIA-ONLY. Outside KIA a payroll-flavoured request goes straight from the first stage to
+ * the EA — there is no HR desk in that chain. Before this, the rule was brand-blind, so a Hyundai or
+ * Platinum "Incentive Disbursement" was routed to an HR stage those brands do not staff: measured,
+ * PLATINUM_0004 (Rs2,54,397) had cleared its first stage and was sitting on an HR desk that nobody
+ * was ever going to clear.
+ *
+ * ⚠️ Deliberately its OWN list rather than reusing ED_BRANDS from lib/approvals/first-stage-approver.
+ * Both happen to be ['kia'] today, and that is a coincidence of the org chart, not one rule. Sharing
+ * the constant would mean that giving some other brand an ED silently gave it an HR stage too.
+ */
+export const HR_STAGE_BRANDS = ['kia'] as const
+
+/** Does this brand have an HR approval stage in its chain? */
+export function brandHasHrStage(brand: unknown): boolean {
+  const b = String(brand ?? '').trim().toLowerCase()
+  // Rows written before the `brand` column existed are KIA — the same fallback approval-scope uses.
+  if (!b) return true
+  return (HR_STAGE_BRANDS as readonly string[]).some((known) => b === known || b.startsWith(known))
+}
+
+/**
+ * ⚠️ `brand` is REQUIRED, and that is on purpose. Making it optional would let a caller keep the old
+ * brand-blind behaviour by simply not passing it — and the last three times a rule in this section
+ * changed, the bug was that only one of the call sites got updated. A required parameter makes tsc
+ * name every one of them.
+ */
+export function isHrApprovalRequired(
+  approvalType: string | null | undefined,
+  brand: string | null | undefined,
+): boolean {
+  if (!brandHasHrStage(brand)) return false
   if (!approvalType) return false
   const normalized = approvalType.trim().toLowerCase().replace(/_/g, ' ')
   if (!normalized) return false

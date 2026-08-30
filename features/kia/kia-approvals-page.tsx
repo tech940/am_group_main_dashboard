@@ -64,7 +64,7 @@ import { printPaymentOrder } from '@/lib/kia/print-payment-order'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
+import { brandHasHrStage, isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 import { brandHasEd, firstStageApproverRolesForTrack, isServiceApproval, usesGroupServiceManager } from '@/lib/approvals/first-stage-approver'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
@@ -1291,8 +1291,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return `Held by ${firstStage}`
     }
 
-    if (req.hrApproval === 'NOT APPROVED') return 'Rejected by HR'
-    if (req.hrApproval === 'HELD') return 'Held by HR'
+    /*
+     * Only when HR is actually in this brand's chain. These two lines are NOT gated by the payroll
+     * type — they read the stored column directly — so without the brand check a Hyundai or Platinum
+     * row that HR had held before the stage was removed would read 'Held by HR' for ever, while the
+     * server considers it to be sitting at EA and lets the EA approve it. The screen would be
+     * announcing a blockage that no longer exists and that nobody could clear.
+     */
+    if (brandHasHrStage(req.brand)) {
+      if (req.hrApproval === 'NOT APPROVED') return 'Rejected by HR'
+      if (req.hrApproval === 'HELD') return 'Held by HR'
+    }
 
     if (req.eaApproval === 'NOT APPROVED') return 'Rejected by EA'
     if (req.eaApproval === 'HELD') return 'Held by EA'
@@ -1314,8 +1323,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return `Pending ${firstStage}`
     }
 
-    // Stage 1 approved — check if HR approval is required
-    const requiresHr = isHrApprovalRequired(req.approvalType)
+    // Stage 1 approved — check whether HR is in this chain at all. HR is a KIA-ONLY stage: every
+    // other brand goes straight from the first stage to the EA. See brandHasHrStage.
+    const requiresHr = isHrApprovalRequired(req.approvalType, req.brand)
     if (requiresHr && (!req.hrApproval || req.hrApproval === '')) {
       return 'Pending HR'
     }
@@ -2280,7 +2290,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
   const renderWorkflowStepper = (req: ApprovalRequest) => {
     const pendingLabel = getPendingStageLabel(req)
-    const requiresHr = isHrApprovalRequired(req.approvalType)
+    const requiresHr = isHrApprovalRequired(req.approvalType, req.brand)
     
     const stages = [
       { key: 'sales_manager', label: 'ED', status: req.vpApproval },
@@ -4668,7 +4678,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 : (isService
                   ? (usesGroupServiceManager(req.brand) ? 'Group Service Mgr' : 'GSM (Service)')
                   : 'GSM (Sales)')
-              const requiresHrStage = isHrApprovalRequired(req.approvalType)
+              const requiresHrStage = isHrApprovalRequired(req.approvalType, req.brand)
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
                 { key: 'sales_manager', label: firstStageLabel, status: req.vpApproval },
