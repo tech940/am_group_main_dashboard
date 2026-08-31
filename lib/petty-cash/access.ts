@@ -50,8 +50,13 @@ export function pettyCashBranchScope<T extends PgColumn>(column: T, brands: stri
 }
 
 /** Brands this login may act in. Empty for 'all'/null pins — ask hasPettyCashAllBranchAccess first. */
-function brandsOf(appUser: Pick<AppUser, 'brand'>) {
-  return getPettyCashUserBrands(appUser.brand)
+function brandsOf(appUser: Pick<AppUser, 'brand' | 'role'>) {
+  const brands = getPettyCashUserBrands(appUser.brand)
+  // For EA: AM Platinum (Poonch & Rajouri) is Platinum Hyundai and always accompanies Hyundai
+  if ((appUser.role === 'ea' || appUser.role === 'eba') && brands.includes('hyundai') && !brands.includes('platinum')) {
+    brands.push('platinum')
+  }
+  return brands
 }
 
 /** May this user VIEW petty-cash data scoped to `branchId`? All-branch roles may

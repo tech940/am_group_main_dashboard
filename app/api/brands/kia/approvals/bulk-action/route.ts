@@ -218,6 +218,7 @@ export async function POST(request: Request) {
           stage: activeStageKey,
           senderName: appUser.fullName || 'An approver',
           remarks: remarks || '',
+          request,
         })
         emailedCount++
 
@@ -265,6 +266,7 @@ export async function POST(request: Request) {
             stage: activeStageKey,
             senderName: appUser.fullName || 'An approver',
             remarks: remarks || '',
+            request,
           })
           emailedCount++
         }
@@ -281,6 +283,7 @@ export async function POST(request: Request) {
             stage: activeStageKey,
             senderName: appUser.fullName || 'An approver',
             remarks: remarks || '',
+            request,
           })
           emailedCount++
         }

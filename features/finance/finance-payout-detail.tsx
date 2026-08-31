@@ -30,6 +30,9 @@ async function fetchDetail(id: string): Promise<PayoutDetailResponse> {
 type EditState = Record<string, string>
 
 const toEdit = (p: PayoutRow): EditState => ({
+  loanAmount: p.loanAmount ?? '',
+  hyp: p.hyp ?? '',
+  bankBranch: p.bankBranch ?? '',
   payoutStatus: p.payoutStatus ?? '',
   reasonIfOuthouse: p.reasonIfOuthouse ?? '',
   dealerPayoutPercent: p.dealerPayoutPercent ?? '',
@@ -187,11 +190,27 @@ export function FinancePayoutDetail({ id, onClose, onSaved }: {
                 </div>
               </Card>
 
-              <Card icon={BadgeIndianRupee} tone="teal" title="Loan" kicker="From the booking">
+              <Card icon={BadgeIndianRupee} tone="teal" title="Loan" kicker="Loan & Hypothecation">
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  <FieldValue label="Loan Amount" value={formatMoney(payout.loanAmount)} />
-                  <FieldValue label="Hypothecation" value={payout.hyp} />
-                  <FieldValue label="Bank Branch" value={payout.bankBranch} />
+                  <EditText
+                    label="Loan Amount (₹)"
+                    value={edit.loanAmount}
+                    onChange={(v) => set('loanAmount', v)}
+                    disabled={!canEdit}
+                    mono
+                  />
+                  <EditText
+                    label="Hypothecation (Bank)"
+                    value={edit.hyp}
+                    onChange={(v) => set('hyp', v)}
+                    disabled={!canEdit}
+                  />
+                  <EditText
+                    label="Bank Branch"
+                    value={edit.bankBranch}
+                    onChange={(v) => set('bankBranch', v)}
+                    disabled={!canEdit}
+                  />
                 </div>
               </Card>
 
@@ -259,9 +278,9 @@ export function FinancePayoutDetail({ id, onClose, onSaved }: {
                         />
                         <p className="text-[13px] font-bold text-[var(--kia-text)]">{fieldLabel(a.field)}</p>
                         <p className="mt-0.5 text-[12px] font-semibold">
-                          <span className="text-[var(--kia-text-faint)] line-through">{auditValue(a.before)}</span>
+                          <span className="text-[var(--kia-text-faint)] line-through">{auditValue(a.before, a.field)}</span>
                           <span className="mx-1.5 text-[var(--kia-text-faint)]">→</span>
-                          <span className="text-[var(--kia-text)]">{auditValue(a.after)}</span>
+                          <span className="text-[var(--kia-text)]">{auditValue(a.after, a.field)}</span>
                         </p>
                         <p className="mt-0.5 text-[11px] font-semibold text-[var(--kia-text-faint)]">
                           {a.actorName} · {a.actorRole.replace(/_/g, ' ')} · {formatDateTime(a.createdAt)}

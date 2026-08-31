@@ -229,6 +229,8 @@ export async function GET(request: Request) {
   const recordingsOnly = searchParams.get('recordingsOnly') === 'true'
   const pendingOnly = searchParams.get('pendingOnly') === 'true'
   const unansweredOnly = searchParams.get('unansweredOnly') === 'true'
+  const unansweredType = searchParams.get('unansweredType') || (unansweredOnly ? 'incoming' : 'all')
+  const missedIncomingOnly = searchParams.get('missedIncomingOnly') === 'true'
   const specialTeamOnly = searchParams.get('specialTeamOnly') === 'true'
 
   try {
@@ -302,11 +304,16 @@ export async function GET(request: Request) {
       else if (callStatusFilter === 'connected_incoming') query = query.eq('call_type', 'incoming')
       else if (['missed_incoming', 'missed_outgoing', 'unanswered'].includes(callStatusFilter)) impossibleFilter = true
     } else {
-      if (unansweredOnly) query = query.in('outcome', UNANSWERED_OUTCOMES)
-      else if (callStatusFilter === 'connected_outgoing') query = query.eq('direction', 'outgoing').eq('outcome', OUTCOME_ANSWERED)
+      if (missedIncomingOnly || (unansweredOnly && unansweredType === 'incoming')) {
+        query = query.eq('direction', 'incoming').in('outcome', UNANSWERED_OUTCOMES)
+      } else if (unansweredOnly && unansweredType === 'outgoing') {
+        query = query.eq('direction', 'outgoing').in('outcome', UNANSWERED_OUTCOMES)
+      } else if (unansweredOnly) {
+        query = query.in('outcome', UNANSWERED_OUTCOMES)
+      } else if (callStatusFilter === 'connected_outgoing') query = query.eq('direction', 'outgoing').eq('outcome', OUTCOME_ANSWERED)
       else if (callStatusFilter === 'connected_incoming') query = query.eq('direction', 'incoming').eq('outcome', OUTCOME_ANSWERED)
-      else if (callStatusFilter === 'missed_incoming') query = query.eq('direction', 'incoming').eq('outcome', OUTCOME_MISSED)
-      else if (callStatusFilter === 'missed_outgoing') query = query.eq('direction', 'outgoing').eq('outcome', OUTCOME_NO_ANSWER)
+      else if (callStatusFilter === 'missed_incoming') query = query.eq('direction', 'incoming').in('outcome', UNANSWERED_OUTCOMES)
+      else if (callStatusFilter === 'missed_outgoing') query = query.eq('direction', 'outgoing').in('outcome', UNANSWERED_OUTCOMES)
       else if (callStatusFilter === 'unanswered') query = query.in('outcome', UNANSWERED_OUTCOMES)
     }
 

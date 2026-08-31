@@ -33,6 +33,9 @@ const RECEIPT_STATUS_SET = new Set<string>(PAYOUT_RECEIPT_STATUSES)
  * an unknown key is rejected rather than ignored, so a typo can't silently no-op.
  */
 const EDITABLE_FIELDS = {
+  loanAmount: 'numeric',
+  hyp: 'text',
+  bankBranch: 'text',
   payoutStatus: 'enum:payout',
   reasonIfOuthouse: 'text',
   dealerPayoutPercent: 'numeric',

@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
 import { sendEmail } from '@/lib/email/email-service'
 import { emailLayout } from '@/lib/email/templates/layout'
 import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
-import { sendApprovalDecisionEmail } from '@/lib/approvals/decision-emails'
+import { sendApprovalDecisionEmail, getAppBaseUrl } from '@/lib/approvals/decision-emails'
 import { brandHasHrStage, isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 import { createResubmitToken } from '@/lib/kia/approval-resubmit'
 
@@ -30,15 +30,6 @@ const SEND_BACK_STAGE_LABELS: Record<string, string> = {
   accounts: 'Accounts',
   payment_done: 'Payment',
 }
-
-/** Same resolution order as lib/delegation/emails.ts so every outbound link agrees on the host. */
-function getAppBaseUrl(): string {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'))
-  return String(baseUrl).replace(/\/$/, '')
-}
-
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -258,7 +249,11 @@ export async function POST(
           ? firstStageShortLabel(requestRow.brand, requestRow.department, requestRow.approvalType)
           : (SEND_BACK_STAGE_LABELS[stage] || stage.toUpperCase())
         const vendorLabel = (requestRow.vendorName || '').trim()
-        const resubmitUrl = `${getAppBaseUrl()}/brands/kia/payment-approvals/submit?resubmit=${createResubmitToken(requestRow.id)}`
+        const brand = String(requestRow.brand || 'kia').trim().toLowerCase()
+        const submitPath = brand === 'kia'
+          ? '/brands/kia/payment-approvals/submit'
+          : `/brands/${brand}/approvals/submit`
+        const resubmitUrl = `${getAppBaseUrl(request)}${submitPath}?resubmit=${createResubmitToken(requestRow.id)}`
 
         const bodyHtml = `
           <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${requestRow.name},</p>
@@ -449,6 +444,7 @@ export async function POST(
           stage,
           senderName: appUser.fullName || 'An approver',
           remarks: remarks || '',
+          request,
         })
       } catch (err) {
         console.error('[approvals-action] Failed to dispatch %s email:', action, err)

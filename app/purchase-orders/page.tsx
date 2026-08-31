@@ -716,6 +716,7 @@ function PurchaseOrdersPageContent() {
       setUserRole(data.role || '')
       if (data.role === 'accounts') {
         setPurchaseOrderListMode('all')
+        setApprovalBranchFilter('all')
       }
       if (data.role === 'md' || data.role === 'ea') {
         /*
@@ -745,7 +746,7 @@ function PurchaseOrdersPageContent() {
       params.set('pageSize', String(PURCHASE_ORDER_PAGE_SIZE))
       params.set('scope', isApprovalRole(userRole) && approvalFilter === 'all' ? 'all' : isCompletionTrackingView ? 'spending' : 'active')
 
-      if (userRole === 'purchase_manager') {
+      if (userRole === 'purchase_manager' || (userRole === 'accounts' && showPOTableView)) {
         params.set('view', 'table')
       }
 
@@ -755,6 +756,10 @@ function PurchaseOrdersPageContent() {
           // MY_BRANCHES means "no explicit choice" — omit the param so the server applies the
           // login's own default rather than the client dictating one.
           if (approvalBranchFilter !== MY_BRANCHES) params.set('branchFilter', approvalBranchFilter)
+        }
+      } else if (userRole === 'accounts') {
+        if (approvalBranchFilter && approvalBranchFilter !== MY_BRANCHES && approvalBranchFilter !== 'all') {
+          params.set('branchFilter', approvalBranchFilter)
         }
       }
 
@@ -1519,7 +1524,31 @@ function PurchaseOrdersPageContent() {
     return (
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          {!isApprovalQueue && !isCompletionTrackingView && (['today', 'all'] as const).map((mode) => {
+          {userRole === 'accounts' && (
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Branch</span>
+              <Select
+                value={approvalBranchFilter === MY_BRANCHES ? 'all' : approvalBranchFilter}
+                onValueChange={(val) => {
+                  setApprovalBranchFilterPreference(val)
+                  setPurchaseOrderPage(1)
+                }}
+              >
+                <SelectTrigger className="h-8 min-w-[140px] rounded-lg border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-none">
+                  <SelectValue placeholder="All Branches" />
+                </SelectTrigger>
+                <SelectContent className="z-[100] rounded-xl border-slate-100 bg-white shadow-2xl">
+                  <SelectItem value="all" className="text-xs font-bold">All Branches</SelectItem>
+                  {BRANCH_OPTIONS.map((branch) => (
+                    <SelectItem key={branch.value} value={branch.value} className="text-xs font-bold">
+                      {branch.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {!isApprovalQueue && !isCompletionTrackingView && userRole !== 'accounts' && (['today', 'all'] as const).map((mode) => {
               const isActive = purchaseOrderListMode === mode
 
               return (
@@ -1541,6 +1570,10 @@ function PurchaseOrdersPageContent() {
                   ? `${getBranchLabel(approvalBranchFilter)} orders`
                   : 'All readable orders'
                 : `${APPROVAL_FILTER_OPTIONS.find((option) => option.value === approvalFilter)?.label || 'Approval'} queue`
+              : userRole === 'accounts'
+                ? approvalBranchFilter !== 'all' && approvalBranchFilter !== MY_BRANCHES
+                  ? `${getBranchLabel(approvalBranchFilter)} Orders`
+                  : 'All Branches'
               : effectivePurchaseOrderListMode === 'today'
                 ? 'Current day orders'
                 : 'All orders'} · {total} total

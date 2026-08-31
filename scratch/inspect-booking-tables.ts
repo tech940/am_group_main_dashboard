@@ -23,15 +23,18 @@ function generateNumber(prefix: string) {
   return `${prefix}-${dateStr}-${rand}`
 }
 
+import { getPettyCashDashboard, listPettyCashRequests, getPettyCashApprovalQueue, getPettyCashApprovalCount } from '@/lib/petty-cash/server'
+import type { AppUser } from '@/lib/auth/app-user'
+
 async function main() {
-  const result = await sql`
-    SELECT a.id, a.allocation_number, a.branch_id, a.allocated_amount, a.spent_amount, a.status, a.notes,
-           u.full_name, u.email, u.role::text, u.dealers, u.department
-    FROM petty_cash_allocations a
-    JOIN users u ON a.allocated_to = u.id
-    WHERE a.allocated_to = '39744825-3f88-4f4e-a3c8-6eccfce57571'
-  `
-  console.log('Verified Allocation for Malik Sharma:\n', result)
+  const settings = await sql`
+    SELECT *
+    FROM settings
+  `.catch((err) => {
+    console.error('Settings table error:', err.message)
+    return []
+  })
+  console.log('Settings in DB:\n', settings)
 
   await sql.end()
 }

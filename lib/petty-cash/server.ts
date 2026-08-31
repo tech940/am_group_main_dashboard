@@ -240,7 +240,7 @@ const CREATOR_REQUEST_QUEUE_STATUSES = new Set([
 
 function filterDashboardRequests(appUser: AppUser, requests: Array<Record<string, unknown>>) {
   if (appUser.role === 'ea') {
-    return requests.filter((request) => ['ea_pending', 'ea_on_hold'].includes(String(request.status || '')))
+    return requests.filter((request) => ['ea_pending', 'ea_on_hold', 'ed_approved'].includes(String(request.status || '')))
   }
 
   if (appUser.role === 'md' || appUser.role === 'eba') {

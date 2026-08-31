@@ -335,11 +335,14 @@ export async function GET(request: NextRequest) {
      * comma lists in both. Brand-less rows are ALWAYS included: they predate the brand column and
      * belong to no dealership, so dropping them hides real orders from everyone.
      */
-    const branchScope = resolveBranchScope(appUser.brand, branchFilter)
+    const branchScope = appUser.role === 'accounts'
+      ? resolveBranchScope('all', branchFilter)
+      : resolveBranchScope(appUser.brand, branchFilter)
 
     if (branchFilter && branchFilter !== 'all'
       && appUser.role !== 'md' && appUser.role !== 'ea' && appUser.role !== 'admin'
-      && appUser.role !== 'developer' && appUser.role !== 'purchase_manager') {
+      && appUser.role !== 'developer' && appUser.role !== 'purchase_manager'
+      && appUser.role !== 'accounts') {
       return NextResponse.json({ error: 'Forbidden branch filter' }, { status: 403 })
     }
 

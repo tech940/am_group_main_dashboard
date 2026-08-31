@@ -156,6 +156,9 @@ export function formatDateTime(iso: string | null) {
 
 /** camelCase field name → the label the finance team actually uses. Drives the audit timeline. */
 export const FIELD_LABELS: Record<string, string> = {
+  loanAmount: 'Loan Amount',
+  hyp: 'Hypothecation (Bank)',
+  bankBranch: 'Bank Branch',
   payoutStatus: 'Payout Status',
   reasonIfOuthouse: 'Reason (Out House)',
   dealerPayoutPercent: 'Dealer Payout %',
@@ -182,7 +185,7 @@ export const FIELD_LABELS: Record<string, string> = {
 export const fieldLabel = (f: string) => FIELD_LABELS[f] || f
 
 /** Renders an audit before/after value for display. */
-export function auditValue(v: unknown): string {
+export function auditValue(v: unknown, field?: string): string {
   const raw = v && typeof v === 'object' && 'value' in (v as Record<string, unknown>)
     ? (v as Record<string, unknown>).value
     : v
@@ -192,5 +195,8 @@ export function auditValue(v: unknown): string {
   if (LABELS[s]) return LABELS[s]
   // ISO timestamp → readable date
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return formatDate(s)
+  if (field && ['loanAmount', 'dealerPayoutAmount', 'dsePayoutAmount', 'amountReceived'].includes(field)) {
+    return formatMoney(s)
+  }
   return s
 }

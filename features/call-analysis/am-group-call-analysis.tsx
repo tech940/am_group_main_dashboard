@@ -866,6 +866,7 @@ export function AmGroupCallAnalysis() {
   const [callStatus, setCallStatus] = useState('all')
   const [search, setSearch] = useState('')
   const [activityGranularity, setActivityGranularity] = useState<'hour' | 'day'>('hour')
+  const [unansweredFilterType, setUnansweredFilterType] = useState<'incoming' | 'unrecovered' | 'recovered' | 'outgoing' | 'all'>('incoming')
   const [showFiltersModal, setShowFiltersModal] = useState(false)
   const [page, setPage] = useState(1)
 
@@ -939,7 +940,7 @@ export function AmGroupCallAnalysis() {
   })
 
   const unansweredCallsQuery = useQuery<{ rows: RecordingRow[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>({
-    queryKey: ['am-group-unanswered-calls', filterParams, page],
+    queryKey: ['am-group-unanswered-calls', filterParams, page, unansweredFilterType],
     enabled: subTab === 'unanswered',
     placeholderData: keepPreviousData,
     staleTime: 2 * 60 * 1000,
@@ -948,11 +949,23 @@ export function AmGroupCallAnalysis() {
       p.set('page', String(page))
       p.set('pageSize', '50')
       p.set('unansweredOnly', 'true')
+      p.set('unansweredType', unansweredFilterType === 'outgoing' ? 'outgoing' : unansweredFilterType === 'all' ? 'all' : 'incoming')
       const res = await fetch(`/api/call-analysis/am-group/calls?${p.toString()}`)
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load')
       return res.json()
     },
   })
+
+  const displayedUnansweredRows = useMemo(() => {
+    const rawRows = unansweredCallsQuery.data?.rows || []
+    if (unansweredFilterType === 'unrecovered') {
+      return rawRows.filter((r) => r.isMissedIncoming && !r.isConnectedLater)
+    }
+    if (unansweredFilterType === 'recovered') {
+      return rawRows.filter((r) => r.isMissedIncoming && r.isConnectedLater)
+    }
+    return rawRows
+  }, [unansweredCallsQuery.data?.rows, unansweredFilterType])
 
   const fleetHealthQuery = useQuery<FleetHealthData>({
     queryKey: ['am-group-fleet-health', branch],
@@ -1426,10 +1439,10 @@ export function AmGroupCallAnalysis() {
           )}
         >
           <PhoneOff className="h-4 w-4" />
-          <span>Unanswered Numbers</span>
-          {d && d.summary.totalUnanswered > 0 && (
+          <span>Missed Incoming Calls</span>
+          {d && (d.summary.missedIncoming || 0) > 0 && (
             <span className="ml-1 bg-rose-100 text-rose-700 text-[9px] font-black px-1.5 py-0.5 rounded-full border border-rose-200">
-              {d.summary.totalUnanswered}
+              {d.summary.missedIncoming}
             </span>
           )}
         </button>
@@ -2226,7 +2239,15 @@ export function AmGroupCallAnalysis() {
         <div className="space-y-6">
           {analyticsQuery.data?.summary?.missedIncomingRecovery && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <Card
+                onClick={() => { setUnansweredFilterType('incoming'); setPage(1) }}
+                className={cn(
+                  'rounded-3xl border p-5 shadow-sm cursor-pointer transition-all hover:shadow-md',
+                  unansweredFilterType === 'incoming'
+                    ? 'border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/20'
+                    : 'border-slate-200 bg-white'
+                )}
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[11px] font-black uppercase text-slate-400 tracking-wider">Total Missed Incoming</p>
@@ -2243,7 +2264,15 @@ export function AmGroupCallAnalysis() {
                 </div>
               </Card>
 
-              <Card className="rounded-3xl border border-emerald-200 bg-emerald-50/40 p-5 shadow-sm">
+              <Card
+                onClick={() => { setUnansweredFilterType('recovered'); setPage(1) }}
+                className={cn(
+                  'rounded-3xl border p-5 shadow-sm cursor-pointer transition-all hover:shadow-md',
+                  unansweredFilterType === 'recovered'
+                    ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/60'
+                    : 'border-emerald-200 bg-emerald-50/40'
+                )}
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[11px] font-black uppercase text-emerald-800 tracking-wider">Callback Connected (Recovered)</p>
@@ -2265,7 +2294,15 @@ export function AmGroupCallAnalysis() {
                 </div>
               </Card>
 
-              <Card className="rounded-3xl border border-rose-200 bg-rose-50/40 p-5 shadow-sm">
+              <Card
+                onClick={() => { setUnansweredFilterType('unrecovered'); setPage(1) }}
+                className={cn(
+                  'rounded-3xl border p-5 shadow-sm cursor-pointer transition-all hover:shadow-md',
+                  unansweredFilterType === 'unrecovered'
+                    ? 'border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/60'
+                    : 'border-rose-200 bg-rose-50/40'
+                )}
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[11px] font-black uppercase text-rose-800 tracking-wider">Still Remained Unrecovered</p>
@@ -2290,33 +2327,99 @@ export function AmGroupCallAnalysis() {
           )}
 
           <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
+            <CardHeader className="p-0 pb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <CardTitle className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-2">
                   <PhoneOff className="h-4 w-4 text-rose-500" />
-                  Unanswered &amp; Missed Call Numbers
+                  Missed Incoming Calls
                 </CardTitle>
                 <p className="mt-0.5 text-xs font-medium text-slate-500">
-                  All calls where the customer did not answer (outgoing not answered) or CRE missed an incoming call.
+                  Customer incoming calls missed or unreturned by CRE staff.
                 </p>
               </div>
-              {agent !== 'all' && (
-                <Button variant="outline" size="sm" onClick={() => { setAgent('all'); setPage(1) }} className="h-8 rounded-xl text-xs font-bold border-slate-200 text-slate-600">
-                  <X className="h-3.5 w-3.5 mr-1" /> Clear CRE Filter
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={unansweredFilterType === 'incoming' ? 'default' : 'outline'}
+                  onClick={() => { setUnansweredFilterType('incoming'); setPage(1) }}
+                  className={cn(
+                    'h-8 rounded-xl text-xs font-bold px-3 transition-all',
+                    unansweredFilterType === 'incoming'
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-sm'
+                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                  )}
+                >
+                  <PhoneIncoming className="h-3.5 w-3.5 mr-1 text-rose-300" />
+                  All Missed Incoming ({summary?.missedIncoming || 0})
                 </Button>
-              )}
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={unansweredFilterType === 'unrecovered' ? 'default' : 'outline'}
+                  onClick={() => { setUnansweredFilterType('unrecovered'); setPage(1) }}
+                  className={cn(
+                    'h-8 rounded-xl text-xs font-bold px-3 transition-all',
+                    unansweredFilterType === 'unrecovered'
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm'
+                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                  )}
+                >
+                  <TriangleAlert className="h-3.5 w-3.5 mr-1 text-amber-200" />
+                  Still Unrecovered ({summary?.missedIncomingRecovery?.remainedMissing || 0})
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={unansweredFilterType === 'recovered' ? 'default' : 'outline'}
+                  onClick={() => { setUnansweredFilterType('recovered'); setPage(1) }}
+                  className={cn(
+                    'h-8 rounded-xl text-xs font-bold px-3 transition-all',
+                    unansweredFilterType === 'recovered'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                  )}
+                >
+                  <CircleCheck className="h-3.5 w-3.5 mr-1 text-emerald-200" />
+                  Recovered ({summary?.missedIncomingRecovery?.connectedLater || 0})
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={unansweredFilterType === 'outgoing' ? 'default' : 'outline'}
+                  onClick={() => { setUnansweredFilterType('outgoing'); setPage(1) }}
+                  className={cn(
+                    'h-8 rounded-xl text-xs font-bold px-3 transition-all text-slate-500 hover:text-slate-800',
+                    unansweredFilterType === 'outgoing'
+                      ? 'bg-slate-800 hover:bg-slate-900 text-white shadow-sm'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  )}
+                >
+                  Outgoing Unanswered ({summary?.missedOutgoing || 0})
+                </Button>
+
+                {agent !== 'all' && (
+                  <Button variant="outline" size="sm" onClick={() => { setAgent('all'); setPage(1) }} className="h-8 rounded-xl text-xs font-bold border-slate-200 text-slate-600 ml-1">
+                    <X className="h-3.5 w-3.5 mr-1" /> Clear CRE Filter
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
               {unansweredCallsQuery.isFetching ? (
                 <div className="flex py-12 items-center justify-center text-slate-400 gap-2 text-xs font-bold">
                   <Loader2 className="h-4 w-4 animate-spin text-rose-500" />
-                  <span>Loading unanswered calls...</span>
+                  <span>Loading missed calls...</span>
                 </div>
-              ) : (unansweredCallsQuery.data?.rows || []).length === 0 ? (
+              ) : displayedUnansweredRows.length === 0 ? (
                 <div className="py-16 text-center">
                   <PhoneOff className="h-10 w-10 mx-auto text-emerald-400 mb-3" />
-                  <p className="text-sm font-black text-emerald-600">No unanswered calls found!</p>
-                  <p className="text-xs font-medium text-slate-400 mt-1">All calls were answered in this date range.</p>
+                  <p className="text-sm font-black text-emerald-600">No missed calls found!</p>
+                  <p className="text-xs font-medium text-slate-400 mt-1">All incoming calls were answered or none match this filter.</p>
                 </div>
               ) : (
                 <>
@@ -2327,12 +2430,13 @@ export function AmGroupCallAnalysis() {
                         <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent</th>
                         <th className="py-3.5 px-4 font-bold text-slate-400">Branch</th>
                         <th className="py-3.5 px-4 font-bold text-slate-400">Status / Type</th>
+                        <th className="py-3.5 px-4 font-bold text-slate-400">Callback Status</th>
                         <th className="py-3.5 px-4 font-bold text-slate-400">Call Time</th>
                         <th className="py-3.5 px-4 text-center font-bold text-slate-400">Duration</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {unansweredCallsQuery.data?.rows.map((row) => (
+                      {displayedUnansweredRows.map((row) => (
                         <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
                           <td className="py-3.5 px-4 font-bold text-slate-900">
                             <div className="flex flex-col">
@@ -2357,6 +2461,23 @@ export function AmGroupCallAnalysis() {
                             {getTypeBadge(row.callType, row.statusLabel)}
                           </td>
                           <td className="py-3.5 px-4">
+                            {row.isMissedIncoming ? (
+                              row.isConnectedLater ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                                  <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
+                                  <span className="truncate max-w-[170px]">{row.callbackDelayLabel || 'Callback Connected'}</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700">
+                                  <TriangleAlert className="h-3 w-3 text-rose-600 shrink-0" />
+                                  Pending Callback
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-slate-400 font-medium text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4">
                             <FormattedTimeCell isoStr={row.recordedAt} />
                           </td>
                           <td className="py-3.5 px-4 text-center font-bold text-slate-700">
@@ -2371,7 +2492,7 @@ export function AmGroupCallAnalysis() {
                   {unansweredCallsQuery.data?.pagination && unansweredCallsQuery.data.pagination.totalPages > 1 && (
                     <div className="flex items-center justify-between border-t border-slate-100 p-4">
                       <p className="text-xs font-bold text-slate-500">
-                        Showing page {page} of {unansweredCallsQuery.data.pagination.totalPages} ({unansweredCallsQuery.data.pagination.total} total unanswered)
+                        Showing page {page} of {unansweredCallsQuery.data.pagination.totalPages} ({unansweredCallsQuery.data.pagination.total} total {unansweredFilterType === 'outgoing' ? 'unanswered outgoing' : 'missed incoming'})
                       </p>
                       <div className="flex items-center gap-2">
                         <Button

@@ -47,11 +47,50 @@ export function stageLabelFor(row: DecisionRecipient, stage: string): string {
 }
 
 /** Same resolution order as lib/delegation/emails.ts so every outbound link agrees on the host. */
-function getAppBaseUrl(): string {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'))
-  return String(baseUrl).replace(/\/$/, '')
+export function getAppBaseUrl(request?: Request, explicitBaseUrl?: string | null): string {
+  if (explicitBaseUrl && explicitBaseUrl.trim() && !explicitBaseUrl.includes('localhost')) {
+    return explicitBaseUrl.trim().replace(/\/$/, '')
+  }
+
+  if (request) {
+    const origin = request.headers.get('origin')
+    if (origin && !origin.includes('localhost')) {
+      return origin.replace(/\/$/, '')
+    }
+    const forwardedHost = request.headers.get('x-forwarded-host')
+    const forwardedProto = request.headers.get('x-forwarded-proto') || 'https'
+    if (forwardedHost && !forwardedHost.includes('localhost')) {
+      return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, '')
+    }
+    const referer = request.headers.get('referer')
+    if (referer) {
+      try {
+        const refUrl = new URL(referer)
+        if (!refUrl.host.includes('localhost')) {
+          return `${refUrl.protocol}//${refUrl.host}`.replace(/\/$/, '')
+        }
+      } catch {}
+    }
+    const host = request.headers.get('host')
+    if (host && !host.includes('localhost')) {
+      return `${forwardedProto}://${host}`.replace(/\/$/, '')
+    }
+  }
+
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.SITE_URL
+  if (envUrl && !envUrl.includes('localhost')) {
+    return envUrl.replace(/\/$/, '')
+  }
+
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`.replace(/\/$/, '')
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`.replace(/\/$/, '')
+  }
+
+  return (envUrl || 'http://localhost:3000').replace(/\/$/, '')
 }
 
 /** Emails are HTML; a vendor name or remark containing < or & must not be able to break the layout. */
@@ -84,13 +123,17 @@ export type DecisionRecipient = {
   approvalType?: string | null
 }
 
-type DecisionContext = {
+export type DecisionContext = {
   /** Workflow stage that acted, e.g. 'md' | 'accounts'. */
   stage: string
   /** Display name of the approver. */
   senderName: string
   /** The approver's comments. Mandatory in practice for send-back and reject. */
   remarks: string
+  /** Optional incoming Request to derive the current origin and host directly from the browser. */
+  request?: Request
+  /** Optional explicit base URL. */
+  baseUrl?: string | null
 }
 
 function requestLabel(row: DecisionRecipient): string {
@@ -111,7 +154,12 @@ export function sendApprovalSentBackEmail(row: DecisionRecipient, ctx: DecisionC
   if (!row.email) return
   try {
     const stageLabel = stageLabelFor(row, ctx.stage)
-    const resubmitUrl = `${getAppBaseUrl()}/brands/kia/payment-approvals/submit?resubmit=${createResubmitToken(row.id)}`
+    const baseUrl = getAppBaseUrl(ctx.request, ctx.baseUrl)
+    const brand = String(row.brand || 'kia').trim().toLowerCase()
+    const submitPath = brand === 'kia'
+      ? '/brands/kia/payment-approvals/submit'
+      : `/brands/${brand}/approvals/submit`
+    const resubmitUrl = `${baseUrl}${submitPath}?resubmit=${createResubmitToken(row.id)}`
     const bodyHtml = `
       <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${escapeHtml(row.name)},</p>
       <p style="margin:0 0 16px;font-size:15px;color:#334155">

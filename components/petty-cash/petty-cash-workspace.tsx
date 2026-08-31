@@ -440,19 +440,24 @@ export function PettyCashWorkspace() {
    * all-branch by role — their visibility follows the admin-panel assignment, so an EA pinned to
    * 'kia' is now a single-brand viewer here exactly as the server scopes them.
    */
+  const userAssignedBrands = useMemo(() => getPettyCashUserBrands(currentBranchId), [currentBranchId])
+  const isMultiBranchViewer = isPettyCashAllBranchRole(userRole) || currentBranchId === 'all' || userAssignedBrands.length > 1
   const isAllBranchViewer = isPettyCashAllBranchRole(userRole) || currentBranchId === 'all'
   /*
    * MD default: their ALLOTTED branch (the admin-panel assignment), not the whole group — they can
    * click over to any other branch or All. Initialised once from the first payload; an assignment
    * that is not a petty-cash brand (e.g. 'all', 'honda') falls back to All Branches.
    */
-  const viewedBranchId = isAllBranchViewer && brandView && brandView !== 'all' ? brandView : currentBranchId
-  const brandViewOptions = useMemo(() => getPettyCashConfiguredBranches(), [])
+  const viewedBranchId = isMultiBranchViewer && brandView && brandView !== 'all' && brandView !== MY_BRANCHES ? brandView : currentBranchId
+  const brandViewOptions = useMemo(() => {
+    if (isAllBranchViewer) return getPettyCashConfiguredBranches()
+    return userAssignedBrands.filter((brand) => isPettyCashConfiguredForBranch(brand))
+  }, [isAllBranchViewer, userAssignedBrands])
   /** Names the branches this login is actually assigned, so the default chip is not a mystery. */
   const myBranchesLabel = useMemo(() => {
-    const labels = getPettyCashUserBrands(currentBranchId).map((brand) => getBranchLabel(brand))
+    const labels = userAssignedBrands.map((brand) => getBranchLabel(brand))
     return labels.length ? `My Branches · ${labels.join(', ')}` : 'My Branches'
-  }, [currentBranchId])
+  }, [userAssignedBrands])
 
   useEffect(() => {
     /*
@@ -468,17 +473,19 @@ export function PettyCashWorkspace() {
      * MY_BRANCHES means "whatever my assignment says"; the loaders send no branchId for it, which is
      * exactly what makes the server apply the default.
      */
-    if (!isAllBranchViewer || brandView || !currentBranchId) return
+    if (!isMultiBranchViewer || brandView || !currentBranchId) return
     brandViewRef.current = MY_BRANCHES
     setBrandView(MY_BRANCHES)
-  }, [isAllBranchViewer, brandView, currentBranchId])
+  }, [isMultiBranchViewer, brandView, currentBranchId])
   const canFilterExpensesByLocation = !isOwnSubmissionsOnly && ['admin', 'md', 'ea', 'eba', 'developer', 'manager'].includes(userRole)
 
   const seededLocationOptions = useMemo(
-    () => (isAllBranchViewer && (!brandView || brandView === 'all')
-      ? getAllPettyCashLocationOptions()
+    () => (isMultiBranchViewer && (!brandView || brandView === 'all' || brandView === MY_BRANCHES)
+      ? (isAllBranchViewer
+        ? getAllPettyCashLocationOptions()
+        : userAssignedBrands.flatMap((b) => getPettyCashLocationOptions(b)))
       : getPettyCashLocationOptions(viewedBranchId)),
-    [isAllBranchViewer, brandView, viewedBranchId],
+    [isMultiBranchViewer, isAllBranchViewer, brandView, viewedBranchId, userAssignedBrands],
   )
   const expenseLocationOptions = useMemo(
     () => Array.from(new Set([...seededLocationOptions, ...allExpenses.map((expense) => (expense.location || '').trim()).filter(Boolean)])).sort(),
@@ -541,16 +548,18 @@ export function PettyCashWorkspace() {
    * outlet names, no Request Float buttons for branches the server would refuse anyway.
    */
   const visibleTopology = useMemo(() => {
-    const allowed = isAllBranchViewer
-      ? (brandView && brandView !== 'all' ? [brandView] : getPettyCashConfiguredBranches())
-      : getPettyCashUserBrands(currentBranchId).filter((brand) => isPettyCashConfiguredForBranch(brand))
+    const allowed = isMultiBranchViewer
+      ? (brandView && brandView !== 'all' && brandView !== MY_BRANCHES
+        ? [brandView]
+        : (isAllBranchViewer ? getPettyCashConfiguredBranches() : userAssignedBrands.filter((brand) => isPettyCashConfiguredForBranch(brand))))
+      : userAssignedBrands.filter((brand) => isPettyCashConfiguredForBranch(brand))
     return allowed.map((brand) => ({
       brand,
       label: getBranchLabel(brand),
       locations: getPettyCashLocationOptions(brand),
       departments: PETTY_CASH_DEPARTMENT_OPTIONS,
     }))
-  }, [isAllBranchViewer, brandView, currentBranchId])
+  }, [isMultiBranchViewer, isAllBranchViewer, brandView, userAssignedBrands])
 
   useEffect(() => {
     // Land on a dealership this viewer actually has, and follow the brand switcher when it moves.
@@ -978,9 +987,9 @@ export function PettyCashWorkspace() {
               * SAME branch — a switch that scoped one tab of three was rejected in review once
               * already, and for good reason.
               */}
-            {isAllBranchViewer && brandView && (
+            {isMultiBranchViewer && brandView && (
               <div className="flex items-center gap-1 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-1" role="group" aria-label="Branch view">
-                {[MY_BRANCHES, ...brandViewOptions, 'all'].map((option) => {
+                {[MY_BRANCHES, ...brandViewOptions, ...(isAllBranchViewer ? ['all'] : [])].map((option) => {
                   const active = brandView === option
                   const label = option === MY_BRANCHES
                     ? myBranchesLabel

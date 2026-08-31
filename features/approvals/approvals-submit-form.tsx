@@ -959,7 +959,10 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     let cancelled = false
     void (async () => {
       try {
-        const res = await fetch(`/api/brands/${brand}/approvals/resubmit?token=${encodeURIComponent(token)}`)
+        let res = await fetch(`/api/brands/${brand}/approvals/resubmit?token=${encodeURIComponent(token)}`)
+        if (!res.ok && res.status === 404 && brand !== 'kia') {
+          res = await fetch(`/api/brands/kia/approvals/resubmit?token=${encodeURIComponent(token)}`)
+        }
         const payload = await res.json().catch(() => ({}))
         if (cancelled) return
         if (!res.ok) {

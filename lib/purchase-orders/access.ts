@@ -52,7 +52,7 @@ export function canCreatePurchaseOrders(role: PurchaseOrderRole | null | undefin
 }
 
 export function canViewPurchaseOrderTable(role: PurchaseOrderRole | null | undefined) {
-  return role === 'purchase_manager' || role === 'ed'
+  return role === 'purchase_manager' || role === 'ed' || role === 'accounts'
 }
 
 export function canSubmitVendorInformation(role: PurchaseOrderRole | null | undefined) {

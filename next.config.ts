@@ -11,6 +11,18 @@ const nextConfig: NextConfig = {
   experimental: {
     authInterrupts: true,
   },
+  async rewrites() {
+    return [
+      {
+        source: '/brands/:brand/payment-approvals/submit',
+        destination: '/brands/:brand/approvals/submit',
+      },
+      {
+        source: '/api/brands/:brand/approvals/resubmit',
+        destination: '/api/brands/kia/approvals/resubmit',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

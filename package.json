@@ -110,6 +110,7 @@
     "verify:group-service-approvals": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-group-service-approvals.ts",
     "verify:hr-stage": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-hr-stage-kia-only.ts",
     "verify:service-cadence": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-service-cadence.ts",
+    "verify:insurance-360": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-insurance-360.ts",
     "verify:customer-360-service-detail": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-customer-360-service-detail.ts"
   },
   "dependencies": {
