@@ -70,6 +70,42 @@ function isNvi(workType: string | null): boolean {
   return String(workType || '').trim().toUpperCase() === 'NVI'
 }
 
+/**
+ * Attach "km since the previous visit" to each workshop row.
+ *
+ * ── Why the reader does this and not the client ───────────────────────────────────────────────
+ * The services array handed to the client is TRUNCATED to 50 rows. A delta computed there would be
+ * measured against whatever row happened to survive the cut, so on a heavy vehicle the oldest shown
+ * visit would report a gap that silently spans everything trimmed off. Computed here, over the full
+ * set, every delta means the same thing.
+ *
+ * ⚠️ Rows arrive newest-first; deltas are only meaningful oldest-first, so this sorts a copy and
+ * writes the answer back onto the original rows.
+ *
+ * ⚠️ NULL, never 0, when either end has no reading. Roughly a third of billed visits carry no
+ * odometer, and printing "+0 km" for those would claim the car had not moved.
+ *
+ * ⚠️ A NEGATIVE gap is discarded rather than shown. 26 of 1,686 consecutive readings run backwards
+ * (a replaced cluster, a re-used registration, a typo); "-30,000 km" on a service history reads as
+ * a system fault, and the honest answer is that this pair cannot be read.
+ */
+function withMileageDeltas<T extends Record<string, unknown>>(rows: T[]): T[] {
+  const dated = rows
+    .map((row, index) => ({ row, index, when: dateStr(row.ro_date) || dateStr(row.bill_date) }))
+    .filter((r) => r.when)
+    .sort((a, b) => String(a.when).localeCompare(String(b.when)) || a.index - b.index)
+
+  let previous: number | null = null
+  for (const { row } of dated) {
+    const km = Number(row.mileage)
+    const current = Number.isFinite(km) && km > 0 ? km : null
+    ;(row as Record<string, unknown>).__mileageSinceLast =
+      current !== null && previous !== null && current > previous ? current - previous : null
+    if (current !== null) previous = current
+  }
+  return rows
+}
+
 /** Postgres DATE arrives as a JS Date through this driver — String().slice() would give "Thu Jul 30". */
 function dateStr(value: unknown): string | null {
   if (!value) return null
@@ -101,6 +137,26 @@ export type KiaCustomerSummary = {
   vehicleCount: number
   serviceCount: number
   lastActivityDate: string | null
+  /*
+   * ── WHAT THE DIRECTORY CARD SHOWS ────────────────────────────────────────────────────────────
+   *
+   * The card used to carry counts alone — ENQ / BOOK / CARS / SVC — which is an inventory of records
+   * rather than anything about the customer. These five answer "when did we last see them, what are
+   * they worth, and is anything about to lapse", which is what someone scanning the list is for.
+   *
+   * ⚠️ Every one is an aggregate over CTEs the directory statement ALREADY runs; none adds a join.
+   * That matters because this single statement serves the whole directory.
+   */
+  /** Last REAL workshop visit — excludes NVI, our own pre-delivery inspection. */
+  lastServiceDate: string | null
+  /** Lifetime workshop spend, tax-inclusive. 0 is a real answer: they came in and were not billed. */
+  serviceSpend: number | null
+  /** Soonest expiry among policies still in force. Null when every policy has lapsed. */
+  nextPolicyExpiry: string | null
+  /** Latest expiry on record, so a lapsed customer can still say when. */
+  latestPolicyExpiry: string | null
+  /** Most recently delivered model, to name the car on the card. */
+  primaryModel: string | null
   gaps: KiaCustomerGaps
   gapCount: number
 }
@@ -262,7 +318,8 @@ function directoryCte(
       (ins.policy_expiry_date IS NOT NULL AND ins.policy_expiry_date < CURRENT_DATE) AS insurance_lapsed,
       ro.service_count,
       ro.last_service_date,
-      ro.last_customer_service_date
+      ro.last_customer_service_date,
+      ro.service_spend
     FROM latest_sales s
     LEFT JOIN latest_insurance ins ON UPPER(BTRIM(ins.vinno)) = UPPER(BTRIM(s.vin_number))
     -- WARNING: kia_sales_report.registration_name is the NAME the vehicle is registered to
@@ -270,6 +327,14 @@ function directoryCte(
     -- ro_billing_report.vehicle_reg_no (5,422 of 5,505 rows populated).
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS service_count, MAX(r.bill_date) AS last_service_date,
+             /*
+              * Lifetime workshop spend. Free on this statement: the lateral already scans exactly
+              * these rows for the count and the last date.
+              *
+              * ⚠️ total_amt is NEVER NULL — an unbilled visit stores a literal 0 — so SUM is safe
+              * and needs no COALESCE. It is tax-inclusive.
+              */
+             SUM(r.total_amt) AS service_spend,
              -- The last REAL visit. NVI is the dealership's own pre-delivery inspection (964 rows,
              -- billed on none of them), and counting it as a service visit hid 126 sold vehicles
              -- from the never-serviced gap: their only workshop row was our own paperwork, stamped
@@ -289,6 +354,23 @@ function directoryCte(
       COUNT(*)::int AS vehicle_count,
       COALESCE(SUM(service_count), 0)::int AS service_count,
       MAX(last_service_date) AS last_service_date,
+      /*
+       * Everything the directory card needs, rolled up here rather than fetched per row. The card
+       * renders 12,654 profiles from ONE statement, so each of these must be an aggregate over CTEs
+       * that already run — not a new join.
+       */
+      COALESCE(SUM(service_spend), 0) AS service_spend,
+      -- The last visit that was a real customer visit, not our own pre-delivery inspection.
+      MAX(last_customer_service_date) AS last_customer_service_date,
+      /*
+       * The SOONEST policy still in force is what an employee acts on; MAX would show the furthest
+       * expiry and hide a car expiring next week behind one covered until 2029.
+       */
+      MIN(policy_expiry_date) FILTER (WHERE policy_expiry_date >= CURRENT_DATE) AS next_policy_expiry,
+      -- ...and the latest expiry overall, so a fully-lapsed customer can still say when it lapsed.
+      MAX(policy_expiry_date) AS latest_policy_expiry,
+      -- The most recently delivered car, to name the customer's vehicle on the card.
+      (ARRAY_AGG(model ORDER BY delivery_date DESC NULLS LAST))[1] AS primary_model,
       BOOL_OR(NOT has_insurance) AS any_without_insurance,
       BOOL_OR(insurance_lapsed) AS any_insurance_lapsed,
       -- Judged on the last CUSTOMER visit, never on an NVI row — see the note in the lateral.
@@ -408,6 +490,11 @@ function directoryCte(
       COALESCE(v.service_count, 0) AS service_count,
       GREATEST(COALESCE(e.last_sales_activity, '1900-01-01'::date),
                COALESCE(v.last_service_date, '1900-01-01'::date)) AS last_activity_date,
+      v.last_customer_service_date,
+      v.service_spend,
+      v.next_policy_expiry,
+      v.latest_policy_expiry,
+      v.primary_model,
       (COALESCE(e.booking_count, 0) = 0) AS gap_enquiry_no_booking,
       COALESCE(v.any_without_insurance, FALSE) AS gap_no_insurance,
       COALESCE(v.any_service_overdue, FALSE) AS gap_no_recent_service,
@@ -531,6 +618,18 @@ function mapSummary(row: Record<string, unknown>): KiaCustomerSummary {
     serviceCount: num(row.service_count),
     // '1900-01-01' is the GREATEST() sentinel for "no activity at all".
     lastActivityDate: lastActivity && lastActivity > '1900-01-01' ? lastActivity : null,
+    lastServiceDate: dateStr(row.last_customer_service_date),
+    /*
+     * ⚠️ Zero is kept as zero, not turned into null. A customer with visits but no bills has
+     * genuinely spent nothing with the workshop, which is a different fact from "we hold no
+     * figure" — and 2,398 of 5,711 visits are unbilled, so this is the common case, not the edge.
+     */
+    serviceSpend: row.service_spend === null || row.service_spend === undefined
+      ? null
+      : Number(row.service_spend),
+    nextPolicyExpiry: dateStr(row.next_policy_expiry),
+    latestPolicyExpiry: dateStr(row.latest_policy_expiry),
+    primaryModel: str(row.primary_model),
     gaps,
     gapCount: Object.values(gaps).filter(Boolean).length,
   }
@@ -690,6 +789,17 @@ export type KiaProfileVehicle = {
     parts: number | null
     tax: number | null
     discount: number | null
+    /**
+     * Odometer at this visit, from kia_psf_yearly. Null when that feed holds no reading for the RO
+     * — roughly a third of billed visits, so the UI must render an absence, never a 0.
+     */
+    mileage: number | null
+    /**
+     * Kilometres covered since the PREVIOUS visit on this vehicle. Null on the first visit, and
+     * null whenever either end is missing a reading — never 0, which would claim the car did not
+     * move. Computed in the reader so the client cannot re-derive it against a truncated list.
+     */
+    mileageSinceLast: number | null
   }[]
   /** Sum of billed visits only, and how many visits carry no price. Never coerce these together. */
   serviceSpend: number | null
@@ -946,12 +1056,63 @@ export async function getKiaCustomerProfile(
          * work_type is selected because NVI is our own pre-delivery inspection, not a customer
          * visit - see the note on nvi_only below.
          */
-        SELECT UPPER(BTRIM(vin)) AS vin, ro_no, bill_no, bill_date, ro_date, model, vehicle_reg_no,
-               work_type, service_advisor, bill_status,
-               total_amt, labour_amt, part_amt, labour_tax, part_tax, total_disc
-        FROM ro_billing_report
-        WHERE UPPER(BTRIM(vin)) IN (${sql.join(vins.map((v) => sql`${v}`), sql`, `)})
-        ORDER BY bill_date DESC NULLS LAST
+        SELECT UPPER(BTRIM(b.vin)) AS vin, b.ro_no, b.bill_no, b.bill_date, b.ro_date, b.model,
+               b.vehicle_reg_no, b.work_type, b.service_advisor, b.bill_status,
+               b.total_amt, b.labour_amt, b.part_amt, b.labour_tax, b.part_tax, b.total_disc,
+               psf.mileage
+        FROM ro_billing_report b
+        /*
+         * THE ODOMETER. ro_billing_report has no mileage column at all; the reading lives in
+         * kia_psf_yearly, a separate feed sharing (vin, ro_no). 3,938 of 3,984 PSF rows match a bill.
+         *
+         * ⚠️ AGGREGATED BEFORE THE JOIN, deliberately. Joining the raw feed fans out — 23 PSF rows
+         * match more than one bill (max 3) — and a fan-out here would silently multiply serviceSpend,
+         * because the money is summed over these same rows. MAX() per (vin, ro_no) cannot fan out.
+         * A vehicle booked in twice on one day genuinely has two readings; the higher is the later.
+         *
+         * ⚠️ mileage > 0: the feed's minimum is 46 km and no row is 0, so a 0 is a blank written as
+         * a number, not a brand-new car.
+         */
+        /*
+         * THREE FEEDS, one reading. kia_psf_yearly alone covered 3,946 of 5,757 billed visits (68.5%);
+         * adding the other two takes it to 4,352 (75.6%).
+         *
+         * ⚠️ kia_demo_job_cards is NOT only demo cars, despite the name — it is the same DMS job-card
+         * export landing in a second table, and it carries 406 readings PSF does not. 409 of the 479
+         * it recovers are on vehicles present in kia_sales_report, i.e. cars we actually sold.
+         * Verified against PSF where both describe the same (vin, ro_no): 1,050 overlapping rows,
+         * 1,020 identical, and the 30 that differ differ by at most 149 km — a revised reading on one
+         * job card, not a different vehicle.
+         *
+         * ⚠️ kia_open_ro_yearly recovers only 5. It stays because it is the feed for cars ON THE RAMP
+         * NOW, which is exactly where the freshest reading appears, and it costs one scan of 236 rows.
+         *
+         * ⚠️ MAX over the union, so a revised reading wins and — as before — the aggregate cannot fan
+         * out. Fan-out here would multiply serviceSpend, which is summed over these same rows.
+         *
+         * Sources deliberately NOT used: v_upgrade_tenure_pool (a Hyundai view, 0 KIA matches, km
+         * null) and hyundai_warranty_claim_list (17,511 readings, but Hyundai only — there is no KIA
+         * warranty table).
+         */
+        LEFT JOIN (
+          SELECT vin, ro_no, MAX(mileage) AS mileage
+          FROM (
+            SELECT UPPER(BTRIM(vin)) AS vin, UPPER(BTRIM(ro_no)) AS ro_no, mileage
+            FROM kia_psf_yearly
+            WHERE mileage > 0 AND COALESCE(BTRIM(vin), '') <> '' AND COALESCE(BTRIM(ro_no), '') <> ''
+            UNION ALL
+            SELECT UPPER(BTRIM(vin)), UPPER(BTRIM(r_o_no)), mileage
+            FROM kia_demo_job_cards
+            WHERE mileage > 0 AND COALESCE(BTRIM(vin), '') <> '' AND COALESCE(BTRIM(r_o_no), '') <> ''
+            UNION ALL
+            SELECT UPPER(BTRIM(vin)), UPPER(BTRIM(r_o_no)), mileage
+            FROM kia_open_ro_yearly
+            WHERE mileage > 0 AND COALESCE(BTRIM(vin), '') <> '' AND COALESCE(BTRIM(r_o_no), '') <> ''
+          ) odo
+          GROUP BY vin, ro_no
+        ) psf ON psf.vin = UPPER(BTRIM(b.vin)) AND psf.ro_no = UPPER(BTRIM(b.ro_no))
+        WHERE UPPER(BTRIM(b.vin)) IN (${sql.join(vins.map((v) => sql`${v}`), sql`, `)})
+        ORDER BY b.bill_date DESC NULLS LAST
       `),
       db.execute(sql`
         SELECT UPPER(BTRIM(COALESCE(vin_no, ''))) AS vin, complaint_no, complaint_date, close_date, vehicle_model
@@ -1118,7 +1279,7 @@ export async function getKiaCustomerProfile(
       })()),
       // Every row is our own pre-delivery inspection: a service count with no real customer visit.
       nviOnly: services.length > 0 && services.every((s) => isNvi(str(s.work_type))),
-      services: services.slice(0, 50).map((s) => ({
+      services: withMileageDeltas(services).slice(0, 50).map((s) => ({
         roNo: str(s.ro_no),
         billNo: str(s.bill_no),
         billDate: dateStr(s.bill_date),
@@ -1128,6 +1289,9 @@ export async function getKiaCustomerProfile(
         workType: str(s.work_type),
         advisor: str(s.service_advisor),
         amount: money(s.total_amt),
+        // The odometer at this visit, and the distance since the previous one. See withMileageDeltas.
+        mileage: money(s.mileage),
+        mileageSinceLast: money(s.__mileageSinceLast),
         billStatus: str(s.bill_status),
         labour: money(s.labour_amt),
         parts: money(s.part_amt),

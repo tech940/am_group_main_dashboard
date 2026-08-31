@@ -65,12 +65,20 @@ function GroupLabel({ label }: { label: string }) {
 
   return (
     <div className="flex items-center gap-2 px-1 pb-2 pt-4 first:pt-0">
+      {/*
+        * Group headings take the same neutral grey as the module icons — see getIconBadgeStyle.
+        * These were teal, indigo and a hardcoded #055B65; the hardcoded one also pinned the heading
+        * to a single theme, so it stayed teal when the dashboard theme changed around it.
+        *
+        * Favourites keeps its FILLED bookmark. That is a shape difference, not a colour one, and it
+        * still reads at a glance in monochrome — which is the point.
+        */}
       {isFav ? (
-        <Bookmark className="h-3.5 w-3.5 fill-[#055B65] text-[#055B65] shrink-0" />
+        <Bookmark className="h-3.5 w-3.5 fill-slate-400 text-slate-400 shrink-0" />
       ) : isBranch ? (
-        <Building2 className="h-3.5 w-3.5 text-teal-500 shrink-0" />
+        <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
       ) : (
-        <LayoutGrid className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+        <LayoutGrid className="h-3.5 w-3.5 text-slate-400 shrink-0" />
       )}
       <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500/90 select-none">
         {label}
@@ -79,28 +87,30 @@ function GroupLabel({ label }: { label: string }) {
   )
 }
 
-// ─── Module Icon Badge Colors ────────────────────────────────────────────────
-function getIconBadgeStyle(label: string, active?: boolean) {
+/**
+ * Module icon treatment — ONE neutral colour for every section.
+ *
+ * ── Why the colours went ──────────────────────────────────────────────────────────────────────
+ * This used to map keywords in the label to seventeen different tints: blue for bookings, emerald
+ * for approvals, purple for petty cash, rose for renewals, and so on. Three problems with that:
+ *
+ *   1. The colour meant NOTHING. It was assigned by substring, so "Vendor Payment" and "Insurance"
+ *      came out the same teal for no shared reason, while "Purchase Order" (sky) and "Petty Cash"
+ *      (purple) differed for no reason either. Colour that does not encode anything still costs the
+ *      reader attention, and a sidebar is scanned, not studied.
+ *   2. It fought the one colour that DOES mean something — the active item. When every row is
+ *      already coloured, the selected row stops standing out.
+ *   3. It was keyword-matched, so a section renamed tomorrow silently changes colour, and a new
+ *      section falls through to grey — the palette drifted on its own.
+ *
+ * Now: slate for everything at rest, and the active pill keeps white-on-navy. The nav has exactly
+ * one colour, and it marks where you are.
+ *
+ * ⚠️ `active` must stay first. Without it the active row would render slate-on-navy and become the
+ * hardest row to read rather than the easiest.
+ */
+function getIconBadgeStyle(_label: string, active?: boolean) {
   if (active) return 'bg-white/20 text-white'
-
-  const l = label.toLowerCase()
-  if (l.includes('booking') || l.includes('dashboard')) return 'bg-blue-100 text-blue-600'
-  if (l.includes('discount') || l.includes('approval')) return 'bg-emerald-100 text-emerald-600'
-  if (l.includes('cockpit'))                             return 'bg-blue-100 text-blue-600'
-  if (l.includes('delegation') || l.includes('task'))   return 'bg-emerald-100 text-emerald-600'
-  if (l.includes('purchase') || l.includes('order'))    return 'bg-sky-100 text-sky-600'
-  if (l.includes('petty') || l.includes('cash'))        return 'bg-purple-100 text-purple-600'
-  if (l.includes('vendor payment'))                     return 'bg-teal-100 text-teal-600'
-  if (l.includes('vendor registry'))                    return 'bg-teal-100 text-teal-600'
-  if (l.includes('renewal') || l.includes('pipeline')) return 'bg-rose-100 text-rose-500'
-  if (l.includes('call') || l.includes('analysis'))     return 'bg-indigo-100 text-indigo-600'
-  if (l.includes('data') || l.includes('health'))       return 'bg-emerald-100 text-emerald-600'
-  if (l.includes('customer') || l.includes('360'))      return 'bg-teal-100 text-[#055B65]'
-  if (l.includes('admin'))                              return 'bg-teal-100 text-teal-600'
-  if (l.includes('effective') || l.includes('access')) return 'bg-blue-100 text-blue-600'
-  if (l.includes('scrap'))                              return 'bg-amber-100 text-amber-600'
-  if (l.includes('insurance'))                          return 'bg-teal-100 text-teal-600'
-  if (l.includes('finance'))                            return 'bg-violet-100 text-violet-600'
   return 'bg-slate-100 text-slate-600'
 }
 
@@ -152,14 +162,19 @@ function FavBookmark({
       aria-label={favourite.active ? `Remove ${label} from favourites` : `Add ${label} to favourites`}
       title={favourite.active ? 'Remove from favourites' : 'Add to favourites'}
     >
+      {/*
+        * Neutral like every other icon in the nav. The FILL is what says "favourited" — a solid
+        * bookmark against an outlined one — so the state survives losing the teal, and it survives
+        * for a colour-blind reader too, which it did not when hue was doing the work.
+        */}
       <Bookmark
         className={cn(
           'h-3.5 w-3.5 transition-colors',
           favourite.active
-            ? 'fill-[#055B65] text-[#055B65]'
+            ? 'fill-slate-500 text-slate-500'
             : activeItem
             ? 'text-white/60 hover:text-white'
-            : 'text-slate-300 hover:text-[#055B65]'
+            : 'text-slate-300 hover:text-slate-500'
         )}
       />
     </button>
@@ -287,14 +302,33 @@ function AccordionRow({
       {/* Label */}
       <span className="flex-1 truncate text-left leading-tight flex items-center gap-1.5 min-w-0">
         <span className="truncate">{node.label}</span>
+        {/*
+          * The 360 chip is the ONE accent left in the nav, and it now comes from the THEME rather
+          * than a literal.
+          *
+          * It was `bg-teal-50 text-[#055B65]` — a hardcoded tropical-teal that (a) clashed with the
+          * sidebar's own lavender surface (#EEF4FF), which is why it read as wrong rather than as
+          * special, and (b) stayed teal when the dashboard theme changed around it, because a hex
+          * literal cannot follow a token.
+          *
+          * --dashboard-primary-soft / -primary / -primary-border is the app's existing chip triple.
+          * On the default theme that is #f2f5ff on #4B49AC — the same family as the sidebar surface,
+          * so it belongs to the nav instead of fighting it, and it re-tints with the theme.
+          *
+          * ⚠️ Inline style, not a Tailwind arbitrary value: `bg-[var(--x)]` has silently failed
+          * elsewhere in this codebase, and a chip that renders transparent would be invisible.
+          */}
         {(node.key === '/customer-360' || node.label.toLowerCase().includes('customer 360')) && (
           <span
             className={cn(
               "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black tracking-tight shrink-0 shadow-2xs border transition-colors select-none",
-              node.active
-                ? "bg-white/20 text-white border-white/30"
-                : "bg-teal-50 text-[#055B65] border-teal-200/80"
+              node.active && "bg-white/20 text-white border-white/30",
             )}
+            style={node.active ? undefined : {
+              background: 'var(--dashboard-primary-soft, #f2f5ff)',
+              color: 'var(--dashboard-primary, #4B49AC)',
+              borderColor: 'var(--dashboard-primary-border, #cbd8ff)',
+            }}
             title="360° Customer Intelligence"
           >
             <svg

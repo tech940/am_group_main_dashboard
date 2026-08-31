@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useDeferredValue, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { MainLayout } from '@/components/layout/main-layout'
+// The ONE milestone list, shared with the server timeline builder so the two cannot drift.
+import { isMilestoneEvent } from '@/lib/kia/customer-profile/timeline'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
@@ -298,6 +300,56 @@ function fmtMoneyCompact(value: number | null | undefined): string | null {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency', currency: 'INR', maximumFractionDigits: 0,
   }).format(parsed)
+}
+
+/**
+ * "3 months ago" / "in 12 days" — the form someone scanning a list of customers actually reads.
+ *
+ * An exact date answers "when"; this answers "is that a problem", which is the question a directory
+ * is for. The exact date stays in the tooltip so nothing is lost.
+ */
+function relativeDays(iso: string | null): { days: number; text: string } | null {
+  if (!iso) return null
+  const then = Date.parse(`${iso}T00:00:00Z`)
+  if (Number.isNaN(then)) return null
+  const today = new Date()
+  const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  const days = Math.round((then - todayUtc) / 86_400_000)
+  const abs = Math.abs(days)
+  const unit = abs < 31 ? `${abs} day${abs === 1 ? '' : 's'}`
+    : abs < 365 ? `${Math.round(abs / 30)} month${Math.round(abs / 30) === 1 ? '' : 's'}`
+      : `${(abs / 365).toFixed(abs < 730 ? 1 : 0)} years`
+  if (days === 0) return { days, text: 'today' }
+  return { days, text: days > 0 ? `in ${unit}` : `${unit} ago` }
+}
+
+/**
+ * The one insurance sentence a card should carry.
+ *
+ * ⚠️ "No policy on record" is never "uninsured". The feed only covers policies sold through the
+ * dealership, so a customer insured elsewhere looks identical to one with no cover at all — and
+ * telling an employee the second when we only know the first is how a customer gets a wrong call.
+ */
+function insuranceState(row: KiaCustomerSummary): { label: string; tone: string; icon: typeof Shield } {
+  const upcoming = relativeDays(row.nextPolicyExpiry)
+  if (upcoming) {
+    // 30 days is the renewal window the insurance section already works to.
+    const urgent = upcoming.days <= 30
+    return {
+      label: `Expires ${upcoming.text}`,
+      tone: urgent ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-slate-600 bg-slate-50 border-slate-200',
+      icon: urgent ? ShieldAlert : ShieldCheck,
+    }
+  }
+  const lapsed = relativeDays(row.latestPolicyExpiry)
+  if (lapsed) {
+    return {
+      label: `Lapsed ${lapsed.text}`,
+      tone: 'text-rose-700 bg-rose-50 border-rose-200',
+      icon: ShieldAlert,
+    }
+  }
+  return { label: 'No policy with us', tone: 'text-slate-500 bg-slate-50 border-slate-200', icon: Shield }
 }
 
 function fmtDate(value: string | null) {
@@ -710,28 +762,75 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
                             <p className="text-[11px] text-slate-400 truncate">
                               {row.city || 'Location unrecorded'}
                             </p>
+                            {/* The car, named — the counts said "CARS 1" without ever saying which. */}
+                            {row.primaryModel && (
+                              <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 truncate">
+                                <Car className="h-3 w-3 text-slate-400 shrink-0" />
+                                <span className="truncate">{row.primaryModel}</span>
+                                {row.vehicleCount > 1 && (
+                                  <span className="text-slate-400 font-medium shrink-0">+{row.vehicleCount - 1}</span>
+                                )}
+                              </p>
+                            )}
                           </div>
                         </div>
 
-                        {/* Telemetry Matrix */}
-                        <div className="grid grid-cols-4 gap-1 p-2 rounded-xl bg-slate-50 border border-slate-100 text-center">
-                          <div>
-                            <span className="text-[9px] font-semibold text-slate-400 block">ENQ</span>
-                            <span className="text-xs font-black text-slate-800 tabular-nums">{row.enquiryCount}</span>
+                        {/*
+                          * ── WHAT THIS CUSTOMER LOOKS LIKE ────────────────────────────────────
+                          *
+                          * This replaced a four-up strip of ENQ / BOOK / CARS / SVC counts. Those
+                          * counted our RECORDS; these say when we last saw the customer, what the
+                          * relationship is worth, and whether anything is about to lapse — which is
+                          * what somebody scanning 12,654 cards is actually looking for.
+                          */}
+                        <dl className="rounded-xl bg-slate-50 border border-slate-100 divide-y divide-slate-100 overflow-hidden">
+                          <div className="flex items-center gap-2 px-2.5 py-2">
+                            <Wrench className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <dt className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide shrink-0">Last service</dt>
+                            <dd
+                              className="ml-auto text-[11px] font-bold text-slate-800 truncate"
+                              title={row.lastServiceDate ? fmtDate(row.lastServiceDate) : undefined}
+                            >
+                              {/*
+                                * The NVI-excluded date: our own pre-delivery inspection is not a
+                                * customer visit, and counting it made 126 cars look recently seen.
+                                */}
+                              {relativeDays(row.lastServiceDate)?.text ?? (
+                                <span className="font-semibold text-slate-400">Never serviced</span>
+                              )}
+                            </dd>
                           </div>
-                          <div>
-                            <span className="text-[9px] font-semibold text-slate-400 block">BOOK</span>
-                            <span className="text-xs font-black text-slate-800 tabular-nums">{row.bookingCount}</span>
+
+                          <div className="flex items-center gap-2 px-2.5 py-2">
+                            {(() => {
+                              const ins = insuranceState(row)
+                              const InsIcon = ins.icon
+                              return (
+                                <>
+                                  <InsIcon className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                  <dt className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide shrink-0">Insurance</dt>
+                                  <dd className={cn('ml-auto px-1.5 py-0.5 rounded border text-[11px] font-bold truncate', ins.tone)}>
+                                    {ins.label}
+                                  </dd>
+                                </>
+                              )
+                            })()}
                           </div>
-                          <div>
-                            <span className="text-[9px] font-semibold text-slate-400 block">CARS</span>
-                            <span className="text-xs font-black text-[var(--dashboard-primary)] tabular-nums">{row.vehicleCount}</span>
+
+                          <div className="flex items-center gap-2 px-2.5 py-2">
+                            <CreditCard className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <dt className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide shrink-0">Workshop spend</dt>
+                            <dd className="ml-auto text-[11px] font-bold text-slate-800 tabular-nums truncate">
+                              {/*
+                                * Zero is printed as "Not billed", not as Rs 0: 2,398 of 5,711 visits
+                                * carry no price, and Rs 0 would read as "the work was free".
+                                */}
+                              {row.serviceSpend && row.serviceSpend > 0
+                                ? fmtMoney(row.serviceSpend)
+                                : <span className="font-semibold text-slate-400">Not billed</span>}
+                            </dd>
                           </div>
-                          <div>
-                            <span className="text-[9px] font-semibold text-slate-400 block">SVC</span>
-                            <span className="text-xs font-black text-slate-800 tabular-nums">{row.serviceCount}</span>
-                          </div>
-                        </div>
+                        </dl>
 
                         {/* Bottom Gaps & CTA */}
                         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
@@ -751,9 +850,20 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
                             )}
                           </div>
 
-                          <span className="text-xs font-bold text-slate-500 group-hover:text-[var(--dashboard-primary)] inline-flex items-center gap-1 transition-colors shrink-0">
-                            Dossier <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
-                          </span>
+                          {/*
+                            * A real button, not a decorative span. The whole card is clickable, but a
+                            * span cannot be reached by keyboard and reads as nothing to a screen
+                            * reader — and the label now says what it opens rather than naming a
+                            * document type.
+                            */}
+                          <button
+                            type="button"
+                            onClick={(event) => { event.stopPropagation(); setOpenKey(row.key) }}
+                            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 group-hover:border-[var(--dashboard-primary)] group-hover:text-[var(--dashboard-primary)] hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--dashboard-primary)] transition-colors cursor-pointer"
+                          >
+                            View details
+                            <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+                          </button>
                         </div>
                       </div>
                     )
@@ -1130,9 +1240,23 @@ function StructuredActivityStream({
     service: false,
   })
 
+  /*
+   * ── MILESTONES BY DEFAULT ────────────────────────────────────────────────────────────────────
+   *
+   * The stream used to list every step the DMS records — "Enquiry created", "Test drive", "Booking
+   * created", "Vehicle invoiced" — around the one line a customer would recognise, "Vehicle
+   * delivered". That is the salesperson's paperwork, not the customer's story, and on an ordinary
+   * buyer it is five rows of noise hiding the purchase.
+   *
+   * Nothing is discarded: "View Full Timeline" turns every one of them back on. The default is the
+   * story; the full record is one click away.
+   */
+  const showEverything = expandedSections.sales && expandedSections.insurance && expandedSections.service
+
   const salesEvents = useMemo(() => {
-    return events.filter((e) => e.category === 'sales' || e.category === 'accessories' || e.category === 'communication')
-  }, [events])
+    const inScope = events.filter((e) => e.category === 'sales' || e.category === 'accessories' || e.category === 'communication')
+    return showEverything ? inScope : inScope.filter(isMilestoneEvent)
+  }, [events, showEverything])
 
   const insuranceEvents = useMemo(() => {
     return events.filter((e) => e.category === 'insurance')
@@ -1152,6 +1276,11 @@ function StructuredActivityStream({
   const sortedSales = useMemo(() => [...salesEvents].sort(sortFn), [salesEvents, sortFn])
   const sortedInsurance = useMemo(() => [...insuranceEvents].sort(sortFn), [insuranceEvents, sortFn])
   const sortedService = useMemo(() => [...serviceEvents].sort(sortFn), [serviceEvents, sortFn])
+
+  const hiddenSalesSteps = useMemo(() => {
+    const inScope = events.filter((e) => e.category === 'sales' || e.category === 'accessories' || e.category === 'communication')
+    return inScope.length - inScope.filter(isMilestoneEvent).length
+  }, [events])
 
   const showSales = activeTab === 'all' || activeTab === 'sales'
   const showInsurance = activeTab === 'all' || activeTab === 'insurance'
@@ -1266,8 +1395,17 @@ function StructuredActivityStream({
                   Sales &amp; Delivery
                 </h4>
                 <p className="text-xs text-slate-500 font-normal">
-                  {sortedSales.length} {sortedSales.length === 1 ? 'Activity' : 'Activities'}
+                  {sortedSales.length} {sortedSales.length === 1 ? 'Milestone' : 'Milestones'}
                 </p>
+                {/*
+                  * Say what is being held back, so a shorter list reads as a decision rather than as
+                  * missing data. Suppressed only while the full timeline is off.
+                  */}
+                {!showEverything && hiddenSalesSteps > 0 && (
+                  <p className="text-[11px] text-slate-400 font-normal">
+                    +{hiddenSalesSteps} enquiry {hiddenSalesSteps === 1 ? 'step' : 'steps'} hidden
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1502,6 +1640,8 @@ function StructuredActivityStream({
                       <th className="px-4 py-3">Activity</th>
                       <th className="px-4 py-3 whitespace-nowrap">Job Card / ID</th>
                       <th className="px-4 py-3 whitespace-nowrap">Service Type</th>
+                      {/* The odometer, and how far the car ran since the previous visit. */}
+                      <th className="px-4 py-3 text-right whitespace-nowrap">Odometer</th>
                       <th className="px-4 py-3">Details</th>
                       <th className="px-4 py-3 text-right whitespace-nowrap">Amount (₹)</th>
                       <th className="px-4 py-3 text-center whitespace-nowrap">Status</th>
@@ -1548,6 +1688,30 @@ function StructuredActivityStream({
                           {/* Service Type */}
                           <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-700">
                             {serviceType}
+                          </td>
+
+                          {/*
+                            * Odometer at the visit, with the distance since the previous one beneath.
+                            * Both are absent on roughly a third of billed visits, and an absent
+                            * reading is shown as a dash — never 0, which would claim the car had not
+                            * moved.
+                            */}
+                          <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
+                            {typeof item.metadata?.odometer === 'number' ? (
+                              <>
+                                <span className="font-semibold text-slate-800">
+                                  {Math.round(item.metadata.odometer).toLocaleString('en-IN')}
+                                  <span className="ml-0.5 text-[10px] font-medium text-slate-400">km</span>
+                                </span>
+                                {typeof item.metadata?.kmSinceLast === 'number' && (
+                                  <span className="block text-[11px] font-medium text-[#EA580C]">
+                                    +{Math.round(item.metadata.kmSinceLast).toLocaleString('en-IN')} since last
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
                           </td>
 
                           {/* Details */}
@@ -1607,7 +1771,11 @@ function StructuredActivityStream({
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
         >
           <Calendar className="h-4 w-4 text-slate-500" />
-          <span>{expandedSections.sales && expandedSections.insurance && expandedSections.service ? 'Collapse Timeline' : 'View Full Timeline'}</span>
+          <span>
+            {showEverything
+              ? 'Show key milestones only'
+              : 'View full timeline — every enquiry, test drive and invoice'}
+          </span>
         </button>
       </div>
     </div>
@@ -1621,18 +1789,35 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
 
   const totalServices = profile.vehicles.reduce((acc, v) => acc + (v.serviceCount || 0), 0)
 
+  /*
+   * ── THE TOTAL MUST BE AUDITABLE ──────────────────────────────────────────────────────────────
+   *
+   * It used to render as one figure with the components hidden in a `title` tooltip, so a customer
+   * showing "Rs 12,278" against a service table where most rows read "—" looked simply wrong. The
+   * money is real, but it comes from three different places and only one of them was on screen.
+   *
+   * The parts are kept and printed beneath the total. A component that is zero is omitted rather
+   * than printed as "Rs 0", which would imply we hold a nil figure rather than no figure.
+   */
   const spend = profile.vehicles.reduce(
     (acc, v) => {
-      if (v.serviceSpend !== null && v.serviceSpend !== undefined) acc.total += v.serviceSpend
-      if (v.accessoriesSpend !== null && v.accessoriesSpend !== undefined) acc.total += v.accessoriesSpend
+      if (v.serviceSpend !== null && v.serviceSpend !== undefined) acc.service += v.serviceSpend
+      if (v.accessoriesSpend !== null && v.accessoriesSpend !== undefined) acc.accessories += v.accessoriesSpend
       acc.priced += v.servicesBilled || 0
       acc.unpriced += v.servicesUnbilled || 0
+      // A cancelled policy is not money the customer spent with us.
       const premium = v.insurance?.cancelled ? null : v.insurance?.grossPremium
-      if (premium !== null && premium !== undefined) acc.total += premium
+      if (premium !== null && premium !== undefined) acc.insurance += premium
       return acc
     },
-    { total: 0, priced: 0, unpriced: 0 },
+    { service: 0, accessories: 0, insurance: 0, priced: 0, unpriced: 0 },
   )
+  const spendTotal = spend.service + spend.accessories + spend.insurance
+  const spendParts = [
+    { label: 'Workshop', value: spend.service },
+    { label: 'Insurance', value: spend.insurance },
+    { label: 'Accessories', value: spend.accessories },
+  ].filter((part) => part.value > 0)
 
   const filteredEvents = useMemo(() => {
     if (!selectedVin) return rawEvents
@@ -1700,18 +1885,31 @@ function DossierView({ profile, caps, onClose }: { profile: ProfileWithStory; ca
             </div>
 
             <div className="flex items-center gap-3">
-              <div
-                className="text-right bg-white/10 backdrop-blur-xs px-5 py-3 rounded-2xl border border-white/15"
-                title="Workshop bills + insurance premium + accessories."
-              >
+              <div className="text-right bg-white/10 backdrop-blur-xs px-5 py-3 rounded-2xl border border-white/15">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
                   Total Spend Recorded
                 </span>
                 <span className="text-xl sm:text-2xl font-black text-white block mt-0.5 font-sans tabular-nums">
-                  {fmtMoney(spend.total) ?? '—'}
+                  {fmtMoney(spendTotal) ?? '—'}
                 </span>
-                <span className="text-[10px] text-slate-400 block mt-0.5 font-medium">
+                {/* Where the number comes from, on the face of it rather than in a tooltip. */}
+                {spendParts.length > 0 && (
+                  <span className="flex flex-wrap justify-end gap-x-3 gap-y-0.5 mt-1.5">
+                    {spendParts.map((part) => (
+                      <span key={part.label} className="text-[10px] font-semibold text-slate-300 tabular-nums">
+                        <span className="text-slate-500 font-medium">{part.label}</span>{' '}
+                        {fmtMoney(part.value)}
+                      </span>
+                    ))}
+                  </span>
+                )}
+                <span className="text-[10px] text-slate-400 block mt-1 font-medium">
                   {profile.vehicles.length} {profile.vehicles.length === 1 ? 'Vehicle' : 'Vehicles'} • {totalServices} {totalServices === 1 ? 'Service' : 'Services'}
+                  {/*
+                    * Unbilled visits are named, because they are the reason the workshop figure is
+                    * lower than the visit count suggests: 2,398 of 5,711 rows carry no price.
+                    */}
+                  {spend.unpriced > 0 && ` • ${spend.unpriced} not billed`}
                 </span>
               </div>
             </div>

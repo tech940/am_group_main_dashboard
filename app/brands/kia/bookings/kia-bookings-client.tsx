@@ -81,6 +81,7 @@ import {
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { AddBankBranch } from '@/components/kia/add-bank-branch'
 import {
   AnimatedNumber,
   AnimatePresence,
@@ -7136,7 +7137,19 @@ function EmailQuoteDialog({
 
   const totals = pricing.totals
   const bankOptions = useMemo(() => getKiaBankOptions(banks), [banks])
-  const filteredBranches = pricing.branchOptions
+  /*
+   * Branches added from this dialog, merged over the server's list.
+   *
+   * ⚠️ Invalidating the options query is NOT enough on its own: `banks` reaches this dialog as a
+   * PROP, and its parent may have sourced it from `priceOptions` rather than the query, in which
+   * case a refetch changes nothing here. Holding the addition locally makes the new branch
+   * selectable immediately whichever way the list arrived; the server copy catches up on reload.
+   */
+  const [addedBranches, setAddedBranches] = useState<string[]>([])
+  const filteredBranches = useMemo(() => {
+    const merged = [...pricing.branchOptions, ...addedBranches]
+    return Array.from(new Set(merged.filter(Boolean)))
+  }, [pricing.branchOptions, addedBranches])
   const isCashPayment = form.bankName.toUpperCase() === 'CASH'
   const filteredTrims = useMemo(() => {
     return trims.filter((t) => !form.modelName || t.model === form.modelName).map((t) => t.trim_description)
@@ -7301,6 +7314,18 @@ function EmailQuoteDialog({
                         {filteredBranches.map((br) => <SelectItem key={br} value={br}>{br}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                    {/*
+                      * A Select can only offer what it was given, so a branch missing from the sheet
+                      * used to block the booking entirely. Added branches go to the shared list, so
+                      * the proforma and Finance get them too.
+                      */}
+                    <AddBankBranch
+                      bankName={form.bankName}
+                      onAdded={(branch) => {
+                        setAddedBranches((prev) => (prev.includes(branch) ? prev : [...prev, branch]))
+                        update('bankBranch', branch)
+                      }}
+                    />
                   </Field>
                 )}
                 <Field label="Loan Amount">

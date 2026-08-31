@@ -143,6 +143,18 @@ export async function listSalesOnlyCustomers(
     phone: null,
     email: null,
     city: (row.city as string) || null,
+    /*
+     * ⚠️ NULL on purpose, in all five. Hyundai and Platinum have a SALES feed and nothing else — no
+     * repair orders, no insurance policies — so there is no last service, no spend and no expiry to
+     * report. Filling these with 0 would say "they have never spent anything with us", which is a
+     * claim about the customer; null says "we do not hold that feed for this brand", which is a
+     * claim about us. The card renders the second.
+     */
+    lastServiceDate: null,
+    serviceSpend: null,
+    nextPolicyExpiry: null,
+    latestPolicyExpiry: null,
+    primaryModel: null,
     dealerCode: String(row.outlet || '') || null,
     enquiryCount: 0,
     bookingCount: 0,
@@ -213,6 +225,18 @@ export async function getSalesOnlyCustomerProfile(
     phone: null,
     email: null,
     city: (first.city as string) || null,
+    /*
+     * ⚠️ NULL on purpose, in all five. Hyundai and Platinum have a SALES feed and nothing else — no
+     * repair orders, no insurance policies — so there is no last service, no spend and no expiry to
+     * report. Filling these with 0 would say "they have never spent anything with us", which is a
+     * claim about the customer; null says "we do not hold that feed for this brand", which is a
+     * claim about us. The card renders the second.
+     */
+    lastServiceDate: null,
+    serviceSpend: null,
+    nextPolicyExpiry: null,
+    latestPolicyExpiry: null,
+    primaryModel: null,
     dealerCode: String(first.outlet || '') || null,
     enquiryCount: 0,
     bookingCount: 0,

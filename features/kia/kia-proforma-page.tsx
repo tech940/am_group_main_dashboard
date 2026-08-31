@@ -63,6 +63,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { AddBankBranch } from '@/components/kia/add-bank-branch'
 import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
 import { kiaApprovalStage, KIA_APPROVAL_STAGE_LABELS, kiaStageActorLabel, pendingStageOf } from '@/lib/kia-proforma/approval'
 import { calculateKiaProformaPricing, getKiaBankOptions, getBranchesForBank } from '@/lib/kia-proforma/pricing'
@@ -821,6 +822,8 @@ type BookingPrefill = {
 }
 
 function GenerateProforma({ options, onSaved, bookingPrefill }: { options: OptionsPayload; onSaved: () => void; bookingPrefill?: BookingPrefill | null }) {
+  // Used to refresh the shared bank/branch list after a branch is added from this form.
+  const queryClient = useQueryClient()
   const [form, setForm] = useState<FormState>(() => {
     if (!bookingPrefill) return EMPTY_FORM
     // Map booking fields to proforma FormState
@@ -1150,7 +1153,24 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
             <Field label="Fuel Type"><Select value={form.fuelType} onValueChange={(value) => update('fuelType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['DIESEL', 'PETROL', 'ELECTRIC'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Bank" error={errors.bankName}><DataListInput listId="kia-banks" value={form.bankName} onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '', loanAmount: value.toUpperCase() === 'CASH' ? '0' : current.loanAmount }))} onBlur={canonicalizeBank} options={bankOptions} disabled={lockedFields.bankName} /></Field>
             {form.bankName && form.bankName.toUpperCase() !== 'CASH' && (
-              <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="kia-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} disabled={lockedFields.bankBranch} /></Field>
+              <Field label="Bank Branch" error={errors.bankBranch}>
+                <DataListInput listId="kia-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} disabled={lockedFields.bankBranch} />
+                {/*
+                  * This field already ACCEPTS a typed branch — canonicalizeBranch keeps an unknown
+                  * one rather than clearing it. What it never did was REMEMBER it, so the same
+                  * branch had to be retyped on every proforma and never reached Finance or the
+                  * booking form. This saves it to the shared list once.
+                  */}
+                {!lockedFields.bankBranch && (
+                  <AddBankBranch
+                    bankName={form.bankName}
+                    onAdded={async (branch) => {
+                      await queryClient.invalidateQueries({ queryKey: ['kia-proforma-options'] })
+                      update('bankBranch', branch)
+                    }}
+                  />
+                )}
+              </Field>
             )}
             {/* Loan Amount is disabled for CASH payments (nothing is financed). */}
             <Field label="Loan Amount"><TextInput type="number" value={form.loanAmount} disabled={form.bankName.toUpperCase() === 'CASH'} onChange={(event) => update('loanAmount', event.target.value)} /></Field>

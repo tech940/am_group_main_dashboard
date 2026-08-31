@@ -118,6 +118,82 @@ const push = (
   out.push({ date: d, category, title, detail, vin, reference, metadata })
 }
 
+/**
+ * Milestones a customer would recognise as something that happened TO them.
+ *
+ * ⚠️ The stream showed every funnel step the DMS records — enquiry created, test drive, booking
+ * created, vehicle invoiced — which is the SALESPERSON's paperwork, not the customer's story. On a
+ * normal buyer that is five rows of noise around the one line that matters. These stay in the data
+ * and remain visible under "View Full Timeline"; they are simply not the default reading.
+ */
+const MILESTONE_TITLES = new Set([
+  'Vehicle delivered',
+  'Payment received',
+  'Service visit',
+  'Accessories purchased',
+  'Insurance policy started',
+  'Insurance policy expires',
+  'Insurance renewal due',
+  'Extended warranty purchased',
+  'Complaint raised',
+  'Enquiry lost',
+])
+
+/**
+ * Takes the minimal shape rather than TimelineEvent so the client page — which declares its own
+ * structurally-identical type — can share this one list instead of keeping a second copy of it.
+ * A duplicated list here is how the screen and the server drift.
+ */
+export function isMilestoneEvent(event: { title: string }): boolean {
+  return MILESTONE_TITLES.has(event.title)
+}
+
+/**
+ * Collapse events that describe the SAME real-world happening.
+ *
+ * ⚠️ "Vehicle delivered" was emitted twice for every ordinary purchase — once from the enquiry row
+ * (which carries the funnel's delivery_date) and once from the vehicle row (which carries the sales
+ * feed's). Same customer, same car, same day, two lines. The same is true of "Booking created".
+ *
+ * The richer record wins: the one carrying a VIN, and failing that the one with more metadata. A
+ * naive "keep the first" would have kept the enquiry copy, which has no VIN and so cannot be
+ * filtered by vehicle.
+ */
+function dedupeSameEvent(events: TimelineEvent[]): TimelineEvent[] {
+  /*
+   * ⚠️ The two copies do NOT share their detail text, which is why an exact-match key misses them.
+   * The enquiry copy reads "SONET"; the vehicle copy reads "SONET · JK14L3988". Grouping is
+   * therefore on the MODEL — the first segment of the detail — plus the date and the title.
+   */
+  const groupKey = (e: TimelineEvent) => {
+    const model = String(e.detail || '').split('·')[0].trim().toLowerCase()
+    return `${e.date}|${e.title}|${model}`
+  }
+
+  const groups = new Map<string, TimelineEvent[]>()
+  const order: string[] = []
+  for (const e of events) {
+    const k = groupKey(e)
+    if (!groups.has(k)) { groups.set(k, []); order.push(k) }
+    groups.get(k)!.push(e)
+  }
+
+  const out: TimelineEvent[] = []
+  for (const k of order) {
+    const group = groups.get(k)!
+    if (group.length === 1) { out.push(group[0]); continue }
+    /*
+     * A VIN-bearing event is a real vehicle record; a VIN-less one on the same day for the same
+     * model is the funnel's shadow of it. Keep EVERY VIN-bearing event — a dealership genuinely
+     * takes delivery of several cars of one model on one day, and collapsing those would erase
+     * real handovers — and drop the shadows only when a real record exists to shadow.
+     */
+    const withVin = group.filter((e) => e.vin)
+    out.push(...(withVin.length ? withVin : [group[0]]))
+  }
+  return out
+}
+
 /** Every dated event on this customer, newest first. */
 export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEvent[] {
   const out: TimelineEvent[] = []
@@ -226,6 +302,15 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
           ...(v.insurance.cancelled ? { 'Policy Cancelled': 'Yes — this policy is not in force' } : {}),
           // Gross is what the customer actually paid; net is before tax. Both are present on every
           // policy we hold, so no "not available" wording is needed here.
+          /*
+           * ⚠️ RAW numbers as well as the formatted strings. The insurance table's Premium column
+           * reads `metadata.grossPremium`, and only the pre-formatted 'Premium Paid (incl. tax)'
+           * key existed — so every policy showed "—" in that column while its premium was still
+           * being counted into the header's Total Spend. The total looked invented.
+           */
+          grossPremium: v.insurance.grossPremium ?? null,
+          policyNo: v.insurance.policyNo ?? null,
+          insurer: v.insurance.insurer ?? null,
           'Premium Paid (incl. tax)': rupees(v.insurance.grossPremium, 'Not recorded'),
           'Net Premium': rupees(v.insurance.netPremium, 'Not recorded'),
           'Policy Inception Date': iso(v.insurance.effectiveDate),
@@ -247,6 +332,9 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
           'Policy Number': v.insurance.policyNo,
           'Insurance Company': v.insurance.insurer,
           // The premium on the EXPIRING policy — the number the renewal conversation starts from.
+          grossPremium: v.insurance.grossPremium ?? null,
+          policyNo: v.insurance.policyNo ?? null,
+          insurer: v.insurance.insurer ?? null,
           'Premium Last Paid': rupees(v.insurance.grossPremium, 'Not recorded'),
           'Policy Expiry Date': iso(v.insurance.expiryDate),
           'Policy Inception Date': iso(v.insurance.effectiveDate),
@@ -279,6 +367,13 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
           jobCard: jobCardRef,
           serviceType: s.workType || 'General Service',
           amount: s.amount,
+          /*
+           * The odometer at this visit and the distance since the previous one, as raw numbers for
+           * the table column. Both are null when the feed holds no reading — about a third of
+           * billed visits — and the table must render that absence rather than a 0.
+           */
+          odometer: s.mileage ?? null,
+          kmSinceLast: s.mileageSinceLast ?? null,
           billAmount: s.amount,
           labour: s.labour,
           parts: s.parts,
@@ -301,6 +396,12 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
             'Tax': rupees(s.tax, '—'),
           } : {}),
           ...(s.discount ? { 'Discount Given': rupees(s.discount) } : {}),
+          ...(s.mileage
+            ? { 'Odometer at Visit': `${Math.round(s.mileage).toLocaleString('en-IN')} km` }
+            : { 'Odometer at Visit': 'Not recorded on this job card' }),
+          ...(s.mileageSinceLast
+            ? { 'Distance Since Previous Visit': `${Math.round(s.mileageSinceLast).toLocaleString('en-IN')} km` }
+            : {}),
           'Service Advisor': s.advisor,
           'Invoice / Bill Date': iso(s.billDate),
           'Job Card (RO) Date': iso(s.roDate),
@@ -368,7 +469,9 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
 
   // Newest first, and stable within a day so a delivery never renders above the invoice that
   // produced it purely because of array order.
-  return out.sort((a, b) => (a.date === b.date ? a.category.localeCompare(b.category) : b.date.localeCompare(a.date)))
+  // Collapse the double-counted handover before anything downstream counts or renders it.
+  return dedupeSameEvent(out)
+    .sort((a, b) => (a.date === b.date ? a.category.localeCompare(b.category) : b.date.localeCompare(a.date)))
 }
 
 /**

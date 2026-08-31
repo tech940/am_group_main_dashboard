@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { AddBankBranch } from '@/components/kia/add-bank-branch'
 import {
   DELAY_REASONS, formatCountdown, formatCurrency, formatDate, formatDateTime,
   roleLabel, statusMeta, bankStatusMeta, str, isRealRemarkText, getFinanceRowMdRemarks,
@@ -483,6 +484,19 @@ export function FinanceDetail({ proformaId, canApprove, currentUserRole, onBack 
                 <option value="">{bankName ? 'Select a branch…' : 'Select a bank first'}</option>
                 {branchesForBank.map((b) => <option key={b} value={b}>{b}</option>)}
               </select>
+              {/*
+                * A native <select> cannot hold a value that is not among its options, so a missing
+                * branch used to be a hard stop here — the finance team had to ask a developer to run
+                * a script. On success the option list is refetched and the new branch selected, so
+                * the dialog can be finished without leaving it.
+                */}
+              <AddBankBranch
+                bankName={bankName}
+                onAdded={async (branch) => {
+                  await bankOptionsQuery.refetch()
+                  setBankBranch(branch)
+                }}
+              />
             </div>
           </div>
           <DialogFooter>
