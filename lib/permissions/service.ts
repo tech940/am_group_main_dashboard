@@ -52,7 +52,10 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // v31: adds the group_service_manager role. A new role changes every snapshot's shape, so a
 // stale v30 entry would resolve it as having no template at all.
 // v32: registers fuel_approvals in PERMISSION_GROUPS and SECTION_ROUTES for Access Map control.
-const PERMISSION_CACHE_VERSION = 'v32'
+// v33: the global-access blanket no longer REVOKES kia.approvals from the roles that staff its
+//      stages. Every ea/eba/ed/ceo/hr snapshot cached under v32 still says false, so without this
+//      bump the EA stays locked out for another 75 minutes and the fix reads as not working.
+const PERMISSION_CACHE_VERSION = 'v33'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -73,6 +76,21 @@ function isAdminOnlyPermission(permissionKey: string) {
 // land here automatically (see RESTRICTED_DEFAULT_SECTIONS in the registry).
 function isRestrictedDefaultPermission(permissionKey: string) {
   return RESTRICTED_DEFAULT_PERMISSION_KEYS.has(permissionKey)
+}
+
+/**
+ * The multi-brand Approvals section.
+ *
+ * ⚠️ The key stays `kia.approvals` for historical reasons — the section receives submissions from
+ * every brand, but renaming the key would silently kill every existing grant. See the note in
+ * BRAND_NEUTRAL_PERMISSION_GROUPS.
+ *
+ * Used only to stop the global-access blanket from revoking this section from the very roles that
+ * staff its stages (EA, HR, ED). See the comment at that call site for why the blanket cannot
+ * simply be made additive.
+ */
+function isApprovalsSectionPermission(permissionKey: string) {
+  return permissionKey === 'kia.approvals' || permissionKey.startsWith('kia.approvals.')
 }
 
 const PERMISSION_TABLE_NAMES = [
@@ -585,7 +603,30 @@ export function resolveEffectiveSnapshot(
   // defaults to visible. It also makes the Access Map's `defaultVisible` correct, so unticking a
   // box computes a real Deny delta (false) rather than "inherit" (null).
   if (hasGlobalAccessRole(role) && !isSuperAdminRole(role)) {
-    for (const key of Object.keys(roleDefaults)) roleDefaults[key] = !isAdminOnlyPermission(key) && !isRestrictedDefaultPermission(key)
+    for (const key of Object.keys(roleDefaults)) {
+      /*
+       * ── The blanket must not REVOKE the approvals section from its own approvers ─────────────
+       *
+       * This loop is an ASSIGNMENT, not a union, so for a restricted-default key it overwrites
+       * `true` with `false` — destroying what the tier bundle and the role's own template granted.
+       * `kia.approvals` is restricted-by-default (it is in SECTION_ROUTES but not in
+       * DEFAULT_VISIBLE_SECTIONS), so it was being revoked from every global-access role.
+       *
+       * Measured: ea, eba, ceo, hr AND ed all resolved `kia.approvals.view = false` — the ED while
+       * its own template grants view/approve/audit on that very group. Those roles ARE the approval
+       * stages: EA owns the `ea` stage, HR the `hr` stage, ED the KIA first stage. The section was
+       * being hidden from the people the workflow requires.
+       *
+       * ⚠️ NARROW ON PURPOSE. The obvious "just make the blanket additive" fix is NOT safe: measured
+       * across these roles it would also hand them user_management.create/edit/delete,
+       * access_control.view/edit, admin_audit.view, finance.approve, bank_sanctions.view and
+       * ca.view — because their TEMPLATES list those keys and only this blanket is holding them
+       * back. Preserving an already-`true` value for the approvals group alone grants nothing that
+       * was not already granted, and leaves every other restricted section exactly as it was.
+       */
+      if (roleDefaults[key] === true && isApprovalsSectionPermission(key)) continue
+      roleDefaults[key] = !isAdminOnlyPermission(key) && !isRestrictedDefaultPermission(key)
+    }
   }
   // Sensitive reports: deny by default to roles outside the top-management allowlist (still grantable).
   applySensitiveReportDefaults(roleDefaults, role)

@@ -168,7 +168,72 @@ const BRAND_WIDE_APPROVAL_ROLES = new Set([
   'accounts_team',
   'finance_head',
   'finance_team',
+  /*
+   * ── The EA is a MANDATORY stage, and all four of them were blind ──────────────────────────────
+   *
+   * Measured 2026-09-02: every active `ea` login saw 0 of 222 requests, while 23 worth Rs18,43,207
+   * sat at the EA stage — kia 6, hyundai 14, platinum 3, all inside the brands they hold. Nothing
+   * can pass EA without an EA, so the entire group's approval pipeline was stalled behind an empty
+   * screen, and the screen gave no hint that anything was being withheld.
+   *
+   * The cause is the fail-closed pin gate below: they carry brand='hyundai,platinum,kia' and
+   * `dealers = NULL`, so `allowed.size === 0` and every row was refused. The doc on
+   * canSeeAllApprovals names this exact group — "all 5 accounts, all 4 ea and all 3 branch_admin" —
+   * as the cost of failing closed. Accounts was subsequently carved out here and the EA never was.
+   *
+   * The Accounts argument applies verbatim: there is one EA function per BRAND, not one per
+   * showroom, so branch-scoping does not describe how the work is done — it only hides requests
+   * from the person the chain requires to move them.
+   *
+   * ⚠️ This is NOT the incident the header warns about. That was `hasGlobalAccessRole` letting nine
+   * roles see the whole GROUP. This set is brand-wide and `canAccessBrand` still runs first, so an
+   * EA holding 'hyundai,platinum,kia' sees those three brands and no honda or tata row. Pinning
+   * them instead was rejected for the same reason it was rejected for the Group Service Manager:
+   * a pin must be re-edited every time a branch opens or somebody types a new spelling into the
+   * public form, and when it goes stale it fails silently.
+   *
+   * `eba` is included because it is the same function; today its only holder happens to carry
+   * brand='all' and was therefore the one approver who could see anything.
+   */
+  'ea',
+  'eba',
+  /*
+   * ── HR sees every branch of its brand ─────────────────────────────────────────────────────────
+   *
+   * HR is a stage in this chain (payroll-type approvals at KIA), and there is one HR function per
+   * brand, not one per showroom — the same reason Accounts and the EA are here.
+   *
+   * It was pinned to JK402,JK501 instead, which hid the Banihal requests. And the pin could not be
+   * corrected: the Edit User dialog offered a "Banihal — approvals only (JK502)" checkbox that the
+   * save path silently discarded (parseUserDealers drops any code absent from the DMS registry), so
+   * the box reverted to unchecked on every save. That save bug is fixed separately in
+   * app/api/admin/users/route.ts, but the pin should never have been load-bearing for this role.
+   *
+   * ⚠️ Brand-wide, NOT group-wide — `holdsBrandStrictly` runs first, so the KIA HR sees every KIA
+   * branch and no Hyundai row.
+   */
+  'hr',
 ])
+
+/**
+ * Does this login's OWN brand assignment cover `rowBrand`?
+ *
+ * ⚠️ NOT `canAccessBrand`, and that difference is the whole point. That helper short-circuits to
+ * `true` for `hasGlobalAccessRole`, which covers ea, eba, ceo, ed, edp, process_coordinator and hr —
+ * so pairing it with a brand-wide carve-out silently grants GROUP-wide sight of every vendor name
+ * and amount, which is precisely the incident the header of this file says must never come back.
+ *
+ * Caught by measurement, not by reading: an honda-only EA scored 23 of 23 on a queue made entirely
+ * of kia, hyundai and platinum rows.
+ *
+ * Reads `users.brand` and nothing else: 'all' means all, a comma list means those, blank means none.
+ */
+function holdsBrandStrictly(appUser: AppUser, rowBrand: string): boolean {
+  if (hasAllBranchAccess(appUser.brand)) return true
+  const assigned = String(appUser.brand || '').trim().toLowerCase()
+  if (!assigned) return false
+  return assigned.split(',').map((b) => b.trim()).filter(Boolean).includes(rowBrand)
+}
 
 export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeRow): boolean {
   if (!appUser) return false
@@ -192,7 +257,7 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
    * looking at an empty section.
    */
   const role = String(appUser.role || '').trim().toLowerCase()
-  if (BRAND_WIDE_APPROVAL_ROLES.has(role)) return true
+  if (BRAND_WIDE_APPROVAL_ROLES.has(role) && holdsBrandStrictly(appUser, rowBrand)) return true
 
   /*
    * The GROUP SERVICE MANAGER owns the service approval stage for Hyundai and Platinum together, so

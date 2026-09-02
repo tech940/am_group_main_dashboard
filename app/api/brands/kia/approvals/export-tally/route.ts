@@ -4,7 +4,7 @@ import { kiaApprovalRequests, glAccounts } from '@/lib/db/schema'
 import { eq, and, or } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { filterVisibleApprovals } from '@/lib/kia/approval-scope'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requirePermission } from '@/lib/permissions/service'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
 export async function GET(req: NextRequest) {
@@ -13,10 +13,25 @@ export async function GET(req: NextRequest) {
     // approved voucher - 49 rows worth Rs 38,06,954 - with amount, vendor, requester name,
     // branch, GST and GL code. There is no middleware covering this path, so the guard has to
     // live here.
-    const denied = await requireBrandApiAccess('kia')
-    if (denied) return denied
+    /*
+     * ⚠️ NOT `requireBrandApiAccess('kia')`, which is what this used to call.
+     *
+     * The Approvals section is MULTI-BRAND — Hyundai, Platinum and MG all submit through it, and
+     * only the permission key is still named `kia.*` for historical reasons. Hardcoding the KIA
+     * brand check meant every non-KIA login 403'd on this endpoint, so Hyundai Accounts and
+     * Platinum Accounts could see their MD-approved vouchers on screen and then could not export a
+     * single one of them to Tally. Their own brand's payments, refused by a KIA brand gate.
+     *
+     * The permission gates the SECTION; `filterVisibleApprovals` below already restricts the rows
+     * to what this user may see, so a Hyundai login exports Hyundai vouchers and nothing else. That
+     * row filter — not the brand of the URL — is what keeps the CSV correctly scoped.
+     */
     const appUser = await getAuthenticatedAppUser()
     if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const permission = await requirePermission(appUser, 'kia.approvals.view')
+    if (!permission.allowed) {
+      return NextResponse.json({ error: permission.reason }, { status: 403 })
+    }
     // Fetch all fully approved requests (or you can filter by selectedIds query param)
     const { searchParams } = new URL(req.url)
     const selectedIdsParam = searchParams.get('ids')

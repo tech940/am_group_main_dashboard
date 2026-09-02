@@ -113,7 +113,8 @@
     "verify:insurance-360": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-insurance-360.ts",
     "verify:discount-chain": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-discount-chain.ts",
     "verify:customer-360-service-detail": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-customer-360-service-detail.ts",
-    "verify:approval-resubmit": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approval-resubmit.ts"
+    "verify:approval-resubmit": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approval-resubmit.ts",
+    "verify:approver-visibility": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approver-visibility.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

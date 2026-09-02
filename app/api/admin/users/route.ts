@@ -18,7 +18,7 @@ import {
   type BranchModuleAccessRoleValue,
 } from '@/lib/branch-module-access'
 import { isUserBranchValue } from '@/lib/branches'
-import { parseUserDealers } from '@/lib/dealers/registry'
+import { normalizeDealers } from '@/lib/admin/normalize-dealers'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import {
@@ -47,14 +47,6 @@ type CreateUserInput = {
 
 // Dealer/branch scope only applies to a single concrete brand that has a dealer registry.
 // Anything else (no brand, 'all', or multi-brand) clears the scope to null (= all branches).
-function normalizeDealers(brand: string | null | undefined, value: unknown): string | null {
-  if (!brand || brand === 'all' || brand.includes(',')) return null
-  const codes = Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : typeof value === 'string' ? value.split(',') : []
-  const valid = parseUserDealers(brand, codes.join(','))
-  return valid.length ? valid.join(',') : null
-}
 
 function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null

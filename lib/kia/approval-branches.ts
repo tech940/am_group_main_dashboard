@@ -75,7 +75,9 @@ export const APPROVAL_BRANCH_SYNONYMS: Record<string, readonly (readonly string[
   kia: [
     ['JK402', 'KIA-JM', 'JAMMU'],
     ['JK501', 'KIA-UD', 'UDHAMPUR'],
-    ['JK502', 'BANIHAL'],
+    // KIA-BN follows the same DMS-style prefix as KIA-JM and KIA-UD above. It was missed when
+    // Banihal was added, so its 2 rows were reachable by NO pin at all — not even one on JK502.
+    ['JK502', 'KIA-BN', 'BANIHAL'],
   ],
   // Hyundai files the branch NAME as the dealer code; the N-codes are what the DMS registry pins.
   hyundai: [
@@ -84,7 +86,10 @@ export const APPROVAL_BRANCH_SYNONYMS: Record<string, readonly (readonly string[
     ['N6848', 'BILLAWAR'],
     ['N6847', 'VIJAYPUR'],
     ['N6844', 'AKHNOOR'],
-    ['N6846', 'RS PURA', 'RSPURA'],
+    // ⚠️ RS_PURA (underscore) is how the pin is ACTUALLY stored in users.dealers — it is the token
+    // on three live Hyundai logins. Only the spaced and unspaced forms were listed, so that pin
+    // expanded to nothing and matched no row.
+    ['N6846', 'RS_PURA', 'RS PURA', 'RSPURA'],
   ],
   platinum: [
     ['N5211', 'JAMMU'],
