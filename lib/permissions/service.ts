@@ -51,7 +51,8 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // this fixes stay locked out for another hour and it reads as "the fix did not work".
 // v31: adds the group_service_manager role. A new role changes every snapshot's shape, so a
 // stale v30 entry would resolve it as having no template at all.
-const PERMISSION_CACHE_VERSION = 'v31'
+// v32: registers fuel_approvals in PERMISSION_GROUPS and SECTION_ROUTES for Access Map control.
+const PERMISSION_CACHE_VERSION = 'v32'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

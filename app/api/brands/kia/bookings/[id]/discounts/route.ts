@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
-import { kiaBookingDiscounts, kiaBookings, kiaBookingActivity } from '@/lib/db/schema'
+import { kiaVehicleAllocations, kiaBookingDiscounts, kiaBookings, kiaBookingActivity } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
+import { canRequestDiscount, isValidDiscountType } from '@/lib/kia/discount-chain'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -54,10 +55,16 @@ export async function POST(
 
     const { id } = await context.params
     const body = await request.json().catch(() => ({}))
-    const { amount, reason } = body
+    const { amount, reason, discountType } = body
 
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      return NextResponse.json({ error: 'Invalid discount amount. Must be a positive number.' }, { status: 400 })
+      return NextResponse.json({ error: 'Enter a discount amount greater than zero.' }, { status: 400 })
+    }
+    if (!isValidDiscountType(discountType)) {
+      return NextResponse.json({ error: 'Choose a discount type from the list.' }, { status: 400 })
+    }
+    if (!String(reason ?? '').trim()) {
+      return NextResponse.json({ error: 'Add a remark explaining why this discount is needed.' }, { status: 400 })
     }
 
     // Verify booking exists
@@ -71,16 +78,68 @@ export async function POST(
       return NextResponse.json({ error: 'Booking not found.' }, { status: 404 })
     }
 
+    /*
+     * ⚠️ DELIVERED ONLY. A discount before handover belongs in the proforma price, where the
+     * customer signs it; this flow is money returned AFTER the sale, which is why it needs the MD
+     * and then a payment. Enforced here and not only on the screen — the button being hidden is a
+     * courtesy, this is the control.
+     */
+    if (!canRequestDiscount(booking)) {
+      return NextResponse.json({
+        error: 'A discount can only be requested once the vehicle has been delivered.',
+      }, { status: 400 })
+    }
+
+    /*
+     * The delivered vehicle AS IT STANDS NOW, frozen onto the request.
+     *
+     * The booking keeps changing — a car can be re-allotted and a variant corrected, both of which
+     * happened this month — so an approver reading this request weeks later must see what was
+     * actually delivered when it was raised, not whatever the record has become.
+     */
+    const [allocation] = await db
+      .select()
+      .from(kiaVehicleAllocations)
+      .where(eq(kiaVehicleAllocations.bookingId, id))
+      .orderBy(desc(kiaVehicleAllocations.allocatedAt))
+      .limit(1)
+
+    const meta = (booking.metadata || {}) as Record<string, unknown>
+    const vehicleSnapshot = {
+      capturedAt: new Date().toISOString(),
+      bookingNumber: booking.bookingNumber,
+      customerName: booking.customerName,
+      dealerCode: booking.dealerCode,
+      model: booking.model,
+      variant: booking.variant,
+      color: booking.color,
+      fuelType: booking.fuelType,
+      // The allocation is the authority on WHICH car; the booking's allocated_vin is the fallback.
+      vin: allocation?.vinNumber ?? booking.allocatedVin ?? null,
+      engineNo: allocation?.engineNo ?? null,
+      deliveredAt: booking.deliveredAt ? booking.deliveredAt.toISOString() : null,
+      consultantName: booking.consultantName,
+      bankName: booking.bankName,
+      loanAmount: booking.loanAmount,
+      financeRequired: booking.financeRequired,
+      amountReceived: booking.amountReceived,
+      exShowroom: typeof meta.exShowroom === 'number' ? meta.exShowroom : null,
+    }
+
     // Insert the discount request
     const [inserted] = await db
       .insert(kiaBookingDiscounts)
       .values({
         bookingId: id,
         requestedAmount: String(amount),
-        reason: reason || '',
+        discountType: String(discountType).trim(),
+        reason: String(reason).trim(),
+        // PENDING is the OVERALL status; the chain itself starts with every stage column NULL,
+        // which discountStage() reads as "waiting on the Sales Manager".
         status: 'PENDING',
         requestedBy: appUser.id,
         requestedByName: appUser.fullName,
+        vehicleSnapshot,
       })
       .returning()
 
@@ -89,7 +148,8 @@ export async function POST(
       bookingId: id,
       activityType: 'discount_requested',
       title: 'Discount Requested',
-      description: `Requested a discount of INR ${Number(amount).toLocaleString('en-IN')} by ${appUser.fullName}. Reason: ${reason || 'Not specified'}.`,
+      description: `Requested a ${String(discountType).trim()} discount of INR ${Number(amount).toLocaleString('en-IN')}`
+        + ` on ${vehicleSnapshot.vin || 'an unallocated vehicle'} by ${appUser.fullName}. Reason: ${String(reason).trim()}.`,
       actorUserId: appUser.id,
       actorName: appUser.fullName,
       actorRole: appUser.role,

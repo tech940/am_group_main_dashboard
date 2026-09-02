@@ -799,6 +799,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'fuel_approvals',
+    name: 'Fuel Approvals',
+    parentKey: null,
+    description: 'Vehicle, genset and yard fuel requisition orders, slip verification, and multi-stage workflow (ED → HR → MD).',
+    sortOrder: 59,
+    actions: ['view', 'create', 'edit', 'approve', 'audit'],
+  },
+  {
     key: 'finance',
     name: 'Finance',
     parentKey: null,
@@ -897,6 +905,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   ca: { href: '/ca' },
   finance: { href: '/finance' },
   bank_sanctions: { href: '/bank-sanctions' },
+  fuel_approvals: { href: '/fuel-approvals', aliases: ['/brands/kia/fuel-approvals'] },
   scrap_erp: { href: '/scrap-erp' },
   insurance_analysis: { href: '/insurance' },
   'kia.booking_payment_history': { href: '/brands/kia/booking-payment-history' },
@@ -970,7 +979,7 @@ export const DEFAULT_VISIBLE_SECTIONS = new Set<string>([
   // Broadly visible on purpose: every user gets a personal task inbox. Who may DELEGATE is role-gated
   // (lib/delegation/access.ts), and the list only shows tasks a user created or was assigned.
   'delegation_tasks',
-  'purchase_orders', 'finance_orders', 'petty_cash', 'am_finance', 'user_management', 'scrap_erp',
+  'purchase_orders', 'finance_orders', 'petty_cash', 'fuel_approvals', 'am_finance', 'user_management', 'scrap_erp',
   'kia.business_excellence', 'kia.service_appointment', 'kia.demo_job_cards', 'kia.demo_cars_list',
   'kia.sales_report', 'kia.stock_report', 'kia.bookings', 'kia.proforma',
   'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.demo_job_cards',
@@ -1130,6 +1139,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'purchase_orders',
     'finance_orders',
     'petty_cash',
+    'fuel_approvals',
     'am_finance',
     'reports',
   ], ['view', 'approve', 'audit']),
@@ -1153,6 +1163,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'purchase_orders',
     'finance_orders',
     'petty_cash',
+    'fuel_approvals',
     'am_finance',
     'bank_sanctions',
     'scrap_erp',
@@ -1257,6 +1268,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
     ...keysForGroups(['bank_sanctions'], ['view']),
     ...keysForGroups(['kia.approvals'], ['view']),
+    ...keysForGroups(['fuel_approvals'], ['view', 'create', 'audit']),
   ],
   manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit', 'approve']),
@@ -1265,6 +1277,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
   ],
   technician: [
     ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
@@ -1277,6 +1290,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   service_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
   ],
   general_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1285,6 +1299,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
   ],
   // General Service Manager: service-side oversight. Views KIA service modules; the
   // Vehicle Tracker is additionally role-gated in lib/kia/vehicle-tracker-access.ts.
@@ -1313,6 +1328,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'create']),
+    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
   ],
   sales_head: [
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1320,6 +1336,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
   ],
   // KIA Proforma workflow: front-line executive — locked to the Bookings section
   // (Booking CRM + generating proformas). No stock, insurance, approve or audit.
@@ -1340,6 +1357,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     // 1 could reach the section, via a hand-added user override; the other 3 got a page they were
     // allowed to open but no link to open it with. No 'audit' — that stays with branch_admin.
     ...keysForGroups(['petty_cash'], ['view', 'create', 'edit']),
+    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
   ],
   // Assistant Manager: a BRANCH GENERALIST who oversees both Sales and Service for the branches
   // they are assigned to. Deliberately view/create/edit with NO approve and NO audit — that is the
@@ -1375,6 +1393,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     // requires role AND permission (lib/navigation/sections.ts:642), so the link was hidden. The one
     // live ED works only because somebody hand-granted a user-level override; the next ED would not.
     ...keysForGroups(['petty_cash'], ['view', 'approve', 'audit']),
+    ...keysForGroups(['fuel_approvals'], ['view', 'create', 'edit', 'approve', 'audit']),
   ],
   // KIA Proforma workflow: final approver alongside the Finance Head — reviews & approves/declines
   // proformas (stage 2), and confirms payment received at the booking finance stage.

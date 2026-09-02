@@ -578,6 +578,17 @@
     text-transform: uppercase !important;
     font-size: 11px !important;
   }
+  .fuel-approvals-clean-table thead tr {
+    background-color: #f8fafc !important;
+  }
+  .fuel-approvals-clean-table th {
+    background-color: #f8fafc !important;
+    color: #475569 !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em !important;
+    text-transform: uppercase !important;
+    font-size: 11px !important;
+  }
 
   /* Customer 360 Activity Stream Category Tables Opt-Out */
   .c360-sales-table thead tr {

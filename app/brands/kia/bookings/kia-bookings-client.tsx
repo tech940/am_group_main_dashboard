@@ -127,6 +127,9 @@ import {
 } from '@/lib/kia-proforma/pricing'
 import { proformaPdfFilename } from '@/lib/kia-proforma/pdf-filename'
 import { getIndiaYmd } from '@/lib/date-time'
+// One list for the form and the API — see lib/kia/discount-chain.ts.
+import { DISCOUNT_TYPES } from '@/lib/kia/discount-chain'
+import { canRequestDiscount } from '@/lib/kia/discount-chain'
 
 /*
  * The default range is the current INDIAN month.
@@ -817,6 +820,7 @@ function BookingMobileCard({
   isSalesPerson,
   normalizedCurrentRole,
   onAddRemark,
+  onApplyDiscount,
 }: {
   row: BookingRow
   onOpen: (id: string) => void
@@ -825,6 +829,7 @@ function BookingMobileCard({
   isSalesPerson?: boolean
   normalizedCurrentRole?: string
   onAddRemark?: (type: 'overdue' | 'idt' | 'general') => void
+  onApplyDiscount?: (id: string) => void
 }) {
   const router = useRouter()
   const canViewPii = useCanViewPii()
@@ -899,6 +904,26 @@ function BookingMobileCard({
         <FieldValue label="VIN" value={row.allocatedVin || '—'} mono />
         <FieldValue label="Finance" value={row.financeOrderNumber || '—'} />
       </div>
+
+      {/*
+        * ── APPLY FOR DISCOUNT, ON THE ROW ─────────────────────────────────────────────────────
+        * This lived only inside the detail drawer, so a consultant had to open a booking to find
+        * out the option existed. A post-delivery discount is raised FROM the list — you are looking
+        * down a column of delivered cars deciding which needs one.
+        *
+        * ⚠️ Delivered only, from the shared rule. Before handover a discount belongs in the
+        * proforma price; this flow is money returned after the sale. The API enforces the same
+        * check, so hiding the button is a courtesy rather than the control.
+        */}
+      {canRequestDiscount(row) && onApplyDiscount && (
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onApplyDiscount(row.id) }}
+          className="mb-1 inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500 sm:h-9"
+        >
+          <Percent className="h-3.5 w-3.5 shrink-0" /> Apply for Discount
+        </button>
+      )}
 
       <div className="flex items-center gap-2 pt-0.5" onClick={(event) => event.stopPropagation()}>
         {row.proformaNumber ? (
@@ -1719,6 +1744,12 @@ export function KiaBookingsClient({
 
   const [invoiceViewerBooking, setInvoiceViewerBooking] = useState<any | null>(null)
   const [invoiceViewerOpen, setInvoiceViewerOpen] = useState(false)
+  /*
+   * Set when "Apply for Discount" is pressed on a LIST row. The dialog itself lives in the detail
+   * panel, so the row opens the booking and hands the panel a one-shot instruction to open it —
+   * rather than the row owning a second copy of the same form.
+   */
+  const [autoOpenDiscountFor, setAutoOpenDiscountFor] = useState<string | null>(null)
   const [isEmiCalculatorOpen, setIsEmiCalculatorOpen] = useState(false)
   const [emiCalcTarget, setEmiCalcTarget] = useState<{ model?: string; variant?: string; exShowroom?: number } | null>(null)
   const [uploadingInvoiceFile, setUploadingInvoiceFile] = useState<File | null>(null)
@@ -3550,6 +3581,7 @@ export function KiaBookingsClient({
                     isSalesPerson={roleCanActAsSalesPerson(normalizedCurrentRole)}
                     normalizedCurrentRole={normalizedCurrentRole}
                     onAddRemark={(type) => openRemarkDialog(row, type)}
+                    onApplyDiscount={(id) => { setAutoOpenDiscountFor(id); openBooking(id) }}
                   />
                 )
               })}
@@ -4515,6 +4547,8 @@ export function KiaBookingsClient({
               onEdit={() => setEditingBookingId(detailQuery.data.booking.id)}
               discounts={discountsQuery.data?.discounts || []}
               onRefreshDiscounts={() => discountsQuery.refetch()}
+              autoOpenDiscount={autoOpenDiscountFor === detailQuery.data.booking.id}
+              onAutoOpenDiscountHandled={() => setAutoOpenDiscountFor(null)}
               onOpenInvoiceViewer={(b) => {
                 setInvoiceViewerBooking(b)
                 setInvoiceViewerOpen(true)
@@ -5951,6 +5985,8 @@ function BookingDrawer({
   onEdit,
   discounts = [],
   onRefreshDiscounts,
+  autoOpenDiscount,
+  onAutoOpenDiscountHandled,
   onOpenInvoiceViewer,
   onOpenEmiCalculator,
   onOpenOverdueRemark,
@@ -5974,6 +6010,8 @@ function BookingDrawer({
   /** Extra-payment-time requests raised on this booking, newest first. */
   paymentWindowRequests?: any[]
   onRefreshDiscounts?: () => void
+  autoOpenDiscount?: boolean
+  onAutoOpenDiscountHandled?: () => void
   onOpenInvoiceViewer?: (booking: any) => void
   onOpenEmiCalculator?: (target: { model?: string; variant?: string; exShowroom?: number }) => void
   onOpenOverdueRemark?: (target: { id: string; bookingNumber?: string; customerName?: string; notes?: string | null }) => void
@@ -5982,13 +6020,36 @@ function BookingDrawer({
   const [sharingLink, setSharingLink] = useState(false)
   const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false)
   const [discountAmount, setDiscountAmount] = useState('')
+  const [discountType, setDiscountType] = useState('')
   const [discountReason, setDiscountReason] = useState('')
   const [isSubmittingDiscount, setIsSubmittingDiscount] = useState(false)
+
+  /*
+   * Open the dialog when the LIST row asked for it, exactly once.
+   *
+   * ⚠️ Cleared through onAutoOpenDiscountHandled in the same effect. Without that the flag stays
+   * true and the dialog re-opens every time the user closes it — the parent state would keep
+   * re-asserting the request it already made.
+   */
+  useEffect(() => {
+    if (!autoOpenDiscount) return
+    setIsDiscountDialogOpen(true)
+    onAutoOpenDiscountHandled?.()
+  }, [autoOpenDiscount, onAutoOpenDiscountHandled])
 
   const handleRequestDiscount = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!discountAmount || isNaN(Number(discountAmount)) || Number(discountAmount) <= 0) {
-      toast({ title: 'Invalid amount', description: 'Please enter a valid positive discount amount.', variant: 'error' })
+      toast({ title: 'Enter an amount', description: 'The discount must be greater than zero.', variant: 'error' })
+      return
+    }
+    // Checked here for a fast, in-place message; the API enforces the same rules independently.
+    if (!discountType) {
+      toast({ title: 'Choose a discount type', description: 'Pick the type this discount falls under.', variant: 'error' })
+      return
+    }
+    if (!discountReason.trim()) {
+      toast({ title: 'Add a remark', description: 'Say why this discount is needed — the Sales Manager and MD read this.', variant: 'error' })
       return
     }
     setIsSubmittingDiscount(true)
@@ -5996,13 +6057,17 @@ function BookingDrawer({
       const response = await fetch(`/api/brands/kia/bookings/${booking.id}/discounts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: Number(discountAmount), reason: discountReason }),
+        body: JSON.stringify({ amount: Number(discountAmount), reason: discountReason.trim(), discountType }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Failed to submit discount request.')
-      toast({ title: 'Discount requested', description: `Requested discount of INR ${Number(discountAmount).toLocaleString('en-IN')}` })
+      toast({
+        title: 'Sent to the Sales Manager',
+        description: `₹${Number(discountAmount).toLocaleString('en-IN')} ${discountType} — the Sales Manager approves first, then the MD, then Accounts confirm the payment.`,
+      })
       setIsDiscountDialogOpen(false)
       setDiscountAmount('')
+      setDiscountType('')
       setDiscountReason('')
       if (onRefreshDiscounts) onRefreshDiscounts()
     } catch (err) {
@@ -6890,52 +6955,126 @@ function BookingDrawer({
 
       {/* Apply Discount Request Dialog */}
       <Dialog open={isDiscountDialogOpen} onOpenChange={setIsDiscountDialogOpen}>
-        <DialogContent className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl duration-200">
-          <DialogTitle className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-            <Percent className="h-5 w-5 text-slate-900" /> Request Booking Discount
+        {/*
+          * ⚠️ MOBILE FIRST. The old dialog was a fixed max-w-md box centred with a -translate-y-1/2,
+          * which on a phone puts the footer under the keyboard the moment the remarks field focuses.
+          * This is a bottom sheet under sm: full width, pinned to the bottom, its own scroll area and
+          * a max height that leaves room for the keyboard. It becomes a centred dialog from sm up.
+          */}
+        <DialogContent className="fixed inset-x-0 bottom-0 top-auto z-50 max-h-[92dvh] w-full translate-x-0 translate-y-0 overflow-y-auto rounded-t-2xl border border-slate-100 bg-white p-5 shadow-2xl duration-200 sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:p-6">
+          <DialogTitle className="flex items-center gap-2 text-base font-extrabold text-slate-900 sm:text-lg">
+            <Percent className="h-5 w-5 shrink-0 text-slate-900" /> Apply for Discount
           </DialogTitle>
+          <p className="mt-1 text-xs text-slate-500">
+            Sales Manager approves first, then the MD. Accounts then confirm the money reached the customer.
+          </p>
+
+          {/*
+            * The vehicle this discount is against, stated before the form.
+            *
+            * An approver reading the request weeks later sees exactly this, frozen — the API
+            * snapshots it onto the record, because a car can be re-allotted and a variant corrected
+            * after the fact, and both happened this month.
+            */}
+          <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px]">
+            <div className="col-span-2">
+              <dt className="font-semibold uppercase tracking-wide text-slate-400">Customer</dt>
+              <dd className="font-bold text-slate-900">{booking.customerName || '—'}</dd>
+            </div>
+            <div className="col-span-2">
+              <dt className="font-semibold uppercase tracking-wide text-slate-400">Vehicle</dt>
+              <dd className="font-semibold text-slate-800">
+                {[booking.model, booking.variant].filter(Boolean).join(' · ') || '—'}
+                {booking.color ? <span className="text-slate-500"> · {booking.color}</span> : null}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold uppercase tracking-wide text-slate-400">VIN</dt>
+              <dd className="font-mono text-[10px] font-semibold text-slate-700 break-all">
+                {allocation?.vinNumber || booking.allocatedVin || 'Not allocated'}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold uppercase tracking-wide text-slate-400">Delivered</dt>
+              <dd className="font-semibold text-slate-700">
+                {booking.deliveredAt ? new Date(booking.deliveredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold uppercase tracking-wide text-slate-400">Booking</dt>
+              <dd className="font-mono text-[10px] font-semibold text-slate-700">{booking.bookingNumber}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold uppercase tracking-wide text-slate-400">Consultant</dt>
+              <dd className="font-semibold text-slate-700">{booking.consultantName || '—'}</dd>
+            </div>
+          </dl>
+
           <form onSubmit={handleRequestDiscount} className="mt-4 space-y-4">
             <div className="space-y-2">
-              <label htmlFor="discount-amount" className="text-xs font-black uppercase tracking-wider text-slate-500 block">
+              <label htmlFor="discount-amount" className="block text-xs font-black uppercase tracking-wider text-slate-500">
                 Discount Amount (INR) <span className="text-red-500">*</span>
               </label>
               <Input
                 id="discount-amount"
                 type="number"
                 required
+                min="1"
+                // A numeric keypad on a phone, and no scroll-wheel spinner to nudge a money figure.
+                inputMode="numeric"
                 placeholder="e.g. 15000"
                 value={discountAmount}
                 onChange={(e) => setDiscountAmount(e.target.value)}
-                className="h-11 rounded-xl border-slate-200 bg-white font-bold"
+                className="h-11 rounded-xl border-slate-200 bg-white font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="discount-reason" className="text-xs font-black uppercase tracking-wider text-slate-500 block">
-                Reason / Remarks <span className="text-red-500">*</span>
+              <label htmlFor="discount-type" className="block text-xs font-black uppercase tracking-wider text-slate-500">
+                Discount Type <span className="text-red-500">*</span>
+              </label>
+              {/*
+                * A native select on purpose: it opens the OS picker on a phone, which is a far better
+                * target than a custom listbox, and it needs no extra markup to be reachable by
+                * keyboard. The list comes from the shared module so the form and the API agree.
+                */}
+              <select
+                id="discount-type"
+                required
+                value={discountType}
+                onChange={(e) => setDiscountType(e.target.value)}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 focus:border-slate-950 focus:outline-none"
+              >
+                <option value="" disabled>Select a discount type…</option>
+                {DISCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="discount-reason" className="block text-xs font-black uppercase tracking-wider text-slate-500">
+                Remarks <span className="text-red-500">*</span>
               </label>
               <textarea
                 id="discount-reason"
                 required
-                placeholder="Please explain why this discount is required..."
+                placeholder="Why is this discount needed? The Sales Manager and MD read this."
                 value={discountReason}
                 onChange={(e) => setDiscountReason(e.target.value)}
                 className="w-full min-h-[100px] rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold focus:border-slate-950 focus:outline-none"
               />
             </div>
-            <DialogFooter className="flex justify-end gap-2 pt-2">
+            <DialogFooter className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsDiscountDialogOpen(false)}
                 disabled={isSubmittingDiscount}
-                className="h-10 rounded-xl"
+                className="h-11 w-full rounded-xl sm:h-10 sm:w-auto"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmittingDiscount}
-                className="h-10 rounded-xl bg-slate-950 text-white hover:bg-slate-800"
+                className="h-11 w-full rounded-xl bg-slate-950 text-white hover:bg-slate-800 sm:h-10 sm:w-auto"
               >
                 {isSubmittingDiscount ? (
                   <>

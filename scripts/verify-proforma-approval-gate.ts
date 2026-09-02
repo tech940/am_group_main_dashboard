@@ -272,9 +272,48 @@ async function main() {
   chainRouting()
   await draftsAreMarked()
   bookingsDownloadGate()
+  previewRouteGate()
   await dataGate()
   console.log(failures === 0 ? '\n=== ALL CHECKS PASSED ===' : `\n=== ${failures} FAILURE(S) ===`)
   process.exit(failures === 0 ? 0 : 1)
+}
+
+
+const PREVIEW_ROUTE = 'app/api/brands/kia/proforma/[id]/preview/route.ts'
+
+/**
+ * THE PDF ROUTE MUST REFUSE, not merely watermark.
+ *
+ * Reported from the office: consultants were still downloading unapproved proformas even though the
+ * Bookings screen hides the button. Hiding a button does not close a URL — this route served the
+ * document to anyone who could reach it, and a watermarked draft is still a complete PROFORMA
+ * INVOICE carrying the customer's name and every figure. It forwards to a customer exactly as well
+ * as the approved one.
+ *
+ * ⚠️ A SOURCE check on purpose. A data check could only notice after a customer already held an
+ * unapproved invoice — the detection IS the damage. Re-opening the route fails this instantly and
+ * costs nobody anything.
+ */
+function previewRouteGate() {
+  console.log('\n3b) The PDF route itself refuses an unapproved proforma')
+  const route = fs.readFileSync(PREVIEW_ROUTE, 'utf8')
+
+  const gateRe = /if\s*\(\s*!isFullyApproved\s*&&\s*!isApprover\s*\)/
+  check(gateRe.test(route), 'the route 403s when not fully approved and the caller cannot approve it')
+
+  /*
+   * The refusal must come BEFORE the render. A check placed after buildKiaProformaPdf would still
+   * do the work, and one careless edit later would still return it.
+   */
+  const gateAt = route.search(gateRe)
+  const buildAt = route.indexOf('buildKiaProformaPdf(')
+  check(gateAt > -1 && buildAt > -1 && gateAt < buildAt, 'the refusal happens BEFORE the PDF is rendered')
+
+  // The approvers keep access, or the gate stalls the very chain it protects.
+  check(/!isApprover/.test(route), 'an approver can still fetch it, so review is not blocked')
+
+  // Defence in depth: a draft an approver does fetch still announces itself.
+  check(/DRAFT, NOT APPROVED/.test(route), 'a draft an approver fetches is still marked NOT APPROVED')
 }
 
 main().catch((e) => { console.error(e); process.exit(1) })

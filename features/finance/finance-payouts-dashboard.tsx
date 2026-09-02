@@ -314,6 +314,17 @@ export function FinancePayoutsDashboard() {
             <p className="text-[13px] font-bold text-[var(--kia-text-soft)]">
               <span className="kia-tnum text-[var(--kia-text)]">{data.total}</span> record{data.total === 1 ? '' : 's'}
               {filtersActive && <span className="ml-1 text-[var(--kia-text-faint)]">· filtered</span>}
+              {/*
+                * A date range filters on DELIVERY date, and a payout whose financing completed before
+                * the car went out has none — so it drops out of the range entirely. Saying so is the
+                * whole point: the alternative is a ledger that quietly gets shorter and money that
+                * stops being chased because nobody knew it was missing.
+                */}
+              {(data.undatedExcluded ?? 0) > 0 && (
+                <span className="ml-2 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                  {data.undatedExcluded} completed payout{data.undatedExcluded === 1 ? '' : 's'} not yet delivered — hidden by this date range
+                </span>
+              )}
             </p>
             <p className="text-[11px] font-bold text-[var(--kia-text-faint)]">
               Page {data.page} of {data.totalPages}

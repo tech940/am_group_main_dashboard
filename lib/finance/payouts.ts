@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, asc, count, desc, eq, gte, ilike, isNotNull, lte, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, ilike, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { kiaFinancePayouts, kiaFinancePayoutActivity } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
@@ -228,10 +228,33 @@ export async function listFinancePayouts(appUser: AppUser, input: PayoutListInpu
   if (input.dealer) where.push(eq(kiaFinancePayouts.dealerCode, input.dealer))
   if (input.bankVisit === 'scheduled') where.push(eq(kiaFinancePayouts.bankVisitScheduled, true))
   if (input.bankVisit === 'done') where.push(isNotNull(kiaFinancePayouts.dateOfBankVisit))
+  // Snapshot before the date predicates go on — see the note below.
+  const whereWithoutDates = [...where]
+  /*
+   * ── ⚠️ A DATE RANGE SILENTLY HIDES UNDELIVERED PAYOUTS ────────────────────────────────────────
+   * `delivery_date` is NULL on every payout created when FINANCING was completed but the car has not
+   * gone out yet — 8 rows at the time of writing, each a real bank payout to chase. NULL fails both
+   * `>=` and `<=`, so the moment anyone picks a month those rows vanish from the ledger with no
+   * indication that anything was removed.
+   *
+   * The filter itself is left alone, and deliberately: a row with no delivery date genuinely is not
+   * inside a delivery-date range, and forcing it in would make it appear in EVERY month. What
+   * changes is that the omission is now COUNTED and reported, so the screen can say what it is not
+   * showing instead of quietly shrinking.
+   */
+  const dateFilterApplied = Boolean(input.from || input.to)
   if (input.from) where.push(gte(kiaFinancePayouts.deliveryDate, new Date(input.from)))
   if (input.to) where.push(lte(kiaFinancePayouts.deliveryDate, new Date(input.to)))
 
   const filter = where.length ? and(...where) : undefined
+  /*
+   * The same filters MINUS the dates, restricted to undated rows: exactly what the date range is
+   * hiding. Built from `whereWithoutDates` so a search term or a status filter still applies —
+   * otherwise the count would over-report rows the user had already filtered out for other reasons.
+   */
+  const undatedFilter = dateFilterApplied
+    ? and(...whereWithoutDates, isNull(kiaFinancePayouts.deliveryDate))
+    : undefined
   const order = input.sort === 'delivery_asc'
     ? asc(kiaFinancePayouts.deliveryDate)
     : input.sort === 'amount_desc'
@@ -241,7 +264,7 @@ export async function listFinancePayouts(appUser: AppUser, input: PayoutListInpu
   // The page, the count and the KPIs are independent — one round trip instead of three.
   // KPIs are deliberately computed over the FILTERED set, so they answer "what am I looking at?"
   // rather than a constant that ignores the filters.
-  const [rows, [totals], [kpi]] = await Promise.all([
+  const [rows, [totals], [kpi], [undated]] = await Promise.all([
     db.select().from(kiaFinancePayouts).where(filter).orderBy(order).limit(pageSize).offset((page - 1) * pageSize),
     db.select({ n: count() }).from(kiaFinancePayouts).where(filter),
     db.select({
@@ -253,6 +276,9 @@ export async function listFinancePayouts(appUser: AppUser, input: PayoutListInpu
       payoutTotal: sql<string>`coalesce(sum(${kiaFinancePayouts.dealerPayoutAmount}), 0)::text`,
       receivedTotal: sql<string>`coalesce(sum(${kiaFinancePayouts.amountReceived}), 0)::text`,
     }).from(kiaFinancePayouts).where(filter),
+    undatedFilter
+      ? db.select({ n: count() }).from(kiaFinancePayouts).where(undatedFilter)
+      : Promise.resolve([{ n: 0 }]),
   ])
 
   const canSeeMobile = canViewFinancePayoutMobile(appUser.role)
@@ -263,6 +289,11 @@ export async function listFinancePayouts(appUser: AppUser, input: PayoutListInpu
     page,
     pageSize,
     total,
+    /*
+     * How many payouts this date range is hiding because they have no delivery date yet. Zero when
+     * no date filter is applied. The screen states it; see the note on `dateFilterApplied`.
+     */
+    undatedExcluded: Number(undated?.n || 0),
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
     kpis: {
       total: Number(kpi?.total || 0),

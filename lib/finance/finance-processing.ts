@@ -17,6 +17,8 @@ import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { normalizeBankName } from '@/lib/kia/bank-utils'
+// A completed financing joins the payouts ledger — see the note in markKiaFinanceComplete.
+import { upsertFinancePayoutForBooking } from '@/lib/kia/bookings'
 
 // ── Finance status model ────────────────────────────────────────────────────────────────────────
 export type KiaFinanceStatus = 'pending' | 'in_progress' | 'delayed' | 'completed'
@@ -403,14 +405,39 @@ export async function markKiaFinanceComplete(proformaId: string, appUser: AppUse
     }
   }
   const completedAt = new Date()
-  await db.update(kiaFinanceProcessing).set({
-    financeStatus: 'completed',
-    completedAt,
-    completedBy: appUser.id,
-    completedByName: actorName(appUser),
-    completedByRole: appUser.role,
-    updatedAt: completedAt,
-  }).where(eq(kiaFinanceProcessing.id, processing.id))
+  await db.transaction(async (tx) => {
+    await tx.update(kiaFinanceProcessing).set({
+      financeStatus: 'completed',
+      completedAt,
+      completedBy: appUser.id,
+      completedByName: actorName(appUser),
+      completedByRole: appUser.role,
+      updatedAt: completedAt,
+    }).where(eq(kiaFinanceProcessing.id, processing.id))
+
+    /*
+     * ── HAND IT TO THE PAYOUTS DESK ────────────────────────────────────────────────────────────
+     * A completed financing is money to be collected from the bank, so it belongs on the payouts
+     * ledger whether or not the car has gone out yet. Completion does NOT require delivery — the
+     * rule above allows it once Accounts confirms payment, and a Finance Head can complete outright
+     * — so keying the ledger on delivery alone stranded them: measured, 10 of 62 completed
+     * financings had no payout row, 8 of them live bookings with a named bank.
+     *
+     * ⚠️ In the SAME transaction as the status change. If the payout insert failed on its own the
+     * financing would read complete while the payouts desk never heard about it — exactly the state
+     * this is fixing.
+     *
+     * The upsert is idempotent and refreshes only the snapshot columns, so a later delivery (or a
+     * reopen-and-complete) cannot overwrite a payout figure finance has already recorded.
+     */
+    if (processing.bookingId) {
+      const [booking] = await tx.select().from(kiaBookings)
+        .where(eq(kiaBookings.id, processing.bookingId)).limit(1)
+      if (booking) {
+        await upsertFinancePayoutForBooking(tx, booking, appUser, 'finance_complete')
+      }
+    }
+  })
   await addFinanceActivity({
     financeProcessingId: processing.id, proformaId, type: 'completed',
     title: 'Financing marked complete',

@@ -21,6 +21,7 @@ import {
   Recycle,
   PhoneCall,
   ShieldCheck,
+  Fuel,
   LogOut, UserSearch } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
@@ -562,6 +563,16 @@ export function Sidebar() {
         icon: Users,
         external: true,
         active: pathname.startsWith('/brands/kia/vendors'),
+      })
+    }
+    if (hasPermission('fuel_approvals.view')) {
+      commonNodes.push({
+        key: '/fuel-approvals',
+        label: 'Fuel Approvals',
+        href: '/fuel-approvals',
+        icon: Fuel,
+        external: true,
+        active: pathname.startsWith('/fuel-approvals') || pathname.startsWith('/brands/kia/fuel-approvals'),
       })
     }
     // Call Analysis — MD + Developer only, role-gated (see lib/callyzer/access.ts).

@@ -40,28 +40,45 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  /*
-   * ── AN UNAPPROVED PROFORMA MUST LOOK UNAPPROVED ─────────────────────────────────────────────
-   *
-   * This route rendered the identical document at every stage of the chain. A PENDING proforma came
-   * out byte-for-byte the same as the Finance-signed one the customer is mailed: same "PROFORMA
-   * INVOICE" heading, same numbers, no marking of any kind. The Bookings screen links straight here
-   * from a control commented "Direct Download Button (Always Visible)", so any consultant handling
-   * the customer could pull a finished-looking invoice before the Sales Manager had seen it, let
-   * alone Finance, and forward it.
-   *
-   * ⚠️ The fix is to MARK it, not to block it. The approvers have to read the document in order to
-   * approve it — gating this route on approval would break the very chain it is meant to protect.
-   * So the PDF stays available to staff at every stage and simply tells the truth about itself.
-   *
-   * buildKiaProformaPdf already honours documentTitle and disclaimerLines (invoice.ts:457 and
-   * 460-466); they were dead code here only because they are not columns on kia_proformas, so they
-   * were always undefined. The quote PDF uses the same pattern for its "not valid for bank purpose"
-   * box. No rendering code changes.
-   */
   const stage = kiaApprovalStage(row.approvalStatus)
   const isFullyApproved = stage === 'approved'
   const awaiting = kiaStageActorLabel(pendingStageOf(row.approvalStatus))
+
+  /*
+   * ── NO PROFORMA PDF LEAVES THIS ROUTE UNTIL THE CHAIN COMPLETES ─────────────────────────────
+   *
+   * Reported from the office: consultants were still downloading proformas before Finance had
+   * approved them. The Bookings screen already hides the button on an unapproved row — but hiding a
+   * button does not close a URL, and this route served the document to anyone who could reach it.
+   * A marked draft is still a complete PROFORMA INVOICE with the customer's name and every figure
+   * on it, and it forwards to a customer exactly as well as the real one.
+   *
+   * ⚠️ This REPLACES an earlier decision to mark rather than block. That note argued the approvers
+   * need the PDF to review, so blocking would stall the chain it protects. It does not: the
+   * approvers read the proforma in the ProformaPreviewDrawer on the Proforma page, which renders
+   * the RECORD and never calls this route — checked before changing this, because a gate that
+   * stalls its own approval chain is worse than the leak it closes.
+   *
+   * So the people who can ACT on the pending stage keep access, and everyone else — including the
+   * consultant who raised it and is the person most likely to send it on — gets a 403 until Finance
+   * signs. The marking below stays as defence in depth for the approvers who do fetch it.
+   */
+  if (!isFullyApproved && !isApprover) {
+    return NextResponse.json({
+      error: awaiting
+        ? `This proforma is not approved yet — it is awaiting ${awaiting} approval. The PDF becomes available once Finance signs it.`
+        : 'This proforma was declined and must be revised before it can be downloaded.',
+    }, { status: 403 })
+  }
+
+  /*
+   * ── AN UNAPPROVED PROFORMA MUST STILL LOOK UNAPPROVED ───────────────────────────────────────
+   * Reached only by an approver now, but the marking is kept: a reviewer who saves a copy must not
+   * end up holding a document indistinguishable from the Finance-signed one.
+   *
+   * buildKiaProformaPdf already honours documentTitle and disclaimerLines (invoice.ts:457 and
+   * 460-466); they were dead code here only because they are not columns on kia_proformas.
+   */
 
   const pdf = buildKiaProformaPdf(isFullyApproved ? row : {
     ...row,

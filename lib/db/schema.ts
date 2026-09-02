@@ -2120,6 +2120,79 @@ export const kiaApprovalRequestsRelations = relations(kiaApprovalRequests, ({ on
   }),
 }))
 
+// ── Fuel Approvals ────────────────────────────────────────────────────────────
+// Vehicle, genset, and yard fuel requisition orders with ED -> HR -> MD approval workflow
+export const fuelApprovals = pgTable('fuel_approvals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  requestNumber: text('request_number').unique().notNull(),
+  brand: text('brand').default('kia').notNull(),
+  location: text('location').notNull(),
+  fuelRequiredFor: text('fuel_required_for').notNull(),
+  vehRegNo: text('veh_reg_no').notNull(),
+  vinNo: text('vin_no').notNull(),
+  lastFuelFilledDate: date('last_fuel_filled_date'),
+  fuelType: text('fuel_type').notNull(),
+  currentKmReading: text('current_km_reading'),
+  fuelFilledDate: date('fuel_filled_date').notNull(),
+  fuelFilledLtrs: decimal('fuel_filled_ltrs', { precision: 10, scale: 2 }).notNull(),
+  fuelSlipUrl: text('fuel_slip_url').notNull(),
+  remarks: text('remarks'),
+  status: text('status').default('ed_pending').notNull(),
+  currentStage: text('current_stage').default('ed').notNull(),
+
+  edApprovedBy: uuid('ed_approved_by').references(() => users.id),
+  edApprovedByName: text('ed_approved_by_name'),
+  edApprovedAt: timestamp('ed_approved_at', { withTimezone: true }),
+  edRemarks: text('ed_remarks'),
+
+  hrApprovedBy: uuid('hr_approved_by').references(() => users.id),
+  hrApprovedByName: text('hr_approved_by_name'),
+  hrApprovedAt: timestamp('hr_approved_at', { withTimezone: true }),
+  hrRemarks: text('hr_remarks'),
+
+  mdApprovedBy: uuid('md_approved_by').references(() => users.id),
+  mdApprovedByName: text('md_approved_by_name'),
+  mdApprovedAt: timestamp('md_approved_at', { withTimezone: true }),
+  mdRemarks: text('md_remarks'),
+
+  rejectedBy: uuid('rejected_by').references(() => users.id),
+  rejectedByName: text('rejected_by_name'),
+  rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+  rejectStage: text('reject_stage'),
+  rejectRemarks: text('reject_remarks'),
+
+  sendBackReason: text('send_back_reason'),
+
+  submittedById: uuid('submitted_by_id').references(() => users.id),
+  submittedByName: text('submitted_by_name').notNull(),
+  submittedByEmail: text('submitted_by_email').notNull(),
+
+  history: jsonb('history').$type<any[]>().default([]).notNull(),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const fuelApprovalsRelations = relations(fuelApprovals, ({ one }) => ({
+  submittedBy: one(users, {
+    fields: [fuelApprovals.submittedById],
+    references: [users.id],
+  }),
+  edApprover: one(users, {
+    fields: [fuelApprovals.edApprovedBy],
+    references: [users.id],
+  }),
+  hrApprover: one(users, {
+    fields: [fuelApprovals.hrApprovedBy],
+    references: [users.id],
+  }),
+  mdApprover: one(users, {
+    fields: [fuelApprovals.mdApprovedBy],
+    references: [users.id],
+  }),
+}))
+
+
 // ── Vendors ──────────────────────────────────────────────────────────────────
 // Central vendor / company registry — shared across all brands and modules.
 // name + gstNumber are mandatory; email / phone / address are optional.
@@ -2281,11 +2354,49 @@ export const kiaBookingDiscounts = pgTable('kia_booking_discounts', {
   actionByName: text('action_by_name'),
   actionRemarks: text('action_remarks'),
   actionAt: timestamp('action_at', { withTimezone: true }),
+  /*
+   * ── The three-stage chain (migration 0050) ───────────────────────────────────────────────────
+   *     requested -> Sales Manager -> MD -> Accounts confirm the money reached the customer
+   *
+   * The `status` / `action_*` columns above PRE-DATE the chain and keep their meaning as the overall
+   * outcome; two live requests were already using them when 0050 ran. The stage rules live in
+   * lib/kia/discount-chain.ts and are shared by the screen and the API.
+   */
+  discountType: text('discount_type'),
+  smStatus: text('sm_status'),
+  smBy: uuid('sm_by').references(() => users.id),
+  smByName: text('sm_by_name'),
+  smRemarks: text('sm_remarks'),
+  smAt: timestamp('sm_at', { withTimezone: true }),
+  mdStatus: text('md_status'),
+  mdBy: uuid('md_by').references(() => users.id),
+  mdByName: text('md_by_name'),
+  mdRemarks: text('md_remarks'),
+  mdAt: timestamp('md_at', { withTimezone: true }),
+  /** What the MD actually granted. NULL means "as requested". */
+  mdApprovedAmount: decimal('md_approved_amount', { precision: 14, scale: 2 }),
+  /**
+   * 'PAID' | 'NOT_PAID' | NULL. Accounts recording a FACT, not a fourth approval — "approved but
+   * never paid" and "refused" are different states and the business cares about the difference.
+   */
+  payoutStatus: text('payout_status'),
+  payoutBy: uuid('payout_by').references(() => users.id),
+  payoutByName: text('payout_by_name'),
+  payoutRemarks: text('payout_remarks'),
+  payoutAt: timestamp('payout_at', { withTimezone: true }),
+  payoutReference: text('payout_reference'),
+  /**
+   * The delivered vehicle as it stood when the discount was requested — VIN, model, variant, colour,
+   * delivery date, consultant, price. Frozen because the booking keeps changing: a car can be
+   * re-allotted or a variant corrected, and an approver must see what they are approving against.
+   */
+  vehicleSnapshot: jsonb('vehicle_snapshot').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   bookingIdIdx: index('kia_booking_discounts_booking_idx').on(table.bookingId),
   statusIdx: index('kia_booking_discounts_status_idx').on(table.status),
+  stageIdx: index('kia_booking_discounts_stage_idx').on(table.smStatus, table.mdStatus, table.payoutStatus),
 }))
 
 /**

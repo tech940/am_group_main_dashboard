@@ -59,6 +59,13 @@ export type PayoutListResponse = {
   pageSize: number
   total: number
   totalPages: number
+  /**
+   * Payouts a date range is hiding because financing completed before the car was delivered, so they
+   * carry no delivery date yet. Zero unless a date filter is applied. NEVER omit this from the
+   * screen: a ledger that silently shrinks when you pick a month is how real money stops being
+   * chased.
+   */
+  undatedExcluded?: number
   kpis: PayoutKpis
   canSeeMobile: boolean
   canEdit: boolean

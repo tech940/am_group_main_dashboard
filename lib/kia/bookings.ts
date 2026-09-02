@@ -1805,12 +1805,41 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
  * Idempotent via the partial unique index on booking_id — re-delivering, or any retry, updates the
  * snapshot rather than creating a second row. Runs on the delivery `tx` so it rolls back with it.
  */
-export async function createFinancePayoutForDeliveredBooking(tx: DbTx, booking: typeof kiaBookings.$inferSelect, appUser: AppUser) {
+/**
+ * Put a booking on the Finance Payouts ledger.
+ *
+ * ── Why this is no longer delivery-only ───────────────────────────────────────────────────────
+ * A payout row used to be created ONLY when a booking was marked delivered. But financing can be
+ * marked complete WITHOUT a delivery — markKiaFinanceComplete allows it once Accounts confirms
+ * payment received, and a Finance Head / admin / MD can complete it outright. Those financings were
+ * finished as far as the finance team was concerned and never reached the payouts desk at all.
+ *
+ * Measured before this change: 10 of 62 completed financings had no payout row. Eight were live
+ * pre-delivery bookings with `finance_required = true` and a named bank — real money nobody was
+ * chasing, invisible to the team whose job is to chase it.
+ *
+ * ⚠️ A CANCELLED booking is skipped. There is no payout to collect on a sale that did not happen,
+ * and adding one would put a permanent phantom on the ledger.
+ */
+export type FinancePayoutSource = 'delivery' | 'finance_complete'
+
+export async function upsertFinancePayoutForBooking(
+  tx: DbTx,
+  booking: typeof kiaBookings.$inferSelect,
+  appUser: AppUser,
+  source: FinancePayoutSource = 'delivery',
+) {
+  if (booking.status === 'cancelled' || booking.deletedAt) return { skipped: 'cancelled' as const }
   const meta = (booking.metadata || {}) as JsonRecord
   const snapshot = {
     bookingId: booking.id,
-    source: 'delivery' as const,
-    deliveryDate: booking.deliveredAt ?? new Date(),
+    source,
+    /*
+     * ⚠️ NULL when the car has not gone out, never today's date. Stamping "delivered today" on a
+     * booking still sitting at proforma stage would put a fiction on a financial ledger, and the
+     * payouts screen sorts and ages by this column.
+     */
+    deliveryDate: booking.deliveredAt ?? (source === 'delivery' ? new Date() : null),
     customerName: booking.customerName,
     customerPhone: booking.customerPhone,
     model: [booking.model, booking.variant].filter(Boolean).join(' ') || booking.model,
@@ -1840,7 +1869,13 @@ export async function createFinancePayoutForDeliveredBooking(tx: DbTx, booking: 
     // Refresh the snapshot only. Deliberately does NOT touch the finance-entered columns — a
     // re-delivery must never wipe a payout amount someone already recorded.
     set: {
-      deliveryDate: snapshot.deliveryDate,
+      /*
+       * ⚠️ COALESCE, not a plain overwrite. Finance can complete BEFORE delivery, which writes a
+       * null delivery date; the later delivery upsert then fills it in. Without this guard the
+       * reverse order — someone re-completing finance on an already-delivered booking — would wipe
+       * a real delivery date back to null.
+       */
+      deliveryDate: sql`COALESCE(EXCLUDED.delivery_date, ${kiaFinancePayouts.deliveryDate})`,
       customerName: snapshot.customerName,
       customerPhone: snapshot.customerPhone,
       model: snapshot.model,
@@ -1854,6 +1889,16 @@ export async function createFinancePayoutForDeliveredBooking(tx: DbTx, booking: 
       updatedAt: new Date(),
     },
   })
+  return { skipped: null }
+}
+
+/** Kept so existing call sites read unchanged; delivery is just one of the two triggers now. */
+export async function createFinancePayoutForDeliveredBooking(
+  tx: DbTx,
+  booking: typeof kiaBookings.$inferSelect,
+  appUser: AppUser,
+) {
+  return upsertFinancePayoutForBooking(tx, booking, appUser, 'delivery')
 }
 
 export async function generateKiaBookingProforma(id: string, appUser: AppUser) {

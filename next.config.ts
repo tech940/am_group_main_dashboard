@@ -21,6 +21,10 @@ const nextConfig: NextConfig = {
         source: '/api/brands/:brand/approvals/resubmit',
         destination: '/api/brands/kia/approvals/resubmit',
       },
+      {
+        source: '/brands/kia/fuel-approvals',
+        destination: '/fuel-approvals',
+      },
     ];
   },
 };
