@@ -34,7 +34,26 @@ function walk(dir: string): string[] {
   return out
 }
 
-const allPages = walk(join(ROOT, 'app')).map((f) => readFileSync(f, 'utf8')).join('\n')
+/*
+ * ⚠️ COMMENTS ARE STRIPPED BEFORE SEARCHING.
+ *
+ * This check proves a guard by finding the permission key in page source. Without stripping, a page
+ * that merely CLAIMS to be guarded passes — and one did: app/brands/kia/payment-approvals/page.tsx
+ * carried the line `// Gated by 'kia.approvals.view' permission` and no guard whatsoever, and that
+ * comment was the only occurrence of the key in any page file. Every authenticated user could open
+ * the Approvals section and read vendor names, amounts and bill links, while this test passed green
+ * on the comment describing the guard that was not there.
+ */
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    // The leading capture keeps `https://…` and other `://` sequences from being eaten as comments.
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+}
+
+const allPages = walk(join(ROOT, 'app'))
+  .map((f) => stripComments(readFileSync(f, 'utf8')))
+  .join('\n')
 const groupKeys = new Set(PERMISSION_GROUPS.map((g) => g.key))
 const permissionKeys = new Set(PERMISSIONS.map((p) => p.key))
 

@@ -69,6 +69,60 @@ console.log('\n2) BOTH routes email the submitter on REJECT and HOLD')
     const setsRejected = src.includes("'Rejected'")
     check(!setsRejected || src.includes('sendApprovalDecisionEmail('),
       `${label} never marks a request Rejected without a message leaving`)
+
+    /*
+     * ⚠️ THE CHECKS ABOVE ARE WHOLE-FILE SUBSTRING TESTS, AND THAT IS NOT ENOUGH.
+     *
+     * bulk-action passed all of them while covering only 3 of its 5 stages: the call was wired into
+     * the `md` and `accounts` branches and nowhere else, so REJECT and HOLD at the FIRST stage and
+     * at `ea` set the column and sent nothing. It also passed the "never marks Rejected without a
+     * message" guard, because the first-stage branch does not set emailSendStatus either — silent
+     * in both dimensions reads as clean to a heuristic.
+     *
+     * That mattered most to the Group Service Manager: the first stage is the ONLY stage he can act
+     * on, so bulk-rejecting Hyundai/Platinum service requests notified nobody, while rejecting the
+     * same rows one at a time from their row buttons emailed every submitter.
+     *
+     * So assert the SHAPE that makes per-stage coverage impossible to get wrong: the send must sit
+     * in its own `action === 'REJECT' || action === 'HOLD'` block, OUTSIDE any stage branch, the way
+     * the single-row route has always done it.
+     */
+    const lines = src.split('\n')
+    /*
+     * There is more than one `action === 'REJECT' || action === 'HOLD'` guard: the md and accounts
+     * branches still use one to set `emailSendStatus`. So find the guard that actually SENDS rather
+     * than the first one, or this check reports on the wrong block.
+     *
+     * Indentation differs between the two routes (bulk's sits inside its per-row `for`), so the
+     * send is located within the guard rather than by pinning a column.
+     */
+    const guardAt = lines.reduce((found, l, i) => {
+      if (found >= 0) return found
+      if (!/if \(action === 'REJECT' \|\| action === 'HOLD'\)/.test(l)) return found
+      return lines.slice(i, i + 12).some((n) => n.includes('sendApprovalDecisionEmail(')) ? i : found
+    }, -1)
+    check(guardAt >= 0,
+      `${label} sends the decision email from ONE hoisted block, not per-stage`)
+
+    /*
+     * And that block must be at the OUTER level, not tucked inside a stage branch — which is
+     * precisely where bulk's copies lived. The stage branches all test `activeStageKey`, so the
+     * guard sitting at a shallower indent than the nearest preceding stage test proves it is not
+     * inside one.
+     */
+    if (guardAt >= 0) {
+      const indentOf = (l: string) => l.length - l.trimStart().length
+      const lastStageTest = lines.slice(0, guardAt).map((l, i) => ({ l, i }))
+        .filter(({ l }) => /activeStageKey === '/.test(l)).pop()
+      check(!lastStageTest || indentOf(lines[guardAt]) <= indentOf(lastStageTest.l),
+        `${label}'s decision email is outside every stage branch`)
+    }
+
+    // Belt and braces: no stage branch may keep a private copy, or the hoisted block is dead weight
+    // and the two can drift apart again.
+    const sendCount = (src.match(/sendApprovalDecisionEmail\(/g) || []).length
+    check(sendCount <= 2,
+      `${label} has at most two send sites — the hoisted REJECT/HOLD one and SEND_BACK (found ${sendCount})`)
   }
 }
 

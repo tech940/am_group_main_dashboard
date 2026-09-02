@@ -1614,7 +1614,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return data.rows.filter(row => {
       // 1. Pending for me vs All vs Sent Back vs MD Remarks vs Rejected filter
       const stageSelected = selectedStage !== 'All'
-      if (filterScope === 'pending' && !stageSelected && !getIsPendingForUser(row)) {
+      /*
+       * ⚠️ This used to carry `&& !stageSelected`, so choosing anything in the workflow-state
+       * dropdown turned the personal-queue filter OFF entirely — while the tab above kept showing
+       * `pendingForMeCount`. With "Pending EA" selected, a Group Service Manager's list filled with
+       * every request sitting at EA/MD/Accounts (none of them his, all with their buttons correctly
+       * hidden) under a heading that still read "Pending My Approval (3)". The count and the list
+       * described different populations and nothing said the tab filter had been dropped.
+       *
+       * The stage dropdown now NARROWS this scope instead of replacing it. Browsing other desks is
+       * what the "All" tab is for. The `all` scope below still needs its own !stageSelected, or
+       * picking "Paid Cases" there would hide the very rows it selects.
+       */
+      if (filterScope === 'pending' && !getIsPendingForUser(row)) {
         return false
       }
       if (filterScope === 'all' && !stageSelected) {
@@ -3404,9 +3416,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               <option value="All">All Workflow States</option>
               {/* Ordered to follow the real chain: Stage 1 → HR → EA → MD → Accounts → Payment.
                   Accounts used to sit above EA/MD, which read as though it came first.
-                  Stage 1 is relabelled because this option matches ED, VP and GSM alike — that is
-                  what getActiveStageKey('sales_manager') covers. */}
-              <option value="pending_sales_manager">Pending ED / VP / GSM</option>
+                  Stage 1 is named by ROLE nowhere, because the desk differs by brand and
+                  department: ED or GSM (Sales) at KIA, VP on KIA service, GSM (Sales) at Hyundai
+                  and Platinum, and the Group Service Manager on their service. The old label
+                  "Pending ED / VP / GSM" named three desks and omitted the fourth, so the Group
+                  Service Manager had to filter his own queue by picking roles that are not his.
+                  Every row's own chip still names its actual desk via firstStageDisplayLabel. */}
+              <option value="pending_sales_manager">Pending First Approval</option>
               <option value="pending_hr">Pending HR</option>
               <option value="pending_ea">Pending EA</option>
               <option value="pending_md">Pending MD</option>
@@ -4556,7 +4572,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   })
                   setDetailRow(result.row)
                   setRemarkText('')
-                  queryClient.invalidateQueries({ queryKey: ['kia', 'approvals'] })
+                  // The list is registered as ['kia-approval-requests'] (see the useQuery above).
+                  // This invalidated ['kia','approvals'], which NO query on this screen uses, so the
+                  // queue kept its stale history and went on rendering the previous "Latest Action
+                  // Comment". The drawer looked right only because setDetailRow patched it locally.
+                  queryClient.invalidateQueries({ queryKey: ['kia-approval-requests'] })
                 } else {
                   toast({
                     title: 'Error',

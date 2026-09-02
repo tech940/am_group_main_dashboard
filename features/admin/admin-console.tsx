@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils'
 import { AccessControlPanel } from './access-control-panel'
 import { AccessMap, type AccessMatrixData } from './access-map'
 import { RolesPanel, type RolesData } from './roles-panel'
+import { ROLE_PERMISSION_TEMPLATE_LABELS } from '@/lib/permissions/registry'
 
 type Capabilities = {
   authority: 'developer' | 'branch_admin'
@@ -164,7 +165,21 @@ type AuditResponse = {
   }>
 }
 
+/*
+ * ⚠️ DERIVED from the registry, not retyped beside it.
+ *
+ * This map used to be a standalone list, and its own comment already asked whoever edited it to
+ * "keep in step with ROLE_PERMISSION_TEMPLATE_LABELS". Three roles had fallen out of step —
+ * group_service_manager, assistant_manager and hr — so Admin -> Users rendered the raw enum string
+ * `group_service_manager` in the role badge and in both role pickers, on the one screen where
+ * somebody assigns that role.
+ *
+ * Spreading the registry first means a new role is labelled the moment it is templated; the entries
+ * below are the deliberate local wordings that survive on top of it. The registry is client-safe
+ * (its only import is `import type`), so this costs nothing.
+ */
 const ROLE_LABELS: Record<string, string> = {
+  ...ROLE_PERMISSION_TEMPLATE_LABELS,
   developer: 'Developer',
   branch_admin: 'Branch Admin',
   admin: 'Legacy Admin',

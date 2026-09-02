@@ -115,6 +115,26 @@ export async function POST(request: Request) {
         continue;
       }
 
+      /*
+       * A SENT BACK request belongs to the SUBMITTER, not to an approver.
+       *
+       * SEND_BACK nulls every stage column, so the inference above puts the row straight back at
+       * 'sales_manager' and it looks approvable again. The single-row route refuses this
+       * ([id]/action/route.ts:181); bulk did not, so a row could be advanced past the first stage
+       * while still carrying emailSendStatus='SentBack' and a live 30-day re-submit token the
+       * submitter could then use to reset the chain underneath the approvers.
+       *
+       * Only the client stopped it, and only at selection time: `selectedRequestIds` is never
+       * re-validated, so a row somebody else sent back AFTER it was ticked still went through.
+       */
+      if (row.emailSendStatus === 'SentBack' && action !== 'SEND_BACK') {
+        failedRows.push({
+          id: row.id,
+          error: 'This request was sent back to the submitter and is waiting on them to re-submit.',
+        })
+        continue
+      }
+
       // Check if user is authorized to act on this active stage
       const userRoleLower = (appUser.role || '').toLowerCase()
       const isAccountsUser = 
@@ -200,6 +220,44 @@ export async function POST(request: Request) {
         : 'HELD'
 
       /*
+       * The audit entry, built for EVERY action including SEND_BACK.
+       *
+       * This used to sit below the stage branches, and SEND_BACK `continue`d past it. So a bulk
+       * send-back left NO record of who did it, when, or from which stage - only the free-text
+       * `sendBackReason` column survived, and `updated_at` still showed the previous action's time.
+       * The same request sent back from its row button was recorded correctly. Send-back is the
+       * first approver's main non-approve action, so this was the least-audited thing they do.
+       *
+       * 'ea' had no arm in the role ternary and fell through to 'MD', so every bulk EA decision was
+       * written into the permanent history as though the MD had made it. The stepper matches on
+       * `h.roleKey === key || h.role?.toLowerCase()?.includes(key)`, so those entries rendered the
+       * EA's name and timestamp under "MD APPROVAL" on a request the MD had never seen.
+       */
+      const historyList = Array.isArray(row.history) ? [...row.history] : []
+      const roleLabel =
+        activeStageKey === 'sales_manager' ? firstStageShortLabel(row.brand, row.department, row.approvalType) :
+        activeStageKey === 'hr' ? 'HR' :
+        activeStageKey === 'ea' ? 'EA' :
+        activeStageKey === 'accounts' ? 'Accounts' :
+        'MD'
+
+      const recordHistory = () => {
+        historyList.push({
+          id: Math.random().toString(36).substring(7),
+          role: roleLabel,
+          roleKey: activeStageKey,
+          user: appUser.fullName,
+          action: statusVal,
+          // Defaulting to 'Bulk approved' on a rejection or a send-back would put a false statement
+          // into the audit trail, so the fallback follows the action.
+          remarks: remarks || ('Bulk ' + statusVal.toLowerCase()),
+          timestamp: new Date().toISOString(),
+        })
+        updates.history = historyList
+        updates.updatedAt = new Date()
+      }
+
+      /*
        * SEND_BACK is not a stage decision — it returns the request to the submitter, so every stage
        * that had signed off is cleared and the whole chain restarts on re-submission. This mirrors
        * the single-row route exactly; the two used to disagree because bulk simply refused the action.
@@ -222,8 +280,15 @@ export async function POST(request: Request) {
         })
         emailedCount++
 
-        await db.update(kiaApprovalRequests).set(updates).where(eq(kiaApprovalRequests.id, row.id))
-        processedRows.push(row.id)
+        recordHistory()
+        // `.returning()` so this branch pushes the same shape as every other one - it pushed a bare
+        // id string while the rest push the updated row.
+        const [sentBackRow] = await db
+          .update(kiaApprovalRequests)
+          .set(updates)
+          .where(eq(kiaApprovalRequests.id, row.id))
+          .returning()
+        processedRows.push(sentBackRow)
         continue
       }
 
@@ -260,15 +325,6 @@ export async function POST(request: Request) {
         updates.managementRemarks = remarks || ''
         if (action === 'REJECT' || action === 'HOLD') {
           updates.emailSendStatus = action === 'REJECT' ? 'Rejected' : 'Held'
-          // Previously this line was the ONLY thing that happened: the column said 'Rejected' and no
-          // message ever left. The submitter saw nothing.
-          sendApprovalDecisionEmail(action, row, {
-            stage: activeStageKey,
-            senderName: appUser.fullName || 'An approver',
-            remarks: remarks || '',
-            request,
-          })
-          emailedCount++
         }
       } else if (activeStageKey === 'accounts') {
         updates.accountApproval = statusVal
@@ -279,36 +335,33 @@ export async function POST(request: Request) {
           updates.emailSendStatus = 'Completed'
         } else if (action === 'REJECT' || action === 'HOLD') {
           updates.emailSendStatus = action === 'REJECT' ? 'Rejected' : 'Held'
-          sendApprovalDecisionEmail(action, row, {
-            stage: activeStageKey,
-            senderName: appUser.fullName || 'An approver',
-            remarks: remarks || '',
-            request,
-          })
-          emailedCount++
         }
       }
 
-      // Build history entry
-      const historyList = Array.isArray(row.history) ? [...row.history] : []
-      const roleLabel = 
-        activeStageKey === 'sales_manager' ? firstStageShortLabel(row.brand, row.department, row.approvalType) : 
-        activeStageKey === 'hr' ? 'HR' :
-        activeStageKey === 'accounts' ? 'Accounts' : 
-        'MD'
-
-      const historyEntry = {
-        id: Math.random().toString(36).substring(7),
-        role: roleLabel,
-        roleKey: activeStageKey,
-        user: appUser.fullName,
-        action: statusVal,
-        remarks: remarks || 'Bulk approved',
-        timestamp: new Date().toISOString()
+      /*
+       * Tell the submitter, whatever stage refused it.
+       *
+       * This call was wired into the `md` and `accounts` branches ONLY. The first stage and the EA
+       * set their column and said nothing - so rejecting twenty requests from the bulk toolbar
+       * notified nobody, while rejecting the same twenty one at a time from the row buttons emailed
+       * every submitter. The first stage is the only stage a Group Service Manager can ever act on,
+       * so every bulk rejection of a Hyundai or Platinum service request was silent.
+       *
+       * Hoisted OUT of the stage branches, exactly as the single-row route does it
+       * ([id]/action/route.ts, "Sent for EVERY stage, not just MD"), so a new stage cannot be added
+       * without notification again.
+       */
+      if (action === 'REJECT' || action === 'HOLD') {
+        sendApprovalDecisionEmail(action, row, {
+          stage: activeStageKey,
+          senderName: appUser.fullName || 'An approver',
+          remarks: remarks || '',
+          request,
+        })
+        emailedCount++
       }
-      historyList.push(historyEntry)
-      updates.history = historyList
-      updates.updatedAt = new Date()
+
+      recordHistory()
 
       // Execute update
       const [updatedRow] = await db

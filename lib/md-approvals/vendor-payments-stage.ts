@@ -18,6 +18,7 @@
  */
 
 import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
+import { firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
 
 /**
  * Does this payment type route through HR? Aliased from the ONE shared definition in
@@ -41,6 +42,12 @@ export type VendorPaymentStageInput = {
   managementApproval?: string | null
   accountApproval?: string | null
   approvalType?: string | null
+  /*
+   * Needed by the LABEL, not the stage inference. The first stage is a different person per brand
+   * and per department — ED at KIA, the sales GSM elsewhere, and the Group Service Manager on
+   * Hyundai/Platinum service — so a label that does not read these cannot name the right desk.
+   */
+  department?: string | null
   /*
    * Needed in practice even though it is optional in the type: HR is a KIA-only stage, so without
    * the brand this resolver parks a Hyundai or Platinum payroll request on an HR desk that brand
@@ -93,12 +100,65 @@ export function isAwaitingVendorPaymentMd(row: VendorPaymentStageInput): boolean
   return vendorPaymentActiveStage(row) === 'md'
 }
 
-/** Human label for whose desk a request is on — used when browsing in "All" scope. */
-export const VENDOR_PAYMENT_STAGE_LABEL: Record<VendorPaymentStageKey, string> = {
-  sales_manager: 'With ED',
-  hr: 'With HR',
-  ea: 'With EA',
-  md: 'Awaiting MD',
-  accounts: 'With Accounts',
+/**
+ * Human label for whose desk a request is on — used when browsing in "All" scope.
+ *
+ * ⚠️ KEPT ONLY FOR THE STAGES WHOSE OWNER IS THE SAME EVERYWHERE. `sales_manager` is deliberately
+ * absent: that desk is a different person per brand and per department, so a constant cannot name
+ * it. Use `vendorPaymentStageLabel(row)` instead, which reads the brand and the department.
+ */
+const FIXED_STAGE_LABEL: Record<Exclude<VendorPaymentStageKey, 'sales_manager'>, string> = {
+  hr: 'HR',
+  ea: 'EA',
+  md: 'MD',
+  accounts: 'Accounts',
   done: 'Completed',
+}
+
+/** The column whose value put the request at this stage — what the desk actually did, or nothing. */
+function valueAtStage(stage: VendorPaymentStageKey, row: VendorPaymentStageInput): string | null | undefined {
+  switch (stage) {
+    case 'sales_manager': return row.vpApproval
+    case 'hr': return row.hrApproval
+    case 'ea': return row.eaApproval
+    case 'md': return row.managementApproval
+    case 'accounts': return row.accountApproval
+    default: return undefined
+  }
+}
+
+/** Who owns the desk this request is sitting on. */
+export function vendorPaymentStageDesk(row: VendorPaymentStageInput): string {
+  const stage = vendorPaymentActiveStage(row)
+  if (stage === 'sales_manager') {
+    /*
+     * ⚠️ This used to be the literal 'ED'. Only KIA has an Executive Director, so every Hyundai and
+     * Platinum request at stage one was reported to the MD as "With ED" — naming a desk that brand
+     * does not have, and hiding that Hyundai/Platinum SERVICE requests belong to the Group Service
+     * Manager. The Approvals screen already renders these rows correctly; only this aggregate lied.
+     */
+    return firstStageShortLabel(row.brand, row.department, row.approvalType)
+  }
+  return FIXED_STAGE_LABEL[stage]
+}
+
+/**
+ * The label the MD sees, naming the right desk AND what that desk did.
+ *
+ * ⚠️ HELD and REJECTED must survive into the label. `needsAction` deliberately returns a held or
+ * rejected request to its owner's stage, so without this a request the approver REFUSED reads
+ * identically to one nobody has touched — and the MD Approvals client's only held-state affordance
+ * is `stageLabel.startsWith('Held')`, which a bare "With ..." can never satisfy. The other two
+ * sources already produce 'Held by MD', so vendor payments were the only place the distinction was
+ * being lost.
+ */
+export function vendorPaymentStageLabel(row: VendorPaymentStageInput): string {
+  const stage = vendorPaymentActiveStage(row)
+  if (stage === 'done') return 'Completed'
+
+  const desk = vendorPaymentStageDesk(row)
+  const value = valueAtStage(stage, row)
+  if (value === 'HELD') return `Held by ${desk}`
+  if (value === 'NOT APPROVED') return `Rejected by ${desk}`
+  return stage === 'md' ? 'Awaiting MD' : `With ${desk}`
 }

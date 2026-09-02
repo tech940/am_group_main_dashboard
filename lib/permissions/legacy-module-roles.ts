@@ -8,12 +8,24 @@
 // This module is intentionally CLIENT-SAFE: it has no server-only imports (only an erased `import type`),
 // so the client sidebar can import it directly instead of duplicating the role lists.
 
-// AM Finance: the union of the page's allowlist + global-access roles collapses to exactly these six.
-export const AM_FINANCE_VIEW_ROLES = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba', 'ed'] as const
+/*
+ * AM Finance: the union of the page's allowlist + global-access roles.
+ *
+ * ⚠️ `group_service_manager` was MISSING while its role template granted `am_finance.view`
+ * (registry.ts), so the grant was inert: the sidebar hid the link and the page forbade him. Adding
+ * a role to a template does nothing for these two modules unless it is added HERE as well — the
+ * same trap that had to be fixed for `sales_manager` and `ed`.
+ */
+export const AM_FINANCE_VIEW_ROLES = [
+  'admin', 'developer', 'ceo', 'md', 'ea', 'eba', 'ed', 'group_service_manager',
+] as const
 
 // Petty Cash: the roles the page allows (see lib/petty-cash/access.ts canAccessPettyCash).
 export const PETTY_CASH_VIEW_ROLES = [
   'admin', 'developer', 'branch_admin', 'ea', 'md', 'eba', 'accounts', 'manager', 'general_manager', 'service_general_manager', 'sales_manager', 'ed',
+  // Templated `petty_cash` view+create in registry.ts ("this role raises requests there, it does
+  // not approve them") but absent here, so the link was hidden and the page forbidden.
+  'group_service_manager',
 ] as const
 
 export function isAmFinanceViewRole(role: string | null | undefined): boolean {

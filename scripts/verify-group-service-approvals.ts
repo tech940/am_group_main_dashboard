@@ -14,9 +14,14 @@
  * Read-only. Run: npm run verify:group-service-approvals
  */
 import 'dotenv/config'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { analyticsExecute } from '../lib/analytics/db'
 import { sql } from 'drizzle-orm'
 import { isApprovalVisibleTo } from '../lib/kia/approval-scope'
+import { vendorPaymentActiveStage, vendorPaymentStageLabel } from '../lib/md-approvals/vendor-payments-stage'
+import { isAmFinanceViewRole, isPettyCashViewRole } from '../lib/permissions/legacy-module-roles'
+import { canCreatePettyCashRequest } from '../lib/petty-cash/access'
 import {
   firstStageApproverRolesForTrack, isServiceApproval, usesGroupServiceManager,
 } from '../lib/approvals/first-stage-approver'
@@ -184,6 +189,87 @@ async function main() {
     console.log(`   ${brand.padEnd(9)} service -> ${roles.join(', ').padEnd(24)} sales -> ${salesRoles.join(', ')}`)
     check(roles.length === 1 && roles[0] === ROLE, `${brand} service first stage is the Group Service Manager alone`)
     check(!salesRoles.includes(ROLE), `${brand} sales still belongs to the sales GSM`)
+  }
+
+  console.log('\n8) The BULK toolbar behaves like the row buttons')
+  /*
+   * Bulk and single-row are two implementations of one workflow, and they have drifted repeatedly.
+   * Everything below was a live divergence that only bit the bulk path — which is the path an
+   * approver with a queue actually uses.
+   */
+  {
+    const bulk = readFileSync(join(process.cwd(), 'app/api/brands/kia/approvals/bulk-action/route.ts'), 'utf8')
+
+    // SEND_BACK used to `continue` past the shared history builder, so a bulk send-back — this
+    // role's main non-approve action — left no record of who did it, when, or from which stage.
+    const sendBackBlock = bulk.slice(bulk.indexOf("if (action === 'SEND_BACK') {"))
+    check(sendBackBlock.slice(0, sendBackBlock.indexOf('continue')).includes('recordHistory()'),
+      'a bulk SEND_BACK writes a history entry before it returns')
+
+    // 'ea' had no arm and fell through to 'MD', so bulk EA decisions were recorded — and displayed
+    // in the stepper — as the MD's.
+    check(/activeStageKey === 'ea' \? 'EA'/.test(bulk),
+      "the history role ternary has an 'ea' arm, so an EA action is not recorded as the MD's")
+
+    // A sent-back request belongs to the submitter; SEND_BACK nulls every column so the stage
+    // inference makes it look approvable again.
+    check(/row\.emailSendStatus === 'SentBack' && action !== 'SEND_BACK'/.test(bulk),
+      'bulk refuses to action a request that is sent back, as the single-row route does')
+  }
+
+  console.log('\n9) The MD sees the right desk named on his rows')
+  /*
+   * The MD Approvals aggregate is a different module reading the same table, and it named stage one
+   * 'With ED' for every brand — an Executive Director that Hyundai and Platinum do not have.
+   */
+  {
+    const svcRow = {
+      vpApproval: null, hrApproval: null, eaApproval: null, managementApproval: null,
+      accountApproval: null, approvalType: 'Vendor Payment', brand: 'hyundai', department: 'SERVICE',
+    }
+    check(vendorPaymentStageLabel(svcRow) === 'With Group Service Manager',
+      `a hyundai SERVICE row at stage one reads "${vendorPaymentStageLabel(svcRow)}"`)
+    check(vendorPaymentStageLabel({ ...svcRow, department: 'SALES' }) === 'With GSM',
+      'a hyundai SALES row still names the sales GSM')
+    check(vendorPaymentStageLabel({ ...svcRow, brand: 'kia' }) === 'With ED',
+      'KIA still reads "With ED" — that brand does have one')
+
+    // A refusal must not read like an untouched request: needsAction deliberately returns a held or
+    // rejected row to its owner's stage, and the MD client's only held affordance is the prefix.
+    check(vendorPaymentStageLabel({ ...svcRow, vpApproval: 'HELD' }) === 'Held by Group Service Manager',
+      'a HELD row says who held it')
+    check(vendorPaymentStageLabel({ ...svcRow, vpApproval: 'NOT APPROVED' }) === 'Rejected by Group Service Manager',
+      'a REJECTED row says who rejected it')
+
+    /*
+     * The bug that emptied the MD's queue: the aggregator called the resolver without `eaApproval`,
+     * and needsAction(undefined) is always true, so 'md' was unreachable and awaitingMd was false on
+     * every row. Every field the resolver reads must be passed.
+     */
+    const cleared = {
+      ...svcRow, vpApproval: 'APPROVED', eaApproval: 'APPROVED', hrApproval: 'APPROVED',
+    }
+    check(vendorPaymentActiveStage(cleared) === 'md',
+      'a row past EA reaches the MD stage')
+    check(vendorPaymentActiveStage({ ...cleared, eaApproval: undefined }) !== 'md',
+      'and it does NOT when eaApproval is dropped — proving the field is load-bearing, not decorative')
+
+    const sources = readFileSync(join(process.cwd(), 'lib/md-approvals/sources.ts'), 'utf8')
+    check(/eaApproval:\s*text\(r\.ea_approval\)/.test(sources),
+      'the MD aggregator passes eaApproval into the stage resolver')
+    check(/department:\s*text\(r\.department\)/.test(sources),
+      'and passes department, so the stage-one label can name the right desk')
+  }
+
+  console.log('\n10) His templated module grants are not inert')
+  /*
+   * AM Finance and Petty Cash gate their PAGES on a role allowlist, not the permission snapshot, so
+   * a template grant does nothing until the role is added there too. Both of his were inert.
+   */
+  {
+    check(isPettyCashViewRole(ROLE), 'petty cash: he can see the link and open the page')
+    check(canCreatePettyCashRequest(ROLE), 'petty cash: he can actually raise a request, which is why he was granted it')
+    check(isAmFinanceViewRole(ROLE), 'am finance: his templated view grant reaches the page')
   }
 
   console.log(failures === 0 ? '\n=== ALL CHECKS PASSED ===' : `\n=== ${failures} FAILURE(S) ===`)

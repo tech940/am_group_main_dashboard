@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { kiaApprovalRequests, approvalsCommonData, glAccounts } from '@/lib/db/schema'
 import { and, asc, eq, or } from 'drizzle-orm'
 import { validateEmailDomain } from '@/lib/email-validator'
+import { handleApprovalResubmit } from '@/lib/approvals/resubmit'
 
 export async function POST(
   request: NextRequest,
@@ -108,6 +109,24 @@ export async function POST(
         console.warn('Fallback GL Account query error:', e)
       }
     }
+
+    /*
+     * Re-submission of a sent-back request: UPDATE the original row instead of creating a second
+     * request the approvers would have to reconcile against the first.
+     *
+     * ⚠️ This branch was MISSING here, and only here. The send-back email links back to the
+     * submission form, and the form posts to `/api/brands/{brand}/approvals` — so every Hyundai and
+     * Platinum re-submission landed on this route, fell straight through to the INSERT below, and
+     * produced a duplicate while the original stayed parked at `SentBack` where nobody could clear
+     * it. lib/approvals/resubmit.ts carries the measured evidence.
+     *
+     * Placed BEFORE the vendor auto-save and the request-number allocation: a re-submission must not
+     * burn a new request number, and re-running the vendor insert for an unchanged vendor is waste.
+     */
+    const resubmitted = await handleApprovalResubmit({
+      body, routeBrand: normalizedBrand, normalizedBillUrls, mirrorBill1, mirrorBill2, finalGlAccountId,
+    })
+    if (resubmitted) return resubmitted
 
     // Auto-save new vendor to common list if it doesn't already exist
     if (vendorName && vendorName.trim()) {

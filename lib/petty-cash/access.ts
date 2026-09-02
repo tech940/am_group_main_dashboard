@@ -77,6 +77,9 @@ export function canCreatePettyCashRequest(role: PettyCashRole | null | undefined
     r === 'manager' ||
     r === 'general_manager' ||
     r === 'service_general_manager' ||
+    // Hyundai + Platinum service is one operation under this role; it raises petty-cash requests
+    // the same way each brand's own service GSM does. Templated in registry.ts as view+create.
+    r === 'group_service_manager' ||
     r === 'md' ||
     r === 'accounts' ||
     r === 'ea' ||
