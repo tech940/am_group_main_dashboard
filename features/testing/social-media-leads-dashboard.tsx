@@ -282,7 +282,22 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
     },
   })
 
+  /**
+   * Is this actually a phone number we can dial?
+   *
+   * ⚠️ The API substitutes the literal string '—' when it finds nothing, and today it finds nothing
+   * on EVERY row: phone_num, phone_no, full_phone_number and user_id are empty on all of them, and
+   * the `contact` column the code refers to does not exist in the live table at all. So the tel:
+   * links pointed at "tel:—" and the copy buttons put "—" on the user's clipboard.
+   *
+   * Shape-gated rather than merely non-empty: whatever eventually arrives must look like a dialable
+   * number before we offer to dial it.
+   */
+  const isDialable = (value: string | null | undefined) =>
+    typeof value === 'string' && /\d{10,15}/.test(value.replace(/[^\d]/g, ''))
+
   const handleCopyMobile = (mobile: string) => {
+    if (!isDialable(mobile)) return
     navigator.clipboard.writeText(mobile)
     setCopiedNumber(true)
     setTimeout(() => setCopiedNumber(false), 2000)
@@ -851,8 +866,12 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
             {/* Quick Actions Bar */}
             <div className="grid grid-cols-3 gap-2 p-4 border-b border-slate-100 bg-white">
               <a
-                href={`tel:${selectedDetailLead.mobileNumber}`}
-                className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs transition-colors"
+                /* No number, no Call button — this used to render "tel:—". */
+                {...(isDialable(selectedDetailLead.mobileNumber)
+                  ? { href: `tel:${selectedDetailLead.mobileNumber}` }
+                  : { 'aria-disabled': true, title: 'No phone number on this lead' })}
+                className={cn("flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-xs font-bold text-white shadow-xs transition-colors",
+                  isDialable(selectedDetailLead.mobileNumber) ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-300 cursor-not-allowed pointer-events-none")}
               >
                 <Phone className="h-3.5 w-3.5 fill-white" /> Call
               </a>
@@ -861,6 +880,7 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
                 variant="outline"
                 size="sm"
                 onClick={() => handleCopyMobile(selectedDetailLead.mobileNumber)}
+                disabled={!isDialable(selectedDetailLead.mobileNumber)}
                 className="h-9.5 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50"
               >
                 {copiedNumber ? <Check className="mr-1 h-3.5 w-3.5 text-emerald-600" /> : <Copy className="mr-1 h-3.5 w-3.5 text-slate-500" />}
@@ -1064,6 +1084,7 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
                       size="icon"
                       variant="ghost"
                       onClick={() => handleCopyMobile(contactLead.mobileNumber)}
+                disabled={!isDialable(contactLead.mobileNumber)}
                       className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-200/60"
                       title="Copy Mobile"
                     >
@@ -1074,7 +1095,10 @@ export function SocialMediaLeadsDashboard({ currentUserRole }: { currentUserRole
               </div>
 
               <a
-                href={`tel:${contactLead.mobileNumber}`}
+                /* No number, no Call button — this used to render "tel:—". */
+                {...(isDialable(contactLead.mobileNumber)
+                  ? { href: `tel:${contactLead.mobileNumber}` }
+                  : { 'aria-disabled': true, title: 'No phone number on this lead' })}
                 className="flex items-center justify-center gap-2.5 rounded-2xl bg-[#004e5a] px-5 py-3.5 text-xs font-black text-white hover:bg-[#003c46] shadow-md transition-colors w-full"
               >
                 <Phone className="h-4 w-4 fill-white" /> Call Now

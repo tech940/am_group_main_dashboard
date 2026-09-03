@@ -9,6 +9,7 @@ import {
 } from '@/lib/customer-360/brands'
 import { redactKiaCustomerSummary } from '@/lib/kia/customer-profile/redact'
 import type { KiaCustomerGaps } from '@/lib/kia/customer-profile/reader'
+import { resolveCustomerSort } from '@/lib/kia/customer-profile/reader'
 
 // The KIA directory stitches six feeds together; a cold pooler connection alone costs ~1.8s.
 export const maxDuration = 60
@@ -77,6 +78,9 @@ export async function GET(request: Request) {
       dealerScope,
       gap,
       serviceGapMonths: Number(url.searchParams.get('service_gap_months')) || null,
+      // Whitelisted in the reader (resolveCustomerSort); anything unknown falls back to the default,
+      // so this never reaches the ORDER BY as free text.
+      sort: resolveCustomerSort(url.searchParams.get('sort')),
       page: Number(url.searchParams.get('page')) || 1,
       pageSize: Number(url.searchParams.get('page_size')) || 25,
     })

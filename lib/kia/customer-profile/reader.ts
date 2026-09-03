@@ -170,6 +170,25 @@ export type KiaCustomerListResult = {
   totalCustomers: number
 }
 
+/**
+ * A CANCELLED workshop bill is not a service visit.
+ *
+ * ro_billing_report keeps the cancelled bill AND its reissue as separate rows on the same
+ * (vin, ro_no). Measured: 29 cancelled bills worth Rs4,84,711, of which 28 have a live reissue — so
+ * those 28 visits were counted twice, once at each bill, and their money summed twice.
+ *
+ * ⚠️ This is what "service visits showing twice" actually is. It is NOT a snapshot duplicate: the
+ * feed has 5,829 rows and 5,829 distinct (vin, ro_no, bill_no, bill_date) keys, so a DISTINCT ON
+ * would remove nothing — and would be actively wrong, because one RO legitimately carries two live
+ * bills (MZBGD811LNN006162 / R202601171 has two 'No Payment' bills on different dates).
+ *
+ * Every other consumer already filters this way — KIA Business Excellence, lib/be/revenue-leakage
+ * and lib/cockpit/india-snapshot-sql — which left Customer 360 as the only surface counting
+ * cancelled money.
+ */
+const LIVE_BILL_ONLY = (alias: string) =>
+  sql.raw(`LOWER(TRIM(COALESCE(${alias}.bill_status, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`)
+
 export type KiaCustomerListFilters = {
   search?: string | null
   dealerCode?: string | null
@@ -183,8 +202,34 @@ export type KiaCustomerListFilters = {
   dealerScope?: string[] | null
   gap?: keyof KiaCustomerGaps | null
   serviceGapMonths?: number | null
+  /**
+   * How the directory is ordered. Whitelisted, never interpolated — see CUSTOMER_SORTS.
+   *
+   * ⚠️ `services` is meaningless on Hyundai/Platinum: those feeds arrive with VIN and phone masked,
+   * so there is no workshop join and `service_count` is a hardcoded 0
+   * (lib/customer-360/sales-only-reader.ts). The control is hidden there rather than offering a
+   * sort that silently does nothing.
+   */
+  sort?: KiaCustomerSort | null
   page?: number
   pageSize?: number
+}
+
+/** The orderings the directory offers. */
+export const CUSTOMER_SORTS = {
+  /** Default: who did something most recently. */
+  recent: 'd.last_activity_date DESC NULLS LAST, d.name ASC NULLS LAST',
+  services: 'd.service_count DESC NULLS LAST, d.last_activity_date DESC NULLS LAST',
+  spend: 'd.service_spend DESC NULLS LAST, d.last_activity_date DESC NULLS LAST',
+  name: 'd.name ASC NULLS LAST',
+} as const
+
+export type KiaCustomerSort = keyof typeof CUSTOMER_SORTS
+
+/** Resolve an untrusted sort key to a SQL fragment. Anything unknown falls back to the default. */
+export function resolveCustomerSort(value: unknown): KiaCustomerSort {
+  const key = String(value ?? '').trim()
+  return (key in CUSTOMER_SORTS ? key : 'recent') as KiaCustomerSort
 }
 
 /**
@@ -344,6 +389,7 @@ function directoryCte(
                 FILTER (WHERE COALESCE(r.vehicle_reg_no, '') <> ''))[1] AS vehicle_reg_no
       FROM ro_billing_report r
       WHERE UPPER(BTRIM(r.vin)) = UPPER(BTRIM(s.vin_number))
+        AND ${LIVE_BILL_ONLY('r')}
     ) ro ON TRUE
   ),
 
@@ -702,7 +748,7 @@ export async function listKiaCustomers(
       (SELECT COUNT(*) FROM directory WHERE gap_booked_not_delivered)::int AS c_booked_not_delivered
     FROM directory d
     WHERE ${where}
-    ORDER BY d.last_activity_date DESC NULLS LAST, d.name ASC NULLS LAST
+    ORDER BY ${sql.raw(CUSTOMER_SORTS[resolveCustomerSort(filters.sort)])}
     LIMIT ${pageSize} OFFSET ${offset}
   `)
 
@@ -1112,6 +1158,8 @@ export async function getKiaCustomerProfile(
           GROUP BY vin, ro_no
         ) psf ON psf.vin = UPPER(BTRIM(b.vin)) AND psf.ro_no = UPPER(BTRIM(b.ro_no))
         WHERE UPPER(BTRIM(b.vin)) IN (${sql.join(vins.map((v) => sql`${v}`), sql`, `)})
+          -- A cancelled bill and its reissue are two rows on one visit. See LIVE_BILL_ONLY.
+          AND ${LIVE_BILL_ONLY('b')}
         ORDER BY b.bill_date DESC NULLS LAST
       `),
       db.execute(sql`

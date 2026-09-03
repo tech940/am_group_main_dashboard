@@ -428,5 +428,5 @@ export async function getGroupCockpit(input?: { endDate?: string | null }): Prom
   // v5: sales targets fall back to last-month-actual + 10% (`targetBasis`). The key MUST be bumped
   // with a shape or semantics change — e.g. a v3 payload has no `status`, so every brand would fall
   // through as not-ok, and a v4 one would keep showing "target 0" until it expired.
-  return getCachedData(`cockpit:group:v5:${win.monthStart}:${win.end}`, () => buildCockpit(input?.endDate), CACHE_TTL.SHORT)
+  return getCachedData(`cockpit:group:v6:${win.monthStart}:${win.end}`, () => buildCockpit(input?.endDate), CACHE_TTL.SHORT)
 }

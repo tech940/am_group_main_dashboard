@@ -145,13 +145,30 @@ export function CockpitDashboard() {
                   <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">{b.label} Sales{b.monthLabel ? ` · ${b.monthLabel}` : ''}</h3>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <MiniStat label="Bookings" value={formatInt(b.bookings)} sub={`target ${formatInt(b.bookingTarget)} · ${formatPct(b.bookingAchievement)}`} />
-                <MiniStat label="Deliveries" value={formatInt(b.deliveries)} sub={`target ${formatInt(b.deliveryTarget)} · ${formatPct(b.deliveryAchievement)}`} />
-                <MiniStat label="Conversion" value={formatPct(b.conversion)} sub="bookings → deliveries" />
-                <MiniStat label="Consultants" value={formatInt(b.consultants)} sub="active this month" />
-              </div>
-              {b.targetBasis === 'auto' && (
+              {/*
+                * ⚠️ A FAILED READ IS NOT ZERO SALES.
+                *
+                * The Stock card below has always had this guard; the Sales card did not, and that is
+                * a live defect, not future-proofing. When the KIA sales reader exceeds its 25s
+                * deadline (cockpit-data.ts BUDGET.secondary — measured at 12-20s cold, so within a
+                * few seconds of tripping), withDeadline returns null and a placeholder carrying
+                * `available: false` is built. This card then rendered it as
+                * "Bookings 0 · target 0 · —" — telling the MD the group sold nothing this month.
+                *
+                * withDeadline's own log line says "omitted from this response, not shown as zero".
+                * The Sales card was the one place contradicting it.
+                */}
+              {b.available === false ? (
+                <p className="text-xs font-semibold italic text-slate-400 py-2">Sales figures could not be read for this brand — not shown as zero.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <MiniStat label="Bookings" value={formatInt(b.bookings)} sub={`target ${formatInt(b.bookingTarget)} · ${formatPct(b.bookingAchievement)}`} />
+                  <MiniStat label="Deliveries" value={formatInt(b.deliveries)} sub={`target ${formatInt(b.deliveryTarget)} · ${formatPct(b.deliveryAchievement)}`} />
+                  <MiniStat label="Conversion" value={formatPct(b.conversion)} sub="bookings → deliveries" />
+                  <MiniStat label="Consultants" value={formatInt(b.consultants)} sub="active this month" />
+                </div>
+              )}
+              {b.available !== false && b.targetBasis === 'auto' && (
                 <p className="mt-3 text-[10px] font-semibold text-slate-400">Targets auto-set: last month + 10% (no target configured for this month)</p>
               )}
             </Card>

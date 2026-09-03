@@ -397,8 +397,21 @@ async function fetchForwardBook(brands: InsuranceBrandId[], asOf: string) {
       COUNT(*)::int                     AS vehicles,
       COALESCE(SUM(premium), 0)::float8 AS premium
     FROM latest
-    WHERE expiry_date >= ${asOf}::date
-      AND expiry_date <  (${asOf}::date + INTERVAL '12 months')
+    /*
+     * ⚠️ FLOORED TO THE START OF THE MONTH.
+     *
+     * The buckets are calendar months (to_char on YYYY-MM) but the window used to start at asOf --
+     * today. So the first bar was "today to month end" while its label read as the whole month: on
+     * the 25th it showed about five days of renewals and looked like a collapse, and the 12-month
+     * span ended mid-month, leaving a stub 13th bucket.
+     *
+     * Flooring both ends keeps every bucket a WHOLE month, which is what the axis claims.
+     *
+     * Not to be confused with RENEWAL_DUE_WINDOW_DAYS (lib/insurance-360/lifecycle.ts) -- that is a
+     * rolling 60-DAY status threshold in a different module and is correct as written.
+     */
+    WHERE expiry_date >= date_trunc('month', ${asOf}::date)
+      AND expiry_date <  (date_trunc('month', ${asOf}::date) + INTERVAL '12 months')
     GROUP BY 1
     ORDER BY 1
   `)

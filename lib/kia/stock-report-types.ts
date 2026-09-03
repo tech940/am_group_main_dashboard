@@ -36,6 +36,11 @@ export type KiaStockModelCard = {
   model: string
   units: number
   stockValue: number
+  /**
+   * Distinct VINs of this model delivered in the last 90 days — the denominator for a per-model
+   * days-of-supply. Same window and source as the page's headline KPI, so the two agree.
+   */
+  retailed90: number
   avgAge: number
   freeStock: number
   inTransit: number

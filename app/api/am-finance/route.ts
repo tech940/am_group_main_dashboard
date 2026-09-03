@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { and, asc, count, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessAmFinance, canCreateAmFinance, canEditAmFinance, getAmFinancePermissions } from '@/lib/am-finance/access'
+import { canViewAmFinance } from '@/lib/am-finance/access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { serializeAppDate } from '@/lib/date-time'
 import { db } from '@/lib/db'
@@ -564,7 +565,9 @@ export async function GET(request: NextRequest) {
   try {
     const appUser = await timer.time('auth', () => getAuthenticatedAppUser())
     if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!canAccessAmFinance(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // Same rule as app/am-finance/page.tsx — honours an Access-Map allow AND a deny. Checking
+    // the role alone served data to users the page had already refused. See lib/am-finance/access.ts.
+    if (!(await canViewAmFinance(appUser))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const searchParams = request.nextUrl.searchParams
     const whereExpression = buildFilters(searchParams)

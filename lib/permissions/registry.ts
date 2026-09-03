@@ -1294,6 +1294,21 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ],
   general_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    /*
+     * ⚠️ THE FIRST APPROVAL STAGE. firstStageApproverRolesForTrack returns `general_manager` for the
+     * SALES side of every non-KIA brand, and the KIA first stage additionally admits sales_manager /
+     * sales_head (isGeneralSalesManagerRole, applied identically by the screen, the single-row action
+     * route and bulk-action).
+     *
+     * Without this key they cannot OPEN the section they are the approver for — the sidebar link is
+     * hidden and the page refuses them. It stayed invisible only because the page had no guard at
+     * all and they could still reach it by URL; adding the guard turned a hidden misconfiguration
+     * into a lockout.
+     *
+     * `view` only, deliberately. Authority at the stage is a ROLE check in the routes, not this key,
+     * and rows are still scoped by lib/kia/approval-scope.ts — so this opens the door, not the safe.
+     */
+    ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
@@ -1332,6 +1347,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ],
   sales_head: [
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    // First stage on KIA sales — see the note on general_manager above.
+    ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
@@ -1347,6 +1364,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   // KIA Proforma workflow: reviews & approves/declines proformas.
   sales_manager: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management'], ['view', 'create', 'edit', 'approve', 'audit']),
+    // First stage on KIA sales — see the note on general_manager above.
+    ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),

@@ -610,9 +610,22 @@ export async function getKiaStockReportSummary(input: {
 
     const retailed90 = Number(rows(sales90dResult)[0]?.cnt) || 0
     const trimSalesMap = new Map<string, number>()
+    /*
+     * The same trailing-90 rows, rolled up per MODEL.
+     *
+     * Added for the "Days of supply — the stocking engine" panel, which divided a per-model unit
+     * count by the GROUP-WIDE month-to-date rate over a full 30 days. Two errors at once: the wrong
+     * denominator (every model measured against every model's sales) and a month-to-date numerator
+     * spread over 30 days, which understates the daily rate worst at the start of a month. The panel
+     * therefore disagreed with the days-of-supply KPI on the same page, for the same model.
+     */
+    const modelSales90 = new Map<string, number>()
     for (const r of rows(trimSalesResult)) {
-      const key = `${safeText(r.model).toUpperCase().trim()}|${safeText(r.variant).toUpperCase().trim()}`
-      trimSalesMap.set(key, Number(r.sales_count) || 0)
+      const model = safeText(r.model).toUpperCase().trim()
+      const key = `${model}|${safeText(r.variant).toUpperCase().trim()}`
+      const n = Number(r.sales_count) || 0
+      trimSalesMap.set(key, n)
+      modelSales90.set(model, (modelSales90.get(model) || 0) + n)
     }
 
     const trimStockMap = new Map<string, { model: string; variant: string; stock_count: number; age_sum: number; value_sum: number }>()
@@ -717,6 +730,9 @@ export async function getKiaStockReportSummary(input: {
           model,
           units: value.units,
           stockValue: value.stockValue,
+          // Distinct VINs of THIS model delivered in the last 90 days — the denominator for a
+          // per-model days-of-supply. Same window and same source as the page's headline KPI.
+          retailed90: modelSales90.get(model.toUpperCase().trim()) || 0,
           avgAge: value.units ? Math.round(value.ageTotal / value.units) : 0,
           freeStock: value.freeStock,
           inTransit: value.inTransit,

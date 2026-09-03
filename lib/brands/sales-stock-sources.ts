@@ -68,16 +68,30 @@ export const BRAND_SALES_STOCK_SOURCES: Record<string, BrandSalesStockSource> = 
   hyundai: {
     brand: 'hyundai',
     label: 'AM Hyundai',
+    /*
+     * ⚠️ available stays TRUE and readerImplemented goes FALSE — the distinction matters.
+     *
+     * 4 of the 6 declared tables exist and are large (231,236 / 2,553 / 25,043 / 11,372 rows). What
+     * is missing is (a) hyundai_stock_management, which does not exist as a table at all, and (b) a
+     * cockpit-shaped reader: lib/kia has sales-performance.ts and stock-report.ts, lib/hyundai has
+     * neither, and the dispatcher hard-gates on `src.brand === 'kia'`.
+     *
+     * Both were flipped to true with no reader added, so the cockpit rendered permanently-blank
+     * Hyundai and Platinum cards. Setting `available: false` would have been the easy revert, but it
+     * encodes Hyundai identically to MG — which has ZERO tables — and the next person reading it
+     * would re-request a DMS export that already lands daily.
+     */
     available: true,
-    readerImplemented: true,
+    readerImplemented: false,
     tables: tablesFor('hyundai_'),
     calcProfile: { stockValueUpliftFactor: 1.36 },
   },
   platinum: {
     brand: 'platinum',
     label: 'AM Platinum',
+    // Same as Hyundai above: the feeds exist, the cockpit-shaped reader does not.
     available: true,
-    readerImplemented: true,
+    readerImplemented: false,
     tables: tablesFor('am_platinum_'),
     calcProfile: { stockValueUpliftFactor: 1.36 },
   },

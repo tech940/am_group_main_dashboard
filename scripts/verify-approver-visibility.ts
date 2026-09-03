@@ -274,7 +274,11 @@ async function main() {
    * ceo, hr and even ed, whose own template grants view/approve/audit on that group.
    */
   const KEY = 'kia.approvals.view'
-  const STAGE_OWNING_ROLES = ['ea', 'eba', 'ed', 'vp', 'hr', 'accounts', 'finance_head', 'md', 'general_manager', 'group_service_manager']
+  // Every role any approvals surface will accept at a stage — the screen, the single-row action
+  // route and bulk-action all admit sales_manager / sales_head on the KIA first stage via
+  // isGeneralSalesManagerRole, so they need the section key too.
+  const STAGE_OWNING_ROLES = ['ea', 'eba', 'ed', 'vp', 'hr', 'accounts', 'finance_head', 'md',
+    'general_manager', 'service_general_manager', 'group_service_manager', 'sales_manager', 'sales_head']
   for (const role of STAGE_OWNING_ROLES) {
     let base: Record<string, boolean>
     try { base = buildTierRoleDefaults(role as never) } catch { continue }
@@ -282,13 +286,16 @@ async function main() {
     for (const k of tpl) if (k in base) base[k] = true
     const eff = resolveEffectiveSnapshotForMode(base, {}, role as never, 'kia').effective
     /*
-     * general_manager is deliberately excluded: outside KIA it owns the first stage, but the
-     * section grant is not in its tier or template and never was. Reported, not failed.
+     * ⚠️ general_manager USED TO BE A WARNING HERE, AND THAT WAS WRONG.
+     *
+     * It owns the SALES first stage for every non-KIA brand (firstStageApproverRolesForTrack), so a
+     * GM who cannot open the section cannot approve anything — the definition of an outage, not a
+     * note. It stayed invisible only because the page had no guard and GMs reached it by URL while
+     * the sidebar link was already hidden from them; adding the page guard turned a silent
+     * misconfiguration into a lockout, and this check warned instead of failing.
+     *
+     * Every role that can act on a stage must resolve the section key WITHOUT a per-user override.
      */
-    if (role === 'general_manager') {
-      if (eff[KEY] !== true) warn(`${role} does not hold ${KEY} by default — its holders need an Access-Map tick`)
-      continue
-    }
     check(eff[KEY] === true, `${role} resolves ${KEY} = true without needing a per-user override`)
   }
 

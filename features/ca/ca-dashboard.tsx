@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { BRANCH_OPTIONS, ALL_BRANCH_OPTION } from '@/lib/branches'
 import { cn } from '@/lib/utils'
+import { formatIndiaDate } from '@/lib/date-time'
 
 type Metric = { approvedCount: number; approvedAmount: number }
 type BranchRow = { branch: string; branchLabel: string; po: Metric; pettyCashFunding: Metric; pettyCashSpend: Metric }
@@ -28,7 +29,9 @@ function formatCurrency(v: number) {
   return `${sign}₹${r.toLocaleString('en-IN')}`
 }
 function formatInt(v: number) { return Math.round(Number.isFinite(v) ? v : 0).toLocaleString('en-IN') }
-function formatDate(iso: string | null) { return iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—' }
+// IST, explicitly. The CA view's approved-dates are what a chartered accountant reconciles against,
+// so a date that silently shifts by timezone is the worst possible field to get wrong.
+const formatDate = (iso: string | null) => formatIndiaDate(iso)
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: 'no-store' })

@@ -52,10 +52,12 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // v31: adds the group_service_manager role. A new role changes every snapshot's shape, so a
 // stale v30 entry would resolve it as having no template at all.
 // v32: registers fuel_approvals in PERMISSION_GROUPS and SECTION_ROUTES for Access Map control.
+// v34: kia.approvals granted to general_manager / sales_manager / sales_head — they own the FIRST
+//      approval stage and could not open the section. Every cached v33 snapshot still says false.
 // v33: the global-access blanket no longer REVOKES kia.approvals from the roles that staff its
 //      stages. Every ea/eba/ed/ceo/hr snapshot cached under v32 still says false, so without this
 //      bump the EA stays locked out for another 75 minutes and the fix reads as not working.
-const PERMISSION_CACHE_VERSION = 'v33'
+const PERMISSION_CACHE_VERSION = 'v34'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

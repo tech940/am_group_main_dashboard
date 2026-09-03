@@ -38,6 +38,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { formatIndiaDate } from '@/lib/date-time'
 import type {
   AmountKind,
   MdApprovalRow,
@@ -127,12 +128,8 @@ function daysWaiting(createdAt: string | null): number | null {
   return Math.max(0, Math.floor((Date.now() - t) / 86_400_000))
 }
 
-function formatDate(createdAt: string | null): string {
-  if (!createdAt) return '—'
-  const d = new Date(createdAt)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-}
+// IST, explicitly. 'en-IN' alone is a language, not a timezone — see lib/date-time.ts.
+const formatDate = (createdAt: string | null): string => formatIndiaDate(createdAt)
 
 /**
  * ⚠️ A null `amount` is NOT zero — purchase orders have no number until GRN, long after the MD has

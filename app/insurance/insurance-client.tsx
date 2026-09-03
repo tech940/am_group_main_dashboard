@@ -617,12 +617,20 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
 
   // Reset Filter Handler
   const handleResetFilters = () => {
-    const cur = currentMonthRangeIst()
-    setPendingStartDate(cur.start)
-    setPendingEndDate(cur.end)
+    /*
+     * ⚠️ Reset restores the state the page MOUNTS in — all history — not the current month.
+     *
+     * It used to call currentMonthRangeIst() and apply it, so pressing Reset silently NARROWED the
+     * page to `policy_issue_date` within the current calendar month. On a batch-uploaded feed early
+     * in the month that is legitimately near-zero rows, so every panel emptied and it read as
+     * "Reset broke the screen". Mount sets these to '' (unbounded, labelled "All History"), and a
+     * reset that lands somewhere the page never starts is not a reset.
+     */
+    setPendingStartDate('')
+    setPendingEndDate('')
     setPendingYear('all')
-    setAppliedStartDate(cur.start)
-    setAppliedEndDate(cur.end)
+    setAppliedStartDate('')
+    setAppliedEndDate('')
     setAppliedYear('all')
 
     setDraftDealerCode('all')

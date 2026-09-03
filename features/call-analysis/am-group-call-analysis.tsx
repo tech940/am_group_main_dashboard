@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
 type CrePerformance = {
   cre_id: string
@@ -243,8 +244,10 @@ function getTypeBadge(callType?: string, statusLabel?: string) {
 function FormattedTimeCell({ isoStr }: { isoStr: string }) {
   if (!isoStr) return <span className="text-slate-400 font-medium">—</span>
   const d = new Date(isoStr)
-  const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  // IST on BOTH lines — this is the timestamp cell in the call table, the one people cross-check
+  // against the recording. Neither passed a timeZone, so both rendered in the viewer's zone.
+  const dateStr = d.toLocaleDateString('en-IN', { timeZone: INDIA_TIME_ZONE, day: '2-digit', month: 'short', year: 'numeric' })
+  const timeStr = d.toLocaleTimeString('en-IN', { timeZone: INDIA_TIME_ZONE, hour: 'numeric', minute: '2-digit', hour12: true })
 
   return (
     <div className="flex flex-col">
@@ -378,10 +381,19 @@ function formatDurationHms(seconds: number) {
   return `${s}s`
 }
 
+/*
+ * ⚠️ IST, EXPLICITLY — the server filters this data in IST and the display must agree.
+ *
+ * These two formatters passed no `timeZone`, so they rendered in the BROWSER's zone while
+ * lib/cre-calls/directory.ts selects the window with an explicit +05:30 offset. A call at 00:30 IST
+ * was therefore fetched as belonging to one day and displayed as the previous one — the reported
+ * "timezone" bug on this dashboard. (formatTimeOnly also used 'en-US', unlike everything around it.)
+ */
 function formatTimeOnly(isoStr: string) {
   if (!isoStr) return '—'
   const d = new Date(isoStr)
-  return d.toLocaleTimeString('en-US', {
+  return d.toLocaleTimeString('en-IN', {
+    timeZone: INDIA_TIME_ZONE,
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
@@ -392,6 +404,7 @@ function formatDate(isoStr: string) {
   if (!isoStr) return '—'
   const d = new Date(isoStr)
   return d.toLocaleString('en-IN', {
+    timeZone: INDIA_TIME_ZONE,
     day: '2-digit',
     month: 'short',
     year: 'numeric',

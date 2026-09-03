@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { ScrapTransaction } from '@/lib/scrap-erp/types'
 import {
   Download,
@@ -24,6 +24,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { ScrapRecordDetailModal } from './ScrapRecordDetailModal'
 import { cn } from '@/lib/utils'
+import { currentMonthStart, localToday, toLocalIsoDate } from '@/lib/scrap-erp/date-range'
 
 function formatINR(val: number) {
   return new Intl.NumberFormat('en-IN', {
@@ -122,19 +123,40 @@ export function ScrapRecordGridView({
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [gridSearch, setGridSearch] = useState<string>('')
-  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'month' | '30days' | 'custom'>('all')
+  /*
+   * Defaults to THIS MONTH, matching the Executive Dashboard. The grid holds every sale ever
+   * recorded, and opening on all of them buries the month somebody is working in.
+   *
+   * See the note in ScrapExecutiveDashboardView for why the dates are set on mount rather than in
+   * the initialiser: this is server-rendered too, and a `new Date()` initialiser disagrees with the
+   * browser's calendar for 5.5 hours a day, which React reports as a hydration mismatch.
+   */
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'month' | '30days' | 'custom'>('month')
+
+  /*
+   * eslint react-hooks/set-state-in-effect -- deliberate. The default range is derived from the
+   * VIEWER'S clock, which does not exist during server rendering; computing it in the
+   * initialiser instead makes the server (UTC on Vercel) and the browser (IST) disagree and
+   * React reports a hydration mismatch. One mount-time write is the cost of a correct default.
+   */
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStartDate(currentMonthStart())
+    setEndDate(localToday())
+    setDatePreset('month')
+    setPage(1)
+    // Mount only — re-running would drag the range back under a user who has chosen another.
+  }, [])
 
   // Local detail modal state
   const [localDetailTxn, setLocalDetailTxn] = useState<ScrapTransaction | null>(null)
 
   const handleApplyPreset = (preset: 'all' | 'today' | 'month' | '30days') => {
     setDatePreset(preset)
-    // Local calendar, NOT toISOString(): the latter converts to UTC, which in IST (+05:30) rolls
-    // every boundary back a day — "This Month" resolved to 30 Jun .. 30 Jul instead of 1 .. 31 Jul,
-    // and "Today" pointed at yesterday for anyone loading the page before 05:30 IST.
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const localIso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    const today = localIso(new Date())
+    // Local calendar, NOT toISOString() — see lib/scrap-erp/date-range.ts for what UTC does to
+    // these boundaries in IST. Shared with the Executive Dashboard so the two agree.
+    const localIso = toLocalIsoDate
+    const today = localToday()
     if (preset === 'all') {
       setStartDate('')
       setEndDate('')
@@ -142,8 +164,7 @@ export function ScrapRecordGridView({
       setStartDate(today)
       setEndDate(today)
     } else if (preset === 'month') {
-      const d = new Date()
-      setStartDate(localIso(new Date(d.getFullYear(), d.getMonth(), 1)))
+      setStartDate(currentMonthStart())
       setEndDate(today)
     } else if (preset === '30days') {
       const d = new Date()

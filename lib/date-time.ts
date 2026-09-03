@@ -98,6 +98,33 @@ export function formatIndiaDateTime(
 }
 
 /**
+ * "02 Sep 2026" in India Standard Time. The date-only counterpart to formatIstDateTime.
+ *
+ * ⚠️ USE THIS INSTEAD OF `toLocaleDateString('en-IN', ...)`.
+ *
+ * 'en-IN' is a LANGUAGE, not a timezone. Without an explicit `timeZone` the value renders in the
+ * SERVER's zone during SSR (UTC on Vercel) and the VISITOR's zone in the browser — so a timestamp
+ * after 18:30 IST shows the previous day, and the same row can show two different dates to the same
+ * person on first paint versus hydration. It was live on the MD's Vendor Payments queue, the vendor
+ * ledger and the CA view, all of which are money screens where the date is the point.
+ *
+ * Returns the `fallback` (default '—') when the value is empty or unparseable.
+ */
+export function formatIndiaDate(
+  value: Date | string | null | undefined,
+  fallback = '—',
+): string {
+  const timestamp = parseAppDate(value)
+  if (!timestamp) return fallback
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: INDIA_TIME_ZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(timestamp)
+}
+
+/**
  * "07 Jul 2026, 11:02 am IST" — India Standard Time with an explicit IST suffix. Use this for
  * every "last updated / data freshness / source updated" label so the timezone is unambiguous
  * (a bare toLocaleString renders in UTC during SSR and in the visitor's zone in the browser).

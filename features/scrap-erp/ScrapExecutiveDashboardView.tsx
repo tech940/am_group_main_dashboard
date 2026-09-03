@@ -25,6 +25,9 @@ import { KpiCard } from '@/components/ui/kpi-card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from '@/components/ui/dropdown-menu'
+import {
+  currentMonthEnd, currentMonthLabel, currentMonthStart, toLocalIsoDate,
+} from '@/lib/scrap-erp/date-range'
 
 function formatINR(val: number) {
   return new Intl.NumberFormat('en-IN', {
@@ -41,18 +44,6 @@ function formatCompanyName(name: string) {
 }
 
 // Scrap Type Aging Threshold Configuration
-/**
- * Formats a Date as YYYY-MM-DD in the VIEWER'S LOCAL calendar.
- *
- * `new Date(y, m, 1).toISOString()` is wrong for this: the constructor builds local midnight, and
- * toISOString converts to UTC — which in IST (+05:30) rolls back to the previous day. The "This
- * Month" preset was therefore producing 2026-06-30 .. 2026-07-30 instead of 2026-07-01 .. 2026-07-31,
- * silently pulling one extra June day in and dropping the last day of July.
- */
-function toLocalIsoDate(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
 
 /**
  * Buckets for the "days since last sold, per location" heatmap.
@@ -119,12 +110,47 @@ export function ScrapExecutiveDashboardView({
 }) {
   const [agingFilter, setAgingFilter] = useState<'all' | 'on_schedule' | 'overdue' | 'investigate' | 'never'>('all')
 
-  // Date Range Filter States
+  /*
+   * Date Range Filter States.
+   *
+   * The section DEFAULTS TO THE CURRENT MONTH, not all time. The register holds every sale ever
+   * made, so an all-time default answered a question nobody opens this page to ask, and buried the
+   * month somebody is actually working in under years of history.
+   *
+   * ⚠️ Seeded EMPTY and set on mount, never from `new Date()` in the initialiser. This is a
+   * 'use client' component, so Next still renders it on the server — where the clock is UTC on
+   * Vercel — while the browser is in IST. Computing the month in the initialiser therefore produces
+   * a different value on each side and React throws a hydration mismatch for the 5.5 hours a day
+   * the two calendars disagree, and around every month boundary. The mount effect below runs only
+   * in the browser, so there is one calendar and no mismatch.
+   *
+   * There is no visible flash: the shell fetches transactions on mount too, so nothing is rendered
+   * before this lands.
+   */
   const [startDateInput, setStartDateInput] = useState<string>('')
   const [endDateInput, setEndDateInput] = useState<string>('')
   const [appliedStartDate, setAppliedStartDate] = useState<string>('')
   const [appliedEndDate, setAppliedEndDate] = useState<string>('')
-  const [activePreset, setActivePreset] = useState<string>('all')
+  const [activePreset, setActivePreset] = useState<string>('this_month')
+
+  /*
+   * eslint react-hooks/set-state-in-effect -- deliberate. The default range is derived from the
+   * VIEWER'S clock, which does not exist during server rendering; computing it in the
+   * initialiser instead makes the server (UTC on Vercel) and the browser (IST) disagree and
+   * React reports a hydration mismatch. One mount-time write is the cost of a correct default.
+   */
+  useEffect(() => {
+    const start = currentMonthStart()
+    const end = currentMonthEnd()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStartDateInput(start)
+    setEndDateInput(end)
+    setAppliedStartDate(start)
+    setAppliedEndDate(end)
+    setActivePreset('this_month')
+    // Mount only. Re-running would yank the range back to this month under a user who has just
+    // chosen another one.
+  }, [])
 
   // Other Filter States
   const [companyInput, setCompanyInput] = useState<string>('all')
@@ -220,8 +246,28 @@ export function ScrapExecutiveDashboardView({
     setAppliedCompany('all')
     setAppliedScrapType([])
     setAppliedLocation('all')
-    setActivePreset('all')
+    /*
+     * Reset means "back to the default view", and the default is now the current month. Clearing to
+     * all time here would make Reset the one control that disagrees with what the page opens on.
+     * All Time is still one click away in the presets.
+     */
+    const start = currentMonthStart()
+    const end = currentMonthEnd()
+    setStartDateInput(start)
+    setEndDateInput(end)
+    setAppliedStartDate(start)
+    setAppliedEndDate(end)
+    setActivePreset('this_month')
   }
+
+  /** The untouched default: this month, no other filter narrowed. */
+  const isDefaultMonthView =
+    activePreset === 'this_month'
+    && appliedStartDate === currentMonthStart()
+    && appliedEndDate === currentMonthEnd()
+    && appliedCompany === 'all'
+    && appliedScrapType.length === 0
+    && appliedLocation === 'all'
 
   const handlePresetClick = (presetKey: string, start: string, end: string) => {
     setActivePreset(presetKey)
@@ -643,7 +689,17 @@ export function ScrapExecutiveDashboardView({
                     )}
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                    {appliedStartDate || appliedEndDate || appliedCompany !== 'all' || appliedScrapType.length > 0 || appliedLocation !== 'all' ? (
+                    {isDefaultMonthView ? (
+                      /*
+                       * Named explicitly. This page used to open on every sale ever recorded, so the
+                       * totals are now a fraction of what a returning user remembers — and "filtered"
+                       * alone reads as "something is missing". Say which month, and where the rest went.
+                       */
+                      <span>
+                        Showing <span className="font-bold text-slate-700 dark:text-slate-200">{currentMonthLabel()}</span>
+                        {' '}({activeTxns.length} of {transactions.length} sales) &middot; pick All Time for the full history
+                      </span>
+                    ) : appliedStartDate || appliedEndDate || appliedCompany !== 'all' || appliedScrapType.length > 0 || appliedLocation !== 'all' ? (
                       <span>Showing filtered overview data ({activeTxns.length} matching sales)</span>
                     ) : (
                       <span>Showing all historical records ({transactions.length} total sales)</span>
@@ -826,10 +882,7 @@ export function ScrapExecutiveDashboardView({
                   <button
                     type="button"
                     onClick={() => {
-                      const date = new Date()
-                      const firstDay = toLocalIsoDate(new Date(date.getFullYear(), date.getMonth(), 1))
-                      const lastDay = toLocalIsoDate(new Date(date.getFullYear(), date.getMonth() + 1, 0))
-                      handlePresetClick('this_month', firstDay, lastDay)
+                      handlePresetClick('this_month', currentMonthStart(), currentMonthEnd())
                     }}
                     className={cn(
                       'px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer',

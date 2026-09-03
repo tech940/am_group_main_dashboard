@@ -370,6 +370,7 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
   const [appliedSearch, setAppliedSearch] = useState('')
   const [gap, setGap] = useState<GapKey | null>(null)
   const [serviceGapMonths, setServiceGapMonths] = useState(12)
+  const [sort, setSort] = useState<'recent' | 'services' | 'spend' | 'name'>('recent')
   const [page, setPage] = useState(1)
   const [openKey, setOpenKey] = useState<string | null>(null)
 
@@ -381,10 +382,12 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
     if (deferredSearch) params.set('search', deferredSearch)
     if (gap) params.set('gap', gap)
     params.set('service_gap_months', String(serviceGapMonths))
+    // Whitelisted server-side (resolveCustomerSort) — this is a hint, not a SQL fragment.
+    params.set('sort', sort)
     params.set('page', String(page))
     params.set('page_size', displayMode === 'grid' ? '24' : '30')
     return params.toString()
-  }, [brand, deferredSearch, gap, serviceGapMonths, page, displayMode])
+  }, [brand, deferredSearch, gap, serviceGapMonths, sort, page, displayMode])
 
   const queryClient = useQueryClient()
 
@@ -656,6 +659,34 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
                   </div>
                 )}
 
+                {/* Sort */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sort</span>
+                  <select
+                    /*
+                     * Coerced for DISPLAY on a sales-only brand: the service options are not in the
+                     * list there, and a select whose value has no matching option renders blank.
+                     * The request itself needs no coercion — service_count is a hardcoded 0 on those
+                     * feeds, so that ORDER BY falls straight through to the same secondary sort as
+                     * the default.
+                     */
+                    value={salesOnly && (sort === 'services' || sort === 'spend') ? 'recent' : sort}
+                    onChange={(e) => { setSort(e.target.value as typeof sort); setPage(1) }}
+                    className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 focus:outline-hidden cursor-pointer"
+                  >
+                    <option value="recent">Most recent activity</option>
+                    {/*
+                      * Service sorts are hidden on the sales-only brands. Hyundai and Platinum arrive
+                      * with VIN and phone masked at source, so there is no workshop join and
+                      * service_count is a hardcoded 0 — offering the sort there would look like a
+                      * broken control rather than an absent feed.
+                      */}
+                    {!salesOnly && <option value="services">Most service visits</option>}
+                    {!salesOnly && <option value="spend">Highest service spend</option>}
+                    <option value="name">Name (A–Z)</option>
+                  </select>
+                </div>
+
                 {/* Display Mode Switcher (Grid vs Table) */}
                 <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200">
                   <button
@@ -880,8 +911,13 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
                         <tr className="bg-[var(--dashboard-primary)] text-white font-bold text-[11px] uppercase tracking-wider">
                           <th className="py-3.5 px-4">Customer Identity</th>
                           <th className="py-3.5 px-4">Contact & Location</th>
-                          <th className="py-3.5 px-4 text-center">Enquiries</th>
-                          <th className="py-3.5 px-4 text-center">Bookings</th>
+                          {/*
+                            * Enquiries and Bookings removed by request. They were the last two
+                            * counters left from the pre-redesign table — the grid card had already
+                            * dropped its ENQ/BOOK badges — and on Hyundai/Platinum they are
+                            * hardcoded 0 (masked feeds carry no enquiry or booking join), so the
+                            * column read as a data gap rather than a fact.
+                            */}
                           <th className="py-3.5 px-4 text-center">Vehicles</th>
                           <th className="py-3.5 px-4 text-center">Services</th>
                           <th className="py-3.5 px-4">Lifecycle Gaps</th>
@@ -916,12 +952,6 @@ export function Customer360Page({ canViewPii }: { canViewPii: boolean }) {
                               <div className="text-[11px] text-slate-400">
                                 {row.city || '—'} · {row.dealerCode || 'Direct'}
                               </div>
-                            </td>
-                            <td className="py-3.5 px-4 text-center font-bold text-slate-700 font-sans tabular-nums">
-                              {row.enquiryCount}
-                            </td>
-                            <td className="py-3.5 px-4 text-center font-bold text-slate-700 font-sans tabular-nums">
-                              {row.bookingCount}
                             </td>
                             <td className="py-3.5 px-4 text-center font-black text-[var(--dashboard-primary)] font-sans tabular-nums">
                               {row.vehicleCount}
@@ -1043,6 +1073,13 @@ type TimelineEvent = {
   vin: string | null
   reference: string | null
   metadata?: Record<string, string | number | boolean | null | undefined>
+  /*
+   * Per-item lines of a multi-line document — an accessory counter-sale bill today. Kept OUT of
+   * `metadata` on purpose: that is a flat scalar map rendered as a label/value grid, and a dozen
+   * accessory lines with quantities and prices is a table. Mirrors TimelineLineItem in
+   * lib/kia/customer-profile/timeline.ts.
+   */
+  lines?: Array<{ description: string; qty: number | null; amount: number | null }>
 }
 
 type NextBestAction = {
@@ -1459,6 +1496,30 @@ function StructuredActivityStream({
                             <div className="line-clamp-2" title={item.detail || 'Recorded in DMS'}>
                               <span className="font-normal text-slate-700">{item.detail || 'Recorded in DMS'}</span>
                             </div>
+                            {/*
+                              * The per-item breakdown for a multi-line document — today, an accessory
+                              * counter-sale bill. The timeline collapses a bill to ONE row (a dozen
+                              * near-identical cards for one afternoon buries everything else), so the
+                              * lines live here rather than as separate events. Quantity is shown only
+                              * when the feed actually recorded one; a default of 1 would be invented.
+                              */}
+                            {item.lines && item.lines.length > 0 && (
+                              <ul className="mt-2 space-y-0.5 border-l-2 border-violet-200 pl-2.5">
+                                {item.lines.map((line, li) => (
+                                  <li key={`${line.description}-${li}`} className="flex items-baseline justify-between gap-3 text-[11px] leading-tight">
+                                    <span className="text-slate-600 truncate" title={line.description}>
+                                      {line.description}
+                                      {line.qty !== null && line.qty !== 1 ? (
+                                        <span className="ml-1 font-semibold text-slate-400">x{line.qty}</span>
+                                      ) : null}
+                                    </span>
+                                    <span className="shrink-0 font-semibold text-slate-700 tabular-nums">
+                                      {line.amount !== null ? fmtMoney(line.amount) : '—'}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
                           </td>
 
                           {/* Amount */}

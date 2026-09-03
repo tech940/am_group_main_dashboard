@@ -13,7 +13,7 @@
  *
  * Run:  npx tsx scripts/verify-guard-parity.ts
  */
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { SECTION_ROUTES, PERMISSION_GROUPS, PERMISSIONS } from '../lib/permissions/registry'
 
@@ -51,6 +51,18 @@ function stripComments(src: string): string {
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
 }
 
+/** Every route.ts under a directory, recursively. */
+function walkRoutes(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  const out: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...walkRoutes(p))
+    else if (entry.name === 'route.ts') out.push(p)
+  }
+  return out
+}
+
 const allPages = walk(join(ROOT, 'app'))
   .map((f) => stripComments(readFileSync(f, 'utf8')))
   .join('\n')
@@ -73,6 +85,13 @@ const EXCEPTIONS: Record<string, { reason: string; requireToken?: string }> = {
   'kia.booking_payment_history': { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canViewBookingPaymentHistory' },
   // Insurance Analysis is gated via lib/auth/restricted-analytics.ts (MD, Developer, Assistant Manager).
   insurance_analysis: { reason: 'hardcoded MD/Developer/Assistant Manager gate, not grantable', requireToken: 'canViewRestrictedAnalytics' },
+  /*
+   * AM Finance states its view rule ONCE, in lib/am-finance/access.ts#canViewAmFinance, and the page
+   * plus all three /api/am-finance routes call it. The key therefore no longer appears literally in
+   * the page — which is the point: role-only checks in those routes were serving data to users the
+   * page had already DENIED. Delegation is the fix, so it is recorded here rather than failed.
+   */
+  am_finance: { reason: 'shared async predicate (role + Access-Map allow/deny)', requireToken: 'canViewAmFinance' },
 }
 
 console.log('\n=== Guard parity (sidebar visibility ↔ page guard) ===\n')
@@ -137,16 +156,34 @@ assert(
 // the same broken trip for the user.
 console.log('\n4) Grantable role-gated sections honour an explicit Access-Map grant (page AND api):')
 
-const apiFiles = walk(join(ROOT, 'app/api'))
+/*
+ * ⚠️ `walk()` collects page.tsx. API handlers are route.ts, so this read ZERO files and `allApi`
+ * was the empty string — the "AND in any API route" half of this check has been vacuous since it
+ * was written. walkRoutes() is the right one.
+ */
+const apiFiles = walkRoutes(join(ROOT, 'app/api'))
 const allApi = apiFiles.map((f) => readFileSync(f, 'utf8')).join('\n')
-const allCode = allPages + '\n' + allApi
+
+/*
+ * Shared access modules count as code too. The preferred fix for a drifted guard is to state the
+ * rule ONCE in lib and have the page and the routes both call it — which is what lib/ca/access.ts
+ * and lib/vendors/access.ts now do. Reading only pages and routes would mark that refactor as a
+ * regression, punishing the very pattern this script exists to encourage.
+ */
+const guardModules = ['lib/ca/access.ts', 'lib/vendors/access.ts', 'lib/petty-cash/access.ts', 'lib/am-finance/access.ts']
+  .filter((rel) => existsSync(join(ROOT, rel)))
+  .map((rel) => readFileSync(join(ROOT, rel), 'utf8'))
+  .join('\n')
+
+const allCode = allPages + '\n' + allApi + '\n' + guardModules
 
 // section key -> the role-gate token that guards it
 const ROLE_GATED_GRANTABLE: Record<string, string> = {
   scrap_erp: 'canAccessScrapErp',
   bank_sanctions: 'canViewBankSanctions',
   'kia.booking_payment_history': 'canViewBookingPaymentHistory',
-  ca: 'isCaViewRole',
+  // The CA rule now lives in lib/ca/access.ts and is called by the page AND all three routes.
+  ca: 'canViewCa',
   am_finance: 'canAccessAmFinance',
   petty_cash: 'canAccessPettyCash',
   delegation_tasks: 'delegation_tasks.view',
@@ -161,14 +198,28 @@ for (const [key, token] of Object.entries(ROLE_GATED_GRANTABLE)) {
   )
 }
 
+/*
+ * ⚠️ This loop was DEAD until `apiFiles` was fixed to read route.ts instead of page.tsx. The moment
+ * it ran it found a real one: all three /api/am-finance routes checked `canAccessAmFinance(role)`
+ * alone while the page also honoured an Access-Map allow AND deny — so a granted user was 403'd by
+ * the API that had just rendered for them, and, worse, a DENIED user was still served data.
+ *
+ * A route may satisfy this EITHER by doing the explicit-grant check itself, OR by delegating to a
+ * shared async predicate that does. Delegation is the better fix — it is what CA and AM Finance now
+ * do — so the check must not punish it.
+ */
+const DELEGATED_VIEW_PREDICATES = ['canViewCa', 'canViewAmFinance']
+
 for (const file of apiFiles) {
   const body = readFileSync(file, 'utf8')
   for (const [key, token] of Object.entries(ROLE_GATED_GRANTABLE)) {
     if (!body.includes(token + '(')) continue
+    const honoursGrant = body.includes('isPermissionExplicitlyAllowed')
+      || DELEGATED_VIEW_PREDICATES.some((p) => body.includes(p + '('))
     assert(
       `${file.replace(ROOT, '').replace(/\\/g, '/')}: role-gates ${key} and honours the grant`,
-      body.includes('isPermissionExplicitlyAllowed'),
-      'this API would 403 a user its own page just admitted',
+      honoursGrant,
+      'this API would 403 a user its own page just admitted — and would serve a user it just denied',
     )
   }
 }
@@ -188,6 +239,104 @@ for (const [key, exception] of Object.entries(EXCEPTIONS)) {
   if (!exception.reason.includes('not grantable')) continue
   console.log(`  [NOTE] ${key}: tickable in Admin -> Access but ${exception.reason} — a grant here is inert by design`)
 }
+
+console.log('\n7) EVERY page behind a section key guards ITSELF — not just one page per key:')
+/*
+ * ⚠️ Check 3 above searches ALL page files as ONE BLOB, so the moment any single page mentions
+ * `<key>.view` the check passes for every other page sharing that key. That is not a guard test, it
+ * is a "somebody, somewhere" test — and it hid a real hole:
+ *
+ *   `kia.approvals` covers TWO routes (href + an alias): /brands/kia/payment-approvals and
+ *   /brands/kia/vendors. The approvals page had a real guard; the Vendor Registry had only the
+ *   comment `// Gated by kia.approvals.view permission` and no code at all. Any authenticated user
+ *   could open it and read every vendor's GST number and bank account. The blob check stayed green
+ *   throughout, satisfied by the sibling page.
+ *
+ * So: resolve each route to its own page file and require a guard in THAT file.
+ */
+function pageFileFor(href: string): string | null {
+  const candidate = join(ROOT, 'app', href.replace(/^\//, ''), 'page.tsx')
+  return existsSync(candidate) ? candidate : null
+}
+
+for (const [key, route] of Object.entries(SECTION_ROUTES)) {
+  if (EXCEPTIONS[key]) continue
+  for (const href of [route.href, ...(route.aliases ?? [])]) {
+    const file = pageFileFor(href)
+    // A route with no page file of its own is a tab or a client-routed view, not a guarded surface.
+    if (!file) continue
+    const src = stripComments(readFileSync(file, 'utf8'))
+    /*
+     * A pure redirect stub is not an unguarded surface: it renders nothing, and the destination runs
+     * the real guard. /brands/kia/allocation-history is the live example — it exists only so old
+     * bookmarks keep working, and duplicating the guard there would mean two places to keep in sync.
+     */
+    const isRedirectStub = /\b(?:permanentRedirect|redirect)\s*\(/.test(src) && !src.includes('<')
+    if (isRedirectStub) continue
+
+    /*
+     * Accept EITHER the section key or a named guard the page delegates to. `getBrandAccess` counts:
+     * the three Business Excellence pages gate on `access.allowed` + forbidden(), which is a real
+     * guard even though the permission key never appears in the file. Omitting it made this check
+     * report four false positives on its first run — the reason to read every failure before
+     * believing it.
+     */
+    const guarded = src.includes(`'${key}.view'`) || src.includes(`"${key}.view"`)
+      || /\b(?:canUserAccessPermission|requirePermission|isPermissionExplicitlyAllowed|getBrandAccess|canView[A-Z][A-Za-z]*|canAccess[A-Z][A-Za-z]*)\s*\(/.test(src)
+    assert(
+      `${href} guards itself (not via a sibling page)`,
+      guarded,
+      `app${href}/page.tsx has no guard of its own — check 3 passes only because another page shares '${key}'`,
+    )
+  }
+}
+
+console.log('\n8) Vendor Registry and CA state their access rule ONCE:')
+/*
+ * Both modules restated the rule per file, and both had already drifted.
+ *
+ * Vendors: every handler under app/api/brands/[brand]/vendors/** was UNAUTHENTICATED — anonymous
+ * read of bank accounts and GST numbers, anonymous create, and anonymous PATCH/DELETE of a vendor's
+ * bank account, which is a payment-redirection vector.
+ *
+ * CA: the page honoured an Access-Map `ca.view` grant and all three APIs did not, so a granted user
+ * loaded the page and every request behind it 403'd.
+ */
+const vendorRoutes = walkRoutes(join(ROOT, 'app/api/brands/[brand]/vendors'))
+assert('the vendor API has routes to check', vendorRoutes.length > 0)
+for (const file of vendorRoutes) {
+  const src = stripComments(readFileSync(file, 'utf8'))
+  const rel = file.slice(ROOT.length + 1).replace(/\\/g, '/')
+  if (!/export\s+(?:async\s+)?function\s+(?:GET|POST|PATCH|PUT|DELETE)/.test(src)) continue
+  assert(`${rel} guards its handlers via the shared requireVendorAccess`,
+    src.includes('requireVendorAccess'),
+    'a handler here is reachable with no session at all')
+}
+
+{
+  const payments = stripComments(
+    readFileSync(join(ROOT, 'app/api/brands/[brand]/vendors/[id]/payments/route.ts'), 'utf8'))
+  /*
+   * Permission alone is not enough here. This endpoint is deliberately cross-company — one vendor
+   * bills several of our entities — so without a row filter a correctly-permissioned Hyundai user
+   * still receives the whole group's payment ledger.
+   */
+  assert('the vendor payments endpoint scopes ROWS, not just access',
+    payments.includes('filterVisibleApprovals'),
+    'it returns every brand\'s payments to anyone who may open the Registry')
+}
+
+for (const rel of [
+  'app/ca/page.tsx',
+  'app/api/ca/summary/route.ts',
+  'app/api/ca/purchase-orders/route.ts',
+  'app/api/ca/petty-cash/route.ts',
+]) {
+  const src = stripComments(readFileSync(join(ROOT, rel), 'utf8'))
+  assert(`${rel} uses the shared canViewCa predicate`, src.includes('canViewCa'),
+    'it restates the CA rule locally, which is exactly how the page and the APIs drifted apart')
+}
+
 
 console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===\n`)
 process.exit(failures === 0 ? 0 : 1)

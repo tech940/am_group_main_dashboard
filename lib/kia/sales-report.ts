@@ -373,8 +373,33 @@ function isOpenEnquiry(row: Row) {
   )
 }
 
+/**
+ * Has this enquiry already turned into a booking?
+ *
+ * The enquiry feed carries `booking_no` / `booking_date` but NO cancellation flag — cancellation
+ * lives on the booking record, not here — so "a booking exists" is the only rule this feed can
+ * express. A cancelled booking therefore drops out of the chase list too; that is a known limit of
+ * the source, not an oversight.
+ */
+function hasBooking(row: Row) {
+  return Boolean(safeText(row.booking_no) || safeText(row.booking_date))
+}
+
 function isMissedFollowupEnquiry(row: Row, todayStr: string) {
   if (!isOpenEnquiry(row)) return false
+
+  /*
+   * ⚠️ Somebody who has BOUGHT is not a missed follow-up.
+   *
+   * `isOpenEnquiry` excludes only lost and retailed enquiries, and `booking_date` was sitting right
+   * there on the row (getLeadTemperature already reads it) but was never consulted here. Measured
+   * on live data: 924 of 7,857 "missed follow-ups" were customers who had already booked — 11.8% of
+   * the queue was sales chasing people who had signed.
+   *
+   * ⚠️ Deliberately here and NOT in isOpenEnquiry: that predicate is shared with the open-enquiry
+   * and funnel counts, and adding this there would silently move several unrelated numbers.
+   */
+  if (hasBooking(row)) return false
 
   const nextDateVal = row.next_followup_date
   if (!nextDateVal) return true

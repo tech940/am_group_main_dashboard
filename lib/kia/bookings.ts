@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm'
+import type { SQL } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { analyticsDb } from '@/lib/analytics/db'
+import { analyticsDb, analyticsExecute } from '@/lib/analytics/db'
 import {
   financeOrderWorkflow,
   financeOrders,
@@ -275,21 +276,29 @@ const KIA_ALLOTTABLE_STOCK_STATUSES = ['free stock', 'in transit', 'from other d
  * @param variant SQL expression for the booking's variant
  * @param color   SQL expression for the booking's colour
  */
-const kiaMatchingStockExists = (model: string, variant: string, color: string) => sql`
-  EXISTS (
-    SELECT 1 FROM kia_stock_management sm
+/**
+ * The FROM + WHERE half of the match, so the EXISTS predicate and the COUNT endpoint can never
+ * describe different sets.
+ *
+ * Takes BOUND fragments rather than raw strings, so a caller may pass either a column expression
+ * (`sql.raw('kb.model')`) or a user-supplied value (`sql`${model}``) — the latter parameterised, not
+ * interpolated. That distinction is why this is split out: the count endpoint receives its three
+ * attributes from the query string.
+ */
+const kiaMatchingStockFromWhere = (model: SQL, variant: SQL, color: SQL) => sql`
+    FROM kia_stock_management sm
     LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
     WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ${sql`(${sql.join(
       KIA_ALLOTTABLE_STOCK_STATUSES.map((v) => sql`${v}`), sql`, `)})`}
       AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-      AND (sm.model ILIKE '%' || ${sql.raw(model)} || '%' OR ${sql.raw(model)} ILIKE '%' || sm.model || '%')
+      AND (sm.model ILIKE '%' || ${model} || '%' OR ${model} ILIKE '%' || sm.model || '%')
       AND coalesce(sm.variant, '') <> ''
-      AND coalesce(${sql.raw(variant)}, '') <> ''
-      AND (sm.variant ILIKE '%' || ${sql.raw(variant)} || '%' OR ${sql.raw(variant)} ILIKE '%' || sm.variant || '%')
+      AND coalesce(${variant}, '') <> ''
+      AND (sm.variant ILIKE '%' || ${variant} || '%' OR ${variant} ILIKE '%' || sm.variant || '%')
       AND coalesce(sm.exterior_color_name, '') <> ''
-      AND coalesce(${sql.raw(color)}, '') <> ''
-      AND (sm.exterior_color_name ILIKE '%' || ${sql.raw(color)} || '%'
-           OR ${sql.raw(color)} ILIKE '%' || sm.exterior_color_name || '%')
+      AND coalesce(${color}, '') <> ''
+      AND (sm.exterior_color_name ILIKE '%' || ${color} || '%'
+           OR ${color} ILIKE '%' || sm.exterior_color_name || '%')
       /*
        * The SAME allocation rule the Allot picker uses (getKiaBookingMatchingVehicles). A lapsed
        * unpaid hold is still offerable there, so a bare "released_at IS NULL" here would mark a
@@ -303,8 +312,39 @@ const kiaMatchingStockExists = (model: string, variant: string, color: string) =
       )
       -- ...and not a car we have already handed over; the allocation is released at handover, so
       -- nothing above can see it.
-      AND NOT ${sql.raw(kiaDeliveredByUsSql('sm'))}
+      AND NOT ${sql.raw(kiaDeliveredByUsSql('sm'))}`
+
+const kiaMatchingStockExists = (model: string, variant: string, color: string) => sql`
+  EXISTS (
+    SELECT 1 ${kiaMatchingStockFromWhere(sql.raw(model), sql.raw(variant), sql.raw(color))}
   )`
+
+/**
+ * How many stock cars match this model + variant + colour, by the SAME rule as the badge.
+ *
+ * ⚠️ Built because `/api/brands/kia/bookings/check-stock` was the SEVENTH hand-written copy of this
+ * match and the only one never migrated when the other six were consolidated. It was also the worst:
+ * the booking form SENDS `model`, and that route never read the parameter at all — it matched on
+ * variant + colour alone. So a Seltos GTX in white counted as stock for a Sonet GTX in white.
+ *
+ * It also skipped every allottability rule the others apply: no `stock_status` allowlist, no
+ * retail/hold exclusion, and no check for cars we have already delivered. The number under the form
+ * ("IN STOCK — N units available") was therefore both wrong and looser than the badge on the same
+ * booking's row.
+ */
+export async function countKiaMatchingStock(model: string, variant: string, color: string): Promise<number> {
+  const m = text(model)
+  const v = text(variant)
+  const c = text(color)
+  // All three are required — the predicate demands both sides be populated, so a blank cannot match.
+  if (!m || !v || !c) return 0
+
+  // analyticsExecute, like every other kia_stock_management read — the old route used the app `db`
+  // pool, which is the odd one out and misses the analytics pool's tuning.
+  const rows = await analyticsExecute<{ count: number }>(sql`
+    SELECT COUNT(*)::int AS count ${kiaMatchingStockFromWhere(sql`${m}`, sql`${v}`, sql`${c}`)}`)
+  return Number(rows[0]?.count ?? 0)
+}
 
 /** A booking's colour, with the same column-then-metadata precedence every SQL site uses. */
 const bookingColorOf = (b: { color?: unknown; metadata?: unknown }) =>

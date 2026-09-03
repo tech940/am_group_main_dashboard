@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { desc, sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessAmFinance } from '@/lib/am-finance/access'
+import { canViewAmFinance } from '@/lib/am-finance/access'
 import { serializeAppDate } from '@/lib/date-time'
 import { db } from '@/lib/db'
 import { financeSheet } from '@/lib/db/schema'
@@ -31,7 +32,9 @@ export async function GET(request: NextRequest) {
   try {
     const appUser = await getAuthenticatedAppUser()
     if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!canAccessAmFinance(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // Same rule as app/am-finance/page.tsx — honours an Access-Map allow AND a deny. Checking
+    // the role alone served data to users the page had already refused. See lib/am-finance/access.ts.
+    if (!(await canViewAmFinance(appUser))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const mobileDigits = normalizeDigits(request.nextUrl.searchParams.get('mobileNo'))
     const excludeId = Number(request.nextUrl.searchParams.get('excludeId') || 0)

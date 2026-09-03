@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { formatIndiaDate, formatIstDateTime } from '@/lib/date-time'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   Building2,
@@ -1039,7 +1040,7 @@ export function KiaVendorsClient() {
                                   className="hover:bg-slate-50 dark:hover:bg-slate-800/80 cursor-pointer transition-colors"
                                 >
                                   <td className="py-3 px-4 font-semibold text-slate-500 dark:text-slate-400">
-                                    {new Date(payment.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    {formatIndiaDate(payment.createdAt)}
                                   </td>
                                   <td className="py-3 px-4">
                                     <Badge className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 border border-slate-200 dark:border-slate-700 uppercase font-black text-[9px] rounded-full">
@@ -1196,7 +1197,7 @@ export function KiaVendorsClient() {
                     </div>
                     <div className="space-y-1">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Created At</span>
-                      <p className="text-xs font-bold text-slate-700">{new Date(row.createdAt).toLocaleString('en-IN')}</p>
+                      <p className="text-xs font-bold text-slate-700">{formatIstDateTime(row.createdAt)}</p>
                     </div>
                     <div className="space-y-1">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Workflow Status</span>
@@ -1254,7 +1255,7 @@ export function KiaVendorsClient() {
                               <p className="text-[10px] text-slate-400 font-medium mt-1">By {log.user || 'System'}</p>
                             </div>
                             <span className="text-[10px] font-mono font-bold text-slate-400 shrink-0">
-                              {new Date(log.timestamp).toLocaleDateString('en-IN')}
+                              {formatIndiaDate(log.timestamp)}
                             </span>
                           </div>
                         ))}

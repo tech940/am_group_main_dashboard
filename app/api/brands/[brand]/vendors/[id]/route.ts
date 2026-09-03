@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { vendors, approvalsCommonData } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
+import { requireVendorAccess } from '@/lib/vendors/access'
 
 // DELETE — soft delete vendor from central registry
 export async function DELETE(
@@ -9,6 +10,14 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    /*
+     * ⚠️ This handler was UNAUTHENTICATED. Anyone could edit or delete a vendor — including
+     * its bank account number, which is a payment-redirection vector, since the account on
+     * the vendor record is what Accounts pay against.
+     */
+    const access = await requireVendorAccess()
+    if (access.denied) return access.denied
+
     const { id } = await context.params
 
     // Fetch vendor details to know the name for common data sync
@@ -58,6 +67,14 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    /*
+     * ⚠️ This handler was UNAUTHENTICATED. Anyone could edit or delete a vendor — including
+     * its bank account number, which is a payment-redirection vector, since the account on
+     * the vendor record is what Accounts pay against.
+     */
+    const access = await requireVendorAccess()
+    if (access.denied) return access.denied
+
     const { id } = await context.params
     const body = await request.json()
     const { name, gstNumber, bankAccountNumber, email, phone, address } = body

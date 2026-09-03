@@ -27,6 +27,19 @@ import type { KiaCustomerProfile } from './reader'
  */
 export type TimelineCategory = 'sales' | 'insurance' | 'service' | 'communication' | 'accessories'
 
+/**
+ * One line of a multi-line document — today, one accessory off a counter-sale bill.
+ *
+ * Structured rather than folded into `metadata` because metadata is a flat scalar map printed as a
+ * label/value grid; a dozen accessory lines with quantities and prices is a TABLE, and squashing it
+ * into one comma-joined string is what left the breakdown unbuilt.
+ */
+export type TimelineLineItem = {
+  description: string
+  qty: number | null
+  amount: number | null
+}
+
 export type TimelineEvent = {
   /** ISO date. Events without a date are dropped — an undated row cannot be placed in a story. */
   date: string
@@ -38,6 +51,8 @@ export type TimelineEvent = {
   /** Enquiry no / booking no / policy no — whatever identifies the underlying record. */
   reference: string | null
   metadata?: Record<string, string | number | boolean | null | undefined>
+  /** Present when the event summarises several lines — see TimelineLineItem. */
+  lines?: TimelineLineItem[]
 }
 
 /**
@@ -112,10 +127,11 @@ const push = (
   vin: string | null = null,
   reference: string | null = null,
   metadata?: Record<string, string | number | boolean | null | undefined>,
+  lines?: TimelineLineItem[],
 ) => {
   const d = iso(date)
   if (!d) return
-  out.push({ date: d, category, title, detail, vin, reference, metadata })
+  out.push({ date: d, category, title, detail, vin, reference, metadata, ...(lines?.length ? { lines } : {}) })
 }
 
 /**
@@ -442,7 +458,17 @@ export function buildCustomerTimeline(profile: KiaCustomerProfile): TimelineEven
           'Vehicle Model': v.model,
           'Registration Number': v.registration,
           'Chassis / VIN': v.vin,
-        })
+        },
+        /*
+         * The per-item breakdown the comment above has always promised. It was never actually
+         * passed to the client — only the comma-joined `itemsSummary` string was — so the "breakdown
+         * grid" it refers to could not exist. Quantities and per-line amounts come through here.
+         */
+        bill.items.map((a) => ({
+          description: a.description || 'Accessory',
+          qty: typeof a.qty === 'number' ? a.qty : null,
+          amount: typeof a.amount === 'number' ? a.amount : null,
+        })))
     }
 
     for (const c of v.complaints || []) {

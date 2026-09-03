@@ -898,14 +898,33 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
             <section id="stock-supply" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
                 <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">05</span>Days of supply — the stocking engine</h2>
-                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">Current stock ÷ daily sales rate. Healthy band 21–45 days.</p>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">Current stock ÷ this model&apos;s daily retail rate (trailing 90 days). Healthy band 21–45 days.</p>
               </div>
               <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                 <CardContent className="space-y-5 p-7">
                   {modelCards.slice(0, 5).map((card) => {
-                    const supply = soldThisMonth ? Math.round((card.units / Math.max(1, soldThisMonth / 30))) : 0
-                    const statusText = supply < 21 ? 'RUNNING DRY' : supply > 90 ? 'OVERSTOCKED' : 'HEALTHY'
-                    return <div key={card.model} className="grid grid-cols-[190px_1fr_140px] items-center gap-5 border-b border-[var(--kia-hairline)] pb-4 last:border-0"><div><p className="text-[16px] font-black text-[var(--kia-text)]">{card.model}</p><p className="text-[13px] font-semibold text-[var(--kia-text-soft)]">{card.units} in stock</p></div><div className="relative h-3 rounded-full bg-[var(--kia-surface-sunken)]"><span className="absolute left-[23%] top-0 h-3 w-[22%] bg-emerald-100" /><span className="absolute top-[-9px] h-8 w-1 rounded bg-[var(--dashboard-danger)]" style={{ left: `${Math.min(96, supply)}%` }} /></div><div className="text-right"><span className={cn('rounded-lg px-3 py-2 text-[13px] font-black', statusText === 'HEALTHY' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-[var(--dashboard-danger)]')}>{statusText}</span><p className="mt-2 text-[12px] font-semibold text-[var(--kia-text-soft)]">{supply}d supply</p></div></div>
+                    /*
+                     * ⚠️ PER-MODEL rate, trailing 90 days — the same basis as the days-of-supply KPI
+                     * at the top of this page.
+                     *
+                     * This read `card.units / (soldThisMonth / 30)`: a per-model unit count divided
+                     * by the GROUP-WIDE month-to-date rate spread over a full 30 days. Wrong twice —
+                     * every model was measured against every model's sales, and a month-to-date
+                     * numerator over 30 days understates the daily rate worst at the start of a
+                     * month. The two days-of-supply figures on this page disagreed for the same car.
+                     *
+                     * A model with no retail in 90 days has no supply figure at all; showing 0 read
+                     * as RUNNING DRY, which is the opposite of the truth for a model nobody is buying.
+                     */
+                    const modelDailyRate = (card.retailed90 ?? 0) / 90
+                    const supply = modelDailyRate > 0 ? Math.round(card.units / modelDailyRate) : null
+                    // Band matches the caption above: 21–45 healthy. It previously called anything up
+                    // to 90 days healthy while the caption said 45.
+                    const statusText = supply === null ? 'NO RETAIL 90D'
+                      : supply < 21 ? 'RUNNING DRY'
+                      : supply > 45 ? 'OVERSTOCKED'
+                      : 'HEALTHY'
+                    return <div key={card.model} className="grid grid-cols-[190px_1fr_140px] items-center gap-5 border-b border-[var(--kia-hairline)] pb-4 last:border-0"><div><p className="text-[16px] font-black text-[var(--kia-text)]">{card.model}</p><p className="text-[13px] font-semibold text-[var(--kia-text-soft)]">{card.units} in stock</p></div><div className="relative h-3 rounded-full bg-[var(--kia-surface-sunken)]"><span className="absolute left-[23%] top-0 h-3 w-[22%] bg-emerald-100" /><span className="absolute top-[-9px] h-8 w-1 rounded bg-[var(--dashboard-danger)]" style={{ left: `${Math.min(96, supply ?? 0)}%` }} /></div><div className="text-right"><span className={cn('rounded-lg px-3 py-2 text-[13px] font-black', statusText === 'HEALTHY' ? 'bg-emerald-50 text-emerald-700' : statusText === 'NO RETAIL 90D' ? 'bg-slate-100 text-slate-600' : 'bg-rose-50 text-[var(--dashboard-danger)]')}>{statusText}</span><p className="mt-2 text-[12px] font-semibold text-[var(--kia-text-soft)]">{supply === null ? 'no sales in 90d' : `${supply}d supply`}</p></div></div>
                   })}
                 </CardContent>
               </Card>

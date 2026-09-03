@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { vendors, approvalsCommonData } from '@/lib/db/schema'
 import { and, eq, isNull, sql } from 'drizzle-orm'
+import { requireVendorAccess } from '@/lib/vendors/access'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +12,9 @@ export async function GET(
   _context: { params: Promise<{ brand: string }> }
 ) {
   try {
+    const access = await requireVendorAccess()
+    if (access.denied) return access.denied
+
     const rows = await db
       .select()
       .from(vendors)
@@ -33,6 +37,9 @@ export async function POST(
   _context: { params: Promise<{ brand: string }> }
 ) {
   try {
+    const access = await requireVendorAccess()
+    if (access.denied) return access.denied
+
     const body = await request.json()
     const { name, gstNumber, bankAccountNumber, email, phone, address } = body
 
