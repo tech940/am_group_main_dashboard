@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
  * who could ask for an 'in' token on an approved pass would be able to sign a vehicle back in
  * before it ever left — which is the one thing the whole token design exists to prevent.
  */
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const access = await requireGatePassAccess('gate_pass.view')
   if (access.denied) return access.denied
 
@@ -40,7 +40,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       expectedReturnAt: pass.expectedReturnAt,
       issuedAt: new Date(),
     })
-    const url = buildGateUrl(getAppBaseUrl(), token)
+    /*
+     * ⚠️ ALWAYS pass the request. getAppBaseUrl() with no request skips the host headers entirely
+     * and falls through to NEXT_PUBLIC_APP_URL / VERCEL_PROJECT_PRODUCTION_URL — which on Vercel is
+     * the *.vercel.app name, never a custom domain. The QR then points at a host the business does
+     * not use, and a guard scanning it lands somewhere unexpected or nowhere at all.
+     *
+     * With the request, the link is built against the origin the person is actually browsing, so it
+     * is correct on a custom domain, a preview deployment and localhost alike.
+     */
+    const url = buildGateUrl(getAppBaseUrl(request), token)
 
     return NextResponse.json(
       { url, dataUrl: await qrDataUrl(url), purpose },

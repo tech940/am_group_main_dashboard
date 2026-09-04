@@ -238,7 +238,25 @@ console.log('\n6) The coexistence promise with the other application, enforced b
     'a jsonb chain appended outside a transaction loses concurrent entries')
 }
 
-console.log('\n7) Gate tokens cannot be forged, re-purposed, extended or replayed across passes:')
+console.log('\n7) Every gate link is built against the host the user is actually on:')
+{
+  /*
+   * getAppBaseUrl() with no request skips the host headers and falls through to
+   * NEXT_PUBLIC_APP_URL / VERCEL_PROJECT_PRODUCTION_URL — on Vercel that is the *.vercel.app name,
+   * never a custom domain. A QR built that way points at a host the business does not use, and the
+   * guard who scans it lands nowhere. Every call site in this module must pass the request.
+   */
+  const callers = [...walk('lib/gate-pass'), ...walk('app/api/gate-pass'), ...walk('app/api/gate')]
+  for (const rel of callers) {
+    const src = stripComments(read(rel))
+    if (!src.includes('getAppBaseUrl')) continue
+    assert(`${rel.replace(/\\/g, '/')} passes the request to getAppBaseUrl`,
+      !/getAppBaseUrl\(\s*\)/.test(src),
+      'a request-less call bakes the *.vercel.app host into the QR')
+  }
+}
+
+console.log('\n8) Gate tokens cannot be forged, re-purposed, extended or replayed across passes:')
 {
   /*
    * The guard has no login, so this token IS the credential. Everything below is an attack somebody
