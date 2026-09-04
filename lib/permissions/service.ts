@@ -57,7 +57,11 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // v33: the global-access blanket no longer REVOKES kia.approvals from the roles that staff its
 //      stages. Every ea/eba/ed/ceo/hr snapshot cached under v32 still says false, so without this
 //      bump the EA stays locked out for another 75 minutes and the fix reads as not working.
-const PERMISSION_CACHE_VERSION = 'v34'
+// v35: registers gate_pass (Demo Car GatePass) in PERMISSION_GROUPS and SECTION_ROUTES, and grants
+//      it to sales_manager / general_manager (approve) and sales_executive / manager (create).
+//      A new section key is absent from every v34 snapshot, so the Sales Manager who is the
+//      approver would see no sidebar link and a forbidden() page for the first 75 minutes.
+const PERMISSION_CACHE_VERSION = 'v35'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

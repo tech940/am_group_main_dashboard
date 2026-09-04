@@ -154,6 +154,20 @@ export const ALL_SECTIONS: SearchSection[] = [
     category: 'general_modules',
   },
   {
+    id: 'gate_pass',
+    name: 'Demo Car GatePass',
+    description: 'Raise and approve demo car gate passes, and see the QR-verified exit and entry log for every demo vehicle.',
+    href: '/gate-pass',
+    department: 'sales',
+    // 'common', not 'kia': the tables carry a brand column from day one and the section is meant to
+    // widen. Marking it 'kia' would make canUserAccessSection apply the brand check and hide it
+    // from anyone whose users.brand does not literally contain 'kia'.
+    brand: 'common',
+    iconName: 'ScanLine',
+    initials: 'GP',
+    category: 'general_modules',
+  },
+  {
     id: 'finance',
     name: 'Customer Vehicle Financing',
     description: 'Track retail vehicle financing orders, bank logins, approval status, and disbursals.',
@@ -559,7 +573,15 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/admin',
   '/scrap',
   '/scrap-erp',
-  
+  // ⚠️ Adding an href here is NOT optional for a new section. canUserAccessSection() hard-returns
+  // false for anything absent from this set, so a section registered everywhere else is still
+  // invisible to global search — which is exactly what happened to Fuel Approvals, and why it
+  // cannot be found by searching for it today.
+  //
+  // The guard-facing /gate/<token> page is deliberately NOT listed: it is unauthenticated by
+  // design and must never appear in a staff member's search results.
+  '/gate-pass',
+
   // Kia
   '/brands/kia/activity',
   '/brands/kia/business-excellence',

@@ -22,6 +22,8 @@ import {
   PhoneCall,
   ShieldCheck,
   Fuel,
+  ScanLine,
+  Calculator,
   LogOut, UserSearch } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
@@ -38,7 +40,7 @@ import { canViewBankSanctions } from '@/lib/auth/bank-sanctions-access'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
-import { isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
+import { isPettyCashViewRole, isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 
 const VEHICLE_TRACKER_HREF = '/brands/kia/vehicle-tracker'
 const BOOKING_PAYMENT_HISTORY_HREF = '/brands/kia/booking-payment-history'
@@ -573,6 +575,26 @@ export function Sidebar() {
         icon: Fuel,
         external: true,
         active: pathname.startsWith('/fuel-approvals') || pathname.startsWith('/brands/kia/fuel-approvals'),
+      })
+    }
+    if (hasPermission('gate_pass.view')) {
+      commonNodes.push({
+        key: '/gate-pass',
+        label: 'Demo Car GatePass',
+        href: '/gate-pass',
+        icon: ScanLine,
+        external: true,
+        active: pathname.startsWith('/gate-pass'),
+      })
+    }
+    if (isCaViewRole(userRole) || hasPermission('ca.view')) {
+      commonNodes.push({
+        key: '/ca',
+        label: 'CA Portal',
+        href: '/ca',
+        icon: Calculator,
+        external: true,
+        active: Boolean(pathname?.startsWith('/ca')),
       })
     }
     // Call Analysis — MD + Developer only, role-gated (see lib/callyzer/access.ts).

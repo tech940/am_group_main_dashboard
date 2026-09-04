@@ -24,6 +24,10 @@ const CURRENT: Record<string, string> = {
   '/am-finance': 'am_finance.view',
   '/ca': 'ca.view',
   '/finance': 'finance.view',
+  // Added with the Demo Car GatePass section so that change contributes no NEW mismatch. The 14
+  // pre-existing ones above are untouched — per this file's own header the baseline needs
+  // refreshing wholesale or the script retiring, and neither is this section's job.
+  '/gate-pass': 'gate_pass.view',
   '/brands/kia/business-excellence': 'kia.business_excellence.view',
   '/brands/kia/business-excellence/executive-dashboard': 'kia.business_excellence.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',

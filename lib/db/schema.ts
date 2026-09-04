@@ -2646,3 +2646,164 @@ export const socialMediaLeads = pgTable('social_media_leads', {
   updatedAt: timestamp('updated_at', { withTimezone: true }),
 })
 
+
+// ── Demo Car GatePass ─────────────────────────────────────────────────────────
+/*
+ * A demo car leaving the premises: request -> single approval -> gate out -> gate in.
+ *
+ * ⚠️ VEHICLE DETAILS ARE A SNAPSHOT, NOT A JOIN.
+ * The demo fleet lives in demo_car_list, which is read through lib/analytics/db.ts — a PLUGGABLE
+ * provider that is Postgres today but is designed to swap to BigQuery (ANALYTICS_READ_SOURCE).
+ * A cross-provider join is not expressible, so the vehicle is copied onto the pass at creation.
+ * That is also the correct audit behaviour: a gate record must show what the vehicle was WHEN IT
+ * LEFT, not what today's feed says.
+ *
+ * ⚠️ STATUS IS text, NOT a pgEnum — the rule stated in 0050_add_kia_discount_approval_chain.sql:
+ * a new value must not need a migration, ALTER TYPE ... ADD VALUE cannot run in a transaction, and
+ * a missing one has taken this app down before. The vocabulary lives in lib/gate-pass/status.ts.
+ *
+ * ⚠️ There is deliberately NO current_stage column. With a single approver, status alone is
+ * authoritative. Purchase orders carry stage + status + per-stage columns and the three drifted.
+ */
+export const demoGatePasses = pgTable('demo_gate_passes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  passNo: text('pass_no').unique().notNull(),
+  brand: text('brand').default('kia').notNull(),
+  dealerCode: text('dealer_code').notNull(),
+
+  // Vehicle snapshot — copied at creation. vin is the identity; registrationNumber is what the
+  // guard actually reads off the car.
+  vin: text('vin').notNull(),
+  registrationNumber: text('registration_number'),
+  model: text('model'),
+  variant: text('variant'),
+  color: text('color'),
+  keyNumber: text('key_number'),
+
+  requestedBy: uuid('requested_by').references(() => users.id),
+  requestedByName: text('requested_by_name').notNull(),
+  requestedByEmail: text('requested_by_email').notNull(),
+  department: text('department'),
+
+  // 'staff' — a dashboard user, licence pre-filled from demoGatePassDrivers.
+  // 'customer' — a stranger; the licence is captured as a PHOTO at the gate and the number is NOT
+  // stored. driverLicenceNo stays null for these on purpose.
+  driverKind: text('driver_kind').default('staff').notNull(),
+  driverUserId: uuid('driver_user_id').references(() => users.id),
+  driverName: text('driver_name').notNull(),
+  driverPhone: text('driver_phone'),
+  driverLicenceNo: text('driver_licence_no'),
+  driverLicenceExpiry: date('driver_licence_expiry'),
+
+  purpose: text('purpose').notNull(),
+  purposeNote: text('purpose_note'),
+  expectedReturnAt: timestamp('expected_return_at', { withTimezone: true }).notNull(),
+  remarks: text('remarks'),
+
+  status: text('status').default('pending_approval').notNull(),
+
+  approvedBy: uuid('approved_by').references(() => users.id),
+  approvedByName: text('approved_by_name'),
+  approvedByRole: text('approved_by_role'),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  approvalRemarks: text('approval_remarks'),
+
+  gateOutAt: timestamp('gate_out_at', { withTimezone: true }),
+  gateOutOdo: decimal('gate_out_odo', { precision: 12, scale: 0 }),
+  gateOutGuardName: text('gate_out_guard_name'),
+  gateOutSignaturePath: text('gate_out_signature_path'),
+  gateOutPhotoPaths: jsonb('gate_out_photo_paths').$type<Record<string, string>>().default({}).notNull(),
+  customerLicencePath: text('customer_licence_path'),
+  customerLicenceCheckedBy: text('customer_licence_checked_by'),
+
+  gateInAt: timestamp('gate_in_at', { withTimezone: true }),
+  gateInOdo: decimal('gate_in_odo', { precision: 12, scale: 0 }),
+  gateInGuardName: text('gate_in_guard_name'),
+  gateInSignaturePath: text('gate_in_signature_path'),
+  gateInPhotoPaths: jsonb('gate_in_photo_paths').$type<Record<string, string>>().default({}).notNull(),
+  parkedLocation: text('parked_location'),
+  keyHandoverTo: text('key_handover_to'),
+  gateInRemarks: text('gate_in_remarks'),
+
+  cancelledBy: uuid('cancelled_by').references(() => users.id),
+  cancelledByName: text('cancelled_by_name'),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  cancelReason: text('cancel_reason'),
+
+  // Idempotency for the overdue sweep — the reminder_sent_at pattern from lib/delegation/emails.ts.
+  // Without it the cron re-mails on every run.
+  overdueNotifiedAt: timestamp('overdue_notified_at', { withTimezone: true }),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  demoGatePassesStatusIdx: index('demo_gate_passes_status_idx').on(table.status, table.createdAt),
+  demoGatePassesDealerIdx: index('demo_gate_passes_dealer_idx').on(table.dealerCode, table.createdAt),
+  demoGatePassesVinIdx: index('demo_gate_passes_vin_idx').on(table.vin, table.createdAt),
+  demoGatePassesRequesterIdx: index('demo_gate_passes_requester_idx').on(table.requestedBy, table.createdAt),
+}))
+
+/*
+ * Append-only audit. Modelled on bank_sanction_history (0045): a FULL post-action snapshot as jsonb
+ * plus a flat pass_no copy, and gate_pass_id ON DELETE SET NULL so the history OUTLIVES the record.
+ *
+ * ⚠️ Deliberately NOT a history jsonb array on the pass row. That append is a read-modify-write
+ * (app/api/fuel-approvals/[id]/action/route.ts) that runs outside a transaction and silently loses
+ * an entry when two actions race. Every write here goes inside the transaction that moved the pass.
+ */
+export const demoGatePassEvents = pgTable('demo_gate_pass_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gatePassId: uuid('gate_pass_id').references(() => demoGatePasses.id, { onDelete: 'set null' }),
+  passNo: text('pass_no').notNull(),
+  action: text('action').notNull(),
+  actorId: uuid('actor_id').references(() => users.id),
+  actorName: text('actor_name').notNull(),
+  actorRole: text('actor_role'),
+  previousStatus: text('previous_status'),
+  newStatus: text('new_status'),
+  remarks: text('remarks'),
+  snapshot: jsonb('snapshot').$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  demoGatePassEventsPassIdx: index('demo_gate_pass_events_pass_idx').on(table.gatePassId, table.createdAt),
+  demoGatePassEventsPassNoIdx: index('demo_gate_pass_events_pass_no_idx').on(table.passNo, table.createdAt),
+  demoGatePassEventsActorIdx: index('demo_gate_pass_events_actor_idx').on(table.actorId, table.createdAt),
+}))
+
+/*
+ * Driver licence store, owned by this module.
+ *
+ * Nothing else in this schema carries a driving licence. kia_employees does, but it belongs to a
+ * separate application and is off-limits by decision. Keyed on users.id so a staff driver types
+ * their licence once and it pre-fills forever — and so the form can refuse a request on an expired
+ * licence. Customers are never stored here; their licence is a photo on the pass itself.
+ */
+export const demoGatePassDrivers = pgTable('demo_gate_pass_drivers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).unique().notNull(),
+  licenceNo: text('licence_no').notNull(),
+  // The name as PRINTED on the licence, which is not always the name in users (initials, married
+  // names, transliteration). The guard checks the physical card against this one.
+  licenceName: text('licence_name'),
+  // Object path in the PRIVATE demo-gate-pass bucket. Never a public URL — this is a photograph
+  // of a government ID, read back only through a short-lived signed URL.
+  licenceDocPath: text('licence_doc_path'),
+  licenceExpiry: date('licence_expiry'),
+  phone: text('phone'),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const demoGatePassesRelations = relations(demoGatePasses, ({ one, many }) => ({
+  requester: one(users, { fields: [demoGatePasses.requestedBy], references: [users.id] }),
+  approver: one(users, { fields: [demoGatePasses.approvedBy], references: [users.id] }),
+  events: many(demoGatePassEvents),
+}))
+
+export const demoGatePassEventsRelations = relations(demoGatePassEvents, ({ one }) => ({
+  gatePass: one(demoGatePasses, {
+    fields: [demoGatePassEvents.gatePassId],
+    references: [demoGatePasses.id],
+  }),
+}))

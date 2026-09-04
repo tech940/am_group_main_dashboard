@@ -189,6 +189,88 @@ export async function GET(request: Request) {
 
     const offset = (page - 1) * pageSize
 
+    /*
+     * ── Which year of cover is this? ─────────────────────────────────────────────────────────────
+     *
+     * The register showed the feed's own policy_type, so every renewal read the same whether it was
+     * the customer's second year or their fifth. These two columns turn it into a position:
+     * `policy_seq` is where this policy sits in the vehicle's history, and `first_policy_type` says
+     * whether we hold the policy that STARTED the relationship. lib/insurance/policy-year.ts turns
+     * the pair into Y1 / Y2+ / Rollover.
+     *
+     * ⚠️ THE WINDOW RUNS OVER THE WHOLE TABLE, BEFORE THE WHERE — that is the entire reason for the
+     * CTE. Numbering the FILTERED rows would make the year depend on the date range on screen: pick
+     * "this month" and every policy in it becomes Y1. The sequence is a property of the vehicle, not
+     * of the current view.
+     *
+     * ⚠️ Partitioned on the chassis, falling back to the row id when it is blank. Without the
+     * fallback every chassis-less policy would share one partition and be numbered 1..N as though
+     * they were one car's history.
+     *
+     * Downstream of the cross-dealer UNION the columns are already canonical, so the expressions
+     * differ per path — the same asymmetry the SELECT below already handles.
+     */
+    const seqChassis = includeOther ? 'chassis_no' : col(brand, 'chassisNo')
+    const seqIssue = includeOther ? 'policy_issue_date' : col(brand, 'policyIssueDate')
+    const seqType = includeOther ? 'policy_type' : col(brand, 'policyType')
+    const seqTie = includeOther ? 'policy_no' : col(brand, 'policyNo')
+    // Cover start, for the chain's per-year period labels. Not every brand carries one, so the
+    // aggregate coalesces to the issue date rather than assuming it exists.
+    const seqStart = includeOther ? 'policy_start_date' : col(brand, 'policyStartDate')
+    const seqMfg = includeOther ? 'mfg_year' : col(brand, 'mfgYear')
+    const seqPartition = `COALESCE(NULLIF(UPPER(TRIM(${seqChassis})), ''), 'row-' || ${col(brand, 'id')}::text)`
+    const seqOrder = `${seqIssue} ASC NULLS LAST, ${seqTie} ASC NULLS LAST`
+
+    /*
+     * ⚠️ NO ALIAS OF OUR OWN. `insuranceSource(brand)` does not return a table name — it returns a
+     * DISTINCT ON de-duplication subquery that already carries its alias, e.g.
+     *   (SELECT DISTINCT ON (policy_no) * FROM hyundai_... ORDER BY ...) AS hyundai_...
+     * Adding a second alias is a syntax error, and it only shows on the brands whose source is that
+     * subquery — KIA reads a bare table and would have looked fine while Hyundai and Platinum 500'd.
+     */
+    const sequencedFrom = `(
+      SELECT *,
+             ROW_NUMBER() OVER (PARTITION BY ${seqPartition} ORDER BY ${seqOrder}) AS policy_seq,
+             /*
+              * The vehicle's WHOLE policy history, oldest first — not just this row's own type.
+              * The register renders the entire chain on every row (Y1 · Y2 · Rollover · Y3), so it
+              * needs the full ordered list plus this row's index into it.
+              */
+             ARRAY_AGG(UPPER(TRIM(COALESCE(${seqType}, '')))) OVER (
+               PARTITION BY ${seqPartition} ORDER BY ${seqOrder}
+               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+             ) AS policy_chain,
+             /*
+              * The COVER PERIOD of each policy in the chain, so a chip can say which year it means.
+              * "Y4" beside a 2026 issue date reads as a contradiction until you can see that Y4 is
+              * the 2026-27 cover year — the label counts the customer's years with us, not the
+              * length of any one policy (these are all 1-year policies).
+              */
+             /*
+              * ⚠️ ::text on each element. The postgres driver parses text[] into a JS array but
+              * hands back a date[] as the raw Postgres literal "{2023-10-20,2024-10-20}" — a
+              * STRING — so the chain silently lost every period and every chip read "null policy
+              * year". Casting at source keeps it an array the client can index.
+              */
+             ARRAY_AGG(COALESCE(${seqStart}, ${seqIssue})::text) OVER (
+               PARTITION BY ${seqPartition} ORDER BY ${seqOrder}
+               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+             ) AS policy_chain_starts,
+             /*
+              * The vehicle's manufacture year, so the chain can be numbered by the CAR'S AGE rather
+              * than by how many policies we happen to hold.
+              *
+              * ⚠️ This is the whole point. Counting rows made a 2021 Santro's 2026-27 policy read
+              * "Y4" because we only hold four of its policies — but 2026 is that car's SIXTH year.
+              * The number has to mean the vehicle's year, or it contradicts the issue date sitting
+              * next to it. Populated on 100% of Hyundai and Platinum rows.
+              */
+             MIN(NULLIF(regexp_replace(${seqMfg}::text, '[^0-9]', '', 'g'), '')::int) OVER (
+               PARTITION BY ${seqPartition}
+             ) AS policy_mfg_year
+      FROM ${fromClause}
+    ) seqd`
+
     const [countRes, rowsRes] = await Promise.all([
       db.execute(sql.raw(`
         SELECT COUNT(*)::int as total
@@ -203,7 +285,8 @@ export async function GET(request: Request) {
             ? selectList('hyundai', HISTORY_COLUMN_KEYS, { fillAbsentWithNull: true }) + ", source"
             : selectList(brand, ROW_KEYS, { fillAbsentWithNull: true })
         }
-        FROM ${fromClause}
+        , policy_seq, policy_chain, policy_chain_starts, policy_mfg_year
+        FROM ${sequencedFrom}
         WHERE ${whereClause}
         ORDER BY ${safeSortField} ${sortDir} NULLS LAST
         LIMIT ${pageSize} OFFSET ${offset}

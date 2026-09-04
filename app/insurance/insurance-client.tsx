@@ -68,6 +68,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import { cn } from '@/lib/utils'
 import type { CrmDisposition } from '@/lib/insurance/crm'
 import type { RenewalDue, RenewalPipeline } from '@/lib/insurance/renewals'
+import { policyYearChain } from '@/lib/insurance/policy-year'
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
 
@@ -115,6 +116,12 @@ function normalizePolicyRow(p: any) {
     vehRegistNo: p.veh_regist_no ?? p.vehRegistNo ?? '—',
     insuranceCompany: p.insurance_company ?? p.insuranceCompany ?? '—',
     policyType: p.policy_type ?? p.policyType ?? 'Comprehensive',
+    // Position of this policy in its vehicle's history, and whether we hold the policy that STARTED
+    // the relationship. Computed server-side over the whole table — see lib/insurance/policy-year.ts.
+    policySeq: p.policy_seq ?? null,
+    policyChain: Array.isArray(p.policy_chain) ? p.policy_chain : [],
+    policyChainStarts: Array.isArray(p.policy_chain_starts) ? p.policy_chain_starts : [],
+    policyMfgYear: p.policy_mfg_year ?? p.mfg_year ?? null,
     grossPremium: Number(p.gross_premium ?? p.grossPremium ?? 0),
     netPremium: Number(p.net_premium ?? p.netPremium ?? 0),
     netOdPremiumA: Number(p.net_od_premium_a ?? p.netOdPremiumA ?? 0),
@@ -139,23 +146,36 @@ function normalizePolicyRow(p: any) {
   }
 }
 
+/*
+ * ⚠️ "RENEWAL".includes("NEW") IS TRUE. R-E-**N-E-W**-A-L.
+ *
+ * This function tested `includes('NEW')` FIRST, so every renewal was labelled NEW and classified as
+ * a "New Vehicle Policy". Measured across the three feeds: 19,115 of 26,499 Hyundai rows (72.1%),
+ * 9,144 of 13,607 Platinum (67.2%) and 638 of 1,503 KIA (42.4%) — 28,897 policies in total — were
+ * reported as brand-new business when they were renewals. It is why the register appeared to be
+ * nothing but NEW, and why a four-year-old car's fourth renewal opened as "New Vehicle Policy".
+ *
+ * Matched by EQUALITY now. The feeds carry exactly NEW / RENEWAL / ROLLOVER (KIA in Title case), so
+ * there is nothing for a substring test to buy — and one term containing another is exactly what it
+ * cost.
+ */
 export function getPolicyTypeBadge(type?: string | null) {
   const norm = (type || '').toUpperCase().trim()
-  if (norm.includes('NEW')) {
+  if (norm === 'NEW') {
     return {
       label: 'NEW',
       className: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 font-semibold',
       dotColor: 'bg-emerald-500',
     }
   }
-  if (norm.includes('RENEWAL')) {
+  if (norm === 'RENEWAL') {
     return {
       label: 'RENEWAL',
       className: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 font-semibold',
       dotColor: 'bg-slate-500',
     }
   }
-  if (norm.includes('ROLLOVER')) {
+  if (norm === 'ROLLOVER') {
     return {
       label: 'ROLLOVER',
       className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-semibold',
@@ -170,10 +190,11 @@ export function getPolicyTypeBadge(type?: string | null) {
 }
 
 export function getPolicyClassification(type?: string | null) {
+  // Equality, not includes() — see the note on getPolicyTypeBadge: 'RENEWAL' contains 'NEW'.
   const norm = (type || '').toUpperCase().trim()
-  if (norm.includes('NEW')) return 'New Vehicle Policy'
-  if (norm.includes('RENEWAL')) return 'Dealership Policy Renewal'
-  if (norm.includes('ROLLOVER')) return 'Rollover / Transferred Policy'
+  if (norm === 'NEW') return 'New Vehicle Policy'
+  if (norm === 'RENEWAL') return 'Dealership Policy Renewal'
+  if (norm === 'ROLLOVER') return 'Rollover / Transferred Policy'
   return 'Standard Comprehensive Cover'
 }
 
@@ -2142,6 +2163,17 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                         return rawList.map((raw: any) => {
                           const p = normalizePolicyRow(raw)
                           const typeBadge = getPolicyTypeBadge(p.policyType)
+                          /*
+                           * The register shows WHICH YEAR OF COVER this is, not the feed's own
+                           * NEW/RENEWAL/ROLLOVER — every renewal used to read the same whether it
+                           * was the customer's second year or their fifth.
+                           *
+                           * Y2+ rather than Y2 means our records begin mid-relationship, so the
+                           * true year may be higher. That is 14,580 of 26,498 Hyundai policies, so
+                           * numbering them from 1 would have reported over half the book as
+                           * first-year customers.
+                           */
+                          const chain = policyYearChain(p.policyChain, p.policySeq, p.policyChainStarts, p.policyMfgYear)
                           return (
                             <TableRow
                               key={p.id || p.policyNo || p.chassisNo}
@@ -2169,10 +2201,44 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                                 {p.insuranceCompany}
                               </TableCell>
                               <TableCell>
-                                <Badge className={cn("text-[10px] flex items-center gap-1 border shadow-2xs font-black", typeBadge.className)}>
-                                  <span className={cn("h-1.5 w-1.5 rounded-full", typeBadge.dotColor)} />
-                                  <span>{typeBadge.label}</span>
-                                </Badge>
+                                {/*
+                                  * THE WHOLE RELATIONSHIP, on every row: Y1 · Y2 · Rollover · Y3.
+                                  * The policy this row is for is filled in; the rest of the chain is
+                                  * outlined, so you can see the shape at a glance and still tell
+                                  * which year you are looking at.
+                                  *
+                                  * A rollover is an EVENT, not a year — it sits in date order but
+                                  * takes no number, so the count continues across it.
+                                  *
+                                  * The leading ellipsis means our records begin mid-relationship
+                                  * (14,580 of 26,498 Hyundai policies), so the real count is higher.
+                                  */}
+                                <div className="flex flex-wrap items-center gap-1" title={chain.title}>
+                                  {chain.truncated && (
+                                    <span className="text-[11px] font-black text-slate-400" title="Insured before our records begin">&hellip;</span>
+                                  )}
+                                  {chain.entries.map((e, i) => (
+                                    <span
+                                      key={`${e.label}-${i}`}
+                                      title={e.period
+                                        ? `${e.label === 'Rollover' ? 'Rolled over to us' : `Year ${e.label.slice(1)} of the vehicle's life`} — ${e.period} policy year`
+                                        : e.label}
+                                      className={cn(
+                                        "rounded-full border px-1.5 py-0.5 text-[10px] font-black leading-none whitespace-nowrap",
+                                        e.current
+                                          ? e.kind === 'rollover'
+                                            ? "bg-blue-600 text-white border-blue-600"
+                                            : "bg-emerald-600 text-white border-emerald-600"
+                                          : e.kind === 'rollover'
+                                            ? "bg-transparent text-blue-600 border-blue-200 dark:text-blue-300 dark:border-blue-800"
+                                            : "bg-transparent text-slate-400 border-slate-200 dark:text-slate-500 dark:border-slate-700",
+                                      )}
+                                    >
+                                      {e.label}
+                                    </span>
+                                  ))}
+                                  {chain.entries.length === 0 && <span className="text-[10px] text-slate-400">&mdash;</span>}
+                                </div>
                               </TableCell>
                               <TableCell className="text-right font-black text-slate-900 dark:text-slate-100">
                                 {formatCurrency(p.grossPremium)}
@@ -2430,12 +2496,41 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
             </div>
             <div className="flex items-center gap-2">
               {(() => {
+                /*
+                 * The SAME chain the register row shows, so the two can never disagree — the
+                 * inspector used to open a fourth renewal as "NEW" while its row said Y4.
+                 */
+                const modalChain = policyYearChain(selectedPolicyRecord?.policyChain, selectedPolicyRecord?.policySeq, selectedPolicyRecord?.policyChainStarts, selectedPolicyRecord?.policyMfgYear)
                 const modalTypeBadge = getPolicyTypeBadge(selectedPolicyRecord?.policyType)
                 return (
-                  <Badge className={cn("font-black text-xs px-2.5 py-0.5 border shadow-2xs flex items-center gap-1.5", modalTypeBadge.className)}>
-                    <span className={cn("h-2 w-2 rounded-full", modalTypeBadge.dotColor)} />
-                    <span>{modalTypeBadge.label}</span>
-                  </Badge>
+                  <div className="flex items-center gap-2" title={modalChain.title}>
+                    {modalChain.truncated && (
+                      <span className="text-xs font-black text-slate-400">&hellip;</span>
+                    )}
+                    {modalChain.entries.map((e, i) => (
+                      <span
+                        key={`${e.label}-${i}`}
+                        className={cn(
+                          "rounded-full border px-2 py-0.5 text-[11px] font-black leading-none whitespace-nowrap",
+                          e.current
+                            ? e.kind === 'rollover'
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-emerald-600 text-white border-emerald-600"
+                            : e.kind === 'rollover'
+                              ? "bg-transparent text-blue-600 border-blue-200"
+                              : "bg-transparent text-slate-400 border-slate-200",
+                        )}
+                      >
+                        {e.label}
+                      </span>
+                    ))}
+                    {modalChain.entries.length === 0 && (
+                      <Badge className={cn("font-black text-xs px-2.5 py-0.5 border shadow-2xs flex items-center gap-1.5", modalTypeBadge.className)}>
+                        <span className={cn("h-2 w-2 rounded-full", modalTypeBadge.dotColor)} />
+                        <span>{modalTypeBadge.label}</span>
+                      </Badge>
+                    )}
+                  </div>
                 )
               })()}
               {selectedPolicyRecord?.column64vbStatus === 'VERIFIED' ? (
@@ -2507,6 +2602,25 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                     <span className="font-bold text-slate-800 dark:text-slate-200">
                       {getPolicyClassification(selectedPolicyRecord.policyType)}
                     </span>
+                    {/* Says in words what the chip row above shows, so the two cannot be read apart. */}
+                    {(() => {
+                      const c = policyYearChain(selectedPolicyRecord.policyChain, selectedPolicyRecord.policySeq, selectedPolicyRecord.policyChainStarts, selectedPolicyRecord.policyMfgYear)
+                      const here = c.entries.find((e) => e.current)
+                      if (!here) return null
+                      return (
+                        <span className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                          {here.kind === 'rollover'
+                            ? `Rolled over to us from another insurer${here.period ? ` in ${here.period}` : ''}`
+                            /*
+                             * Spelled out because "Y4" beside a 2026 issue date looked wrong: the
+                             * number is the customer's YEAR WITH US, and the period says which
+                             * cover year that is. These are 1-year policies.
+                             */
+                            : `Year ${here.label.slice(1)} of the vehicle's life${here.period ? ` · ${here.period} policy year` : ''}`}
+                          {c.entries.length > 1 && ` · history: ${c.truncated ? '… ' : ''}${c.entries.map((e) => e.label).join(' · ')}`}
+                        </span>
+                      )
+                    })()}
                   </div>
                 </div>
               </div>

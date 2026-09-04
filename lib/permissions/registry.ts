@@ -807,6 +807,16 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'create', 'edit', 'approve', 'audit'],
   },
   {
+    key: 'gate_pass',
+    name: 'Demo Car GatePass',
+    parentKey: null,
+    description: 'Demo car gate passes: request with auto-filled vehicle details, Sales Manager approval, QR-based guard verification at exit and entry, and the full gate audit trail.',
+    // ⚠️ Integer only. A fractional sortOrder (153.1) failed the registry sync with 22P02 and took
+    // down the entire Access Map along with the section that introduced it.
+    sortOrder: 60,
+    actions: ['view', 'create', 'edit', 'approve', 'audit'],
+  },
+  {
     key: 'finance',
     name: 'Finance',
     parentKey: null,
@@ -906,6 +916,9 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   finance: { href: '/finance' },
   bank_sanctions: { href: '/bank-sanctions' },
   fuel_approvals: { href: '/fuel-approvals', aliases: ['/brands/kia/fuel-approvals'] },
+  // The guard-facing /gate/<token> page is deliberately NOT registered here. It is unauthenticated
+  // by design (guards have no accounts) and is protected by an HMAC token, not by this section.
+  gate_pass: { href: '/gate-pass' },
   scrap_erp: { href: '/scrap-erp' },
   insurance_analysis: { href: '/insurance' },
   'kia.booking_payment_history': { href: '/brands/kia/booking-payment-history' },
@@ -1278,6 +1291,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create']),
+    // Raises and tracks gate passes for their branch. Approval stays with the Sales Manager.
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   technician: [
     ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
@@ -1315,6 +1330,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create']),
+    // Fallback gate pass approver, so a demo car is never stuck behind one Sales Manager on leave.
+    ...keysForGroups(['gate_pass'], ['view', 'create', 'edit', 'approve', 'audit']),
   ],
   // General Service Manager: service-side oversight. Views KIA service modules; the
   // Vehicle Tracker is additionally role-gated in lib/kia/vehicle-tracker-access.ts.
@@ -1360,6 +1377,9 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   sales_executive: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    // Raises demo car gate passes — the front-line role that actually takes a customer out on a
+    // test drive. No approve: their own request is signed off by the Sales Manager.
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // KIA Proforma workflow: reviews & approves/declines proformas.
   sales_manager: [
@@ -1377,6 +1397,15 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     // allowed to open but no link to open it with. No 'audit' — that stays with branch_admin.
     ...keysForGroups(['petty_cash'], ['view', 'create', 'edit']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create']),
+    /*
+     * ⚠️ THE GATE PASS APPROVER. Sales Manager is the single approval desk for a demo car leaving
+     * the premises (GATE_PASS_APPROVER_ROLES, lib/gate-pass/access.ts), with GM and MD as fallback.
+     *
+     * Without this key they cannot OPEN the section they are the approver for — the sidebar link is
+     * hidden and the page refuses them. That is exactly how the general sales manager was locked out
+     * of Approvals: an action-owning role with no view key is an INERT approver.
+     */
+    ...keysForGroups(['gate_pass'], ['view', 'create', 'edit', 'approve', 'audit']),
   ],
   // Assistant Manager: a BRANCH GENERALIST who oversees both Sales and Service for the branches
   // they are assigned to. Deliberately view/create/edit with NO approve and NO audit — that is the

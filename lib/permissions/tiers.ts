@@ -141,6 +141,10 @@ export const SECTION_MIN_TIER: Partial<Record<string, Tier>> = {
   'kia.call_analytics': TIER.MANAGER,
   'kia.allocation_history': TIER.MANAGER,
   'kia.lead_followups': TIER.EMPLOYEE,
+  // EMPLOYEE, not MANAGER: the sales executive taking a customer on a test drive is the person who
+  // RAISES the pass. Leaving it unlisted would default it to SUPER_ADMIN once the tiered resolver
+  // adopts this map, and lock out the only role that actually needs to create one.
+  gate_pass: TIER.EMPLOYEE,
   'kia.call_center': TIER.MANAGER,
   user_management: TIER.SUPER_ADMIN,
   access_control: TIER.SUPER_ADMIN,

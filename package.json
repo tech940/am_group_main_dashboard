@@ -114,7 +114,8 @@
     "verify:discount-chain": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-discount-chain.ts",
     "verify:customer-360-service-detail": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-customer-360-service-detail.ts",
     "verify:approval-resubmit": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approval-resubmit.ts",
-    "verify:approver-visibility": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approver-visibility.ts"
+    "verify:approver-visibility": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approver-visibility.ts",
+    "verify:gate-pass": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-gate-pass.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",
@@ -149,11 +150,13 @@
     "nextjs-toploader": "^3.9.17",
     "nodemailer": "^8.0.10",
     "postgres": "^3.4.9",
+    "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.75.0",
     "recharts": "^3.8.1",
     "sharp": "^0.34.5",
+    "signature_pad": "^5.1.4",
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7",
     "xlsx": "^0.18.5",
@@ -162,6 +165,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
