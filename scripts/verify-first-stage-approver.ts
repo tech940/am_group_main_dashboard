@@ -192,6 +192,12 @@ for (const type of ['Parts Purchase', 'WORKSHOP', 'Labour Charges', 'Annual Main
 for (const dept of ['SALES', 'Sales', 'Marketing', 'Admin', '']) {
   check(!isServiceApproval(dept, 'Cash'), `department ${JSON.stringify(dept)} with a sales type is NOT service`)
 }
+// Sales departments must NEVER be classified as service, regardless of approval type
+for (const salesDept of ['SALES', 'Sales', 'Sales Department', 'Sales Jammu', 'Sales Banihal']) {
+  for (const type of ['Maintenance & Repair', 'Annual Maintenance', 'Parts Purchase', 'Workshop / Job Work', 'Diesel / Fuel', 'Stationery', 'Labour Charges']) {
+    check(!isServiceApproval(salesDept, type), `sales dept ${JSON.stringify(salesDept)} + type ${JSON.stringify(type)} is NEVER service`)
+  }
+}
 /*
  * Blank stays SALES, not 'unknown'. The callers treat this predicate as BINARY, and a blank
  * department has always routed to the sales GSM; returning 'unknown' here would quietly hand every

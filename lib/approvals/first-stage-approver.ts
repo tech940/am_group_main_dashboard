@@ -77,14 +77,27 @@ const norm = (value: unknown) => String(value ?? '').trim().toLowerCase()
  * 'unknown' here instead would widen the approver set for every blank-department row, so callers
  * keep their own `isServiceApproval(...) ? 'service' : 'sales'`.
  */
-const SERVICE_DEPARTMENT_MARKERS = ['service', 'parts', 'spare', 'body', 'labour']
-const SERVICE_TYPE_MARKERS = ['parts', 'workshop', 'labour', 'maintenance', 'service']
+const SERVICE_DEPARTMENT_MARKERS = ['service', 'parts', 'spare', 'body', 'bodyshop', 'workshop', 'labour']
+const SERVICE_TYPE_MARKERS = ['parts', 'workshop', 'labour', 'service', 'spare', 'bodyshop', 'maintenance']
 
 export function isServiceApproval(department: unknown, approvalType: unknown): boolean {
   const d = norm(department)
   const a = norm(approvalType)
-  return SERVICE_DEPARTMENT_MARKERS.some((m) => d.includes(m))
-    || SERVICE_TYPE_MARKERS.some((m) => a.includes(m))
+
+  // 1. Any department explicitly containing 'sales' is strictly a SALES order (ED / GSM).
+  // Under no circumstances should a Sales order be routed to Service / VP.
+  if (d.includes('sales')) {
+    return false
+  }
+
+  // 2. Department explicitly matches service / workshop / parts / body / labour markers
+  if (SERVICE_DEPARTMENT_MARKERS.some((m) => d.includes(m))) {
+    return true
+  }
+
+  // 3. Fallback when department is unassigned or generic (and not sales):
+  // Check if the approval type is specifically a workshop/service activity
+  return SERVICE_TYPE_MARKERS.some((m) => a.includes(m))
 }
 
 /** The track a request belongs to, as every approvals surface resolves it. */
@@ -107,8 +120,8 @@ export function brandHasEd(brand: unknown): boolean {
 export function trackForDepartment(department: unknown): FirstStageTrack {
   const d = norm(department)
   if (!d) return 'unknown'
-  if (d.includes('service')) return 'service'
   if (d.includes('sales')) return 'sales'
+  if (SERVICE_DEPARTMENT_MARKERS.some((m) => d.includes(m))) return 'service'
   return 'unknown'
 }
 

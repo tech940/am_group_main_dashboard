@@ -18,6 +18,9 @@ import { formatIndiaDateTime } from '@/lib/date-time'
 import { getGatePassStatusInfo } from '@/lib/gate-pass/status'
 import { isGatePassApproverRole } from '@/lib/gate-pass/access-shared'
 import { GatePassFormDialog } from './gate-pass-form-dialog'
+import { GatePassDetail } from './gate-pass-detail'
+import { FleetPanel } from './fleet-panel'
+import { formatDuration, type GatePassSummary } from '@/lib/gate-pass/metrics'
 
 export type GatePassCurrentUser = {
   id: string
@@ -92,6 +95,23 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
+const KPI_TONE: Record<string, string> = {
+  danger: '#9f1239', pending: '#92400e', success: '#065f46', muted: '#0f172a',
+}
+
+function Kpi({ label, value, sub, tone = 'muted' }: {
+  label: string; value: string; sub?: string; tone?: keyof typeof KPI_TONE
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      {/* Inline colour: globals.css retints Tailwind's rose/amber/emerald with !important. */}
+      <p className="mt-0.5 text-2xl font-semibold tabular-nums" style={{ color: KPI_TONE[tone] }}>{value}</p>
+      {sub ? <p className="text-xs text-slate-400">{sub}</p> : null}
+    </div>
+  )
+}
+
 export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUser }) {
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('awaiting')
@@ -102,6 +122,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
   const [remarks, setRemarks] = useState('')
   const [acting, setActing] = useState(false)
   const [qr, setQr] = useState<{ passNo: string; dataUrl: string; purpose: string; url: string } | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   const canApprove = isGatePassApproverRole(currentUser.role)
   const statusFilter = TABS.find((t) => t.key === tab)?.status ?? ''
@@ -120,6 +141,18 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
   })
 
   const rows = data?.rows ?? []
+
+  const { data: summaryData } = useQuery({
+    queryKey: ['gate-pass-summary', search],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      if (search) params.set('search', search)
+      const res = await fetch(`/api/gate-pass/summary?${params.toString()}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error('Could not load the summary.')
+      return res.json() as Promise<{ summary: GatePassSummary; truncated: boolean }>
+    },
+  })
+  const summary = summaryData?.summary
 
   const act = async () => {
     if (!decisionFor) return
@@ -220,6 +253,30 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
           </div>
         </div>
 
+        <FleetPanel />
+
+        {summary ? (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <Kpi label="Out now" value={String(summary.outNow)}
+              sub={summary.overdueNow > 0 ? `${summary.overdueNow} overdue` : 'none overdue'}
+              tone={summary.overdueNow > 0 ? 'danger' : 'muted'} />
+            <Kpi label="Awaiting approval" value={String(summary.awaitingApproval)}
+              tone={summary.awaitingApproval > 0 ? 'pending' : 'muted'} />
+            <Kpi label="Returned on time"
+              value={summary.onTimeRate === null ? '—' : `${summary.onTimeRate}%`}
+              sub={summary.completedTrips === 0 ? 'no trips yet' : `${summary.onTimeReturns}/${summary.completedTrips} trips`}
+              tone={summary.onTimeRate !== null && summary.onTimeRate < 80 ? 'danger' : 'success'} />
+            <Kpi label="Typical trip" value={formatDuration(summary.medianTripMinutes)} sub="median" />
+            {/* The gap nobody sees: a car approved and then left standing is time lost that never
+                shows up in trip duration. */}
+            <Kpi label="Approved → gate" value={formatDuration(summary.medianDispatchMinutes)}
+              sub="median wait before it moves" />
+            <Kpi label="Evidence gaps" value={String(summary.passesMissingEvidence)}
+              sub={summary.odometerAnomalies > 0 ? `${summary.odometerAnomalies} odo anomaly` : 'photos or signatures'}
+              tone={summary.passesMissingEvidence > 0 ? 'pending' : 'muted'} />
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-3">
           <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
             <TabsList>
@@ -259,7 +316,9 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                       : 'No gate passes here yet.'}
                   </td></tr>
                 ) : rows.map((row) => (
-                  <tr key={row.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                  <tr key={row.id}
+                    onClick={() => setDetailId(row.id)}
+                    className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-900">{row.passNo}</div>
                       <div className="text-xs text-slate-500">{row.requestedByName}</div>
@@ -277,7 +336,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                     </td>
                     <td className="px-4 py-3 text-slate-700">{formatIndiaDateTime(row.expectedReturnAt) ?? '—'}</td>
                     <td className="px-4 py-3"><StatusPill status={row.status} /></td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
                         {(row.status === 'approved' || row.status === 'out') ? (
                           <Button size="sm" onClick={() => showQr(row)}>
@@ -319,6 +378,9 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
           </p>
         ) : null}
       </div>
+
+      <GatePassDetail passId={detailId} open={Boolean(detailId)}
+        onOpenChange={(o) => { if (!o) setDetailId(null) }} />
 
       <GatePassFormDialog open={createOpen} onOpenChange={setCreateOpen}
         onCreated={() => queryClient.invalidateQueries({ queryKey: ['gate-passes'] })} />

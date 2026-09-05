@@ -26,6 +26,7 @@ import {
   getGatePassStatusInfo,
   canTransition,
 } from '../lib/gate-pass/status'
+import { gatePassMetrics, summariseGatePasses, formatDuration } from '../lib/gate-pass/metrics'
 import {
   createGateToken,
   verifyGateToken,
@@ -238,7 +239,57 @@ console.log('\n6) The coexistence promise with the other application, enforced b
     'a jsonb chain appended outside a transaction loses concurrent entries')
 }
 
-console.log('\n7) Every gate link is built against the host the user is actually on:')
+console.log('\n7) Register maths, checked against a trip that actually happened:')
+{
+  /*
+   * GP-JK402-000001, 2026-09-04 — the first real round trip through this module. Pinning the
+   * numbers to a real pass means a change to any definition ("late", "distance", "duration") fails
+   * here instead of quietly reporting a different figure on a screen somebody trusts.
+   */
+  const real = {
+    status: 'returned',
+    createdAt: '2026-09-04T15:56:45+05:30',
+    approvedAt: '2026-09-04T15:58:54+05:30',
+    expectedReturnAt: '2026-09-04T15:58:00+05:30',
+    gateOutAt: '2026-09-04T18:02:54+05:30',
+    gateInAt: '2026-09-04T18:11:56+05:30',
+    gateOutOdo: '125',
+    gateInOdo: '129',
+    gateOutPhotoPaths: { odometer: 'a.webp', vehicle_front: 'b.webp' },
+    gateInPhotoPaths: { odometer: 'c.webp', vehicle_front: 'd.webp' },
+    gateOutSignaturePath: null,
+    gateInSignaturePath: null,
+  }
+  const m = gatePassMetrics(real)
+  assert('approval lag is 2 min', m.approvalMinutes === 2, String(m.approvalMinutes))
+  assert('dispatch lag is 124 min (the car sat approved for 2h)', m.dispatchMinutes === 124, String(m.dispatchMinutes))
+  assert('trip is 9 min', m.tripMinutes === 9, String(m.tripMinutes))
+  assert('distance is 4 km', m.distanceKm === 4, String(m.distanceKm))
+  assert('late by 134 min, measured at return', m.lateMinutes === 134 && m.lateBasis === 'returned')
+  assert('the skipped signatures are counted as missing', m.evidence.captured === 4 && m.evidence.expected === 6)
+
+  // A missing reading is "not recorded", which is a different fact from zero.
+  assert('a missing odometer yields null, never 0',
+    gatePassMetrics({ ...real, gateInOdo: null }).distanceKm === null)
+  // A pass that has not left cannot be non-compliant for evidence it could not yet have.
+  assert('an unstarted pass expects no evidence',
+    gatePassMetrics({ ...real, status: 'approved', gateOutAt: null, gateInAt: null,
+      gateOutPhotoPaths: null, gateInPhotoPaths: null }).evidence.expected === 0)
+  // Lateness for a car still out is measured against now, not against a return that never happened.
+  const stillOut = gatePassMetrics({ ...real, status: 'out', gateInAt: null, gateInOdo: null },
+    new Date('2026-09-04T20:00:00+05:30'))
+  assert('a car still out is late against NOW', stillOut.lateBasis === 'still_out' && stillOut.lateMinutes === 242)
+  // A backwards reading is a typo or the wrong car — surfaced, never silently corrected.
+  assert('a backwards odometer is flagged and kept negative', (() => {
+    const b = gatePassMetrics({ ...real, gateInOdo: '120' })
+    return b.odometerWentBackwards === true && b.distanceKm === -5
+  })())
+  assert('an empty set reports no on-time rate rather than 0%',
+    summariseGatePasses([]).onTimeRate === null)
+  assert('formatDuration renders 124 as "2h 4m"', formatDuration(124) === '2h 4m', formatDuration(124))
+}
+
+console.log('\n8) Every gate link is built against the host the user is actually on:')
 {
   /*
    * getAppBaseUrl() with no request skips the host headers and falls through to
@@ -396,12 +447,28 @@ async function liveChecks() {
         'passes raised at this branch would be approvable by nobody')
     }
 
-    // A pass out twice is a double-issued vehicle. Cheap to check, catastrophic to miss.
+    /*
+     * A car out twice is a state the physical world cannot be in — the second person walks to an
+     * empty bay. The application refuses at create time (findHoldingPass) and 0053 makes it
+     * unbypassable under concurrency. Both are checked: the data, and the index behind it.
+     */
     const doubleOut = await sql<{ n: number }[]>`
       SELECT COUNT(*)::int AS n FROM (
         SELECT vin FROM demo_gate_passes WHERE status = 'out' GROUP BY vin HAVING COUNT(*) > 1
       ) t`
     assert('no vehicle is "out" on two passes at once', doubleOut[0].n === 0)
+
+    const idx = await sql<{ n: number }[]>`
+      SELECT COUNT(*)::int AS n FROM pg_indexes
+      WHERE tablename = 'demo_gate_passes'
+        AND indexname = 'demo_gate_passes_one_out_per_vehicle_idx'`
+    assert('the one-out-per-vehicle index exists', idx[0].n === 1,
+      'apply lib/db/migrations/0053_one_live_gate_pass_per_vehicle.sql on the DIRECT port 5432')
+
+    const createSrc = stripComments(read('lib/gate-pass/server.ts'))
+    assert('createGatePass refuses a car that is already booked or out',
+      createSrc.includes('findHoldingPass'),
+      'two people could raise passes for the same vehicle')
 
     // Every gate transition must have left an immutable event behind.
     const gatedNoEvent = await sql<{ n: number }[]>`

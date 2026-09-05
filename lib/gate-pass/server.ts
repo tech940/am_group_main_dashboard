@@ -7,6 +7,7 @@ import { demoGatePasses } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { getAppBaseUrl } from '@/lib/approvals/decision-emails'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import { formatIndiaDateTime } from '@/lib/date-time'
 import { canApproveGatePass, canCancelGatePass, visibleDealerCodes } from './access'
 import { nextGatePassNumber, recordGatePassEvent } from './events'
 import {
@@ -20,6 +21,7 @@ import {
 } from './emails'
 import { getDriverProfile } from './drivers'
 import { lookupByVin } from './vehicles'
+import { findHoldingPass } from './fleet'
 import { GATE_PASS_PURPOSES, canTransition, purposeRequiresNote, type GatePassStatus } from './status'
 import { buildGateUrl, createGateToken } from './token'
 
@@ -231,6 +233,27 @@ export async function createGatePass(appUser: AppUser, rawInput: unknown) {
   if (!dealerCode) throw new GatePassError('That vehicle has no branch recorded, so it cannot be signed out.')
   if (!visibleDealerCodes(appUser).includes(dealerCode)) {
     throw new GatePassError('That vehicle belongs to a branch you are not assigned to.', 403)
+  }
+
+  /*
+   * ⚠️ ONE CAR, ONE LIVE PASS.
+   *
+   * Without this, two people can raise passes for the same vehicle, both get approved, and both
+   * walk out to a car only one of them will find. The fleet count then reports a vehicle that is
+   * out twice, which is not a state the world can be in.
+   *
+   * 'approved' holds the car as well as 'out': the pass exists and somebody is expecting to collect
+   * it. A pass merely awaiting approval does NOT hold it — it may be rejected, and blocking on
+   * unapproved requests would let anyone reserve the whole fleet just by asking.
+   */
+  const holding = await findHoldingPass(vehicle.vin)
+  if (holding) {
+    throw new GatePassError(
+      holding.status === 'out'
+        ? `That car is already out on ${holding.passNo}, with ${holding.driverName}. It is due back ${formatIndiaDateTime(holding.expectedReturnAt) ?? 'at an unrecorded time'}.`
+        : `That car is already booked on ${holding.passNo} by ${holding.requestedByName}. Cancel that pass first, or pick another car.`,
+      409,
+    )
   }
 
   // A staff driver's licence is pulled from the registry and checked BEFORE the pass exists, so an
