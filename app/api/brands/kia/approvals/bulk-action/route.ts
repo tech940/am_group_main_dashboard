@@ -87,9 +87,11 @@ export async function POST(request: Request) {
     let emailedCount = 0
 
     for (const row of rows) {
-      let activeStageKey: 'sales_manager' | 'hr' | 'ea' | 'accounts' | 'md' | null = null
+      let activeStageKey: 'sales_manager' | 'ceo' | 'hr' | 'ea' | 'accounts' | 'md' | null = null
       
+      const isKia = String(row.brand || 'kia').toLowerCase() === 'kia'
       const vpApp = row.vpApproval
+      const ceoApp = row.ceoApproval
       const hrApp = row.hrApproval
       const eaApp = row.eaApproval
       const accApp = row.accountApproval
@@ -100,6 +102,8 @@ export async function POST(request: Request) {
       // Determine what stage this request is currently in
       if (!vpApp || vpApp === 'HELD' || vpApp === 'NOT APPROVED') {
         activeStageKey = 'sales_manager'
+      } else if (isKia && (!ceoApp || ceoApp === 'HELD' || ceoApp === 'NOT APPROVED')) {
+        activeStageKey = 'ceo'
       } else if (requiresHr && (!hrApp || hrApp === 'HELD' || hrApp === 'NOT APPROVED')) {
         activeStageKey = 'hr'
       } else if (!eaApp || eaApp === 'HELD' || eaApp === 'NOT APPROVED') {
@@ -160,39 +164,21 @@ export async function POST(request: Request) {
         userRoleLower.includes('vice_president')
 
       // ── SEPARATION OF DUTIES ──────────────────────────────────────────────────
-      // A stage may be actioned ONLY by that stage's intended approver. No seniority
-      // bypass: MD/CEO (`isSuperUser`) do NOT inherit ED, HR or Accounts rights, so
-      // `isSuperUser` appears on the `md` stage ONLY. This mirrors the single-action
-      // route (app/api/brands/kia/approvals/[id]/action/route.ts).
-      //
-      // WHY: while MD/CEO were authorised on every stage, an MD could approve at `md`
-      // and then mark the same request Accounts-approved and PAID — recording vendor
-      // payments as PAID that Accounts never approved (13 requests in production).
-      // Bulk-approve made it worse: one click could pay an entire selection.
-      //
-      // `isTester` (developer/admin) is retained on all stages as the support escape hatch.
       let isAuthorized = false
       if (activeStageKey === 'sales_manager') {
         if (!brandHasEd(row.brand)) {
-        /*
-         * NON-KIA: there is no Executive Director at this brand, so the first stage belongs to the
-         * General Manager for the relevant side — Sales or Service. ED is not merely unauthorised
-         * here, it does not exist.
-         *
-         * The KIA branches below are deliberately left exactly as they were: this change is about
-         * the brands that have no ED, and narrowing KIA's existing approvers would break a working
-         * flow for the one brand that was never in question.
-         */
-        const allowedRoles = firstStageApproverRolesForTrack(
-          row.brand,
-          isServiceCategory ? 'service' : 'sales',
-        )
-        isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower) || (allowedRoles.includes('vp') && isVp) || (allowedRoles.includes('general_manager') && isGeneralSalesManager)
-      } else if (isServiceCategory) {
+          const allowedRoles = firstStageApproverRolesForTrack(
+            row.brand,
+            isServiceCategory ? 'service' : 'sales',
+          )
+          isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower) || (allowedRoles.includes('vp') && isVp) || (allowedRoles.includes('general_manager') && isGeneralSalesManager)
+        } else if (isServiceCategory) {
           isAuthorized = isTester || isVp || isSuperUser
         } else {
           isAuthorized = isTester || appUser.role === 'ceo' || isGeneralSalesManager || isSuperUser
         }
+      } else if (activeStageKey === 'ceo') {
+        isAuthorized = isTester || appUser.role === 'ceo' || isSuperUser
       } else if (activeStageKey === 'hr') {
         isAuthorized = isTester || isHrUser || isSuperUser
       } else if (activeStageKey === 'accounts') {
@@ -221,21 +207,11 @@ export async function POST(request: Request) {
 
       /*
        * The audit entry, built for EVERY action including SEND_BACK.
-       *
-       * This used to sit below the stage branches, and SEND_BACK `continue`d past it. So a bulk
-       * send-back left NO record of who did it, when, or from which stage - only the free-text
-       * `sendBackReason` column survived, and `updated_at` still showed the previous action's time.
-       * The same request sent back from its row button was recorded correctly. Send-back is the
-       * first approver's main non-approve action, so this was the least-audited thing they do.
-       *
-       * 'ea' had no arm in the role ternary and fell through to 'MD', so every bulk EA decision was
-       * written into the permanent history as though the MD had made it. The stepper matches on
-       * `h.roleKey === key || h.role?.toLowerCase()?.includes(key)`, so those entries rendered the
-       * EA's name and timestamp under "MD APPROVAL" on a request the MD had never seen.
        */
       const historyList = Array.isArray(row.history) ? [...row.history] : []
       const roleLabel =
         activeStageKey === 'sales_manager' ? firstStageShortLabel(row.brand, row.department, row.approvalType) :
+        activeStageKey === 'ceo' ? 'CEO' :
         activeStageKey === 'hr' ? 'HR' :
         activeStageKey === 'ea' ? 'EA' :
         activeStageKey === 'accounts' ? 'Accounts' :
@@ -248,8 +224,6 @@ export async function POST(request: Request) {
           roleKey: activeStageKey,
           user: appUser.fullName,
           action: statusVal,
-          // Defaulting to 'Bulk approved' on a rejection or a send-back would put a false statement
-          // into the audit trail, so the fallback follows the action.
           remarks: remarks || ('Bulk ' + statusVal.toLowerCase()),
           timestamp: new Date().toISOString(),
         })
@@ -259,11 +233,11 @@ export async function POST(request: Request) {
 
       /*
        * SEND_BACK is not a stage decision — it returns the request to the submitter, so every stage
-       * that had signed off is cleared and the whole chain restarts on re-submission. This mirrors
-       * the single-row route exactly; the two used to disagree because bulk simply refused the action.
+       * that had signed off is cleared and the whole chain restarts on re-submission.
        */
       if (action === 'SEND_BACK') {
         updates.vpApproval = null
+        updates.ceoApproval = null
         updates.hrApproval = null
         updates.accountApproval = null
         updates.eaApproval = null
@@ -281,8 +255,6 @@ export async function POST(request: Request) {
         emailedCount++
 
         recordHistory()
-        // `.returning()` so this branch pushes the same shape as every other one - it pushed a bare
-        // id string while the rest push the updated row.
         const [sentBackRow] = await db
           .update(kiaApprovalRequests)
           .set(updates)
@@ -294,6 +266,8 @@ export async function POST(request: Request) {
 
       if (activeStageKey === 'sales_manager') {
         updates.vpApproval = statusVal
+      } else if (activeStageKey === 'ceo') {
+        updates.ceoApproval = statusVal
       } else if (activeStageKey === 'hr') {
         updates.hrApproval = statusVal
       } else if (activeStageKey === 'ea') {
@@ -306,6 +280,7 @@ export async function POST(request: Request) {
         updates.managementApproval = statusVal
         if (action === 'APPROVE') {
           updates.vpApproval = 'APPROVED'
+          updates.ceoApproval = 'APPROVED'
           updates.emailSendStatus = 'MDApproved'
 
           // Trigger email notification to requester that MD approved the payment order

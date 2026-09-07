@@ -32,11 +32,12 @@ export const vendorPaymentRequiresHr = isHrApprovalRequired
 export const VP_STAGE_VALUES = ['APPROVED', 'NOT APPROVED', 'HELD', 'SENT BACK'] as const
 export type VpStageValue = (typeof VP_STAGE_VALUES)[number]
 
-export type VendorPaymentStageKey = 'sales_manager' | 'hr' | 'ea' | 'md' | 'accounts' | 'done'
+export type VendorPaymentStageKey = 'sales_manager' | 'ceo' | 'hr' | 'ea' | 'md' | 'accounts' | 'done'
 
 /** The subset of columns the stage inference needs. Kept minimal so any row shape can satisfy it. */
 export type VendorPaymentStageInput = {
   vpApproval?: string | null
+  ceoApproval?: string | null
   hrApproval?: string | null
   eaApproval?: string | null
   managementApproval?: string | null
@@ -76,15 +77,23 @@ function needsAction(value: string | null | undefined): boolean {
 
 /**
  * The stage this request is currently waiting on — strict ordering:
- * first stage → HR (KIA only, and only for payroll types) → EA → MD → Accounts.
+ * Non-KIA: first stage (GSM/VP) → EA → MD → Accounts.
+ * KIA:     first stage (GSM/VP) → CEO (Sales & Service) → HR (if required) → EA → MD → Accounts.
  *
  * EA approval is strictly required before a request reaches the MD stage.
  */
 export function vendorPaymentActiveStage(row: VendorPaymentStageInput): VendorPaymentStageKey {
+  const brand = String(row.brand || 'kia').trim().toLowerCase()
+  const isKia = brand === 'kia' || brand.startsWith('kia')
   const requiresHr = vendorPaymentRequiresHr(row.approvalType, row.brand)
 
+  // Stage 1: Department head (GSM for Sales, VP for Service)
   if (needsAction(row.vpApproval)) return 'sales_manager'
 
+  // Stage 2: CEO (KIA ONLY - for both Sales and Service)
+  if (isKia && needsAction(row.ceoApproval) && !isApproved(row.managementApproval)) return 'ceo'
+
+  // Stage 3: HR (KIA only, payroll types)
   if (requiresHr && needsAction(row.hrApproval) && !isApproved(row.managementApproval)) return 'hr'
 
   // EA approval is required before MD can act
@@ -108,6 +117,7 @@ export function isAwaitingVendorPaymentMd(row: VendorPaymentStageInput): boolean
  * it. Use `vendorPaymentStageLabel(row)` instead, which reads the brand and the department.
  */
 const FIXED_STAGE_LABEL: Record<Exclude<VendorPaymentStageKey, 'sales_manager'>, string> = {
+  ceo: 'CEO',
   hr: 'HR',
   ea: 'EA',
   md: 'MD',
@@ -119,6 +129,7 @@ const FIXED_STAGE_LABEL: Record<Exclude<VendorPaymentStageKey, 'sales_manager'>,
 function valueAtStage(stage: VendorPaymentStageKey, row: VendorPaymentStageInput): string | null | undefined {
   switch (stage) {
     case 'sales_manager': return row.vpApproval
+    case 'ceo': return row.ceoApproval
     case 'hr': return row.hrApproval
     case 'ea': return row.eaApproval
     case 'md': return row.managementApproval

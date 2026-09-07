@@ -125,15 +125,13 @@ export function canApprovePettyCashStage(
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
 
   switch (stage) {
+    case 'gsm_approval':
+      return false
+    case 'ceo_approval':
     case 'ed_approval':
-      // The stage KEY stays 'ed_approval' across database records — it is the first slot in the chain,
-      // now approved by the CEO instead of ED.
       if (!scope) return false
-      /*
-       * Outside KIA petty cash has NO first stage, so nobody may act on one.
-       */
       if (!pettyCashHasFirstStage(scope.branchId)) return false
-      return r === 'ceo'
+      return r === 'ceo' || r === 'ed'
     case 'ea_approval':
       return r === 'ea' || r === 'eba'
     case 'md_approval':
@@ -220,6 +218,7 @@ export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unkno
     appUser.role === 'accounts' ||
     appUser.role === 'manager' ||
     appUser.role === 'general_manager' ||
+    appUser.role === 'service_general_manager' ||
     // Approver roles, brand-scoped by ASSIGNMENT since they left the all-branch list. Without this
     // arm they would fall through to the createdBy-only fallback below and — as reviewers who never
     // create requests — see an empty queue.
@@ -256,6 +255,7 @@ export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unkno
     appUser.role === 'accounts' ||
     appUser.role === 'manager' ||
     appUser.role === 'general_manager' ||
+    appUser.role === 'service_general_manager' ||
     // Same as the request filter above: assignment-scoped approvers, not createdBy-only.
     appUser.role === 'ceo' ||
     appUser.role === 'ea' ||

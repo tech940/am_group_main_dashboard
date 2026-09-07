@@ -2,26 +2,41 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { vendors, approvalsCommonData } from '@/lib/db/schema'
 import { and, eq, isNull, sql } from 'drizzle-orm'
-import { requireVendorAccess } from '@/lib/vendors/access'
+import { getOptionalVendorAccess, requireVendorAccess } from '@/lib/vendors/access'
 
 export const dynamic = 'force-dynamic'
 
-// GET — list all active vendors from the central vendors master registry
+// GET — list all active vendors (full records for authorized users; safe subset for public submit form)
 export async function GET(
   _request: NextRequest,
   _context: { params: Promise<{ brand: string }> }
 ) {
   try {
-    const access = await requireVendorAccess()
-    if (access.denied) return access.denied
+    const { isAuthorized } = await getOptionalVendorAccess()
 
-    const rows = await db
-      .select()
+    if (isAuthorized) {
+      const rows = await db
+        .select()
+        .from(vendors)
+        .where(isNull(vendors.deletedAt))
+        .orderBy(vendors.name)
+
+      return NextResponse.json({ vendors: rows })
+    }
+
+    // Public / unauthenticated: return safe subset for autocomplete & picker in submit form
+    const publicRows = await db
+      .select({
+        id: vendors.id,
+        name: vendors.name,
+        gstNumber: vendors.gstNumber,
+        vendorCode: vendors.vendorCode,
+      })
       .from(vendors)
       .where(isNull(vendors.deletedAt))
       .orderBy(vendors.name)
 
-    return NextResponse.json({ vendors: rows })
+    return NextResponse.json({ vendors: publicRows })
   } catch (error) {
     console.error('Error fetching vendors:', error)
     return NextResponse.json(
@@ -37,8 +52,7 @@ export async function POST(
   _context: { params: Promise<{ brand: string }> }
 ) {
   try {
-    const access = await requireVendorAccess()
-    if (access.denied) return access.denied
+    const { isAuthorized } = await getOptionalVendorAccess()
 
     const body = await request.json()
     const { name, gstNumber, bankAccountNumber, email, phone, address } = body
@@ -49,7 +63,11 @@ export async function POST(
 
     const trimmedName = name.trim()
     const cleanGst = gstNumber?.trim() || null
-    const cleanBank = bankAccountNumber?.trim() || null
+    // Banking and contact info can only be set by authorized management users
+    const cleanBank = isAuthorized ? (bankAccountNumber?.trim() || null) : null
+    const cleanEmail = isAuthorized ? (email?.trim() || null) : null
+    const cleanPhone = isAuthorized ? (phone?.trim() || null) : null
+    const cleanAddress = isAuthorized ? (address?.trim() || null) : null
 
     // Check duplicate name case-insensitively
     const [existing] = await db

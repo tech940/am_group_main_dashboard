@@ -2,6 +2,14 @@ import { brandHasEd } from '@/lib/approvals/first-stage-approver'
 export const PETTY_CASH_REQUEST_STATUSES = [
   'draft',
   'submitted',
+  'gsm_pending',
+  'gsm_approved',
+  'gsm_on_hold',
+  'gsm_rejected',
+  'ceo_pending',
+  'ceo_approved',
+  'ceo_on_hold',
+  'ceo_rejected',
   'ed_pending',
   'ed_approved',
   'ed_on_hold',
@@ -23,6 +31,12 @@ export const PETTY_CASH_REQUEST_STATUSES = [
 
 export const PETTY_CASH_EXPENSE_STATUSES = [
   'pending',
+  'gsm_pending',
+  'gsm_approved',
+  'gsm_rejected',
+  'ceo_pending',
+  'ceo_approved',
+  'ceo_rejected',
   'ed_pending',
   'ed_approved',
   'ed_rejected',
@@ -324,11 +338,12 @@ export function pettyCashHasFirstStage(branchId: string | null | undefined): boo
 }
 
 /** The status a newly submitted request opens at, for this brand. */
-export function pettyCashInitialStatus(branchId: string | null | undefined): 'ed_pending' | 'ea_pending' {
-  return pettyCashHasFirstStage(branchId) ? 'ed_pending' : 'ea_pending'
+export function pettyCashInitialStatus(branchId: string | null | undefined): 'ceo_pending' | 'ea_pending' {
+  return pettyCashHasFirstStage(branchId) ? 'ceo_pending' : 'ea_pending'
 }
 
 /** The stage a newly submitted request opens at, for this brand. */
-export function pettyCashInitialStage(branchId: string | null | undefined): 'ed_approval' | 'ea_approval' {
-  return pettyCashHasFirstStage(branchId) ? 'ed_approval' : 'ea_approval'
+export function pettyCashInitialStage(branchId: string | null | undefined): 'ceo_approval' | 'ea_approval' {
+  return pettyCashHasFirstStage(branchId) ? 'ceo_approval' : 'ea_approval'
 }
+

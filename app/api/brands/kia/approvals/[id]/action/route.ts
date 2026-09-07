@@ -115,34 +115,19 @@ export async function POST(
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
-      if (!brandHasEd(requestRow.brand)) {
-        /*
-         * NON-KIA: there is no Executive Director at this brand, so the first stage belongs to the
-         * General Manager for the relevant side — Sales or Service (VP for Hyundai/Platinum). ED is not merely unauthorised
-         * here, it does not exist.
-         *
-         * The KIA branches below are deliberately left exactly as they were: this change is about
-         * the brands that have no ED, and narrowing KIA's existing approvers would break a working
-         * flow for the one brand that was never in question.
-         */
-        const allowedRoles = firstStageApproverRolesForTrack(
-          requestRow.brand,
-          isServiceCategory ? 'service' : 'sales',
-        )
-        isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower) || (allowedRoles.includes('vp') && isVp) || (allowedRoles.includes('general_manager') && isGeneralSalesManager)
-      } else if (isServiceCategory) {
-        // SERVICE ORDER: ONLY VP, SuperUser, or Admin/Developer can approve
+      if (isServiceCategory) {
+        // SERVICE ORDER: VP (or SuperUser / Admin/Developer)
         isAuthorized = isTester || isVp || isSuperUser
       } else {
-        // SALES ORDER: Either CEO, General Sales Manager, or SuperUser can approve
-        isAuthorized = isTester || appUser.role === 'ceo' || isGeneralSalesManager || isSuperUser
+        // SALES ORDER: General Sales Manager (or SuperUser / Admin/Developer)
+        isAuthorized = isTester || isGeneralSalesManager || isSuperUser
       }
+    } else if (stage === 'ceo') {
+      // CEO STAGE (KIA): CEO / SuperUser / Admin/Developer
+      isAuthorized = isTester || appUser.role === 'ceo' || isSuperUser
     } else if (stage === 'hr') {
       /*
-       * Outside KIA there is no HR stage, so nobody may act on one — not even HR. Without this an HR
-       * user could still push a Hyundai or Platinum request through a stage its chain does not have,
-       * writing an hr_approval that no longer means anything and moving money by a route the MD
-       * removed. New requests never reach this stage at all; this covers the ones already filed.
+       * Outside KIA there is no HR stage, so nobody may act on one — not even HR.
        */
       isAuthorized = brandHasHrStage(requestRow.brand) && (isTester || isHrUser || isSuperUser)
     } else if (stage === 'accounts') {
@@ -156,9 +141,7 @@ export async function POST(
       // The stage where MD/CEO are the intended approver.
       isAuthorized = isTester || isSuperUser
     } else if (stage === 'payment_done') {
-      // SEPARATION OF DUTIES — see the `accounts` stage above. `isSuperUser` (ceo/md) is
-      // DELIBERATELY EXCLUDED: this stage writes paymentStatus = 'PAID', the UTR and the
-      // payment proof. Recording a payment is an Accounts action, never an MD one.
+      // SEPARATION OF DUTIES — see the `accounts` stage above.
       isAuthorized = isTester || isAccountsUser
     }
 
@@ -168,9 +151,11 @@ export async function POST(
          * Name the approver this BRAND actually has.
          */
         error: `Your role (${appUser.role}) is not authorized to act on ${
-          isServiceCategory
-            ? (brandHasEd(requestRow.brand) || usesVpService(requestRow.brand) ? 'Service (requires VP)' : 'Service (requires the General Service Manager)')
-            : (brandHasEd(requestRow.brand) ? 'Sales (requires CEO or General Sales Manager)' : 'Sales (requires the General Sales Manager)')
+          stage === 'ceo'
+            ? 'requests at the CEO stage (requires CEO)'
+            : isServiceCategory
+              ? 'Service (requires VP)'
+              : 'Sales (requires the General Sales Manager)'
         } requests at the ${stage} stage.`
       }, { status: 403 })
     }
@@ -181,25 +166,31 @@ export async function POST(
 
 
     // Check steps order
-    // Flow: 1: first stage -> 2: HR (if required for Salary/PF/Incentive/Training/Uniform/ESI)
-    //       -> 3: EA (optional) -> 4: MD -> 5: Accounts
-    //
-    // The ORDER is the same for every brand; only the name of stage 1 differs — ED at KIA, the sales
-    // GSM or the Group Service Manager elsewhere. These messages all said "ED approval is pending" on
-    // brands that have no ED, telling a Hyundai EA to wait for a desk that does not exist.
+    // Flow: 1: GSM / VP -> 2: CEO (KIA) -> 3: HR (if required) -> 4: EA -> 5: MD -> 6: Accounts
     if (action !== 'SEND_BACK') {
+      const isKia = String(requestRow.brand || 'kia').toLowerCase() === 'kia'
       const requiresHr = isHrApprovalRequired(requestRow.approvalType, requestRow.brand)
       const firstStageName = firstStageShortLabel(
         requestRow.brand, requestRow.department, requestRow.approvalType,
       )
 
-      if (stage === 'hr' && !isTester && !isSuperUser) {
+      if (stage === 'ceo' && !isTester && !isSuperUser) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: `${firstStageName} approval is pending.` }, { status: 400 })
+        }
+      } else if (stage === 'hr' && !isTester && !isSuperUser) {
+        if (requestRow.vpApproval !== 'APPROVED') {
+          return NextResponse.json({ error: `${firstStageName} approval is pending.` }, { status: 400 })
+        }
+        if (isKia && requestRow.ceoApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'CEO approval is pending.' }, { status: 400 })
         }
       } else if (stage === 'ea' && !isTester && !isSuperUser) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: `${firstStageName} approval is pending.` }, { status: 400 })
+        }
+        if (isKia && requestRow.ceoApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'CEO approval is pending.' }, { status: 400 })
         }
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval is pending.' }, { status: 400 })
@@ -207,6 +198,9 @@ export async function POST(
       } else if (stage === 'md' && !isTester) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: `${firstStageName} approval must be completed first.` }, { status: 400 })
+        }
+        if (isKia && requestRow.ceoApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'CEO approval must be completed first.' }, { status: 400 })
         }
         if (requiresHr && requestRow.hrApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'HR approval must be completed first for Salary/PF/Incentive/Training/Uniform/ESI requests.' }, { status: 400 })
@@ -231,6 +225,7 @@ export async function POST(
 
     if (action === 'SEND_BACK') {
       updates.vpApproval = null
+      updates.ceoApproval = null
       updates.hrApproval = null
       updates.accountApproval = null
       updates.eaApproval = null
@@ -299,6 +294,8 @@ export async function POST(
     } else {
       if (stage === 'sales_manager') {
         updates.vpApproval = statusVal
+      } else if (stage === 'ceo') {
+        updates.ceoApproval = statusVal
       } else if (stage === 'hr') {
         updates.hrApproval = statusVal
       } else if (stage === 'ea') {
@@ -307,6 +304,7 @@ export async function POST(
         updates.managementApproval = statusVal
         if (action === 'APPROVE') {
           updates.vpApproval = 'APPROVED'
+          updates.ceoApproval = 'APPROVED'
           updates.emailSendStatus = 'MDApproved'
 
           // Trigger email notification to requester that MD approved the payment order

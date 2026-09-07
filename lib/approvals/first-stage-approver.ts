@@ -140,8 +140,8 @@ export function trackForDepartment(department: unknown): FirstStageTrack {
  * it before it reaches EA.
  */
 export function firstStageApproverRoles(brand: unknown, department: unknown): string[] {
-  if (brandHasEd(brand)) return ['ceo']
-  const serviceRole = usesVpService(brand) ? 'vp' : 'service_general_manager'
+  const b = norm(brand)
+  const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (trackForDepartment(department)) {
     case 'sales': return ['general_manager']
     case 'service': return [serviceRole]
@@ -159,8 +159,8 @@ export function firstStageApproverRoles(brand: unknown, department: unknown): st
  * silently disagree.
  */
 export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStageTrack): string[] {
-  if (brandHasEd(brand)) return ['ceo']
-  const serviceRole = usesVpService(brand) ? 'vp' : 'service_general_manager'
+  const b = norm(brand)
+  const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (track) {
     case 'sales': return ['general_manager']
     case 'service': return [serviceRole]
@@ -177,10 +177,10 @@ export function canApproveFirstStage(role: unknown, brand: unknown, department: 
  * What to call the stage on screen and in emails.
  */
 export function firstStageLabel(brand: unknown, department: unknown): string {
-  if (brandHasEd(brand)) return 'CEO Approval'
+  const b = norm(brand)
   switch (trackForDepartment(department)) {
     case 'sales': return 'GSM Approval (Sales)'
-    case 'service': return usesVpService(brand) ? 'VP Approval' : 'GSM Approval (Service)'
+    case 'service': return (usesVpService(b) || b === 'kia') ? 'VP Approval' : 'GSM Approval (Service)'
     default: return 'GSM Approval'
   }
 }
@@ -189,8 +189,8 @@ export function firstStageLabel(brand: unknown, department: unknown): string {
  * Short form for a chip, a history row or a decision email.
  */
 export function firstStageShortLabel(brand: unknown, department: unknown, approvalType?: unknown): string {
-  if (brandHasEd(brand)) return 'CEO'
-  if (usesVpService(brand) && isServiceApproval(department, approvalType)) {
+  const b = norm(brand)
+  if ((usesVpService(b) || b === 'kia') && isServiceApproval(department, approvalType)) {
     return 'VP'
   }
   return 'GSM'

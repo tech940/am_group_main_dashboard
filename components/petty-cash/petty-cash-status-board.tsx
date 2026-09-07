@@ -114,7 +114,7 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
   const canDeleteRequest = useCallback((request: PettyCashRequest) => {
     // Condition 1: Must be in a pending stage (not approved / completed / rejected)
     const stageInfo = getPettyCashStageInfo(request.status)
-    const isPending = stageInfo.state === 'pending' || request.status === 'draft' || request.status === 'ed_pending' || request.status === 'ea_pending' || request.status === 'md_pending' || request.status === 'accounts_pending'
+    const isPending = stageInfo.state === 'pending' || request.status === 'draft' || request.status === 'gsm_pending' || request.status === 'ceo_pending' || request.status === 'ed_pending' || request.status === 'ea_pending' || request.status === 'md_pending' || request.status === 'accounts_pending'
     if (!isPending) return false
 
     // Condition 2: Current user must be the submitter of the request (or developer/admin)

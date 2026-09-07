@@ -39,7 +39,7 @@ import type { Tone } from './pc-shared'
 import { MdApprovalAmountDialog } from './pc-md-approval-dialog'
 import type { PettyCashRequest } from './types'
 
-type ApprovalStage = 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'
+type ApprovalStage = 'ceo_approval' | 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'
 
 type ApprovalRequest = {
   id: string
@@ -81,6 +81,14 @@ type RequestDetail = {
 
 const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   submitted: { label: 'Awaiting CEO', tone: 'sky' },
+  gsm_pending: { label: 'Awaiting CEO', tone: 'sky' },
+  gsm_on_hold: { label: 'On Hold · CEO', tone: 'sky' },
+  gsm_approved: { label: 'Awaiting EA', tone: 'amber' },
+  gsm_rejected: { label: 'Rejected · CEO', tone: 'rose' },
+  ceo_pending: { label: 'Awaiting CEO', tone: 'sky' },
+  ceo_on_hold: { label: 'On Hold · CEO', tone: 'sky' },
+  ceo_approved: { label: 'Awaiting EA', tone: 'amber' },
+  ceo_rejected: { label: 'Rejected · CEO', tone: 'rose' },
   ed_pending: { label: 'Awaiting CEO', tone: 'sky' },
   ed_on_hold: { label: 'On Hold · CEO', tone: 'sky' },
   ed_approved: { label: 'Awaiting EA', tone: 'amber' },
@@ -107,6 +115,7 @@ const STATUS_META: Record<string, { label: string; tone: Tone }> = {
 
 
 const STAGE_LABEL: Record<ApprovalStage, string> = {
+  ceo_approval: 'CEO Approval',
   ed_approval: 'CEO Approval',
   ea_approval: 'EA Approval',
   md_approval: 'MD Approval',
@@ -124,7 +133,7 @@ function canActOnStage(role: string, stage: ApprovalStage | null) {
 
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
 
-  if (stage === 'ed_approval') return r === 'ceo'
+  if (stage === 'ceo_approval' || stage === 'ed_approval') return r === 'ceo' || r === 'ed'
   if (stage === 'ea_approval') return r === 'ea' || r === 'eba'
   if (stage === 'md_approval') return r === 'md'
   if (stage === 'accounts') return isAccounts
@@ -191,9 +200,13 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
   const [directRemarks, setDirectRemarks] = useState('')
   const [mdApprovalDialog, setMdApprovalDialog] = useState<PettyCashRequest | null>(null)
   const [stageFilter, setStageFilter] = useState<'all' | ApprovalStage>(() => {
-    return (role === 'md' || role === 'eba') ? 'md_approval' : role === 'ceo' ? 'ed_approval' : 'all'
+    return (role === 'md' || role === 'eba')
+      ? 'md_approval'
+      : (role === 'ceo' || role === 'ed')
+      ? 'ceo_approval'
+      : 'all'
   })
-  const showStageFilter = role === 'ceo' || role === 'md' || role === 'eba' || role === 'developer'
+  const showStageFilter = role === 'ceo' || role === 'ed' || role === 'md' || role === 'eba' || role === 'developer'
 
   const onCountChangeRef = useRef(onCountChange)
   useEffect(() => { onCountChangeRef.current = onCountChange }, [onCountChange])
@@ -380,14 +393,15 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
           </div>
           {showStageFilter && (
             <div className="inline-flex items-center gap-0.5 rounded-2xl border border-slate-200 bg-slate-100 p-0.5">
-              {(['all', 'ed_approval', 'ea_approval', 'md_approval', 'accounts'] as const).map((value) => {
+              {(['all', 'ceo_approval', 'ea_approval', 'md_approval', 'accounts'] as const).map((value) => {
                 const labels: Record<string, string> = {
                   all: 'All Stages',
-                  ed_approval: 'CEO',
+                  ceo_approval: 'CEO',
                   ea_approval: 'EA',
                   md_approval: 'MD',
                   accounts: 'Accounts',
                 }
+                const isActive = stageFilter === value || (value === 'ceo_approval' && stageFilter === 'ed_approval')
                 return (
                   <button
                     key={value}
@@ -395,7 +409,7 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                     onClick={() => setStageFilter(value)}
                     className={cn(
                       'rounded-xl px-3 py-2 text-xs font-bold transition-colors',
-                      stageFilter === value
+                      isActive
                         ? 'bg-white text-slate-900 shadow-sm'
                         : 'text-slate-500 hover:text-slate-700'
                     )}

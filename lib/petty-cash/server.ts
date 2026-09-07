@@ -81,7 +81,7 @@ export const createPettyCashExpenseSchema = z.object({
 export const pettyCashWorkflowSchema = z.object({
   id: uuidSchema,
   action: z.enum(['approve', 'reject', 'hold']),
-  stage: z.enum(['ed_approval', 'ea_approval', 'md_approval', 'accounts']),
+  stage: z.enum(['gsm_approval', 'ceo_approval', 'ed_approval', 'ea_approval', 'md_approval', 'accounts']),
   remarks: optionalText,
   allocatedAmount: moneySchema.optional(),
 })
@@ -96,8 +96,8 @@ export const pettyCashListQuerySchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
 })
 
-const REQUEST_TIMESTAMP_FIELDS = ['createdAt', 'updatedAt', 'submittedAt', 'eaApprovedAt', 'mdApprovedAt', 'accountsApprovedAt', 'rejectedAt', 'deletedAt'] as const
-const EXPENSE_TIMESTAMP_FIELDS = ['createdAt', 'updatedAt', 'submittedAt', 'eaApprovedAt', 'mdApprovedAt', 'accountsApprovedAt', 'rejectedAt', 'deletedAt'] as const
+const REQUEST_TIMESTAMP_FIELDS = ['createdAt', 'updatedAt', 'submittedAt', 'gsmApprovedAt', 'ceoApprovedAt', 'edApprovedAt', 'eaApprovedAt', 'mdApprovedAt', 'accountsApprovedAt', 'rejectedAt', 'deletedAt'] as const
+const EXPENSE_TIMESTAMP_FIELDS = ['createdAt', 'updatedAt', 'submittedAt', 'gsmApprovedAt', 'ceoApprovedAt', 'edApprovedAt', 'eaApprovedAt', 'mdApprovedAt', 'accountsApprovedAt', 'rejectedAt', 'deletedAt'] as const
 const ALLOCATION_TIMESTAMP_FIELDS = ['createdAt', 'updatedAt', 'allocatedAt', 'closedAt'] as const
 const HISTORY_TIMESTAMP_FIELDS = ['createdAt'] as const
 const LEDGER_TIMESTAMP_FIELDS = ['createdAt'] as const
@@ -343,16 +343,16 @@ export async function listPettyCashRequests(appUser: AppUser, input: z.input<typ
 type PettyCashRequestStatus = (typeof pettyCashRequests.$inferSelect)['status']
 
 const PETTY_CASH_APPROVAL_STATUSES = {
-  ed_approval: ['submitted', 'ed_pending', 'ed_on_hold'],
-  ea_approval: ['ea_pending', 'ea_on_hold', 'ed_approved'],
+  ceo_approval: ['submitted', 'ceo_pending', 'ceo_on_hold', 'ed_pending', 'ed_on_hold', 'gsm_pending'],
+  ea_approval: ['ea_pending', 'ea_on_hold', 'ed_approved', 'ceo_approved'],
   md_approval: ['md_pending', 'md_on_hold'],
   accounts: ['accounts_pending', 'accounts_on_hold'],
 } as const satisfies Record<string, readonly PettyCashRequestStatus[]>
 
 /** Which approval stage a request's status currently sits at (null if terminal/creator-side). */
-export function pettyCashStageForStatus(status: string): 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts' | null {
-  if (status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold') return 'ed_approval'
-  if (status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved') return 'ea_approval'
+export function pettyCashStageForStatus(status: string): 'ceo_approval' | 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts' | null {
+  if (status === 'submitted' || status === 'ceo_pending' || status === 'ceo_on_hold' || status === 'ed_pending' || status === 'ed_on_hold' || status === 'gsm_pending') return 'ceo_approval'
+  if (status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved' || status === 'ceo_approved' || status === 'gsm_approved') return 'ea_approval'
   if (status === 'md_pending' || status === 'md_on_hold') return 'md_approval'
   if (status === 'accounts_pending' || status === 'accounts_on_hold') return 'accounts'
   return null
@@ -364,14 +364,13 @@ function pettyCashApprovalStatusesForRole(role: AppUser['role']): PettyCashReque
   const r = String(role).trim().toLowerCase()
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
 
-  // CEO (and GM roles) own the FIRST stage, so they queue on the ed_approval statuses.
-  if (r === 'ceo' || r === 'ed' || r === 'general_manager' || r === 'service_general_manager') {
-    return [...PETTY_CASH_APPROVAL_STATUSES.ed_approval]
+  if (r === 'ceo' || r === 'ed') {
+    return [...PETTY_CASH_APPROVAL_STATUSES.ceo_approval]
   }
   if (r === 'ea') return [...PETTY_CASH_APPROVAL_STATUSES.ea_approval]
   if (r === 'md' || r === 'eba' || r === 'developer') {
     return [
-      ...PETTY_CASH_APPROVAL_STATUSES.ed_approval,
+      ...PETTY_CASH_APPROVAL_STATUSES.ceo_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.ea_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.md_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.accounts,
@@ -1082,22 +1081,36 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
   let newStatus = request.status
   let newStage = request.currentStage
 
-  if (input.stage === 'ed_approval') {
-    if (!['submitted', 'ed_pending', 'ed_on_hold'].includes(request.status)) throw new Error('Request is not awaiting CEO approval')
+  if (input.stage === 'gsm_approval') {
+    if (!['submitted', 'gsm_pending', 'gsm_on_hold'].includes(request.status)) throw new Error('Request is not awaiting GSM approval')
     if (input.action === 'approve') {
-      updateData = { ...updateData, status: 'ea_pending', currentStage: 'ea_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: null }
+      updateData = { ...updateData, status: 'ceo_pending', currentStage: 'ceo_approval', gsmApprovedBy: appUser.id, gsmApprovedAt: now, gsmRemarks: null }
+      newStatus = 'ceo_pending'
+      newStage = 'ceo_approval'
+    } else if (input.action === 'hold') {
+      updateData = { ...updateData, status: 'gsm_on_hold', currentStage: 'gsm_approval', gsmRemarks: input.remarks || null }
+      newStatus = 'gsm_on_hold'
+      newStage = 'gsm_approval'
+    } else {
+      updateData = { ...updateData, status: 'gsm_rejected', currentStage: 'gsm_approval', rejectedAt: now, rejectedBy: appUser.id, gsmRemarks: input.remarks || null }
+      newStatus = 'gsm_rejected'
+    }
+  } else if (input.stage === 'ceo_approval' || input.stage === 'ed_approval') {
+    if (!['ceo_pending', 'ceo_on_hold', 'ed_pending', 'ed_on_hold', 'gsm_approved', 'submitted'].includes(request.status)) throw new Error('Request is not awaiting CEO approval')
+    if (input.action === 'approve') {
+      updateData = { ...updateData, status: 'ea_pending', currentStage: 'ea_approval', ceoApprovedBy: appUser.id, ceoApprovedAt: now, edApprovedBy: appUser.id, edApprovedAt: now, ceoRemarks: null, edRemarks: null }
       newStatus = 'ea_pending'
       newStage = 'ea_approval'
     } else if (input.action === 'hold') {
-      updateData = { ...updateData, status: 'ed_on_hold', currentStage: 'ed_approval', edRemarks: input.remarks || null }
-      newStatus = 'ed_on_hold'
-      newStage = 'ed_approval'
+      updateData = { ...updateData, status: 'ceo_on_hold', currentStage: 'ceo_approval', ceoRemarks: input.remarks || null, edRemarks: input.remarks || null }
+      newStatus = 'ceo_on_hold'
+      newStage = 'ceo_approval'
     } else {
-      updateData = { ...updateData, status: 'ed_rejected', currentStage: 'ed_approval', rejectedAt: now, rejectedBy: appUser.id, edRemarks: input.remarks || null }
-      newStatus = 'ed_rejected'
+      updateData = { ...updateData, status: 'ceo_rejected', currentStage: 'ceo_approval', rejectedAt: now, rejectedBy: appUser.id, ceoRemarks: input.remarks || null, edRemarks: input.remarks || null }
+      newStatus = 'ceo_rejected'
     }
   } else if (input.stage === 'ea_approval') {
-    if (!['ea_pending', 'ea_on_hold', 'ed_approved'].includes(request.status)) throw new Error('Request is not awaiting EA approval')
+    if (!['ea_pending', 'ea_on_hold', 'ed_approved', 'ceo_approved'].includes(request.status)) throw new Error('Request is not awaiting EA approval')
     if (input.action === 'approve') {
       updateData = { ...updateData, status: 'md_pending', currentStage: 'md_approval', eaApprovedBy: appUser.id, eaApprovedAt: now, eaRemarks: null }
       newStatus = 'md_pending'
@@ -1363,18 +1376,28 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
   let newStatus = expense.status
   let newStage = expense.currentStage
 
-  if (input.stage === 'ed_approval') {
-    if (!['pending', 'ed_pending'].includes(expense.status)) throw new Error('Expense is not awaiting CEO approval')
+  if (input.stage === 'gsm_approval') {
+    if (!['pending', 'gsm_pending'].includes(expense.status)) throw new Error('Expense is not awaiting GSM approval')
     if (input.action === 'approve') {
-      updateData = { ...updateData, status: 'ed_approved', currentStage: 'md_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: input.remarks || null }
-      newStatus = 'ed_approved'
+      updateData = { ...updateData, status: 'ceo_pending', currentStage: 'ceo_approval', gsmApprovedBy: appUser.id, gsmApprovedAt: now, gsmRemarks: input.remarks || null }
+      newStatus = 'ceo_pending'
+      newStage = 'ceo_approval'
+    } else {
+      updateData = { ...updateData, status: 'gsm_rejected', rejectedAt: now, rejectedBy: appUser.id, gsmRemarks: input.remarks || null }
+      newStatus = 'gsm_rejected'
+    }
+  } else if (input.stage === 'ceo_approval' || input.stage === 'ed_approval') {
+    if (!['ceo_pending', 'ed_pending', 'gsm_approved', 'pending'].includes(expense.status)) throw new Error('Expense is not awaiting CEO approval')
+    if (input.action === 'approve') {
+      updateData = { ...updateData, status: 'ea_approved', currentStage: 'md_approval', ceoApprovedBy: appUser.id, ceoApprovedAt: now, edApprovedBy: appUser.id, edApprovedAt: now, ceoRemarks: input.remarks || null, edRemarks: input.remarks || null }
+      newStatus = 'ea_approved'
       newStage = 'md_approval'
     } else {
-      updateData = { ...updateData, status: 'ed_rejected', rejectedAt: now, rejectedBy: appUser.id, edRemarks: input.remarks || null }
-      newStatus = 'ed_rejected'
+      updateData = { ...updateData, status: 'ceo_rejected', rejectedAt: now, rejectedBy: appUser.id, ceoRemarks: input.remarks || null, edRemarks: input.remarks || null }
+      newStatus = 'ceo_rejected'
     }
   } else if (input.stage === 'ea_approval') {
-    if (!['pending', 'ed_approved'].includes(expense.status)) throw new Error('Expense is not awaiting EA approval')
+    if (!['pending', 'ed_approved', 'ceo_approved'].includes(expense.status)) throw new Error('Expense is not awaiting EA approval')
     if (input.action === 'approve') {
       updateData = { ...updateData, status: 'ea_approved', currentStage: 'md_approval', eaApprovedBy: appUser.id, eaApprovedAt: now, eaRemarks: input.remarks || null }
       newStatus = 'ea_approved'
@@ -1384,7 +1407,7 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
       newStatus = 'ea_rejected'
     }
   } else if (input.stage === 'md_approval') {
-    if (!['ed_approved', 'ea_approved'].includes(expense.status)) throw new Error('Expense is not awaiting MD approval')
+    if (!['ed_approved', 'ceo_approved', 'ea_approved'].includes(expense.status)) throw new Error('Expense is not awaiting MD approval')
     if (input.action === 'approve') {
       updateData = { ...updateData, status: 'accounts_pending', currentStage: 'accounts', mdApprovedBy: appUser.id, mdApprovedAt: now, mdRemarks: input.remarks || null }
       newStatus = 'accounts_pending'

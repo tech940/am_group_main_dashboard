@@ -50,11 +50,14 @@ check(trackForDepartment('') === 'unknown', 'blank -> unknown')
 check(trackForDepartment(null) === 'unknown', 'null -> unknown')
 check(trackForDepartment('Marketing') === 'unknown', 'an unrecognised department -> unknown')
 
-console.log('\n3) KIA always routes to the CEO, whatever the department')
-for (const dept of ['Sales', 'SERVICE', '', null, 'Marketing']) {
-  const roles = firstStageApproverRoles('kia', dept)
-  check(roles.length === 1 && roles[0] === 'ceo', `kia + ${JSON.stringify(dept)} -> ceo`)
-}
+console.log('\n3) KIA routes Sales to GSM and Service to VP')
+check(JSON.stringify(firstStageApproverRoles('kia', 'Sales')) === JSON.stringify(['general_manager']),
+  'kia + Sales -> general_manager')
+check(JSON.stringify(firstStageApproverRoles('kia', 'Service')) === JSON.stringify(['vp']),
+  'kia + Service -> vp')
+const kiaBoth = firstStageApproverRoles('kia', '')
+check(kiaBoth.length === 2 && kiaBoth.includes('general_manager') && kiaBoth.includes('vp'),
+  'kia + blank department -> sales GSM or VP')
 
 console.log('\n4) Hyundai and Platinum: sales to the sales GSM, service to the VICE PRESIDENT')
 for (const brand of ['hyundai', 'platinum']) {
@@ -80,20 +83,18 @@ for (const brand of ['mg', 'tata', 'honda', 'bajaj', 'ktm', 'triumph']) {
     `${brand} + Service -> its own service_general_manager`)
 }
 
-console.log('\n5) The CEO can never approve at a brand that has no CEO')
-for (const brand of ['hyundai', 'platinum', 'mg']) {
+console.log('\n5) The CEO is no longer a first-stage approver (CEO signs Stage 2 for KIA)')
+for (const brand of ['kia', 'hyundai', 'platinum', 'mg']) {
   for (const dept of ['Sales', 'Service', '', 'Marketing']) {
-    check(!canApproveFirstStage('ceo', brand, dept), `ceo cannot approve ${brand} + ${JSON.stringify(dept)}`)
+    check(!canApproveFirstStage('ceo', brand, dept), `ceo cannot approve first stage for ${brand} + ${JSON.stringify(dept)}`)
   }
 }
 
-console.log('\n6) ...and a GSM can never approve at KIA (that stage is the CEO’s)')
-for (const role of GSM_ROLES) {
-  for (const dept of ['Sales', 'Service', '']) {
-    check(!canApproveFirstStage(role, 'kia', dept),
-      `${role} cannot approve the KIA first stage (${JSON.stringify(dept)})`)
-  }
-}
+console.log('\n6) KIA first stage: GSM approves Sales, VP approves Service')
+check(canApproveFirstStage('general_manager', 'kia', 'Sales'), 'general_manager can approve KIA Sales first stage')
+check(!canApproveFirstStage('general_manager', 'kia', 'Service'), 'general_manager cannot approve KIA Service first stage')
+check(canApproveFirstStage('vp', 'kia', 'Service'), 'VP can approve KIA Service first stage')
+check(!canApproveFirstStage('vp', 'kia', 'Sales'), 'VP cannot approve KIA Sales first stage')
 
 console.log('\n7) A Sales GSM cannot clear a Service request, and vice versa')
 check(!canApproveFirstStage('general_manager', 'hyundai', 'Service'), 'sales GSM blocked on a service request')
@@ -122,8 +123,9 @@ for (const brand of ['kia', 'hyundai', 'platinum']) {
   }
 }
 
-console.log('\n9) The label never says CEO at a brand without one')
-check(firstStageLabel('kia', 'Sales') === 'CEO Approval', 'kia reads "CEO Approval"')
+console.log('\n9) First stage labels by brand and department')
+check(firstStageLabel('kia', 'Sales') === 'GSM Approval (Sales)', 'kia sales reads "GSM Approval (Sales)"')
+check(firstStageLabel('kia', 'Service') === 'VP Approval', 'kia service reads "VP Approval"')
 check(firstStageLabel('hyundai', 'Sales') === 'GSM Approval (Sales)', 'hyundai sales reads "GSM Approval (Sales)"')
 check(firstStageLabel('hyundai', 'Service') === 'VP Approval',
   'hyundai service names the VP Approval')
@@ -197,7 +199,8 @@ check(!isServiceApproval(null, null), 'a wholly blank request is not service')
  * stage at all. The permanent record named the wrong desk.
  */
 console.log('\n13) The short label names the desk that actually signed')
-check(firstStageShortLabel('kia', 'SERVICE') === 'CEO', 'kia still records CEO')
+check(firstStageShortLabel('kia', 'SALES') === 'GSM', 'kia sales records GSM')
+check(firstStageShortLabel('kia', 'SERVICE') === 'VP', 'kia service records VP')
 check(firstStageShortLabel('hyundai', 'SALES') === 'GSM', 'hyundai sales records GSM')
 check(firstStageShortLabel('hyundai', 'SERVICE') === 'VP',
   'hyundai service records VP')

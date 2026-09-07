@@ -40,3 +40,15 @@ export async function requireVendorAccess(): Promise<VendorAccess> {
   }
   return { appUser }
 }
+
+export async function getOptionalVendorAccess(): Promise<{ isAuthorized: boolean; appUser: AppUser | null }> {
+  try {
+    const appUser = await getAuthenticatedAppUser()
+    if (!appUser) return { isAuthorized: false, appUser: null }
+    const permission = await requirePermission(appUser, 'kia.approvals.view')
+    return { isAuthorized: permission.allowed, appUser }
+  } catch {
+    return { isAuthorized: false, appUser: null }
+  }
+}
+

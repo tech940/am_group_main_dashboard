@@ -15,8 +15,8 @@ export type PettyCashApprovalEmailOptions = {
   requestedAmount: string | number
   allocatedAmount?: string | number | null
   purpose: string
-  stage: 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'
-  /** The request's own brand + department — the first stage is ED at KIA and a GSM elsewhere. */
+  stage: 'gsm_approval' | 'ceo_approval' | 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'
+  /** The request's own brand + department — the first stage is GSM at KIA. */
   branchId?: string | null
   department?: string | null
   action: 'approve' | 'hold' | 'reject'
@@ -27,13 +27,17 @@ export type PettyCashApprovalEmailOptions = {
 }
 
 const STAGE_TITLE_MAP: Record<string, string> = {
+  gsm_approval: 'GSM Approval (General Manager)',
+  ceo_approval: 'CEO Approval',
+  ed_approval: 'CEO Approval',
   ea_approval: 'EA Approval (Executive Assistant)',
   md_approval: 'MD Approval (Managing Director)',
   accounts: 'Accounts Approval (Final)',
 }
 
 function stageTitle(opts: Pick<PettyCashApprovalEmailOptions, 'stage' | 'branchId' | 'department'>) {
-  if (opts.stage === 'ed_approval') return 'CEO Approval'
+  if (opts.stage === 'gsm_approval') return 'GSM Approval'
+  if (opts.stage === 'ceo_approval' || opts.stage === 'ed_approval') return 'CEO Approval'
   return STAGE_TITLE_MAP[opts.stage] ?? opts.stage
 }
 

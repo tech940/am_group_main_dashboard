@@ -37,6 +37,7 @@ const warn = (m: string) => console.log(`  [WARN] ${m}`)
 
 /** The roles that own each stage. Anything here must be able to see its own queue. */
 const STAGE_ROLES: Record<string, string[]> = {
+  ceo: ['ceo'],
   hr: ['hr'],
   ea: ['ea', 'eba'],
   md: ['md'],
@@ -47,7 +48,7 @@ type U = { id: string; full_name: string; email: string; role: string; brand: st
 type R = {
   request_no: string; brand: string | null; dealer_code: string | null; location: string | null
   department: string | null; approval_type: string | null; amount: string
-  vp_approval: string | null; hr_approval: string | null; ea_approval: string | null
+  vp_approval: string | null; ceo_approval: string | null; hr_approval: string | null; ea_approval: string | null
   management_approval: string | null; account_approval: string | null
 }
 
@@ -81,32 +82,27 @@ async function main() {
     FROM public.users WHERE is_active = true ORDER BY role, full_name`)
   const rows = await analyticsExecute<R>(sql`
     SELECT request_no, brand, dealer_code, location, department, approval_type, amount::text,
-           vp_approval, hr_approval, ea_approval, management_approval, account_approval
+           vp_approval, ceo_approval, hr_approval, ea_approval, management_approval, account_approval
     FROM kia_approval_requests`)
 
   const stageOf = (r: R) => vendorPaymentActiveStage({
-    vpApproval: r.vp_approval, hrApproval: r.hr_approval, eaApproval: r.ea_approval,
+    vpApproval: r.vp_approval, ceoApproval: r.ceo_approval, hrApproval: r.hr_approval, eaApproval: r.ea_approval,
     managementApproval: r.management_approval, accountApproval: r.account_approval,
     approvalType: r.approval_type, brand: r.brand, department: r.department,
   })
   /**
    * Does `role` own the stage this row is sitting at?
-   *
-   * ⚠️ KIA SERVICE AT STAGE ONE BELONGS TO THE VP, NOT THE ED.
-   *
-   * firstStageApproverRolesForTrack returns ['ed'] for KIA on BOTH tracks — a documented
-   * simplification in that module. But isApprovalVisibleTo explicitly hides Kia Jammu Service from
-   * the ED (isKiaJammuServiceApproval), and the screen excludes the ED from that stage outright.
-   * Taking the helper at face value made this test report 7 live KIA-JM service requests worth
-   * Rs4,03,714 as stranded when VP Parveen Rajan can see and action every one of them.
    */
   const owns = (role: string, r: R) => {
     const st = stageOf(r)
     if (st === 'sales_manager') {
       const service = isServiceApproval(r.department, r.approval_type)
       const brand = String(r.brand || 'kia').trim().toLowerCase()
-      if (brand.startsWith('kia')) return service ? role === 'vp' : (role === 'ceo' || role === 'ed')
+      if (brand.startsWith('kia')) return service ? role === 'vp' : role === 'general_manager'
       return firstStageApproverRolesForTrack(r.brand, service ? 'service' : 'sales').includes(role)
+    }
+    if (st === 'ceo') {
+      return role === 'ceo'
     }
     return (STAGE_ROLES[st] || []).includes(role)
   }

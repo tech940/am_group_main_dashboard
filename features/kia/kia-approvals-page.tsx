@@ -167,6 +167,7 @@ interface ApprovalRequest {
   typeOfPayment: string | null
   remarks: string | null
   vpApproval: string | null
+  ceoApproval: string | null
   accountApproval: string | null
   hrApproval: string | null
   eaApproval: string | null
@@ -425,7 +426,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   // Details & Action Modal states
   const [detailRow, setDetailRow] = useState<ApprovalRequest | null>(null)
   const [actionRemarks, setActionRemarks] = useState('')
-  const [actionStage, setActionStage] = useState<'sales_manager' | 'hr' | 'accounts' | 'ea' | 'md' | 'payment_done' | null>(null)
+  const [actionStage, setActionStage] = useState<'sales_manager' | 'ceo' | 'hr' | 'accounts' | 'ea' | 'md' | 'payment_done' | null>(null)
   const [actionDecision, setActionDecision] = useState<'APPROVE' | 'HOLD' | 'REJECT' | 'SEND_BACK' | null>(null)
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [invoiceDocUrl, setInvoiceDocUrl] = useState('')
@@ -1304,17 +1305,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
    */
   const firstStageDisplayLabel = (req?: ApprovalRequest | null): string => {
     const isService = req ? isServiceCategory(req.department, req.approvalType) : false
-    if (req && !brandHasEd(req.brand)) {
-      // Hyundai and Platinum service is owned by Vice President (VP), so naming the
-      // brand's own "GSM (Service)" would point the submitter at the wrong desk.
-      if (isService) return usesGroupServiceManager(req.brand) ? 'VP' : 'GSM (Service)'
-      return 'GSM (Sales)'
-    }
-    return isService ? 'VP' : 'CEO / GSM (Sales)'
+    return isService ? 'VP' : 'GSM (Sales)'
   }
 
   const getPendingStageLabel = (req: ApprovalRequest): string => {
     const firstStage = firstStageDisplayLabel(req)
+    const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
 
     if (req.vpApproval === 'NOT APPROVED') {
       return `Rejected by ${firstStage}`
@@ -1323,13 +1319,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return `Held by ${firstStage}`
     }
 
-    /*
-     * Only when HR is actually in this brand's chain. These two lines are NOT gated by the payroll
-     * type — they read the stored column directly — so without the brand check a Hyundai or Platinum
-     * row that HR had held before the stage was removed would read 'Held by HR' for ever, while the
-     * server considers it to be sitting at EA and lets the EA approve it. The screen would be
-     * announcing a blockage that no longer exists and that nobody could clear.
-     */
+    if (isKia) {
+      if (req.ceoApproval === 'NOT APPROVED') return 'Rejected by CEO'
+      if (req.ceoApproval === 'HELD') return 'Held by CEO'
+    }
+
     if (brandHasHrStage(req.brand)) {
       if (req.hrApproval === 'NOT APPROVED') return 'Rejected by HR'
       if (req.hrApproval === 'HELD') return 'Held by HR'
@@ -1355,20 +1349,24 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return `Pending ${firstStage}`
     }
 
-    // Stage 1 approved — check whether HR is in this chain at all. HR is a KIA-ONLY stage: every
-    // other brand goes straight from the first stage to the EA. See brandHasHrStage.
+    // KIA Stage 2: CEO Approval (both sales & service)
+    if (isKia && (!req.ceoApproval || req.ceoApproval === '')) {
+      return 'Pending CEO'
+    }
+
+    // HR stage
     const requiresHr = isHrApprovalRequired(req.approvalType, req.brand)
     if (requiresHr && (!req.hrApproval || req.hrApproval === '')) {
       return 'Pending HR'
     }
 
-    // Stage 1 (and HR if required) approved — EA stage
-    if (req.vpApproval === 'APPROVED' && (!req.eaApproval || req.eaApproval === '')) {
+    // EA stage
+    if (!req.eaApproval || req.eaApproval === '') {
       return 'Pending EA'
     }
 
     // Pending MD
-    if (req.vpApproval === 'APPROVED' && (!req.managementApproval || req.managementApproval === '')) {
+    if (!req.managementApproval || req.managementApproval === '') {
       return 'Pending MD'
     }
 
@@ -1390,13 +1388,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (pendingLabel === 'Pending MD' || pendingLabel === 'Held by MD') return 'md'
     if (pendingLabel === 'Pending EA' || pendingLabel === 'Held by EA') return 'ea'
     if (pendingLabel === 'Pending HR' || pendingLabel === 'Held by HR') return 'hr'
-    /*
-     * The first stage, matched against THIS request's own label rather than a hand-kept list of
-     * prefixes ('Pending ED' / 'Pending VP' / 'Pending General Service Manager' / …). That list had
-     * already gone stale once and silently emptied the stage filter; adding the GSM wordings to it
-     * would only set the same trap again. Both strings come from getPendingStageLabel, so an exact
-     * comparison cannot drift from it.
-     */
+    if (pendingLabel === 'Pending CEO' || pendingLabel === 'Held by CEO') return 'ceo'
+
     const firstStage = firstStageDisplayLabel(req)
     if (pendingLabel === `Pending ${firstStage}` || pendingLabel === `Held by ${firstStage}`) return 'sales_manager'
 
@@ -1421,51 +1414,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     effectiveRoleLower.includes('hr')
 
   // ── SEPARATION OF DUTIES ────────────────────────────────────────────────────────
-  // A stage's action buttons belong ONLY to that stage's intended approver. There is no
-  // seniority bypass: md/ceo do NOT inherit ED, HR, EA or Accounts rights, so
-  // ['md','ceo'] appears on the `md` stage ONLY.
-  //
-  // WHY: while md/ceo were eligible on every stage, an MD could approve at `md` and then —
-  // with the same quick-approve button, which silently re-targeted the next stage once the
-  // row re-rendered — mark the request Accounts-approved and PAID. That recorded vendor
-  // payments as PAID which Accounts never approved (13 requests in production).
-  //
-  // Mirrors the server guards in app/api/brands/kia/approvals/[id]/action/route.ts and
-  // .../bulk-action/route.ts. developer/admin keep blanket access (line below) as the
-  // support escape hatch only.
-  /*
-   * May this user act on the FIRST approval stage of THIS request?
-   *
-   * ⚠️ Brand-aware, and that is the whole point. The rule for every brand except KIA is the GSM for
-   * the department — **not the VP**. VP is a KIA-service role; on a Hyundai or Platinum request it
-   * has no standing at all, and before this the screen offered a VP the buttons and showed a
-   * Service GSM none, while the server said the exact opposite (403 for the VP, allowed for the
-   * GSM). The role list comes from firstStageApproverRolesForTrack — the SAME function both
-   * approvals routes call — so the buttons and the API can no longer disagree.
-   *
-   * `effectiveRole` is checked alongside the real role because this screen supports acting under an
-   * assumed role; both must satisfy the same rule.
-   *
-   * KIA is deliberately untouched: CEO or General Sales Manager on sales, VP on service.
-   */
   const canActOnFirstStage = (req?: ApprovalRequest | null) => {
     const isService = req ? isServiceCategory(req.department, req.approvalType) : false
-
-    if (req && !brandHasEd(req.brand)) {
-      const allowed = firstStageApproverRolesForTrack(req.brand, isService ? 'service' : 'sales')
-      return allowed.includes(userRoleLower) || allowed.includes(effectiveRoleLower)
-    }
-
-    // ── KIA ──
     if (isService) {
-      if (effectiveRole === 'ceo' || currentUser.role === 'ceo' || effectiveRole === 'ed' || currentUser.role === 'ed') return false
       return isVpRole(currentUser.role) || isVpRole(effectiveRole)
     }
     return (
-      effectiveRole === 'ceo' ||
-      currentUser.role === 'ceo' ||
-      effectiveRole === 'ed' ||
-      currentUser.role === 'ed' ||
       isGeneralSalesManagerRole(currentUser.role) ||
       isGeneralSalesManagerRole(effectiveRole)
     )
@@ -1479,14 +1433,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (stage === 'sales_manager') {
       return canActOnFirstStage(req) || isSuperUser
     }
+    if (stage === 'ceo') {
+      return ['ceo'].includes(effectiveRole) || ['ceo'].includes(currentUser.role) || isSuperUser
+    }
     if (stage === 'hr') return isHrRole || isSuperUser
     if (stage === 'ea') return ['ea', 'eba'].includes(effectiveRole) || ['ea', 'eba'].includes(currentUser.role) || isSuperUser
     if (stage === 'md') return isSuperUser
-    // SEPARATION OF DUTIES — md/ceo are DELIBERATELY EXCLUDED from the Accounts stages.
-    // These stages mark the vendor payment PAID and capture the UTR / payment proof; letting the
-    // MD act here is what caused payments Accounts never approved to be recorded as PAID.
-    // Only Accounts (plus developer/admin, handled above) may act. Mirrors the server checks in
-    // app/api/brands/kia/approvals/[id]/action/route.ts and .../bulk-action/route.ts.
     if (stage === 'accounts' || stage === 'payment_done') return isAccountsRole
     return false
   }
@@ -1499,28 +1451,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     }
 
     if (pendingLabel === 'Pending Accounts' || pendingLabel === 'Held by Accounts') {
-      // SEPARATION OF DUTIES — md/ceo excluded. This is the flag that renders the row-level
-      // quick Approve button (it is checked BEFORE getActiveStageKey), so leaving md/ceo here
-      // would keep handing the MD a one-click "Approve" on the Accounts stage even with the
-      // other guards fixed. `isAccountsRole` already covers developer/admin.
       return isAccountsRole
     }
 
-    // SEPARATION OF DUTIES — md/ceo excluded from every stage below except their own ('Pending
-    // MD'). This flag renders the row-level quick Approve button and is evaluated BEFORE
-    // getActiveStageKey, so leaving md/ceo here would keep offering the MD a one-click approve
-    // on someone else's stage — which the server now rejects, producing a button that 403s.
     if (pendingLabel === 'Pending HR' || pendingLabel === 'Held by HR') {
       return isHrRole || ['developer', 'admin'].includes(currentUser.role)
     }
 
-    /*
-     * The first stage. This used to be two blocks that sniffed the label for 'VP' / 'ED' / 'GSM
-     * (Sales)' and then re-derived the authority rule inline — which is how a Service GSM at a
-     * non-KIA brand ended up with an EMPTY "Pending My Approval" queue for requests the server was
-     * perfectly willing to let them approve. One check now, against the stage key, using the same
-     * brand-aware rule as the buttons. md/ceo stay excluded — this stage is not theirs.
-     */
+    if (pendingLabel === 'Pending CEO' || pendingLabel === 'Held by CEO') {
+      return ['ceo'].includes(effectiveRole) || ['ceo'].includes(currentUser.role) || ['developer', 'admin'].includes(currentUser.role)
+    }
+
     if (getActiveStageKey(row) === 'sales_manager') {
       return canActOnFirstStage(row) || ['developer', 'admin'].includes(currentUser.role)
     }
@@ -1749,6 +1690,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       const matchesStage =
         selectedStage === 'All' ? true
         : selectedStage === 'pending_sales_manager' ? stageKey === 'sales_manager'
+        : selectedStage === 'pending_ceo' ? stageKey === 'ceo'
         : selectedStage === 'pending_hr' ? stageKey === 'hr'
         : selectedStage === 'pending_ea' ? stageKey === 'ea'
         : selectedStage === 'pending_md' ? stageKey === 'md'
@@ -2337,8 +2279,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     const pendingLabel = getPendingStageLabel(req)
     const requiresHr = isHrApprovalRequired(req.approvalType, req.brand)
     
+    const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
     const stages = [
       { key: 'sales_manager', label: firstStageDisplayLabel(req), status: req.vpApproval },
+      ...(isKia ? [{ key: 'ceo', label: 'CEO', status: req.ceoApproval }] : []),
       ...(requiresHr ? [{ key: 'hr', label: 'HR', status: req.hrApproval }] : []),
       { key: 'accounts', label: 'Accounts (Invoice)', status: req.accountApproval },
       { key: 'ea', label: 'EA', status: req.eaApproval },
@@ -2356,13 +2300,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             const isHeld = stg.status === 'HELD'
             
             // Check if this is the active stage
-            let isActive = false
-            if (pendingLabel === 'Pending ED' && stg.key === 'sales_manager') isActive = true
-            else if (pendingLabel === 'Pending HR' && stg.key === 'hr') isActive = true
-            else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
-            else if (pendingLabel === 'Pending EA' && stg.key === 'ea') isActive = true
-            else if (pendingLabel === 'Pending MD' && stg.key === 'md') isActive = true
-            else if (pendingLabel === 'Pending Payment' && stg.key === 'payment_done') isActive = true
+            const isActive = getActiveStageKey(req) === stg.key
 
             let circleColor = 'bg-slate-100 text-slate-400 border-slate-200'
             let textColor = 'text-slate-400 font-semibold'
@@ -2512,6 +2450,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const getRoleRemarksStyles = (roleKey: string) => {
     switch (roleKey) {
       case 'md': return 'bg-violet-50 border-violet-200 text-violet-800'
+      case 'ceo': return 'bg-purple-50 border-purple-200 text-purple-800'
       case 'ea': return 'bg-sky-50 border-sky-200 text-sky-800'
       case 'accounts': return 'bg-emerald-50 border-emerald-200 text-emerald-800'
       case 'sales_manager': return 'bg-amber-50 border-amber-200 text-amber-800'
@@ -2522,6 +2461,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const getRoleBadgeColor = (roleKey: string) => {
     switch (roleKey) {
       case 'md': return 'bg-violet-600 text-white'
+      case 'ceo': return 'bg-purple-600 text-white'
       case 'ea': return 'bg-sky-600 text-white'
       case 'accounts': return 'bg-emerald-600 text-white'
       case 'sales_manager': return 'bg-amber-500 text-white'
@@ -3377,6 +3317,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   Service Manager had to filter his own queue by picking roles that are not his.
                   Every row's own chip still names its actual desk via firstStageDisplayLabel. */}
               <option value="pending_sales_manager">Pending First Approval</option>
+              <option value="pending_ceo">Pending CEO (Kia)</option>
               <option value="pending_hr">Pending HR</option>
               <option value="pending_ea">Pending EA</option>
               <option value="pending_md">Pending MD</option>
@@ -4435,11 +4376,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               const isRejected = status === 'NOT APPROVED'
               const isHeld = status === 'HELD'
 
-              let isActive = false
-              if (pendingLabel === 'Pending ED' && stageKey === 'sales_manager') isActive = true
-              else if (pendingLabel === 'Pending EA' && stageKey === 'ea') isActive = true
-              else if (pendingLabel === 'Pending MD' && stageKey === 'md') isActive = true
-              else if (pendingLabel === 'Pending Accounts' && stageKey === 'accounts') isActive = true
+              const isActive = pendingStageKey === stageKey
 
               let borderStyle = 'border-slate-100 bg-white opacity-60'
               let badgeText = 'Locked'
@@ -4501,21 +4438,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
             const renderNewWorkflowStepper = (req: ApprovalRequest) => {
               const isService = isServiceCategory(req.department, req.approvalType)
-              /*
-               * Brand-aware: VP is a KIA-service role, every other brand signs off at the GSM — and
-               * Hyundai/Platinum service at the ONE Group Service Manager who covers both. Must
-               * agree with firstStageDisplayLabel above; the same drawer previously called this desk
-               * 'GSM (Service)' here and named it correctly a few lines away.
-               */
-              const firstStageLabel = brandHasEd(req.brand)
-                ? (isService ? 'VP Approval' : 'CEO / GSM')
-                : (isService
-                  ? (usesGroupServiceManager(req.brand) ? 'VP Approval' : 'GSM (Service)')
-                  : 'GSM (Sales)')
+              const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
+              const firstStageLabel = isService ? 'VP Approval' : 'GSM (Sales)'
               const requiresHrStage = isHrApprovalRequired(req.approvalType, req.brand)
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
                 { key: 'sales_manager', label: firstStageLabel, status: req.vpApproval },
+                ...(isKia ? [{ key: 'ceo', label: 'CEO Approval', status: req.ceoApproval }] : []),
                 ...(requiresHrStage ? [{ key: 'hr', label: 'HR', status: req.hrApproval }] : []),
                 { key: 'ea', label: 'EA Review', status: req.eaApproval },
                 { key: 'md', label: 'MD Approval', status: req.managementApproval },
@@ -4547,6 +4476,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   const smEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('vp') || h.role?.toLowerCase()?.includes('ed') || h.role?.toLowerCase()?.includes('gsm') || h.roleKey === 'sales_manager') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
                   return { date: istShortDate(smEntry?.timestamp || req.updatedAt), time: istTime(smEntry?.timestamp || req.updatedAt), user: smEntry?.user || 'Sales Mgr' }
                 }
+                if (key === 'ceo' && req.ceoApproval === 'APPROVED') {
+                  const ceoEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('ceo') || h.roleKey === 'ceo') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
+                  return { date: istShortDate(ceoEntry?.timestamp || req.updatedAt), time: istTime(ceoEntry?.timestamp || req.updatedAt), user: ceoEntry?.user || 'CEO' }
+                }
                 if (key === 'hr' && req.hrApproval === 'APPROVED') {
                   const hrEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('hr') || h.roleKey === 'hr') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
                   return { date: istShortDate(hrEntry?.timestamp || req.updatedAt), time: istTime(hrEntry?.timestamp || req.updatedAt), user: hrEntry?.user || 'HR Team' }
@@ -4575,13 +4508,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       const isRejected = stg.status === 'NOT APPROVED'
                       const isHeld = stg.status === 'HELD'
                       
-                      let isActive = false
-                      // Keyed off getActiveStageKey, not a list of label prefixes — see the note there.
-                      if (getActiveStageKey(req) === 'sales_manager' && stg.key === 'sales_manager') isActive = true
-                      else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
-                      else if (pendingLabel === 'Pending EA' && stg.key === 'ea') isActive = true
-                      else if (pendingLabel === 'Pending MD' && stg.key === 'md') isActive = true
-                      else if (pendingLabel === 'Pending Payment' && stg.key === 'paid') isActive = true
+                      const isActive = getActiveStageKey(req) === stg.key || (pendingLabel === 'Pending Payment' && stg.key === 'paid')
 
                       let circleColor = 'bg-slate-100 text-slate-400 border-slate-200'
                       let textColor = 'text-slate-500 font-semibold'
