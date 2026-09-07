@@ -46,53 +46,36 @@ function formatCompanyName(name: string) {
 // Scrap Type Aging Threshold Configuration
 
 /**
- * Buckets for the "days since last sold, per location" heatmap.
- *
- * ⚠️ THESE ARE ITEM CATEGORIES, SO THEY MUST BE MATCHED AGAINST THE ITEM — see matchesAgingBucket.
- * They were previously matched against `scrapTypeName`, which only ever holds three values
- * (SCRAP / USED OIL / OLD BATTERIES). Six of the eight columns therefore matched NOTHING and read
- * "never" for every location, while 185 rows collapsed into one undifferentiated column. The item
- * name (`description`, from the register's SCRAP ITEM NAME) is where the real categories live.
- *
- * 'GATTA' sits under CARDBOARD: it is the Hindi term for cardboard, and the rates agree
- * (GATTA Rs 12.89/kg vs CARDBOARD Rs 13.42/kg) — 38 rows that were previously uncategorised.
- *
- * OTHER is a genuine catch-all, not an alias list: it collects whatever matches no bucket above
- * (FILTER, RADIATOR, WASTE, BUILDING WASTE MATERIAL …) so no item is invisible on this table.
+ * Buckets for the "days since each scrap type was last sold, per location" heatmap.
+ * Simplified into 2 core categories:
+ *   1. USED OIL (≤30d threshold)
+ *   2. SCRAP (all other items: cardboard, metal, plastic, batteries, barrels, etc. ≤45d threshold)
  */
 const SCRAP_AGING_CONFIG = [
   { key: 'USED OIL', label: 'USED OIL', threshold: 30, aliases: ['USED OIL', 'OIL'] },
-  { key: 'CARDBOARD', label: 'CARDBOARD', threshold: 45, aliases: ['CARDBOARD', 'BOXES', 'GATTA', 'CARTON'] },
-  { key: 'IRON', label: 'IRON', threshold: 60, aliases: ['IRON', 'STEEL', 'METAL'] },
-  { key: 'WASTAGE PLASTIC', label: 'WASTAGE PLASTIC', threshold: 60, aliases: ['WASTAGE PLASTIC', 'PLASTIC', 'BUMPER'] },
-  { key: 'OLD BATTERIES', label: 'OLD BATTERIES', threshold: 60, aliases: ['OLD BATTERIES', 'BATTERY', 'BATTERIES'] },
-  { key: 'EMPTY BARREL', label: 'EMPTY BARREL', threshold: 90, aliases: ['EMPTY BARREL', 'BARREL', 'DRUM'] },
-  { key: 'ALUMINIUM', label: 'ALUMINIUM', threshold: 90, aliases: ['ALUMINIUM', 'ALLUMINIUM', 'ALUMINUM'] },
-  { key: 'BLACK PLASTIC', label: 'BLACK PLASTIC', threshold: 90, aliases: ['BLACK PLASTIC'] },
-  { key: 'OTHER', label: 'OTHER', threshold: 45, aliases: [] },
+  { key: 'SCRAP', label: 'SCRAP', threshold: 45, aliases: [] },
 ]
 
 /**
- * The text the buckets are named after: COMBINES both scrapTypeName and description
- * so neither the registered category nor the custom item name is missed!
+ * Checks whether a transaction represents Used Oil.
  */
-function agingItemText(t: ScrapTransaction): string {
-  const st = String(t.scrapTypeName || '')
-  const d = String(t.description || '')
-  return `${st} ${d}`.toUpperCase().trim()
+function isUsedOilTransaction(t: ScrapTransaction): boolean {
+  const st = String(t.scrapTypeName || '').toUpperCase()
+  const d = String(t.description || '').toUpperCase()
+  return st.includes('USED OIL') || st.includes('OIL') || d.includes('USED OIL') || d.includes('OIL')
 }
 
 /**
- * A row can legitimately land in SEVERAL buckets — an entry described
- * "BLACK PLASTIC,BUMPER P,IRON" really did move iron AND black plastic AND bumper, and "days since
- * we last sold iron here" should count it. Only OTHER is exclusive, by construction.
+ * Matches a transaction to either USED OIL or SCRAP.
  */
 function matchesAgingBucket(t: ScrapTransaction, cfg: { key: string; aliases: string[] }): boolean {
-  const text = agingItemText(t)
-  if (cfg.key === 'OTHER') {
-    return !SCRAP_AGING_CONFIG.some((c) => c.key !== 'OTHER' && c.aliases.some((a) => text.includes(a)))
+  if (cfg.key === 'USED OIL') {
+    return isUsedOilTransaction(t)
   }
-  return cfg.aliases.some((a) => text.includes(a))
+  if (cfg.key === 'SCRAP') {
+    return !isUsedOilTransaction(t)
+  }
+  return false
 }
 
 /** Whole days between two YYYY-MM-DD calendar dates. */

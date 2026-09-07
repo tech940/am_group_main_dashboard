@@ -2,7 +2,7 @@
 // No `server-only` import here so both the server query and the client board
 // can share the exact same status -> stage/approver mapping.
 
-export type PettyCashApprover = 'ED' | 'EA' | 'MD' | 'Accounts'
+export type PettyCashApprover = 'CEO' | 'EA' | 'MD' | 'Accounts'
 
 // 'pending'  = actively waiting on an approver (counts towards "time waiting")
 // 'draft'    = created but not yet submitted into the approval chain
@@ -41,11 +41,11 @@ export type PettyCashStageInfo = {
 // have no pending approver.
 const STAGE_INFO: Record<string, PettyCashStageInfo> = {
   draft: { stageLabel: 'Draft', pillLabel: 'Draft', approver: null, state: 'draft', tone: 'slate' },
-  submitted: { stageLabel: 'ED Approval', pillLabel: 'Waiting on ED', approver: 'ED', state: 'pending', tone: 'amber' },
-  ed_pending: { stageLabel: 'ED Approval', pillLabel: 'Waiting on ED', approver: 'ED', state: 'pending', tone: 'amber' },
-  ed_on_hold: { stageLabel: 'ED Approval · On Hold', pillLabel: 'On hold — ED', approver: 'ED', state: 'pending', tone: 'sky' },
+  submitted: { stageLabel: 'CEO Approval', pillLabel: 'Waiting on CEO', approver: 'CEO', state: 'pending', tone: 'amber' },
+  ed_pending: { stageLabel: 'CEO Approval', pillLabel: 'Waiting on CEO', approver: 'CEO', state: 'pending', tone: 'amber' },
+  ed_on_hold: { stageLabel: 'CEO Approval · On Hold', pillLabel: 'On hold — CEO', approver: 'CEO', state: 'pending', tone: 'sky' },
   ed_approved: { stageLabel: 'EA Approval', pillLabel: 'Waiting on EA', approver: 'EA', state: 'pending', tone: 'amber' },
-  ed_rejected: { stageLabel: 'Rejected by ED', pillLabel: 'Rejected by ED', approver: null, state: 'terminal', tone: 'rose' },
+  ed_rejected: { stageLabel: 'Rejected by CEO', pillLabel: 'Rejected by CEO', approver: null, state: 'terminal', tone: 'rose' },
   ea_pending: { stageLabel: 'EA Approval', pillLabel: 'Waiting on EA', approver: 'EA', state: 'pending', tone: 'amber' },
   ea_on_hold: { stageLabel: 'EA Approval · On Hold', pillLabel: 'On hold — EA', approver: 'EA', state: 'pending', tone: 'sky' },
   ea_approved: { stageLabel: 'MD Approval', pillLabel: 'Waiting on MD', approver: 'MD', state: 'pending', tone: 'amber' },
@@ -61,7 +61,7 @@ const STAGE_INFO: Record<string, PettyCashStageInfo> = {
   unallocated: { stageLabel: 'Unallocated', pillLabel: 'Unallocated', approver: null, state: 'draft', tone: 'slate' },
   rejected: { stageLabel: 'Rejected', pillLabel: 'Rejected', approver: null, state: 'terminal', tone: 'rose' },
   cancelled: { stageLabel: 'Cancelled', pillLabel: 'Cancelled', approver: null, state: 'terminal', tone: 'slate' },
-  pending: { stageLabel: 'ED Approval', pillLabel: 'Waiting on ED', approver: 'ED', state: 'pending', tone: 'amber' },
+  pending: { stageLabel: 'CEO Approval', pillLabel: 'Waiting on CEO', approver: 'CEO', state: 'pending', tone: 'amber' },
 }
 
 const FALLBACK_STAGE_INFO: PettyCashStageInfo = { stageLabel: 'Unknown', pillLabel: 'Unknown', approver: null, state: 'terminal', tone: 'slate' }
@@ -72,13 +72,13 @@ export function getPettyCashStageInfo(status: string | null | undefined): PettyC
 }
 
 // Summary buckets shown as the counts row at the top of the board.
-export const PETTY_CASH_STAGE_BUCKETS = ['ED Approval', 'EA Approval', 'MD Approval', 'Accounts', 'Completed', 'Rejected'] as const
+export const PETTY_CASH_STAGE_BUCKETS = ['CEO Approval', 'EA Approval', 'MD Approval', 'Accounts', 'Completed', 'Rejected'] as const
 export type PettyCashStageBucket = typeof PETTY_CASH_STAGE_BUCKETS[number]
 
 export function getPettyCashStageBucket(status: string | null | undefined): PettyCashStageBucket | null {
   const info = getPettyCashStageInfo(status)
   if (info.state === 'pending') {
-    if (info.approver === 'ED') return 'ED Approval'
+    if (info.approver === 'CEO') return 'CEO Approval'
     if (info.approver === 'EA') return 'EA Approval'
     if (info.approver === 'MD') return 'MD Approval'
     if (info.approver === 'Accounts') return 'Accounts'

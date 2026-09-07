@@ -23,7 +23,8 @@ import { createResubmitToken } from '@/lib/kia/approval-resubmit'
  * kept only so the map still reads as the full list of stages.
  */
 const SEND_BACK_STAGE_LABELS: Record<string, string> = {
-  ed: 'ED',
+  ed: 'CEO',
+  ceo: 'CEO',
   hr: 'HR',
   ea: 'EA',
   md: 'MD',
@@ -131,11 +132,10 @@ export async function POST(
         isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower)
       } else if (isServiceCategory) {
         // SERVICE ORDER: ONLY VP, SuperUser, or Admin/Developer can approve
-        // ED IS STRICTLY EXCLUDED!
-        isAuthorized = appUser.role === 'ed' ? false : isTester || isVp || isSuperUser
+        isAuthorized = isTester || isVp || isSuperUser
       } else {
-        // SALES ORDER: Either ED, General Sales Manager, or SuperUser can approve
-        isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser
+        // SALES ORDER: Either CEO, General Sales Manager, or SuperUser can approve
+        isAuthorized = isTester || appUser.role === 'ceo' || isGeneralSalesManager || isSuperUser
       }
     } else if (stage === 'hr') {
       /*
@@ -173,7 +173,7 @@ export async function POST(
         error: `Your role (${appUser.role}) is not authorized to act on ${
           isServiceCategory
             ? (brandHasEd(requestRow.brand) ? 'Service (requires VP)' : 'Service (requires the General Service Manager)')
-            : (brandHasEd(requestRow.brand) ? 'Sales (requires ED or General Sales Manager)' : 'Sales (requires the General Sales Manager)')
+            : (brandHasEd(requestRow.brand) ? 'Sales (requires CEO or General Sales Manager)' : 'Sales (requires the General Sales Manager)')
         } requests at the ${stage} stage.`
       }, { status: 403 })
     }

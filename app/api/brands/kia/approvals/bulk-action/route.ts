@@ -189,9 +189,9 @@ export async function POST(request: Request) {
         )
         isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower)
       } else if (isServiceCategory) {
-          isAuthorized = appUser.role === 'ed' ? false : isTester || isVp || isSuperUser
+          isAuthorized = isTester || isVp || isSuperUser
         } else {
-          isAuthorized = isTester || appUser.role === 'ed' || isGeneralSalesManager || isSuperUser
+          isAuthorized = isTester || appUser.role === 'ceo' || isGeneralSalesManager || isSuperUser
         }
       } else if (activeStageKey === 'hr') {
         isAuthorized = isTester || isHrUser || isSuperUser

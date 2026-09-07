@@ -63,7 +63,7 @@ async function main() {
       check(service.includes(ROLE), `${brand} service routes to the Group Service Manager`)
       check(!sales.includes(ROLE), `${brand} SALES does not — it stays with the sales GSM`)
     } else if (brand === 'kia') {
-      check(service.join() === 'ed' && sales.join() === 'ed', 'KIA is untouched — still the ED')
+      check(service.join() === 'ceo' && sales.join() === 'ceo', 'KIA routes to CEO')
     } else {
       check(!service.includes(ROLE), `${brand} service still uses its own GSM, not the group role`)
     }
@@ -75,7 +75,7 @@ async function main() {
   check(firstStageLabel('hyundai', 'Service').includes('Group Service Manager'),
     'a Hyundai service request names the Group Service Manager')
   check(usesGroupServiceManager('hyundai') && usesGroupServiceManager('platinum'), 'both brands map to the group role')
-  check(!usesGroupServiceManager('kia') && brandHasEd('kia'), 'KIA still has its ED and is not remapped')
+  check(!usesGroupServiceManager('kia') && brandHasEd('kia'), 'KIA still has CEO first stage and is not remapped')
 
   console.log('\n5) Who holds the role today')
   const holders = await analyticsExecute<{ full_name: string; brand: string | null; is_active: boolean }>(sql`

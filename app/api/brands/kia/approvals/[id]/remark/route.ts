@@ -55,7 +55,7 @@ export async function POST(
 
     const historyEntry = {
       id: Math.random().toString(36).substring(7),
-      role: roleLabel === 'ED' ? 'ED' : roleLabel === 'EA' ? 'EA' : roleLabel === 'ACCOUNTS' ? 'Accounts' : roleLabel,
+      role: roleLabel === 'ED' || roleLabel === 'CEO' ? 'CEO' : roleLabel === 'EA' ? 'EA' : roleLabel === 'ACCOUNTS' ? 'Accounts' : roleLabel,
       roleKey: appUser.role,
       user: appUser.fullName,
       action: 'REMARK_ADD',

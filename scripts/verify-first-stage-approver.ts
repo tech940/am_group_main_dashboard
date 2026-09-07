@@ -50,10 +50,10 @@ check(trackForDepartment('') === 'unknown', 'blank -> unknown')
 check(trackForDepartment(null) === 'unknown', 'null -> unknown')
 check(trackForDepartment('Marketing') === 'unknown', 'an unrecognised department -> unknown')
 
-console.log('\n3) KIA always routes to the ED, whatever the department')
+console.log('\n3) KIA always routes to the CEO, whatever the department')
 for (const dept of ['Sales', 'SERVICE', '', null, 'Marketing']) {
   const roles = firstStageApproverRoles('kia', dept)
-  check(roles.length === 1 && roles[0] === 'ed', `kia + ${JSON.stringify(dept)} -> ed`)
+  check(roles.length === 1 && roles[0] === 'ceo', `kia + ${JSON.stringify(dept)} -> ceo`)
 }
 
 console.log('\n4) Hyundai and Platinum: sales to the sales GSM, service to the GROUP service manager')
@@ -80,14 +80,14 @@ for (const brand of ['mg', 'tata', 'honda', 'bajaj', 'ktm', 'triumph']) {
     `${brand} + Service -> its own service_general_manager`)
 }
 
-console.log('\n5) The ED can never approve at a brand that has no ED')
+console.log('\n5) The CEO can never approve at a brand that has no CEO')
 for (const brand of ['hyundai', 'platinum', 'mg']) {
   for (const dept of ['Sales', 'Service', '', 'Marketing']) {
-    check(!canApproveFirstStage('ed', brand, dept), `ed cannot approve ${brand} + ${JSON.stringify(dept)}`)
+    check(!canApproveFirstStage('ceo', brand, dept), `ceo cannot approve ${brand} + ${JSON.stringify(dept)}`)
   }
 }
 
-console.log('\n6) ...and a GSM can never approve at KIA (that stage is the ED’s)')
+console.log('\n6) ...and a GSM can never approve at KIA (that stage is the CEO’s)')
 for (const role of GSM_ROLES) {
   for (const dept of ['Sales', 'Service', '']) {
     check(!canApproveFirstStage(role, 'kia', dept),
@@ -122,8 +122,8 @@ for (const brand of ['kia', 'hyundai', 'platinum']) {
   }
 }
 
-console.log('\n9) The label never says ED at a brand without one')
-check(firstStageLabel('kia', 'Sales') === 'ED Approval', 'kia reads "ED Approval"')
+console.log('\n9) The label never says CEO at a brand without one')
+check(firstStageLabel('kia', 'Sales') === 'CEO Approval', 'kia reads "CEO Approval"')
 check(firstStageLabel('hyundai', 'Sales') === 'GSM Approval (Sales)', 'hyundai sales reads "GSM Approval (Sales)"')
 check(firstStageLabel('hyundai', 'Service') === 'Group Service Manager Approval',
   'hyundai service names the Group Service Manager')
@@ -131,7 +131,7 @@ check(firstStageLabel('platinum', 'Service') === 'Group Service Manager Approval
   'platinum service names the Group Service Manager')
 check(firstStageLabel('tata', 'Service') === 'GSM Approval (Service)',
   'a brand outside the group still reads "GSM Approval (Service)"')
-check(!firstStageLabel('platinum', '').includes('ED'), 'platinum never reads "ED"')
+check(!firstStageLabel('platinum', '').includes('CEO'), 'platinum never reads "CEO"')
 
 /*
  * ── 10) VP IS NOT AN APPROVER OUTSIDE KIA ─────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ check(!isServiceApproval(null, null), 'a wholly blank request is not service')
  * stage at all. The permanent record named the wrong desk.
  */
 console.log('\n13) The short label names the desk that actually signed')
-check(firstStageShortLabel('kia', 'SERVICE') === 'ED', 'kia still records ED')
+check(firstStageShortLabel('kia', 'SERVICE') === 'CEO', 'kia still records CEO')
 check(firstStageShortLabel('hyundai', 'SALES') === 'GSM', 'hyundai sales records GSM')
 check(firstStageShortLabel('hyundai', 'SERVICE') === 'Group Service Manager',
   'hyundai service records the Group Service Manager')

@@ -22,7 +22,7 @@ export const AM_FINANCE_VIEW_ROLES = [
 
 // Petty Cash: the roles the page allows (see lib/petty-cash/access.ts canAccessPettyCash).
 export const PETTY_CASH_VIEW_ROLES = [
-  'admin', 'developer', 'branch_admin', 'ea', 'md', 'eba', 'accounts', 'manager', 'general_manager', 'service_general_manager', 'sales_manager', 'ed',
+  'admin', 'developer', 'ceo', 'branch_admin', 'ea', 'md', 'eba', 'accounts', 'manager', 'general_manager', 'service_general_manager', 'sales_manager', 'ed',
   // Templated `petty_cash` view+create in registry.ts ("this role raises requests there, it does
   // not approve them") but absent here, so the link was hidden and the page forbidden.
   'group_service_manager',

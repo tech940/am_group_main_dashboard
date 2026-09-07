@@ -231,8 +231,8 @@ async function main() {
       `a hyundai SERVICE row at stage one reads "${vendorPaymentStageLabel(svcRow)}"`)
     check(vendorPaymentStageLabel({ ...svcRow, department: 'SALES' }) === 'With GSM',
       'a hyundai SALES row still names the sales GSM')
-    check(vendorPaymentStageLabel({ ...svcRow, brand: 'kia' }) === 'With ED',
-      'KIA still reads "With ED" — that brand does have one')
+    check(vendorPaymentStageLabel({ ...svcRow, brand: 'kia' }) === 'With CEO',
+      'KIA reads "With CEO"')
 
     // A refusal must not read like an untouched request: needsAction deliberately returns a held or
     // rejected row to its owner's stage, and the MD client's only held affordance is the prefix.

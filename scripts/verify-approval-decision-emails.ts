@@ -37,7 +37,7 @@ console.log('\n1) The stage label names the desk that actually acted')
   const at = (brand: string | null, stage: string) =>
     stageLabelFor({ id: 'x', name: null, email: null, amount: null, vendorName: null, brand }, stage)
 
-  check(at('kia', 'sales_manager') === 'ED', "KIA's first stage reads 'ED'")
+  check(at('kia', 'sales_manager') === 'CEO', "KIA's first stage reads 'CEO'")
   /*
    * ⚠️ This was hardcoded to 'VP'. A Hyundai submitter would have been told a VP decided their
    * request — a role their brand has nobody in, and the same KIA-only assumption already removed

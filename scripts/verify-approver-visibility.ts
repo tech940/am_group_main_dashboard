@@ -105,7 +105,7 @@ async function main() {
     if (st === 'sales_manager') {
       const service = isServiceApproval(r.department, r.approval_type)
       const brand = String(r.brand || 'kia').trim().toLowerCase()
-      if (brand.startsWith('kia')) return service ? role === 'vp' : role === 'ed'
+      if (brand.startsWith('kia')) return service ? role === 'vp' : (role === 'ceo' || role === 'ed')
       return firstStageApproverRolesForTrack(r.brand, service ? 'service' : 'sales').includes(role)
     }
     return (STAGE_ROLES[st] || []).includes(role)
@@ -114,7 +114,7 @@ async function main() {
   const ROLES = [...new Set([
     ...Object.values(STAGE_ROLES).flat(),
     // 'vp' owns KIA service at stage one — see the note on owns().
-    'ed', 'vp', 'general_manager', 'service_general_manager', 'group_service_manager',
+    'ceo', 'ed', 'vp', 'general_manager', 'service_general_manager', 'group_service_manager',
   ])].sort()
 
   console.log('1) EVERY waiting request is visible to somebody who can action it')
@@ -172,8 +172,8 @@ async function main() {
        * The ONE documented exception: KIA policy is that the ED sees every branch EXCEPT Kia Jammu
        * Service. A deliberate carve-out in isKiaJammuServiceApproval, not a scoping gap.
        */
-      if (role === 'ed') {
-        console.log(`     note ed ${h.full_name}: ${seen.length}/${mine.length} — the ${mine.length - seen.length} hidden are the Kia Jammu Service policy exclusion`)
+      if (role === 'ed' || role === 'ceo') {
+        console.log(`     note ${role} ${h.full_name}: ${seen.length}/${mine.length} — the ${mine.length - seen.length} hidden are the Kia Jammu Service policy exclusion`)
         continue
       }
       warn(`${role} ${h.full_name}: ${seen.length}/${mine.length} visible, Rs${hiddenValue.toLocaleString('en-IN')} hidden`

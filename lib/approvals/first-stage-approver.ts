@@ -136,7 +136,7 @@ export function trackForDepartment(department: unknown): FirstStageTrack {
  * it before it reaches EA.
  */
 export function firstStageApproverRoles(brand: unknown, department: unknown): string[] {
-  if (brandHasEd(brand)) return ['ed']
+  if (brandHasEd(brand)) return ['ceo']
   const serviceRole = usesGroupServiceManager(brand) ? 'group_service_manager' : 'service_general_manager'
   switch (trackForDepartment(department)) {
     case 'sales': return ['general_manager']
@@ -155,7 +155,7 @@ export function firstStageApproverRoles(brand: unknown, department: unknown): st
  * silently disagree.
  */
 export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStageTrack): string[] {
-  if (brandHasEd(brand)) return ['ed']
+  if (brandHasEd(brand)) return ['ceo']
   const serviceRole = usesGroupServiceManager(brand) ? 'group_service_manager' : 'service_general_manager'
   switch (track) {
     case 'sales': return ['general_manager']
@@ -171,13 +171,9 @@ export function canApproveFirstStage(role: unknown, brand: unknown, department: 
 
 /**
  * What to call the stage on screen and in emails.
- *
- * ⚠️ Never hardcode "ED" in a shared surface again — that label is what made the KIA-only
- * assumption invisible for so long. Both sections had it written into the UI, the emails and the
- * approvals history rows.
  */
 export function firstStageLabel(brand: unknown, department: unknown): string {
-  if (brandHasEd(brand)) return 'ED Approval'
+  if (brandHasEd(brand)) return 'CEO Approval'
   switch (trackForDepartment(department)) {
     case 'sales': return 'GSM Approval (Sales)'
     case 'service': return usesGroupServiceManager(brand) ? 'Group Service Manager Approval' : 'GSM Approval (Service)'
@@ -187,24 +183,9 @@ export function firstStageLabel(brand: unknown, department: unknown): string {
 
 /**
  * Short form for a chip, a history row or a decision email.
- *
- * ⚠️ This is not merely a rendered label — the action routes write it into the `history` jsonb, so
- * whatever it returns is the permanent audit record of WHICH DESK signed off. It ignored its
- * `department` argument entirely and every caller passed `null` for it, so a Hyundai or Platinum
- * service approval was recorded as a bare 'GSM' — indistinguishable from the sales GSM, who is a
- * different person and cannot act on that stage at all.
- *
- * ⚠️ Safe to change the wording: the screen finds the first-stage history entry by `roleKey ===
- * 'sales_manager'` (written as the stage key, not this label), so the `role?.includes('gsm')`
- * fallback beside it is belt-and-braces rather than load-bearing. Existing rows keep whatever they
- * were written with.
- *
- * ⚠️ KIA still returns 'ED' on every track, including service — where the approver is actually the
- * VP. That is a pre-existing inaccuracy in KIA's own audit trail, left alone deliberately: it is not
- * what this change is about and correcting it would alter KIA rows nobody asked to alter.
  */
 export function firstStageShortLabel(brand: unknown, department: unknown, approvalType?: unknown): string {
-  if (brandHasEd(brand)) return 'ED'
+  if (brandHasEd(brand)) return 'CEO'
   if (usesGroupServiceManager(brand) && isServiceApproval(department, approvalType)) {
     return 'Group Service Manager'
   }

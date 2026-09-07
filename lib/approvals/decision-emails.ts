@@ -25,7 +25,8 @@ import { firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
 
 /** Human labels for the stage that made the decision, so the email can say WHICH desk acted. */
 const STAGE_LABELS: Record<string, string> = {
-  ed: 'ED',
+  ed: 'CEO',
+  ceo: 'CEO',
   hr: 'HR',
   ea: 'EA',
   md: 'MD',

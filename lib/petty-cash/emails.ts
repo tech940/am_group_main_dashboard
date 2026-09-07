@@ -32,22 +32,8 @@ const STAGE_TITLE_MAP: Record<string, string> = {
   accounts: 'Accounts Approval (Final)',
 }
 
-/**
- * The first stage has no fixed name: it is the ED at KIA and the Sales or Service GSM everywhere
- * else. Hardcoding 'ED Approval (Executive Director)' here told a Hyundai submitter their request
- * had been signed off by a role their brand does not have.
- */
 function stageTitle(opts: Pick<PettyCashApprovalEmailOptions, 'stage' | 'branchId' | 'department'>) {
-  if (opts.stage === 'ed_approval') return firstStageLabel(opts.branchId, opts.department)
-  /*
-   * ⚠️ This line read `return stageTitle(opts)` — an unconditional self-call, so EVERY stage other
-   * than the first blew the stack with a RangeError. The throw happened inside
-   * sendPettyCashApprovalEmail's try block and its catch swallowed it, so every petty-cash EA, MD
-   * and final Accounts approval email was silently dropped, including "Final Approved & Allocated".
-   * Nothing surfaced: the approval itself succeeded and only the message vanished.
-   *
-   * STAGE_TITLE_MAP above was the intended lookup and had been dead code since.
-   */
+  if (opts.stage === 'ed_approval') return 'CEO Approval'
   return STAGE_TITLE_MAP[opts.stage] ?? opts.stage
 }
 

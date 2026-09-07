@@ -74,6 +74,7 @@ export function canCreatePettyCashRequest(role: PettyCashRole | null | undefined
     r === 'sales_manager' ||
     r === 'developer' ||
     r === 'admin' ||
+    r === 'ceo' ||
     r === 'manager' ||
     r === 'general_manager' ||
     r === 'service_general_manager' ||
@@ -95,6 +96,7 @@ export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined
     r === 'sales_manager' ||
     r === 'developer' ||
     r === 'admin' ||
+    r === 'ceo' ||
     r === 'manager' ||
     r === 'general_manager' ||
     r === 'service_general_manager' ||
@@ -108,10 +110,8 @@ export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined
 
 /**
  * @param scope the request's own brand + department. REQUIRED to judge the first stage, because who
- *   owns it depends on the brand: KIA has an ED, every other brand routes to the Sales or Service
- *   GSM instead. Omitting it fails the first stage CLOSED rather than falling back to 'ed' — a
- *   silent fallback would hand every Hyundai and Platinum request straight back to a role those
- *   brands do not have.
+ *   owns it depends on the brand: KIA has a first stage (CEO), every other brand opens at EA.
+ *   Omitting it fails the first stage CLOSED.
  */
 export function canApprovePettyCashStage(
   role: PettyCashRole | null | undefined,
@@ -126,16 +126,14 @@ export function canApprovePettyCashStage(
 
   switch (stage) {
     case 'ed_approval':
-      // The stage KEY stays 'ed_approval' across every brand — it is the first slot in the chain,
-      // not a claim about who fills it. See lib/approvals/first-stage-approver.ts.
+      // The stage KEY stays 'ed_approval' across database records — it is the first slot in the chain,
+      // now approved by the CEO instead of ED.
       if (!scope) return false
       /*
-       * Outside KIA petty cash has NO first stage, so nobody may act on one. Without this the GSM
-       * roles would still be able to clear a legacy request sitting at ed_approval, which is the
-       * gate the MD asked to remove. New requests never reach this stage at all.
+       * Outside KIA petty cash has NO first stage, so nobody may act on one.
        */
       if (!pettyCashHasFirstStage(scope.branchId)) return false
-      return canApproveFirstStage(r, scope.branchId, scope.department)
+      return r === 'ceo'
     case 'ea_approval':
       return r === 'ea' || r === 'eba'
     case 'md_approval':
@@ -225,6 +223,7 @@ export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unkno
     // Approver roles, brand-scoped by ASSIGNMENT since they left the all-branch list. Without this
     // arm they would fall through to the createdBy-only fallback below and — as reviewers who never
     // create requests — see an empty queue.
+    appUser.role === 'ceo' ||
     appUser.role === 'ea' ||
     appUser.role === 'eba' ||
     appUser.role === 'ed'
@@ -258,6 +257,7 @@ export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unkno
     appUser.role === 'manager' ||
     appUser.role === 'general_manager' ||
     // Same as the request filter above: assignment-scoped approvers, not createdBy-only.
+    appUser.role === 'ceo' ||
     appUser.role === 'ea' ||
     appUser.role === 'eba' ||
     appUser.role === 'ed'

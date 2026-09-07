@@ -23,15 +23,15 @@ let failures = 0
 const check = (c: boolean, m: string) => { if (!c) failures++; console.log(`  [${c ? 'PASS' : 'FAIL'}] ${m}`) }
 
 const BRANDS = ['kia', 'hyundai', 'platinum']
-const FIRST_STAGE_ROLES = ['ed', 'general_manager', 'service_general_manager']
+const FIRST_STAGE_ROLES = ['ceo', 'ed', 'general_manager', 'service_general_manager']
 
 async function main() {
   console.log('1) A new request opens at the right stage for its brand')
   for (const b of BRANDS) {
     const has = pettyCashHasFirstStage(b)
-    console.log(`   ${b.padEnd(9)} first stage: ${has ? 'ED' : 'none'} -> opens at ${pettyCashInitialStatus(b)} / ${pettyCashInitialStage(b)}`)
+    console.log(`   ${b.padEnd(9)} first stage: ${has ? 'CEO' : 'none'} -> opens at ${pettyCashInitialStatus(b)} / ${pettyCashInitialStage(b)}`)
     if (b === 'kia') {
-      check(has && pettyCashInitialStage(b) === 'ed_approval', 'KIA keeps its ED stage')
+      check(has && pettyCashInitialStage(b) === 'ed_approval', 'KIA keeps its first stage')
     } else {
       check(!has && pettyCashInitialStage(b) === 'ea_approval', `${b} opens directly at EA`)
     }
@@ -43,8 +43,8 @@ async function main() {
       for (const dept of ['Sales', 'Service']) {
         const allowed = canApprovePettyCashStage(role, 'ed_approval', { branchId: b, department: dept })
         if (b === 'kia') {
-          // Only the ED fills KIA's first stage.
-          check(allowed === (role === 'ed'), `kia/${dept}: ${role} ${role === 'ed' ? 'CAN' : 'cannot'} act on the first stage`)
+          // Only the CEO fills KIA's first stage.
+          check(allowed === (role === 'ceo'), `kia/${dept}: ${role} ${role === 'ceo' ? 'CAN' : 'cannot'} act on the first stage`)
         } else {
           check(!allowed, `${b}/${dept}: ${role} cannot act on a first stage that does not exist`)
         }

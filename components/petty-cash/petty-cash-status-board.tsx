@@ -25,7 +25,7 @@ type StatusBoardPayload = {
 type StatusFilter = 'all' | PettyCashStageBucket
 
 const BUCKET_TONE: Record<PettyCashStageBucket, Tone> = {
-  'ED Approval': 'amber',
+  'CEO Approval': 'amber',
   'EA Approval': 'amber',
   'MD Approval': 'blue',
   Accounts: 'violet',
@@ -34,7 +34,7 @@ const BUCKET_TONE: Record<PettyCashStageBucket, Tone> = {
 }
 
 const BUCKET_ICON: Record<PettyCashStageBucket, typeof ShieldCheck> = {
-  'ED Approval': UserCheck,
+  'CEO Approval': UserCheck,
   'EA Approval': ShieldCheck,
   'MD Approval': UserCheck,
   Accounts: ClipboardList,
@@ -141,7 +141,7 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
   // Count per summary bucket.
   const bucketCounts = useMemo(() => {
     const counts: Record<PettyCashStageBucket, number> = {
-      'ED Approval': 0,
+      'CEO Approval': 0,
       'EA Approval': 0,
       'MD Approval': 0,
       Accounts: 0,
@@ -155,7 +155,7 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
     return counts
   }, [requests])
 
-  const pendingCount = bucketCounts['ED Approval'] + bucketCounts['EA Approval'] + bucketCounts['MD Approval'] + bucketCounts.Accounts
+  const pendingCount = bucketCounts['CEO Approval'] + bucketCounts['EA Approval'] + bucketCounts['MD Approval'] + bucketCounts.Accounts
 
   const visibleRequests = useMemo(() => {
     const filtered = filter === 'all'
@@ -348,7 +348,7 @@ function ApproverBadge({ status }: { status: string }) {
   if (!info.approver) {
     return <span className="text-xs font-bold text-slate-500">—</span>
   }
-  const tone: Tone = info.approver === 'EA' ? 'amber' : info.approver === 'MD' ? 'blue' : 'violet'
+  const tone: Tone = info.approver === 'CEO' || info.approver === 'EA' ? 'amber' : info.approver === 'MD' ? 'blue' : 'violet'
   // Third copy of the tone map, now deleted: it had no dark-mode treatment, so this badge stayed
   // light-on-light in dark mode exactly like the two before it. TONE_CLASS is the only source.
   return (

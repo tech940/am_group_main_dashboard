@@ -133,6 +133,7 @@ const isCreatorRole = (role: string) =>
   role === 'general_manager' ||
   role === 'service_general_manager'
 const isApproverRole = (role: string) =>
+  role === 'ceo' ||
   role === 'ea' ||
   role === 'md' ||
   role === 'eba' ||
@@ -163,7 +164,7 @@ function canApproveStageOnClient(role: string, stage: ApprovalStage): boolean {
   if (r === 'developer' || r === 'admin') return true
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
   switch (stage) {
-    case 'ed_approval': return r === 'ed'
+    case 'ed_approval': return r === 'ceo'
     case 'ea_approval': return r === 'ea' || r === 'eba'
     case 'md_approval': return r === 'md'
     case 'accounts': return isAccounts

@@ -364,11 +364,8 @@ function pettyCashApprovalStatusesForRole(role: AppUser['role']): PettyCashReque
   const r = String(role).trim().toLowerCase()
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
 
-  // ED (KIA) and the two GSMs (every other brand) all own the FIRST stage, so they queue on the same
-  // statuses. Which of their brand's requests they can actually action is decided per row by
-  // canApprovePettyCashStage — the queue is deliberately the wider of the two, because a GSM seeing
-  // a KIA row they cannot act on is a much smaller failure than a GSM seeing an empty queue.
-  if (r === 'ed' || r === 'general_manager' || r === 'service_general_manager') {
+  // CEO (and GM roles) own the FIRST stage, so they queue on the ed_approval statuses.
+  if (r === 'ceo' || r === 'ed' || r === 'general_manager' || r === 'service_general_manager') {
     return [...PETTY_CASH_APPROVAL_STATUSES.ed_approval]
   }
   if (r === 'ea') return [...PETTY_CASH_APPROVAL_STATUSES.ea_approval]
@@ -1086,7 +1083,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
   let newStage = request.currentStage
 
   if (input.stage === 'ed_approval') {
-    if (!['submitted', 'ed_pending', 'ed_on_hold'].includes(request.status)) throw new Error('Request is not awaiting ED approval')
+    if (!['submitted', 'ed_pending', 'ed_on_hold'].includes(request.status)) throw new Error('Request is not awaiting CEO approval')
     if (input.action === 'approve') {
       updateData = { ...updateData, status: 'ea_pending', currentStage: 'ea_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: null }
       newStatus = 'ea_pending'
@@ -1367,7 +1364,7 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
   let newStage = expense.currentStage
 
   if (input.stage === 'ed_approval') {
-    if (!['pending', 'ed_pending'].includes(expense.status)) throw new Error('Expense is not awaiting ED approval')
+    if (!['pending', 'ed_pending'].includes(expense.status)) throw new Error('Expense is not awaiting CEO approval')
     if (input.action === 'approve') {
       updateData = { ...updateData, status: 'ed_approved', currentStage: 'md_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: input.remarks || null }
       newStatus = 'ed_approved'

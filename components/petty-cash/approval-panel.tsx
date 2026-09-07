@@ -80,11 +80,11 @@ type RequestDetail = {
 }
 
 const STATUS_META: Record<string, { label: string; tone: Tone }> = {
-  submitted: { label: 'Awaiting ED', tone: 'sky' },
-  ed_pending: { label: 'Awaiting ED', tone: 'sky' },
-  ed_on_hold: { label: 'On Hold · ED', tone: 'sky' },
+  submitted: { label: 'Awaiting CEO', tone: 'sky' },
+  ed_pending: { label: 'Awaiting CEO', tone: 'sky' },
+  ed_on_hold: { label: 'On Hold · CEO', tone: 'sky' },
   ed_approved: { label: 'Awaiting EA', tone: 'amber' },
-  ed_rejected: { label: 'Rejected · ED', tone: 'rose' },
+  ed_rejected: { label: 'Rejected · CEO', tone: 'rose' },
   ea_pending: { label: 'Awaiting EA', tone: 'amber' },
   ea_on_hold: { label: 'On Hold · EA', tone: 'amber' },
   md_pending: { label: 'Awaiting MD', tone: 'blue' },
@@ -107,7 +107,7 @@ const STATUS_META: Record<string, { label: string; tone: Tone }> = {
 
 
 const STAGE_LABEL: Record<ApprovalStage, string> = {
-  ed_approval: 'ED Approval',
+  ed_approval: 'CEO Approval',
   ea_approval: 'EA Approval',
   md_approval: 'MD Approval',
   accounts: 'Accounts',
@@ -124,7 +124,7 @@ function canActOnStage(role: string, stage: ApprovalStage | null) {
 
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
 
-  if (stage === 'ed_approval') return r === 'ed'
+  if (stage === 'ed_approval') return r === 'ceo'
   if (stage === 'ea_approval') return r === 'ea' || r === 'eba'
   if (stage === 'md_approval') return r === 'md'
   if (stage === 'accounts') return isAccounts
@@ -191,9 +191,9 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
   const [directRemarks, setDirectRemarks] = useState('')
   const [mdApprovalDialog, setMdApprovalDialog] = useState<PettyCashRequest | null>(null)
   const [stageFilter, setStageFilter] = useState<'all' | ApprovalStage>(() => {
-    return (role === 'md' || role === 'eba') ? 'md_approval' : 'all'
+    return (role === 'md' || role === 'eba') ? 'md_approval' : role === 'ceo' ? 'ed_approval' : 'all'
   })
-  const showStageFilter = role === 'md' || role === 'eba' || role === 'developer'
+  const showStageFilter = role === 'ceo' || role === 'md' || role === 'eba' || role === 'developer'
 
   const onCountChangeRef = useRef(onCountChange)
   useEffect(() => { onCountChangeRef.current = onCountChange }, [onCountChange])
@@ -380,9 +380,10 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
           </div>
           {showStageFilter && (
             <div className="inline-flex items-center gap-0.5 rounded-2xl border border-slate-200 bg-slate-100 p-0.5">
-              {(['all', 'ea_approval', 'md_approval', 'accounts'] as const).map((value) => {
+              {(['all', 'ed_approval', 'ea_approval', 'md_approval', 'accounts'] as const).map((value) => {
                 const labels: Record<string, string> = {
                   all: 'All Stages',
+                  ed_approval: 'CEO',
                   ea_approval: 'EA',
                   md_approval: 'MD',
                   accounts: 'Accounts',

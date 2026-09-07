@@ -307,35 +307,67 @@ const getMdRemarksList = (req: ApprovalRequest | null | undefined): { user: stri
   return list
 }
 
-const BRANCH_CHIP_PALETTE = [
-  'bg-indigo-100 border-indigo-300 text-indigo-900',
-  'bg-emerald-100 border-emerald-300 text-emerald-900',
-  'bg-amber-100 border-amber-300 text-amber-900',
-  'bg-sky-100 border-sky-300 text-sky-900',
-  'bg-rose-100 border-rose-300 text-rose-900',
-  'bg-violet-100 border-violet-300 text-violet-900',
-  'bg-teal-100 border-teal-300 text-teal-900',
-  'bg-orange-100 border-orange-300 text-orange-900',
-  'bg-cyan-100 border-cyan-300 text-cyan-900',
-  'bg-lime-100 border-lime-300 text-lime-900',
-  'bg-fuchsia-100 border-fuchsia-300 text-fuchsia-900',
-  'bg-blue-100 border-blue-300 text-blue-900',
-]
-const BRANCH_CHIP_FALLBACK = 'bg-slate-100 border-slate-300 text-slate-800'
+const BRAND_CHIP_STYLES: Record<string, string> = {
+  kia: 'bg-rose-50 border-rose-300 text-rose-900 font-extrabold',
+  hyundai: 'bg-sky-50 border-sky-300 text-sky-900 font-extrabold',
+  platinum: 'bg-violet-50 border-violet-300 text-violet-900 font-extrabold',
+  mg: 'bg-teal-50 border-teal-300 text-teal-900 font-extrabold',
+  tata: 'bg-cyan-50 border-cyan-300 text-cyan-900 font-extrabold',
+  honda: 'bg-red-50 border-red-300 text-red-900 font-extrabold',
+  ktm: 'bg-orange-50 border-orange-300 text-orange-900 font-extrabold',
+  triumph: 'bg-zinc-100 border-zinc-300 text-zinc-900 font-extrabold',
+  bajaj: 'bg-amber-50 border-amber-300 text-amber-900 font-extrabold',
+}
+
+const BRAND_CHIP_FALLBACK = 'bg-slate-100 border-slate-300 text-slate-800 font-extrabold'
+
+const BRAND_BADGE_STYLES: Record<string, string> = {
+  kia: 'bg-rose-100 text-rose-800 border-rose-300 font-black',
+  hyundai: 'bg-sky-100 text-sky-800 border-sky-300 font-black',
+  platinum: 'bg-violet-100 text-violet-800 border-violet-300 font-black',
+  mg: 'bg-teal-100 text-teal-800 border-teal-300 font-black',
+  tata: 'bg-cyan-100 text-cyan-800 border-cyan-300 font-black',
+  honda: 'bg-red-100 text-red-800 border-red-300 font-black',
+  ktm: 'bg-orange-100 text-orange-800 border-orange-300 font-black',
+  triumph: 'bg-zinc-100 text-zinc-800 border-zinc-300 font-black',
+  bajaj: 'bg-amber-100 text-amber-800 border-amber-300 font-black',
+}
 
 /**
- * What counts as one branch.
- *
- * `dealerCode` first — it is the outlet's real identity (JK402, N5211, KATHUA) and survives the
- * dealer NAME being typed differently. Falls back to the name, then the location, for the old rows
- * that predate the dealer fields. A row with none of the three gets '' and takes the neutral
- * fallback colour rather than borrowing another branch's.
+ * Resolves the lowercase canonical brand key of an approval request row.
  */
-const branchKeyOf = (row: Pick<ApprovalRequest, 'dealerCode' | 'dealerName' | 'location'>) =>
-  String(row.dealerCode || row.dealerName || row.location || '')
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
+const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dealerName?: string | null; dealerCode?: string | null }) => {
+  const b = (row.brand || '').trim().toLowerCase()
+  if (b) return b
+
+  const reqNo = (row.requestNo || '').trim().toUpperCase()
+  if (reqNo.startsWith('KIA')) return 'kia'
+  if (reqNo.startsWith('HYUNDAI')) return 'hyundai'
+  if (reqNo.startsWith('PLATINUM')) return 'platinum'
+  if (reqNo.startsWith('MG')) return 'mg'
+  if (reqNo.startsWith('TATA')) return 'tata'
+  if (reqNo.startsWith('HONDA')) return 'honda'
+  if (reqNo.startsWith('KTM')) return 'ktm'
+  if (reqNo.startsWith('TRIUMPH')) return 'triumph'
+  if (reqNo.startsWith('BAJAJ')) return 'bajaj'
+
+  const dealer = (row.dealerName || '').toLowerCase()
+  if (dealer.includes('kia')) return 'kia'
+  if (dealer.includes('platinum')) return 'platinum'
+  if (dealer.includes('hyundai')) return 'hyundai'
+  if (dealer.includes('mg')) return 'mg'
+  if (dealer.includes('tata')) return 'tata'
+  if (dealer.includes('honda')) return 'honda'
+  if (dealer.includes('ktm')) return 'ktm'
+  if (dealer.includes('triumph')) return 'triumph'
+  if (dealer.includes('bajaj')) return 'bajaj'
+
+  const code = (row.dealerCode || '').toUpperCase()
+  if (code.startsWith('JK') || code.includes('KIA')) return 'kia'
+  if (code.startsWith('N5211') || code.startsWith('N6250')) return 'platinum'
+
+  return 'kia'
+}
 
 export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }) {
   const queryClient = useQueryClient()
@@ -351,8 +383,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return new Date(d.getFullYear(), d.getMonth(), 1)
   })
 
-  // Filter Scope: 'pending' (Pending My Approval), 'all' (All Active Requests), 'sent_back' (Sent Back Orders), 'md_remarks' (MD Remarks), 'rejected' (Rejected Orders), 'vendors' (Vendor Ledgers), or 'gl_categories' (GL Category Ledgers)
-  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'sent_back' | 'md_remarks' | 'rejected' | 'vendors' | 'gl_categories'>('pending')
+  // Filter Scope: 'pending' (Pending My Approval), 'all' (All Active Requests), 'rejected_sent_back' (Sent Back & Rejected), or 'md_remarks' (MD Remarks)
+  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'rejected_sent_back' | 'md_remarks'>('pending')
 
   // Bulk selection & popup modal states
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([])
@@ -1278,7 +1310,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       if (isService) return usesGroupServiceManager(req.brand) ? 'Group Service Manager' : 'GSM (Service)'
       return 'GSM (Sales)'
     }
-    return isService ? 'VP' : 'ED / GSM (Sales)'
+    return isService ? 'VP' : 'CEO / GSM (Sales)'
   }
 
   const getPendingStageLabel = (req: ApprovalRequest): string => {
@@ -1414,7 +1446,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
    * `effectiveRole` is checked alongside the real role because this screen supports acting under an
    * assumed role; both must satisfy the same rule.
    *
-   * KIA is deliberately untouched: ED or General Sales Manager on sales, VP on service.
+   * KIA is deliberately untouched: CEO or General Sales Manager on sales, VP on service.
    */
   const canActOnFirstStage = (req?: ApprovalRequest | null) => {
     const isService = req ? isServiceCategory(req.department, req.approvalType) : false
@@ -1424,12 +1456,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return allowed.includes(userRoleLower) || allowed.includes(effectiveRoleLower)
     }
 
-    // ── KIA, unchanged ──
+    // ── KIA ──
     if (isService) {
-      if (effectiveRole === 'ed' || currentUser.role === 'ed') return false // ED strictly excluded
+      if (effectiveRole === 'ceo' || currentUser.role === 'ceo' || effectiveRole === 'ed' || currentUser.role === 'ed') return false
       return isVpRole(currentUser.role) || isVpRole(effectiveRole)
     }
     return (
+      effectiveRole === 'ceo' ||
+      currentUser.role === 'ceo' ||
       effectiveRole === 'ed' ||
       currentUser.role === 'ed' ||
       isGeneralSalesManagerRole(currentUser.role) ||
@@ -1604,6 +1638,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return scopedRows.filter(isSentBackOrder).length
   }, [scopedRows, isSentBackOrder])
 
+  const sentBackAndRejectedCount = useMemo(() => {
+    return scopedRows.filter(r => isSentBackOrder(r) || isRejectedOrder(r)).length
+  }, [scopedRows, isSentBackOrder, isRejectedOrder])
+
   const activeRequestsCount = useMemo(() => {
     return scopedRows.filter(r => !isPaidOrder(r) && !isSentBackOrder(r) && !isRejectedOrder(r)).length
   }, [scopedRows, isPaidOrder, isSentBackOrder, isRejectedOrder])
@@ -1612,7 +1650,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const filteredRows = useMemo(() => {
     if (!data?.rows) return []
     return data.rows.filter(row => {
-      // 1. Pending for me vs All vs Sent Back vs MD Remarks vs Rejected filter
+      // 1. Pending for me vs All vs Sent Back & Rejected vs MD Remarks filter
       const stageSelected = selectedStage !== 'All'
       /*
        * ⚠️ This used to carry `&& !stageSelected`, so choosing anything in the workflow-state
@@ -1634,13 +1672,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           return false
         }
       }
-      if (filterScope === 'sent_back') {
-        if (!isSentBackOrder(row)) {
-          return false
-        }
-      }
-      if (filterScope === 'rejected') {
-        if (!isRejectedOrder(row)) {
+      if (filterScope === 'rejected_sent_back') {
+        if (!isSentBackOrder(row) && !isRejectedOrder(row)) {
           return false
         }
       }
@@ -2305,7 +2338,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     const requiresHr = isHrApprovalRequired(req.approvalType, req.brand)
     
     const stages = [
-      { key: 'sales_manager', label: 'ED', status: req.vpApproval },
+      { key: 'sales_manager', label: firstStageDisplayLabel(req), status: req.vpApproval },
       ...(requiresHr ? [{ key: 'hr', label: 'HR', status: req.hrApproval }] : []),
       { key: 'accounts', label: 'Accounts (Invoice)', status: req.accountApproval },
       { key: 'ea', label: 'EA', status: req.eaApproval },
@@ -2464,46 +2497,16 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return 'border-slate-300 text-slate-800 bg-slate-100 font-extrabold'
   }
 
-  /*
-   * ── Per-branch colour for the Request No. and Dealer Name chips ───────────────────────────────
-   *
-   * The list mixes every brand and every outlet, and both of those chips used to be one flat colour
-   * (indigo for the request number, slate for the dealer), so a Kia Jammu row and a Kia Udhampur row
-   * were indistinguishable until you read them. Each BRANCH now carries its own colour, and both
-   * chips in a row share it, so a row reads as a single colour block you can scan for.
-   *
-   * ⚠️ Assigned by INDEX over the sorted branches actually present — deliberately not by hashing the
-   * branch name into the palette. With ~7 branches and a 12-colour palette a hash collides better
-   * than half the time (birthday problem), and two branches sharing a colour defeats the entire
-   * point of the feature. Indexing guarantees every branch is distinct up to the palette size.
-   *
-   * Built from ALL loaded rows, not the filtered ones, so a branch keeps its colour when you filter.
-   * Sorted by key so the same data always produces the same colours; adding a NEW branch can shift
-   * the colours of branches that sort after it, which is the accepted cost of collision-freedom.
-   */
-  const branchChipClassByKey = useMemo(() => {
-    const keys = Array.from(
-      new Set((data?.rows || []).map((row) => branchKeyOf(row)).filter(Boolean)),
-    ).sort()
-    const map = new Map<string, string>()
-    keys.forEach((key, index) => {
-      // Wrap rather than run out of colours. Past the palette size two branches DO repeat a colour;
-      // at 12 slots against the outlets this group runs, that is not reachable today.
-      map.set(key, BRANCH_CHIP_PALETTE[index % BRANCH_CHIP_PALETTE.length])
-    })
-    return map
-  }, [data?.rows])
+  /** The brand colour for one row's Request No. / Dealer Name chips. */
+  const getBrandChipClass = (row: { brand?: string | null; requestNo?: string | null; dealerName?: string | null; dealerCode?: string | null }) =>
+    BRAND_CHIP_STYLES[brandKeyOf(row)] || BRAND_CHIP_FALLBACK
 
-  /** The branch colour for one row's Request No. / Dealer Name chips. */
-  const getBranchChipClass = (row: Pick<ApprovalRequest, 'dealerCode' | 'dealerName' | 'location'>) =>
-    branchChipClassByKey.get(branchKeyOf(row)) || BRANCH_CHIP_FALLBACK
+  /** Backwards compatible alias */
+  const getBranchChipClass = getBrandChipClass
 
   const getBrandBadgeClass = (brand: string) => {
     const b = (brand || '').trim().toLowerCase()
-    if (b === 'kia') return 'bg-rose-100 text-rose-800 border-rose-300 font-black'
-    if (b === 'hyundai') return 'bg-sky-100 text-sky-800 border-sky-300 font-black'
-    if (b === 'mg') return 'bg-teal-100 text-teal-800 border-teal-300 font-black'
-    return 'bg-slate-100 text-slate-800 border-slate-300 font-black'
+    return BRAND_BADGE_STYLES[b] || 'bg-slate-100 text-slate-800 border-slate-300 font-black'
   }
 
   const getRoleRemarksStyles = (roleKey: string) => {
@@ -2592,22 +2595,22 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             </button>
             <button
               onClick={() => {
-                setFilterScope('sent_back')
+                setFilterScope('rejected_sent_back')
                 setMainSubView('requests')
               }}
               className={`pb-2.5 relative transition-all flex-shrink-0 flex items-center gap-1.5 cursor-pointer ${
-                mainSubView === 'requests' && filterScope === 'sent_back' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
+                mainSubView === 'requests' && filterScope === 'rejected_sent_back' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
               }`}
             >
-              <span>Sent Back Orders</span>
+              <span>Sent Back &amp; Rejected</span>
               <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold shadow-2xs transition-all ${
-                sentBackCount > 0 
-                  ? 'bg-amber-600 text-white shadow-amber-500/30' 
+                sentBackAndRejectedCount > 0 
+                  ? 'bg-rose-600 text-white shadow-rose-500/30' 
                   : 'bg-slate-200 text-slate-600'
               }`}>
-                {sentBackCount}
+                {sentBackAndRejectedCount}
               </span>
-              {mainSubView === 'requests' && filterScope === 'sent_back' && (
+              {mainSubView === 'requests' && filterScope === 'rejected_sent_back' && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
               )}
             </button>
@@ -2633,27 +2636,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               )}
             </button>
             <button
-              onClick={() => {
-                setFilterScope('rejected')
-                setMainSubView('requests')
-              }}
-              className={`pb-2.5 relative transition-all flex-shrink-0 flex items-center gap-1.5 cursor-pointer ${
-                mainSubView === 'requests' && filterScope === 'rejected' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
-              }`}
-            >
-              <span>Rejected Orders</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold shadow-2xs transition-all ${
-                rejectedCount > 0 
-                  ? 'bg-rose-600 text-white shadow-rose-500/30' 
-                  : 'bg-slate-200 text-slate-600'
-              }`}>
-                {rejectedCount}
-              </span>
-              {mainSubView === 'requests' && filterScope === 'rejected' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
-              )}
-            </button>
-            <button
               onClick={() => setMainSubView('completed_spend')}
               className={`pb-2.5 relative transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0 ${
                 mainSubView === 'completed_spend' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
@@ -2664,34 +2646,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 ₹{totalCompletedSpend.toLocaleString('en-IN')}
               </span>
               {mainSubView === 'completed_spend' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setFilterScope('vendors')
-                setMainSubView('requests')
-              }}
-              className={`pb-2.5 relative transition-all flex-shrink-0 cursor-pointer ${
-                mainSubView === 'requests' && filterScope === 'vendors' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
-              }`}
-            >
-              <span>Vendors ({vendorSummary.length})</span>
-              {mainSubView === 'requests' && filterScope === 'vendors' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setFilterScope('gl_categories')
-                setMainSubView('requests')
-              }}
-              className={`pb-2.5 relative transition-all flex-shrink-0 cursor-pointer ${
-                mainSubView === 'requests' && filterScope === 'gl_categories' ? 'text-teal-700 font-black' : 'text-slate-400 hover:text-slate-600 font-bold'
-              }`}
-            >
-              <span>GL Categories ({glSummary.length})</span>
-              {mainSubView === 'requests' && filterScope === 'gl_categories' && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--dashboard-action-bg)] rounded-full" />
               )}
             </button>
@@ -3215,15 +3169,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           </div>
           <div
             onClick={() => {
-              setFilterScope('rejected')
+              setFilterScope('rejected_sent_back')
               setMainSubView('requests')
             }}
             className="hidden sm:block cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99]"
-            title="View Rejected Orders"
+            title="View Sent Back & Rejected Orders"
           >
             <KpiCard
-              title="REJECTED"
-              value={rejectedCount}
+              title="REJECTED & SENT BACK"
+              value={sentBackAndRejectedCount}
               subtitle={`All time${scopeSuffix}`}
               icon={XCircle}
               colorScheme="rose"
@@ -3609,146 +3563,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             <Loader2 className="w-10 h-10 animate-spin text-slate-900" />
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Requests Queue...</span>
           </div>
-        ) : filterScope === 'vendors' ? (
-          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-[0_20px_50px_rgba(15,23,42,0.04)] overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#004e5a] text-white border-b border-[#003c46] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
-                    <th scope="col" className="py-3.5 px-6 w-16 text-white font-black">#</th>
-                    <th scope="col" className="py-3.5 px-6 text-white font-black">Vendor Name</th>
-                    <th scope="col" className="py-3.5 px-6 text-center text-white font-black">Transactions</th>
-                    <th scope="col" className="py-3.5 px-6 text-right text-white font-black">Total Spend (₹)</th>
-                    <th scope="col" className="py-3.5 px-6 text-right text-white font-black">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vendorSummary.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-12 text-center text-slate-400 text-xs font-semibold">
-                        No vendors found.
-                      </td>
-                    </tr>
-                  ) : (
-                    vendorSummary.map((v, idx) => (
-                      <tr
-                        key={`${v.name}-${idx}`}
-                        onClick={() => {
-                          setVendorStartDate('')
-                          setVendorEndDate('')
-                          setSelectedVendorMonth('all')
-                          setSelectedVendorName(v.name)
-                        }}
-                        className="border-b border-slate-100 last:border-0 hover:bg-teal-50/50 transition-colors cursor-pointer"
-                      >
-                        <td className="py-4 px-6 font-mono font-bold text-slate-600">
-                          {idx + 1}
-                        </td>
-                        <td className="py-4 px-6 font-black text-slate-900">
-                          {v.name}
-                        </td>
-                        <td className="py-4 px-6 text-center font-bold text-slate-700">
-                          <span className="inline-block px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-xs font-black">
-                            {v.count}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6 text-right font-mono font-black text-sm text-slate-900">
-                          ₹{v.total.toLocaleString('en-IN')}
-                        </td>
-                        <td className="py-4 px-6 text-right">
-                          <button
-                            type="button"
-                            className="text-xs font-black text-teal-700 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg border border-teal-200 transition-colors cursor-pointer"
-                          >
-                            View Ledger
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : filterScope === 'gl_categories' ? (
-          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-[0_20px_50px_rgba(15,23,42,0.04)] overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-400">GL Categories Summary</span>
-              <button
-                type="button"
-                onClick={() => setShowAddGlDialog(true)}
-                className="h-9 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add GL Category
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#004e5a] text-white border-b border-[#003c46] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
-                    <th scope="col" className="py-3.5 px-6 w-16 text-white font-black">#</th>
-                    <th scope="col" className="py-3.5 px-6 text-white font-black">GL Code</th>
-                    <th scope="col" className="py-3.5 px-6 text-white font-black">GL Category Name</th>
-                    <th scope="col" className="py-3.5 px-6 text-center text-white font-black">Transactions</th>
-                    <th scope="col" className="py-3.5 px-6 text-right text-white font-black">Total Spend (₹)</th>
-                    <th scope="col" className="py-3.5 px-6 text-right text-white font-black">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {glSummary.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400 text-xs font-semibold">
-                        No GL categories found.
-                      </td>
-                    </tr>
-                  ) : (
-                    glSummary.map((g, idx) => (
-                      <tr
-                        key={g.id || idx}
-                        onClick={() => {
-                          setGlStartDate('')
-                          setGlEndDate('')
-                          setSelectedGlMonth('all')
-                          setSelectedGlName(g.name)
-                        }}
-                        className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors cursor-pointer"
-                      >
-                        <td className="py-4 px-6 font-mono text-slate-400">
-                          {idx + 1}
-                        </td>
-                        <td className="py-4 px-6 font-mono text-xs font-bold text-slate-500">
-                          {g.code}
-                        </td>
-                        <td className="py-4 px-6 font-bold text-slate-900">
-                          {g.name}
-                        </td>
-                        <td className="py-4 px-6 text-center font-bold text-slate-600">
-                          {g.count}
-                        </td>
-                        <td className="py-4 px-6 text-right font-black text-slate-950 text-base">
-                          {g.total.toLocaleString('en-IN')}
-                        </td>
-                        <td className="py-4 px-6 text-right" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => {
-                              setGlStartDate('')
-                              setGlEndDate('')
-                              setSelectedGlMonth('all')
-                              setSelectedGlName(g.name)
-                            }}
-                            className="h-8 px-3.5 rounded-xl border border-slate-200 hover:border-slate-400 bg-white text-xs font-bold text-slate-700 transition-all shadow-sm"
-                          >
-                            View Ledger
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
         ) : totalRows === 0 ? (
           <div className="bg-white border border-slate-100 rounded-[2rem] p-12 text-center space-y-3 shadow-[0_10px_30px_rgba(15,23,42,0.01)]">
             <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 text-slate-400">
@@ -4120,7 +3934,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           * The seq badge remains only as a fallback for a row with no request_no.
                           */}
                         {row.requestNo ? (
-                          <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 font-mono text-[11px] font-black tracking-wide text-indigo-900 shrink-0">
+                          <span className={`inline-flex items-center rounded-lg border px-2 py-1 font-mono text-[11px] font-black tracking-wide shrink-0 ${getBrandChipClass(row)}`}>
                             {row.requestNo}
                           </span>
                         ) : (
@@ -4694,7 +4508,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                * 'GSM (Service)' here and named it correctly a few lines away.
                */
               const firstStageLabel = brandHasEd(req.brand)
-                ? (isService ? 'VP Approval' : 'ED / GSM')
+                ? (isService ? 'VP Approval' : 'CEO / GSM')
                 : (isService
                   ? (usesGroupServiceManager(req.brand) ? 'Group Service Mgr' : 'GSM (Service)')
                   : 'GSM (Sales)')

@@ -10,11 +10,13 @@ import { enforceDealerScope } from '@/lib/auth/dealer-scope'
 export function canAccessBrand(appUser: AppUser | null, brand: BranchValue) {
   if (!appUser) return false
   if (isSuperAdminRole(appUser.role) || hasGlobalAccessRole(appUser.role)) return true
-  if (hasAllBranchAccess(appUser.brand)) return true
-  if (appUser.brand && appUser.brand.includes(',')) {
-    return appUser.brand.split(',').map(b => b.trim()).includes(brand)
+  const userBrand = (appUser.brand || '').trim().toLowerCase()
+  if (userBrand === 'all' || hasAllBranchAccess(appUser.brand)) return true
+  const targetBrand = String(brand || '').trim().toLowerCase()
+  if (userBrand.includes(',')) {
+    return userBrand.split(',').map(b => b.trim().toLowerCase()).filter(Boolean).includes(targetBrand)
   }
-  return appUser.brand === brand
+  return userBrand === targetBrand
 }
 
 export async function getBrandAccess(brand: string) {
