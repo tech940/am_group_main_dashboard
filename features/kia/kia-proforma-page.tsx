@@ -37,6 +37,7 @@ import {
   Filter,
   History,
   Loader2,
+  Lock,
   Pencil,
   RotateCcw,
   Save,
@@ -1947,8 +1948,23 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
               {isGmRole && (
                 <Button
                   variant="outline"
-                  className="h-8 rounded-xl border-slate-300 px-3 text-xs font-bold text-slate-600 hover:border-indigo-400 hover:text-indigo-600"
-                  onClick={() => setEditingRow(row)}
+                  disabled={row.approvalStatus?.toUpperCase() === 'APPROVED'}
+                  title={row.approvalStatus?.toUpperCase() === 'APPROVED' ? 'This proforma has already been approved by Finance and cannot be edited.' : 'Edit Proforma'}
+                  className={cn(
+                    "h-8 rounded-xl border-slate-300 px-3 text-xs font-bold text-slate-600 hover:border-indigo-400 hover:text-indigo-600",
+                    row.approvalStatus?.toUpperCase() === 'APPROVED' && "opacity-40 cursor-not-allowed hover:border-slate-300 hover:text-slate-600"
+                  )}
+                  onClick={() => {
+                    if (row.approvalStatus?.toUpperCase() === 'APPROVED') {
+                      toast({
+                        title: 'Editing Locked',
+                        description: 'This proforma has already been approved by Finance and cannot be edited.',
+                        variant: 'error',
+                      })
+                      return
+                    }
+                    setEditingRow(row)
+                  }}
                 >
                   <Pencil className="mr-1.5 h-3 w-3" /> Edit
                 </Button>
@@ -2377,9 +2393,15 @@ function GMEditForm({
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--kia-text-faint)]">General Manager Edit</p>
           <DialogTitle className="mt-0.5 text-xl font-extrabold tracking-tight text-[var(--kia-text)]">Edit Proforma #{row.id.slice(0, 8).toUpperCase()}</DialogTitle>
-          <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
-            <AlertTriangle className="h-3 w-3" /> Saving will reset approval to PENDING
-          </div>
+          {row.approvalStatus?.toUpperCase() === 'APPROVED' ? (
+            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-rose-700">
+              <Lock className="h-3 w-3" /> Approved by Finance — Editing is permanently locked
+            </div>
+          ) : (
+            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
+              <AlertTriangle className="h-3 w-3" /> Saving will reset approval to PENDING
+            </div>
+          )}
         </div>
         <Button variant="outline" className="rounded-xl" onClick={onClose}><X className="h-4 w-4" /></Button>
       </div>
@@ -2527,8 +2549,8 @@ function GMEditForm({
       <div className="flex justify-end gap-2">
         <Button variant="outline" className="rounded-xl" onClick={onClose}>Cancel</Button>
         <Button
-          disabled={isSaving}
-          className="rounded-xl bg-indigo-600 px-6 text-white hover:bg-indigo-700"
+          disabled={isSaving || row.approvalStatus?.toUpperCase() === 'APPROVED'}
+          className="rounded-xl bg-indigo-600 px-6 text-white hover:bg-indigo-700 disabled:opacity-50"
           onClick={() => void saveEdit()}
         >
           {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

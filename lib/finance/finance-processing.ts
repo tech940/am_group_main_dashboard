@@ -6,6 +6,7 @@ import {
   kiaProformas,
   kiaBookings,
   kiaPriceDetails,
+  kiaFinancePayouts,
   kiaFinanceProcessing,
   kiaFinanceRemarks,
   kiaFinanceBankAttempts,
@@ -44,11 +45,17 @@ function financeHoursForBooking(booking: { metadata?: unknown } | null | undefin
 export type FinanceBankRow = { bank_name: string; bank_branch: string }
 
 export async function loadFinanceBankOptions(): Promise<{ banks: FinanceBankRow[] }> {
-  const priceRows = await db.select({ bankName: kiaPriceDetails.bankName, hyp: kiaPriceDetails.hyp, bankBranch: kiaPriceDetails.bankBranch })
-    .from(kiaPriceDetails)
+  const [priceRows, payoutRows] = await Promise.all([
+    db.select({ bankName: kiaPriceDetails.bankName, hyp: kiaPriceDetails.hyp, bankBranch: kiaPriceDetails.bankBranch })
+      .from(kiaPriceDetails),
+    db.select({ hyp: kiaFinancePayouts.hyp, bankBranch: kiaFinancePayouts.bankBranch })
+      .from(kiaFinancePayouts)
+      .where(sql`hyp IS NOT NULL AND bank_branch IS NOT NULL`),
+  ])
 
   // Extra branches that should always appear in the dropdown
   const extraBanks: FinanceBankRow[] = [
+    { bank_name: 'PNB BANK', bank_branch: 'PNB - Shastri Nagar' },
     { bank_name: 'JK GRAMEEN', bank_branch: 'JK Grameen Bank Jagti' },
     { bank_name: 'SBI', bank_branch: 'SBI Trikuta Nagar' },
     { bank_name: 'SBI', bank_branch: 'SBI Trikuta Nagar Jammu' },
@@ -58,6 +65,9 @@ export async function loadFinanceBankOptions(): Promise<{ banks: FinanceBankRow[
   const banks: FinanceBankRow[] = [
     ...priceRows
       .map((r) => ({ bank_name: normalizeBankName(text(r.bankName) || text(r.hyp)), bank_branch: text(r.bankBranch) }))
+      .filter((r) => r.bank_name && r.bank_branch),
+    ...payoutRows
+      .map((r) => ({ bank_name: normalizeBankName(text(r.hyp)), bank_branch: text(r.bankBranch) }))
       .filter((r) => r.bank_name && r.bank_branch),
     ...extraBanks,
   ]

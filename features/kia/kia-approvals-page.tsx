@@ -57,8 +57,10 @@ import {
   Printer,
   Trash2,
   Layers,
-  PieChart
+  PieChart,
+  Tag
 } from 'lucide-react'
+import { KiaDiscountApprovalsPanel } from './kia-discount-approvals-panel'
 import { KpiCard } from '@/components/ui/kpi-card'
 import { printPaymentOrder } from '@/lib/kia/print-payment-order'
 import { toast } from '@/hooks/use-toast'
@@ -373,6 +375,30 @@ const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dea
 export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }) {
   const queryClient = useQueryClient()
   const effectiveRole = ['developer', 'admin'].includes(currentUser.role) ? 'md' : currentUser.role
+
+  // Top-level approval section switcher: 'payments' | 'discounts'
+  const [approvalSection, setApprovalSection] = useState<'payments' | 'discounts'>('payments')
+
+  // Fast count query for discounts badge
+  const discountSummaryQuery = useQuery({
+    queryKey: ['kia-discount-requests-summary'],
+    queryFn: async () => {
+      const res = await fetch('/api/brands/kia/bookings/discounts')
+      if (!res.ok) return { rows: [] }
+      return res.json()
+    },
+    staleTime: 30000,
+  })
+
+  const discountPendingCount = useMemo(() => {
+    const rows = (discountSummaryQuery.data?.rows || []) as any[]
+    return rows.filter((r) => r.canAct).length
+  }, [discountSummaryQuery.data?.rows])
+
+  const discountTotalCount = useMemo(() => {
+    return (discountSummaryQuery.data?.rows || []).length
+  }, [discountSummaryQuery.data?.rows])
+
   const [search, setSearch] = useState('')
   const [selectedLocation, setSelectedLocation] = useState('All')
   const [selectedStage, setSelectedStage] = useState('All')
@@ -2497,13 +2523,61 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
   return (
-    <MainLayout title="Approvals" subtitle="Manage payment requests and multi-stage approval workflows">
+    <MainLayout title="Approvals" subtitle="Manage payment requests, discount approvals, and multi-stage workflows">
       <div className="space-y-6 max-w-full overflow-x-hidden">
+        {/* Top-Level Section Switcher: Payment Approvals vs Discount Approvals */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+          <div className="inline-flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setApprovalSection('payments')}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer',
+                approvalSection === 'payments'
+                  ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-950/5'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              )}
+            >
+              <CreditCard className="w-4 h-4 text-emerald-600" />
+              <span>Payment Approvals</span>
+              <span className={cn(
+                'px-1.5 py-0.5 rounded-full text-[10px] font-extrabold',
+                approvalSection === 'payments' ? 'bg-slate-100 text-slate-700' : 'bg-slate-200/80 text-slate-600'
+              )}>
+                {activeRequestsCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setApprovalSection('discounts')}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer',
+                approvalSection === 'discounts'
+                  ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-950/5'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              )}
+            >
+              <Tag className="w-4 h-4 text-amber-600" />
+              <span>Discount Approvals</span>
+              {discountPendingCount > 0 ? (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white shadow-2xs animate-pulse">
+                  {discountPendingCount}
+                </span>
+              ) : discountTotalCount > 0 ? (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700">
+                  {discountTotalCount}
+                </span>
+              ) : null}
+            </button>
+          </div>
+        </div>
 
-
-
-        {/* Clean, modern single navigation tab bar */}
-        <div className="border-b border-slate-100 pb-1">
+        {approvalSection === 'discounts' ? (
+          <KiaDiscountApprovalsPanel currentUser={currentUser} />
+        ) : (
+          <>
+            {/* Clean, modern single navigation tab bar */}
+            <div className="border-b border-slate-100 pb-1">
           <div className="flex items-center gap-6 text-sm font-bold overflow-x-auto whitespace-nowrap scrollbar-none pb-2 w-full">
             <button
               onClick={() => {
@@ -4131,7 +4205,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         )}
       </React.Fragment>
     )}
-    </div>
+          </>
+        )}
+      </div>
 
       {/* 4. DETAIL & ACTION CENTER OVERLAY MODAL */}
       <Dialog open={Boolean(detailRow)} onOpenChange={(open) => { if (!open) setDetailRow(null) }}>

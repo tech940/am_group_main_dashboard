@@ -50,10 +50,10 @@ const CHECKS: Check[] = [
   { label: 'CRM CANNOT see all bookings (retired)', got: canViewAllKiaBookings('crm'), want: false },
   { label: 'sales_executive CANNOT see all bookings (own only)', got: canViewAllKiaBookings('sales_executive'), want: false },
 
-  // Allotment to a booking — IDT exclusive (+ super admins).
+  // Allotment to a booking — IDT, GSM, and Sales Manager (+ super admins).
   { label: 'IDT CAN allot to a booking', got: canAllotKiaVehicleToBooking('idt'), want: true },
   { label: 'developer CAN allot (super-admin override)', got: canAllotKiaVehicleToBooking('developer'), want: true },
-  { label: 'sales_manager CANNOT allot (was allowed before)', got: canAllotKiaVehicleToBooking('sales_manager'), want: false },
+  { label: 'sales_manager CAN allot to a booking', got: canAllotKiaVehicleToBooking('sales_manager'), want: true },
   { label: 'general_manager CAN allot to a booking', got: canAllotKiaVehicleToBooking('general_manager'), want: true },
   { label: 'accounts CANNOT allot (was allowed before)', got: canAllotKiaVehicleToBooking('accounts'), want: false },
   { label: 'md CANNOT allot (was allowed before)', got: canAllotKiaVehicleToBooking('md'), want: false },

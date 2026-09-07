@@ -14,60 +14,74 @@
  * rule has drifted — the vendor-payment screen once offered a VP buttons the server rejected.
  */
 
-export type DiscountStage = 'sales_manager' | 'md' | 'accounts' | 'done' | 'rejected'
+export const DISCOUNT_MD_THRESHOLD = 5000
+
+export type DiscountStage = 'sales_manager' | 'ceo' | 'md' | 'accounts' | 'done' | 'rejected'
 
 export type DiscountChainRow = {
+  requestedAmount?: string | number | null
+  approvedAmount?: string | number | null
   smStatus?: string | null
+  ceoStatus?: string | null
+  ceoApprovedAmount?: string | number | null
   mdStatus?: string | null
+  mdApprovedAmount?: string | number | null
   payoutStatus?: string | null
 }
 
 const norm = (v: unknown) => String(v ?? '').trim().toUpperCase()
 
 /**
+ * Does this discount amount require MD approval?
+ * Disounts > ₹5,000 must pass through MD after CEO before reaching Accounts.
+ */
+export function requiresMdApproval(row: DiscountChainRow): boolean {
+  const amount = Number(row.ceoApprovedAmount || row.approvedAmount || row.requestedAmount || 0)
+  return amount > DISCOUNT_MD_THRESHOLD
+}
+
+/**
  * The stage a request is waiting on.
  *
- * ⚠️ Order matters and rejection short-circuits: a request the Sales Manager refused must never
- * appear in the MD's queue. Reading the stages in sequence is what guarantees that.
+ * Flow:
+ *   Amount <= 5k:  GSM/SM -> CEO -> Accounts -> Done
+ *   Amount > 5k:   GSM/SM -> CEO -> MD -> Accounts -> Done
  */
 export function discountStage(row: DiscountChainRow): DiscountStage {
-  if (norm(row.smStatus) === 'REJECTED' || norm(row.mdStatus) === 'REJECTED') return 'rejected'
+  if (norm(row.smStatus) === 'REJECTED' || norm(row.ceoStatus) === 'REJECTED' || norm(row.mdStatus) === 'REJECTED') {
+    return 'rejected'
+  }
   if (norm(row.smStatus) !== 'APPROVED') return 'sales_manager'
-  if (norm(row.mdStatus) !== 'APPROVED') return 'md'
-  // Accounts have acted either way — PAID or NOT_PAID — so the chain is finished.
+  if (norm(row.ceoStatus) !== 'APPROVED') return 'ceo'
+  if (requiresMdApproval(row) && norm(row.mdStatus) !== 'APPROVED') return 'md'
   if (!norm(row.payoutStatus)) return 'accounts'
   return 'done'
 }
 
 /**
  * Roles that fill each stage.
- *
- * ⚠️ `sales_manager` AND `general_manager` both fill the first desk. The role enum carries both and
- * branches staff them inconsistently — gating on `sales_manager` alone would leave a branch whose
- * sales head holds `general_manager` with a queue nobody can clear. `sales_head` is included for the
- * same reason.
- *
- * ⚠️ developer/admin are support access, NOT business authority. They are listed so a stuck request
- * can be unblocked, and deliberately kept out of MD_ROLES so nobody mistakes the escape hatch for
- * the MD's decision.
  */
 export const DISCOUNT_SUPPORT_ROLES = ['developer', 'admin'] as const
 export const SALES_MANAGER_ROLES = ['sales_manager', 'general_manager', 'sales_head'] as const
-export const MD_ROLES = ['md', 'ceo'] as const
-export const ACCOUNTS_ROLES = ['accounts', 'finance_head', 'finance_team'] as const
+export const CEO_ROLES = ['ceo', 'ed'] as const
+export const MD_ROLES = ['md'] as const
+export const ACCOUNTS_ROLES = ['accounts', 'accounts_head', 'accounts_team', 'finance_head', 'finance_team'] as const
 
 export function canActOnDiscountStage(role: unknown, stage: DiscountStage): boolean {
   const r = String(role ?? '').trim().toLowerCase()
   if (stage === 'done' || stage === 'rejected') return false
   if ((DISCOUNT_SUPPORT_ROLES as readonly string[]).includes(r)) return true
   if (stage === 'sales_manager') return (SALES_MANAGER_ROLES as readonly string[]).includes(r)
+  if (stage === 'ceo') return (CEO_ROLES as readonly string[]).includes(r)
   if (stage === 'md') return (MD_ROLES as readonly string[]).includes(r)
-  return (ACCOUNTS_ROLES as readonly string[]).includes(r)
+  if (stage === 'accounts') return (ACCOUNTS_ROLES as readonly string[]).includes(r)
+  return false
 }
 
 /** What to call the stage on screen and in a queue heading. */
 export const DISCOUNT_STAGE_LABEL: Record<DiscountStage, string> = {
-  sales_manager: 'With Sales Manager',
+  sales_manager: 'With GSM / SM',
+  ceo: 'With CEO',
   md: 'With MD',
   accounts: 'With Accounts',
   done: 'Completed',
@@ -76,9 +90,6 @@ export const DISCOUNT_STAGE_LABEL: Record<DiscountStage, string> = {
 
 /**
  * The overall outcome, for the `status` column the pre-existing rows already use.
- *
- * ⚠️ 'APPROVED' means the MD approved it — NOT that the customer has the money. The payout is
- * reported separately, because "approved but unpaid" is the state most worth being able to see.
  */
 export function discountOverallStatus(row: DiscountChainRow): 'PENDING' | 'APPROVED' | 'REJECTED' {
   const stage = discountStage(row)

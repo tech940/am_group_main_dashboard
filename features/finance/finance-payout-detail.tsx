@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   X, Loader2, Save, User2, Car, FileText, Landmark, Wallet, Users, History, MessageSquare,
   BadgeIndianRupee, Lock,
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Chip, FieldValue, IconTile, InspectorSkeleton } from '@/components/kia/premium'
+import { AddBankBranch } from '@/components/kia/add-bank-branch'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import {
@@ -72,10 +73,20 @@ export function FinancePayoutDetail({ id, onClose, onSaved }: {
    */
   const [edits, setEdits] = useState<Partial<EditState>>({})
   const [saving, setSaving] = useState(false)
+  const queryClient = useQueryClient()
 
   const query = useQuery<PayoutDetailResponse>({
     queryKey: ['finance-payout', id],
     queryFn: () => fetchDetail(id),
+  })
+
+  const bankOptionsQuery = useQuery<{ banks: { bank_name: string; bank_branch: string }[] }>({
+    queryKey: ['finance', 'bank-options'],
+    queryFn: async () => {
+      const res = await fetch('/api/finance/bank-options', { cache: 'no-store' })
+      if (!res.ok) return { banks: [] }
+      return res.json()
+    },
   })
 
   const payout = query.data?.payout
@@ -89,6 +100,32 @@ export function FinancePayoutDetail({ id, onClose, onSaved }: {
     () => (base ? Object.keys(edits).filter((k) => edits[k] !== base[k]) : []),
     [base, edits],
   )
+
+  const bankNames = useMemo(() => {
+    const set = new Set<string>()
+    for (const b of bankOptionsQuery.data?.banks ?? []) {
+      if (b.bank_name?.trim()) set.add(b.bank_name.trim())
+    }
+    if (edit?.hyp?.trim()) set.add(edit.hyp.trim())
+    if (edit?.hypAsPerRc?.trim()) set.add(edit.hypAsPerRc.trim())
+    if (edit?.bankInProforma?.trim()) set.add(edit.bankInProforma.trim())
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [bankOptionsQuery.data?.banks, edit?.hyp, edit?.hypAsPerRc, edit?.bankInProforma])
+
+  const branchesForBank = useMemo(() => {
+    if (!edit?.hyp?.trim()) return []
+    const currentBank = edit.hyp.trim().toLowerCase()
+    const set = new Set<string>()
+    for (const b of bankOptionsQuery.data?.banks ?? []) {
+      if (b.bank_name?.trim().toLowerCase() === currentBank && b.bank_branch?.trim()) {
+        set.add(b.bank_branch.trim())
+      }
+    }
+    if (edit?.bankBranch?.trim()) {
+      set.add(edit.bankBranch.trim())
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [bankOptionsQuery.data?.banks, edit?.hyp, edit?.bankBranch])
 
   const set = (k: string, v: string) => setEdits((prev) => ({ ...prev, [k]: v }))
 
@@ -199,26 +236,66 @@ export function FinancePayoutDetail({ id, onClose, onSaved }: {
                     disabled={!canEdit}
                     mono
                   />
-                  <EditText
+                  <EditSelect
                     label="Hypothecation (Bank)"
                     value={edit.hyp}
-                    onChange={(v) => set('hyp', v)}
+                    onChange={(v) => {
+                      set('hyp', v)
+                      if (edit.bankBranch && v) {
+                        const belongs = bankOptionsQuery.data?.banks?.some(
+                          (b) => b.bank_name?.toLowerCase() === v.toLowerCase() && b.bank_branch?.toLowerCase() === edit.bankBranch?.toLowerCase()
+                        )
+                        if (!belongs) {
+                          set('bankBranch', '')
+                        }
+                      }
+                    }}
                     disabled={!canEdit}
+                    options={bankNames.map((b) => ({ value: b, label: b }))}
+                    placeholder="Select Bank"
                   />
-                  <EditText
-                    label="Bank Branch"
-                    value={edit.bankBranch}
-                    onChange={(v) => set('bankBranch', v)}
-                    disabled={!canEdit}
-                  />
+                  <div>
+                    <EditSelect
+                      label="Bank Branch"
+                      value={edit.bankBranch}
+                      onChange={(v) => set('bankBranch', v)}
+                      disabled={!canEdit || !edit.hyp}
+                      options={branchesForBank.map((b) => ({ value: b, label: b }))}
+                      placeholder={edit.hyp ? 'Select Branch' : 'Select Bank first'}
+                    />
+                    {canEdit && edit.hyp && (
+                      <AddBankBranch
+                        bankName={edit.hyp}
+                        className="mt-1"
+                        onAdded={async (branch) => {
+                          await queryClient.invalidateQueries({ queryKey: ['finance', 'bank-options'] })
+                          set('bankBranch', branch)
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
               </Card>
 
               {/* --- Editable: finance-owned --- */}
               <Card icon={Landmark} tone="amber" title="Bank" kicker="Finance">
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  <EditText label="HYP as per RC" value={edit.hypAsPerRc} onChange={(v) => set('hypAsPerRc', v)} disabled={!canEdit} />
-                  <EditText label="Bank in Proforma" value={edit.bankInProforma} onChange={(v) => set('bankInProforma', v)} disabled={!canEdit} />
+                  <EditSelect
+                    label="HYP as per RC"
+                    value={edit.hypAsPerRc}
+                    onChange={(v) => set('hypAsPerRc', v)}
+                    disabled={!canEdit}
+                    options={bankNames.map((b) => ({ value: b, label: b }))}
+                    placeholder="Select Bank"
+                  />
+                  <EditSelect
+                    label="Bank in Proforma"
+                    value={edit.bankInProforma}
+                    onChange={(v) => set('bankInProforma', v)}
+                    disabled={!canEdit}
+                    options={bankNames.map((b) => ({ value: b, label: b }))}
+                    placeholder="Select Bank"
+                  />
                   <EditText label="Interest Rate (%)" value={edit.bankInterestRate} onChange={(v) => set('bankInterestRate', v)} disabled={!canEdit} />
                   <EditSelect label="Bank Login" value={edit.bankLogin} onChange={(v) => set('bankLogin', v)} disabled={!canEdit}
                     options={[{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]} />
@@ -366,20 +443,22 @@ function EditText({ label, value, onChange, disabled, type = 'text', mono }: {
   )
 }
 
-function EditSelect({ label, value, onChange, disabled, options }: {
+function EditSelect({ label, value, onChange, disabled, options, placeholder = '—' }: {
   label: string
   value: string
   onChange: (v: string) => void
   disabled?: boolean
   options: { value: string; label: string }[]
+  placeholder?: string
 }) {
   return (
     <label className="block">
       <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--kia-text-faint)]">{label}</span>
-      <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger className="mt-1 h-9 rounded-xl text-[13px] font-semibold"><SelectValue placeholder="—" /></SelectTrigger>
+      <Select value={value || undefined} onValueChange={(v) => onChange(v === '__none__' ? '' : v)} disabled={disabled}>
+        <SelectTrigger className="mt-1 h-9 rounded-xl text-[13px] font-semibold"><SelectValue placeholder={placeholder} /></SelectTrigger>
         <SelectContent>
-          {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+          <SelectItem value="__none__">None / Clear</SelectItem>
+          {options.filter((o) => Boolean(o.value)).map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
         </SelectContent>
       </Select>
     </label>

@@ -5,6 +5,7 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { requirePermission } from '@/lib/permissions/service'
 import { getKiaBookingDetail, updateKiaBooking, personNameKey } from '@/lib/kia/bookings'
 import { canViewKiaCustomerPii, redactKiaBookingPii } from '@/lib/kia/pii'
+import { canAllotKiaVehicleToBooking } from '@/lib/kia/workflow-access'
 import { getCachedKiaUserProfile } from '@/lib/kia-proforma/server'
 
 export const dynamic = 'force-dynamic'
@@ -113,9 +114,9 @@ export async function PATCH(request: Request, context: RouteContext<'/api/brands
     if (auth.response) return auth.response
     const { id } = await context.params
     const body = await request.json()
-    if (body.idtRemark !== undefined && auth.appUser?.role?.toLowerCase() !== 'idt') {
+    if (body.idtRemark !== undefined && !canAllotKiaVehicleToBooking(auth.appUser?.role)) {
       const timing = timer.finish()
-      return withServerTiming(NextResponse.json({ error: 'Only the IDT can add or modify stock remarks.' }, { status: 403 }), timing.serverTiming)
+      return withServerTiming(NextResponse.json({ error: 'Only the IDT, GSM, and Sales Manager can add or modify stock remarks.' }, { status: 403 }), timing.serverTiming)
     }
     const booking = await timer.time('update', () => updateKiaBooking(id, body, auth.appUser!))
     const timing = timer.finish()

@@ -2285,7 +2285,7 @@ export async function allotKiaBookingVehicle(
   options: { skipRoleGate?: boolean; extraTime?: { days: number; reason: string } } = {},
 ) {
   if (!options.skipRoleGate && !canAllotKiaVehicleToBooking(appUser.role)) {
-    throw new Error('Only the IDT can allot vehicles to a booking.')
+    throw new Error('Only the IDT, GSM, or Sales Manager can allot vehicles to a booking.')
   }
   const normalizedVin = text(vinNumber).toUpperCase()
   if (!normalizedVin) throw new Error('VIN is required')

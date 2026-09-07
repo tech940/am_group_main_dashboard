@@ -20,7 +20,7 @@ function norm(role?: string | null) {
   return String(role || '').trim().toLowerCase()
 }
 
-const PROFORMA_APPROVER_ROLES = ['sales_manager', 'general_manager', 'md']
+const PROFORMA_APPROVER_ROLES = ['sales_manager', 'general_manager', 'sales_head', 'md']
 
 export function isKiaWorkflowAdmin(role?: string | null) {
   const r = norm(role)
@@ -31,7 +31,7 @@ export function isKiaSalesExecutive(role?: string | null) {
   return norm(role) === 'sales_executive'
 }
 
-/** Sales Manager / General Manager / MD (+ admin): approve/decline proformas, view all, pending approval, history. */
+/** Sales Manager / General Manager / Sales Head / MD (+ admin): approve/decline proformas, view all, pending approval, history. */
 export function canApproveKiaProforma(role?: string | null) {
   const r = norm(role)
   return isKiaWorkflowAdmin(r) || PROFORMA_APPROVER_ROLES.includes(r)
@@ -75,15 +75,14 @@ export function canDeliverKiaBooking(role?: string | null) {
 }
 
 /**
- * IDT — Internal Development Trainee (+ admin/developer): allot a vehicle to a booking. Exclusive.
+ * IDT, GSM (general_manager), and SM (sales_manager / sales_head) (+ admin/developer): allot a vehicle to a booking.
  *
  * Deliberately SEPARATE from canAllotKiaVehicle below, which still governs stock holds, BBND allot
- * and transfer requests — those keep their existing "anyone except the Sales Executive" rule. Only
- * the booking allotment itself is IDT-exclusive.
+ * and transfer requests — those keep their existing "anyone except the Sales Executive" rule.
  */
 export function canAllotKiaVehicleToBooking(role?: string | null) {
   const r = norm(role)
-  return isKiaWorkflowAdmin(r) || r === 'idt' || r === 'general_manager'
+  return isKiaWorkflowAdmin(r) || r === 'idt' || r === 'general_manager' || r === 'sales_manager' || r === 'sales_head'
 }
 
 /**
@@ -130,7 +129,8 @@ export function canViewAllKiaBookings(role?: string | null) {
     r === 'idt' ||
     r === 'cxm' ||
     r === 'ccm' ||
-    r === 'edp'
+    r === 'edp' ||
+    r === 'sales_head'
   )
 }
 

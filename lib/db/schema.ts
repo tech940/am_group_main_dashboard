@@ -2381,6 +2381,12 @@ export const kiaBookingDiscounts = pgTable('kia_booking_discounts', {
   smByName: text('sm_by_name'),
   smRemarks: text('sm_remarks'),
   smAt: timestamp('sm_at', { withTimezone: true }),
+  ceoStatus: text('ceo_status'),
+  ceoBy: uuid('ceo_by').references(() => users.id),
+  ceoByName: text('ceo_by_name'),
+  ceoRemarks: text('ceo_remarks'),
+  ceoAt: timestamp('ceo_at', { withTimezone: true }),
+  ceoApprovedAmount: decimal('ceo_approved_amount', { precision: 14, scale: 2 }),
   mdStatus: text('md_status'),
   mdBy: uuid('md_by').references(() => users.id),
   mdByName: text('md_by_name'),
@@ -2409,7 +2415,7 @@ export const kiaBookingDiscounts = pgTable('kia_booking_discounts', {
 }, (table) => ({
   bookingIdIdx: index('kia_booking_discounts_booking_idx').on(table.bookingId),
   statusIdx: index('kia_booking_discounts_status_idx').on(table.status),
-  stageIdx: index('kia_booking_discounts_stage_idx').on(table.smStatus, table.mdStatus, table.payoutStatus),
+  stageIdx: index('kia_booking_discounts_stage_idx').on(table.smStatus, table.ceoStatus, table.mdStatus, table.payoutStatus),
 }))
 
 /**

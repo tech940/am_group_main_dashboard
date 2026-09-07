@@ -3053,24 +3053,6 @@ export function KiaBookingsClient({
               </span>
             )}
           </button>
-
-          {['md', 'ceo', 'developer', 'admin', 'sales_manager', 'general_manager', 'edp'].includes(currentUserRole) && (
-            <Button
-              variant={crmViewMode === 'discounts' ? 'default' : 'outline'}
-              className={cn("h-10 rounded-2xl px-4 text-sm font-bold sm:h-11 border-slate-200", crmViewMode === 'discounts' && "bg-slate-950 hover:bg-slate-800 text-white")}
-              onClick={() => setCrmViewMode(crmViewMode === 'discounts' ? 'list' : 'discounts')}
-            >
-              {crmViewMode === 'discounts' ? (
-                <>
-                  <ClipboardList className="h-4 w-4" /> Bookings List
-                </>
-              ) : (
-                <>
-                  <Percent className="h-4 w-4 text-slate-700" /> Manage Discounts
-                </>
-              )}
-            </Button>
-          )}
         </div>
       )}
       {canCreateBookings && !stockMode && crmViewMode === 'list' && (

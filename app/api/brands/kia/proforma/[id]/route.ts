@@ -183,6 +183,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       approvalStageActed = stage
       approvalDeclined = declined
     } else if (action === 'edit') {
+      // If the proforma has already been approved by Finance (final stage APPROVED), it is permanently locked against edits.
+      if (String(row.approvalStatus || '').trim().toUpperCase() === 'APPROVED') {
+        return NextResponse.json(
+          { error: 'This proforma has already been approved by Finance and cannot be edited.' },
+          { status: 400 }
+        )
+      }
+
       // ONLY the General Manager can edit a proforma in-place — no other role, not even admins.
       if (appUser.role !== 'general_manager') {
         return NextResponse.json({ error: 'Only the General Manager can edit a proforma.' }, { status: 403 })
