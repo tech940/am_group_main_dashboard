@@ -2134,7 +2134,7 @@ export const kiaApprovalRequestsRelations = relations(kiaApprovalRequests, ({ on
 }))
 
 // ── Fuel Approvals ────────────────────────────────────────────────────────────
-// Vehicle, genset, and yard fuel requisition orders with ED -> HR -> MD approval workflow
+// Vehicle, genset, and yard fuel requisition orders with CEO -> MD approval workflow
 export const fuelApprovals = pgTable('fuel_approvals', {
   id: uuid('id').primaryKey().defaultRandom(),
   requestNumber: text('request_number').unique().notNull(),
@@ -2150,8 +2150,17 @@ export const fuelApprovals = pgTable('fuel_approvals', {
   fuelFilledLtrs: decimal('fuel_filled_ltrs', { precision: 10, scale: 2 }).notNull(),
   fuelSlipUrl: text('fuel_slip_url').notNull(),
   remarks: text('remarks'),
-  status: text('status').default('ed_pending').notNull(),
-  currentStage: text('current_stage').default('ed').notNull(),
+  status: text('status').default('ceo_pending').notNull(),
+  currentStage: text('current_stage').default('ceo').notNull(),
+
+  ceoApprovedBy: uuid('ceo_approved_by').references(() => users.id),
+  ceoApprovedByName: text('ceo_approved_by_name'),
+  ceoApprovedAt: timestamp('ceo_approved_at', { withTimezone: true }),
+  ceoRemarks: text('ceo_remarks'),
+  eaApprovedBy: uuid('ea_approved_by').references(() => users.id),
+  eaApprovedByName: text('ea_approved_by_name'),
+  eaApprovedAt: timestamp('ea_approved_at', { withTimezone: true }),
+  eaRemarks: text('ea_remarks'),
 
   edApprovedBy: uuid('ed_approved_by').references(() => users.id),
   edApprovedByName: text('ed_approved_by_name'),
@@ -2189,6 +2198,14 @@ export const fuelApprovals = pgTable('fuel_approvals', {
 export const fuelApprovalsRelations = relations(fuelApprovals, ({ one }) => ({
   submittedBy: one(users, {
     fields: [fuelApprovals.submittedById],
+    references: [users.id],
+  }),
+  ceoApprover: one(users, {
+    fields: [fuelApprovals.ceoApprovedBy],
+    references: [users.id],
+  }),
+  eaApprover: one(users, {
+    fields: [fuelApprovals.eaApprovedBy],
     references: [users.id],
   }),
   edApprover: one(users, {

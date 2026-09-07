@@ -546,7 +546,7 @@ export function FuelFormDialog({
           {/* Footer */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
             <span className="text-[11px] text-slate-400">
-              Approval track: ED → HR → MD
+              Approval track: Submit → CEO → EA → MD
             </span>
 
             <div className="flex items-center gap-2">
@@ -569,7 +569,7 @@ export function FuelFormDialog({
                     Submitting...
                   </>
                 ) : isEditing ? (
-                  'Re-Submit to ED'
+                  'Re-Submit for Approval'
                 ) : (
                   'Submit Fuel Order'
                 )}

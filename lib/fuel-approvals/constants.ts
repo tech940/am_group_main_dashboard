@@ -70,12 +70,16 @@ export function detectFuelType(vehicleText: string): FuelType | '' {
 }
 
 export const STATUS_LABELS: Record<FuelApprovalStatus, string> = {
+  ceo_pending: 'Awaiting CEO Approval',
+  ceo_on_hold: 'Held by CEO',
+  ea_pending: 'Awaiting EA Approval',
+  ea_on_hold: 'Held by EA',
+  md_pending: 'Awaiting MD Approval',
+  md_on_hold: 'Held by MD',
   ed_pending: 'Awaiting ED Approval',
   ed_on_hold: 'Held by ED',
   hr_pending: 'Awaiting HR Approval',
   hr_on_hold: 'Held by HR',
-  md_pending: 'Awaiting MD Approval',
-  md_on_hold: 'Held by MD',
   approved: 'Approved',
   rejected: 'Rejected',
   sent_back: 'Sent Back',
@@ -83,7 +87,7 @@ export const STATUS_LABELS: Record<FuelApprovalStatus, string> = {
 
 export const STAGE_STEPS = [
   { key: 'submission', label: 'Submission' },
-  { key: 'ed', label: 'ED Approval' },
-  { key: 'hr', label: 'HR Approval' },
+  { key: 'ceo', label: 'CEO Approval' },
+  { key: 'ea', label: 'EA Approval' },
   { key: 'md', label: 'MD Approval' },
 ] as const

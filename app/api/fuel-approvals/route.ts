@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { fuelApprovals } from '@/lib/db/schema'
-import { desc, sql } from 'drizzle-orm'
+import { desc } from 'drizzle-orm'
 import { generateFuelRequestNumber } from '@/lib/fuel-approvals/request-number'
 import type { FuelApprovalRecord } from '@/lib/fuel-approvals/types'
 
@@ -30,9 +30,9 @@ export async function GET(request: NextRequest) {
 
     const role = user.role.trim().toLowerCase()
     const isDeveloper = role === 'developer' || role === 'admin'
-    const isEd = role === 'ed'
-    const isHr = role === 'hr'
-    const isMd = role === 'md' || role === 'ceo'
+    const isCeo = role === 'ceo'
+    const isEa = role === 'ea' || role === 'eba'
+    const isMd = role === 'md'
 
     // Fetch all records for the brand (ordered by created_at DESC)
     const records = await db
@@ -41,8 +41,8 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(fuelApprovals.createdAt))
 
     // Compute counts
-    let edPendingCount = 0
-    let hrPendingCount = 0
+    let ceoPendingCount = 0
+    let eaPendingCount = 0
     let mdPendingCount = 0
     let approvedCount = 0
     let heldCount = 0
@@ -51,8 +51,8 @@ export async function GET(request: NextRequest) {
     let totalLitersApproved = 0
 
     for (const row of records) {
-      if (row.status === 'ed_pending') edPendingCount++
-      if (row.status === 'hr_pending') hrPendingCount++
+      if (row.status === 'ceo_pending' || row.status === 'ed_pending') ceoPendingCount++
+      if (row.status === 'ea_pending' || row.status === 'hr_pending') eaPendingCount++
       if (row.status === 'md_pending') mdPendingCount++
 
       if (row.status === 'approved') {
@@ -70,11 +70,11 @@ export async function GET(request: NextRequest) {
     // Role-specific pending count for current user
     let userPendingCount = 0
     if (isDeveloper) {
-      userPendingCount = edPendingCount + hrPendingCount + mdPendingCount
-    } else if (isEd) {
-      userPendingCount = edPendingCount
-    } else if (isHr) {
-      userPendingCount = hrPendingCount
+      userPendingCount = ceoPendingCount + eaPendingCount + mdPendingCount
+    } else if (isCeo) {
+      userPendingCount = ceoPendingCount
+    } else if (isEa) {
+      userPendingCount = eaPendingCount
     } else if (isMd) {
       userPendingCount = mdPendingCount
     } else {
@@ -91,18 +91,15 @@ export async function GET(request: NextRequest) {
       // Tab filter
       if (tab === 'pending') {
         if (isDeveloper) {
-          if (!['ed_pending', 'hr_pending', 'md_pending'].includes(row.status)) return false
-        } else if (isEd) {
-          // ED only ever sees ED pending
-          if (row.status !== 'ed_pending') return false
-        } else if (isHr) {
-          // HR only ever sees HR pending
-          if (row.status !== 'hr_pending') return false
+          if (!['ceo_pending', 'ea_pending', 'md_pending', 'ed_pending', 'hr_pending'].includes(row.status)) return false
+        } else if (isCeo) {
+          if (row.status !== 'ceo_pending' && row.status !== 'ed_pending') return false
+        } else if (isEa) {
+          if (row.status !== 'ea_pending' && row.status !== 'hr_pending') return false
         } else if (isMd) {
-          // MD only ever sees MD pending
           if (row.status !== 'md_pending') return false
         } else {
-          // Non-approvers have no pending approvals
+          // Non-approvers have no pending approvals in their inbox
           return false
         }
       } else if (tab === 'approved') {
@@ -140,9 +137,11 @@ export async function GET(request: NextRequest) {
       items: filtered as unknown as FuelApprovalRecord[],
       counts: {
         pending: userPendingCount,
-        edPending: edPendingCount,
-        hrPending: hrPendingCount,
+        ceoPending: ceoPendingCount,
+        eaPending: eaPendingCount,
         mdPending: mdPendingCount,
+        edPending: ceoPendingCount,
+        hrPending: eaPendingCount,
         all: records.length,
         approved: approvedCount,
         held: heldCount,
@@ -156,9 +155,11 @@ export async function GET(request: NextRequest) {
         fullName: user.fullName,
         email: user.email,
         isDeveloper,
-        canApproveEd: isEd || isDeveloper,
-        canApproveHr: isHr || isDeveloper,
+        canApproveCeo: isCeo || isDeveloper,
+        canApproveEa: isEa || isDeveloper,
         canApproveMd: isMd || isDeveloper,
+        canApproveEd: isCeo || isDeveloper,
+        canApproveHr: isEa || isDeveloper,
       },
     }, {
       headers: {
@@ -239,8 +240,8 @@ export async function POST(request: NextRequest) {
         fuelFilledLtrs: parsedLtrs.toFixed(2),
         fuelSlipUrl,
         remarks: remarks || null,
-        status: 'ed_pending',
-        currentStage: 'ed',
+        status: 'ceo_pending',
+        currentStage: 'ceo',
         submittedById: user.id,
         submittedByName: user.fullName,
         submittedByEmail: user.email,

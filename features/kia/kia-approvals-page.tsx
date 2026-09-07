@@ -58,9 +58,11 @@ import {
   Trash2,
   Layers,
   PieChart,
-  Tag
+  Tag,
+  Fuel
 } from 'lucide-react'
 import { KiaDiscountApprovalsPanel } from './kia-discount-approvals-panel'
+import { FuelApprovalsClient } from '@/features/fuel-approvals/fuel-approvals-client'
 import { KpiCard } from '@/components/ui/kpi-card'
 import { printPaymentOrder } from '@/lib/kia/print-payment-order'
 import { toast } from '@/hooks/use-toast'
@@ -376,8 +378,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const queryClient = useQueryClient()
   const effectiveRole = ['developer', 'admin'].includes(currentUser.role) ? 'md' : currentUser.role
 
-  // Top-level approval section switcher: 'payments' | 'discounts'
-  const [approvalSection, setApprovalSection] = useState<'payments' | 'discounts'>('payments')
+  // Top-level approval section switcher: 'payments' | 'discounts' | 'fuel'
+  const [approvalSection, setApprovalSection] = useState<'payments' | 'discounts' | 'fuel'>('payments')
 
   // Fast count query for discounts badge
   const discountSummaryQuery = useQuery({
@@ -398,6 +400,20 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const discountTotalCount = useMemo(() => {
     return (discountSummaryQuery.data?.rows || []).length
   }, [discountSummaryQuery.data?.rows])
+
+  // Fast count query for fuel approvals badge
+  const fuelSummaryQuery = useQuery({
+    queryKey: ['fuel-approvals-summary-badge'],
+    queryFn: async () => {
+      const res = await fetch('/api/fuel-approvals?tab=pending')
+      if (!res.ok) return { counts: { pending: 0, all: 0 } }
+      return res.json()
+    },
+    staleTime: 30000,
+  })
+
+  const fuelPendingCount = fuelSummaryQuery.data?.counts?.pending || 0
+  const fuelTotalCount = fuelSummaryQuery.data?.counts?.all || 0
 
   const [search, setSearch] = useState('')
   const [selectedLocation, setSelectedLocation] = useState('All')
@@ -2569,10 +2585,34 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 </span>
               ) : null}
             </button>
+            <button
+              type="button"
+              onClick={() => setApprovalSection('fuel')}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer',
+                approvalSection === 'fuel'
+                  ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-950/5'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              )}
+            >
+              <Fuel className="w-4 h-4 text-teal-700" />
+              <span>Fuel Approvals</span>
+              {fuelPendingCount > 0 ? (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-700 text-white shadow-2xs animate-pulse">
+                  {fuelPendingCount}
+                </span>
+              ) : fuelTotalCount > 0 ? (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700">
+                  {fuelTotalCount}
+                </span>
+              ) : null}
+            </button>
           </div>
         </div>
 
-        {approvalSection === 'discounts' ? (
+        {approvalSection === 'fuel' ? (
+          <FuelApprovalsClient currentUser={currentUser} embedded={true} />
+        ) : approvalSection === 'discounts' ? (
           <KiaDiscountApprovalsPanel currentUser={currentUser} />
         ) : (
           <>

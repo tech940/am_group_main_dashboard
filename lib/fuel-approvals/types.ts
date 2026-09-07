@@ -14,22 +14,26 @@ export type FuelRequiredFor =
 export type FuelType = 'PETROL' | 'DIESEL'
 
 export type FuelApprovalStatus =
+  | 'ceo_pending'
+  | 'ceo_on_hold'
+  | 'ea_pending'
+  | 'ea_on_hold'
+  | 'md_pending'
+  | 'md_on_hold'
   | 'ed_pending'
   | 'ed_on_hold'
   | 'hr_pending'
   | 'hr_on_hold'
-  | 'md_pending'
-  | 'md_on_hold'
   | 'approved'
   | 'rejected'
   | 'sent_back'
 
-export type FuelApprovalStage = 'ed' | 'hr' | 'md' | 'completed' | 'rejected'
+export type FuelApprovalStage = 'ceo' | 'ea' | 'md' | 'completed' | 'rejected' | 'ed' | 'hr'
 
 export interface FuelApprovalHistoryItem {
   id: string
   action: 'SUBMIT' | 'APPROVE' | 'HOLD' | 'SEND_BACK' | 'REJECT' | 'RESUBMIT'
-  stage: 'ed' | 'hr' | 'md' | 'submitter'
+  stage: 'ceo' | 'ea' | 'md' | 'submitter' | 'ed' | 'hr'
   userId: string
   userName: string
   userEmail: string
@@ -55,6 +59,16 @@ export interface FuelApprovalRecord {
   remarks: string | null
   status: FuelApprovalStatus
   currentStage: FuelApprovalStage
+
+  ceoApprovedBy?: string | null
+  ceoApprovedByName?: string | null
+  ceoApprovedAt?: string | null
+  ceoRemarks?: string | null
+
+  eaApprovedBy?: string | null
+  eaApprovedByName?: string | null
+  eaApprovedAt?: string | null
+  eaRemarks?: string | null
 
   edApprovedBy?: string | null
   edApprovedByName?: string | null

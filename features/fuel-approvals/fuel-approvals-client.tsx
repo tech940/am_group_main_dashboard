@@ -18,8 +18,6 @@ import {
   RotateCcw,
   CornerUpLeft,
   Paperclip,
-  ExternalLink,
-  ChevronRight,
   X,
   FileText,
   Loader2,
@@ -27,8 +25,6 @@ import {
   Fuel,
   Wrench,
   Undo2,
-  AlertTriangle,
-  Layers,
   Calendar,
   Eye,
 } from 'lucide-react'
@@ -60,9 +56,10 @@ interface FuelApprovalsClientProps {
     fullName: string
     email: string
   }
+  embedded?: boolean
 }
 
-export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
+export function FuelApprovalsClient({ currentUser, embedded = false }: FuelApprovalsClientProps) {
   const queryClient = useQueryClient()
   const isDeveloper = currentUser.role?.toLowerCase() === 'developer' || currentUser.role?.toLowerCase() === 'admin'
 
@@ -105,8 +102,8 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
         items: FuelApprovalRecord[]
         counts: {
           pending: number
-          edPending: number
-          hrPending: number
+          ceoPending: number
+          eaPending: number
           mdPending: number
           all: number
           approved: number
@@ -125,8 +122,8 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
   const rawItems = data?.items || []
   const counts = data?.counts || {
     pending: 0,
-    edPending: 0,
-    hrPending: 0,
+    ceoPending: 0,
+    eaPending: 0,
     mdPending: 0,
     all: 0,
     approved: 0,
@@ -205,7 +202,7 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
 
       toast({
         title: 'Action completed',
-        description: action === 'RESET' ? 'Record reset to ED pending for testing.' : `Request marked as ${action.toLowerCase()} successfully.`,
+        description: action === 'RESET' ? 'Record reset to CEO pending for testing.' : `Request marked as ${action.toLowerCase()} successfully.`,
         variant: 'success',
       })
 
@@ -286,22 +283,31 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
     const stage = record.currentStage
     const status = record.status
 
-    if (stage === 'ed' && (status === 'ed_pending' || status === 'ed_on_hold')) {
-      return role === 'ed'
+    if (stage === 'ceo' && (status === 'ceo_pending' || status === 'ceo_on_hold')) {
+      return role === 'ceo'
     }
-    if (stage === 'hr' && (status === 'hr_pending' || status === 'hr_on_hold')) {
-      return role === 'hr'
+    if (stage === 'ea' && (status === 'ea_pending' || status === 'ea_on_hold')) {
+      return role === 'ea' || role === 'eba'
     }
     if (stage === 'md' && (status === 'md_pending' || status === 'md_on_hold')) {
-      return role === 'md' || role === 'ceo'
+      return role === 'md'
+    }
+    // Legacy fallback
+    if (stage === 'ed' && (status === 'ed_pending' || status === 'ed_on_hold')) {
+      return role === 'ed' || role === 'ceo'
+    }
+    if (stage === 'hr' && (status === 'hr_pending' || status === 'hr_on_hold')) {
+      return role === 'hr' || role === 'ea' || role === 'eba'
     }
     return false
   }
 
   const getStageActionLabel = (stage: string) => {
-    if (stage === 'ed') return 'Approve (ED)'
-    if (stage === 'hr') return 'Approve (HR)'
+    if (stage === 'ceo') return 'Approve (CEO)'
+    if (stage === 'ea') return 'Approve (EA)'
     if (stage === 'md') return 'Approve (MD)'
+    if (stage === 'ed') return 'Approve (CEO)'
+    if (stage === 'hr') return 'Approve (EA)'
     return 'Approve'
   }
 
@@ -408,24 +414,28 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
             <RotateCcw className="w-3.5 h-3.5 mr-1 text-amber-600" /> Sent Back
           </span>
         )
+      case 'ceo_on_hold':
+      case 'ea_on_hold':
+      case 'md_on_hold':
       case 'ed_on_hold':
       case 'hr_on_hold':
-      case 'md_on_hold':
         return (
           <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
             <PauseCircle className="w-3.5 h-3.5 mr-1 text-amber-600" /> On Hold
           </span>
         )
+      case 'ceo_pending':
       case 'ed_pending':
         return (
           <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
-            <Clock className="w-3.5 h-3.5 mr-1 text-blue-600" /> ED Review
+            <Clock className="w-3.5 h-3.5 mr-1 text-blue-600" /> CEO Review
           </span>
         )
+      case 'ea_pending':
       case 'hr_pending':
         return (
           <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-100 text-purple-800 border border-purple-300">
-            <Clock className="w-3.5 h-3.5 mr-1 text-purple-600" /> HR Review
+            <Clock className="w-3.5 h-3.5 mr-1 text-purple-600" /> EA Review
           </span>
         )
       case 'md_pending':
@@ -443,781 +453,751 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
     }
   }
 
-  return (
-    <MainLayout
-      title="Fuel Approvals"
-      subtitle="Requisition, slip verification and multi-stage workflow (ED → HR → MD)"
-    >
-      <div className="space-y-5 max-w-full pb-16">
-        {/* Workspace Action Toolbar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-base font-bold text-slate-800">
-              Dealership Fuel Orders
-            </h2>
-            <span className="text-xs font-bold text-teal-800 bg-teal-100 px-2.5 py-0.5 rounded-full border border-teal-200">
-              {counts.all} orders
+  const mainContent = (
+    <div className="space-y-5 max-w-full pb-16">
+      {/* Workspace Action Toolbar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <h2 className="text-base font-bold text-slate-800">
+            Dealership Fuel Orders
+          </h2>
+          <span className="text-xs font-bold text-teal-800 bg-teal-100 px-2.5 py-0.5 rounded-full border border-teal-200">
+            {counts.all} orders
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            className="h-9 px-3 rounded-xl border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
+            title="Refresh"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin text-teal-700' : 'text-slate-600'}`} />
+          </Button>
+
+          <Button
+            onClick={() => {
+              setEditRecord(null)
+              setFormDialogOpen(true)
+            }}
+            className="h-9 px-4 rounded-xl text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white shadow-2xs cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            Fill Fuel Form
+          </Button>
+        </div>
+      </div>
+
+      {/* Executive Metric Tiles */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+            Pending My Action
+          </span>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-slate-800 tabular-nums">
+              {counts.pending}
             </span>
           </div>
+          <span className="text-[11px] text-slate-400 mt-1 block font-medium">Awaiting your approval</span>
+        </div>
 
+        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-emerald-200 transition-colors">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+            Approved Fuel
+          </span>
+          <div className="mt-1.5 flex items-baseline gap-1.5">
+            <span className="text-2xl font-black text-emerald-700 tabular-nums">
+              {counts.totalLitersApproved}
+            </span>
+            <span className="text-xs font-bold text-emerald-600">Ltrs</span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block font-medium">Total dispensed &amp; authorized</span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+            Completed Orders
+          </span>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-slate-800 tabular-nums">
+              {counts.approved}
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block font-medium">MD final approved</span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+            In Pipeline
+          </span>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-slate-800 tabular-nums">
+              {counts.all - counts.approved - counts.rejected}
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block font-medium">Under active review</span>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="border-b border-slate-200">
+        <div className="flex items-center gap-6 text-xs sm:text-sm font-semibold overflow-x-auto whitespace-nowrap scrollbar-none pb-2">
+          <button
+            onClick={() => {
+              setCurrentTab('pending')
+              setSelectedIds(new Set())
+            }}
+            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
+              currentTab === 'pending'
+                ? 'text-teal-800 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>Pending My Approval</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              counts.pending > 0
+                ? 'bg-teal-700 text-white'
+                : 'bg-slate-100 text-slate-600'
+            }`}>
+              {counts.pending}
+            </span>
+            {currentTab === 'pending' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              setCurrentTab('all')
+              setSelectedIds(new Set())
+            }}
+            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
+              currentTab === 'all'
+                ? 'text-teal-800 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>All Requisitions</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+              {counts.all}
+            </span>
+            {currentTab === 'all' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              setCurrentTab('approved')
+              setSelectedIds(new Set())
+            }}
+            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
+              currentTab === 'approved'
+                ? 'text-teal-800 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>Approved</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+              {counts.approved}
+            </span>
+            {currentTab === 'approved' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              setCurrentTab('held')
+              setSelectedIds(new Set())
+            }}
+            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
+              currentTab === 'held'
+                ? 'text-teal-800 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>On Hold</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+              {counts.held}
+            </span>
+            {currentTab === 'held' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              setCurrentTab('sent_back')
+              setSelectedIds(new Set())
+            }}
+            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
+              currentTab === 'sent_back'
+                ? 'text-teal-800 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>Sent Back</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              counts.sentBack > 0
+                ? 'bg-amber-600 text-white'
+                : 'bg-slate-100 text-slate-600'
+            }`}>
+              {counts.sentBack}
+            </span>
+            {currentTab === 'sent_back' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              setCurrentTab('rejected')
+              setSelectedIds(new Set())
+            }}
+            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
+              currentTab === 'rejected'
+                ? 'text-teal-800 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>Rejected</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+              {counts.rejected}
+            </span>
+            {currentTab === 'rejected' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Filter & Search Bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+        <div className="relative sm:col-span-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Input
+            placeholder="Search order #, reg, VIN..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 h-9 text-xs rounded-xl bg-white border-slate-200"
+          />
+        </div>
+
+        <select
+          value={selectedLocation}
+          onChange={(e) => setSelectedLocation(e.target.value)}
+          className="h-9 px-3 text-xs rounded-xl bg-white border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-600"
+        >
+          <option value="ALL">All Dealership Locations</option>
+          {FUEL_LOCATIONS.map((loc) => (
+            <option key={loc.value} value={loc.value}>
+              {loc.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={selectedPurpose}
+          onChange={(e) => setSelectedPurpose(e.target.value)}
+          className="h-9 px-3 text-xs rounded-xl bg-white border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-600"
+        >
+          <option value="ALL">All Requisition Purposes</option>
+          {FUEL_REQUIRED_FOR_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={selectedFuelType}
+          onChange={(e) => setSelectedFuelType(e.target.value)}
+          className="h-9 px-3 text-xs rounded-xl bg-white border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-600"
+        >
+          <option value="ALL">All Fuel Types (Petrol / Diesel)</option>
+          <option value="PETROL">Petrol</option>
+          <option value="DIESEL">Diesel</option>
+        </select>
+      </div>
+
+      {/* Floating Multi-Select Bulk Actions Bar */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 p-3 bg-white/95 backdrop-blur-md rounded-2xl border border-slate-300 shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              className="h-9 px-3 rounded-xl border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
-              title="Refresh"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin text-teal-700' : 'text-slate-600'}`} />
-            </Button>
-
-            <Button
-              onClick={() => {
-                setEditRecord(null)
-                setFormDialogOpen(true)
-              }}
-              className="h-9 px-4 rounded-xl text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white shadow-2xs cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              Fill Fuel Form
-            </Button>
-          </div>
-        </div>
-
-        {/* Executive Metric Tiles */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              Pending My Action
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-700 text-xs font-black text-white">
+              {selectedIds.size}
             </span>
-            <div className="mt-1.5 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-800 tabular-nums">
-                {counts.pending}
-              </span>
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block font-medium">Awaiting your approval</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-emerald-200 transition-colors">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              Approved Fuel
+            <span className="text-xs font-bold text-slate-800">
+              {selectedIds.size} {selectedIds.size === 1 ? 'order' : 'orders'} selected
             </span>
-            <div className="mt-1.5 flex items-baseline gap-1.5">
-              <span className="text-2xl font-black text-emerald-700 tabular-nums">
-                {counts.totalLitersApproved}
-              </span>
-              <span className="text-xs font-bold text-emerald-600">Ltrs</span>
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block font-medium">Total dispensed &amp; authorized</span>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              Completed Orders
-            </span>
-            <div className="mt-1.5 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-800 tabular-nums">
-                {counts.approved}
-              </span>
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block font-medium">MD final approved</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              In Pipeline
-            </span>
-            <div className="mt-1.5 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-800 tabular-nums">
-                {counts.all - counts.approved - counts.rejected}
-              </span>
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block font-medium">Under active review</span>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="border-b border-slate-200">
-          <div className="flex items-center gap-6 text-xs sm:text-sm font-semibold overflow-x-auto whitespace-nowrap scrollbar-none pb-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
-              onClick={() => {
-                setCurrentTab('pending')
-                setSelectedIds(new Set())
-              }}
-              className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-                currentTab === 'pending'
-                  ? 'text-teal-800 font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
+              type="button"
+              disabled={actionLoading}
+              onClick={() => handleBulkAction('APPROVE')}
+              style={{ backgroundColor: '#055B65', color: '#ffffff' }}
+              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
             >
-              <span>Pending My Approval</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                counts.pending > 0
-                  ? 'bg-teal-700 text-white'
-                  : 'bg-slate-100 text-slate-600'
-              }`}>
-                {counts.pending}
-              </span>
-              {currentTab === 'pending' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
+              {actionLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Check className="h-3.5 w-3.5 stroke-[2.5]" />
               )}
+              <span>Approve All Selected</span>
             </button>
 
             <button
-              onClick={() => {
-                setCurrentTab('all')
-                setSelectedIds(new Set())
-              }}
-              className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-                currentTab === 'all'
-                  ? 'text-teal-800 font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
+              type="button"
+              disabled={actionLoading}
+              onClick={() => handleBulkAction('SEND_BACK')}
+              style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
+              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
             >
-              <span>All Requisitions</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-                {counts.all}
-              </span>
-              {currentTab === 'all' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-              )}
+              <CornerUpLeft className="h-3.5 w-3.5" />
+              <span>Send Back</span>
             </button>
 
             <button
-              onClick={() => {
-                setCurrentTab('approved')
-                setSelectedIds(new Set())
-              }}
-              className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-                currentTab === 'approved'
-                  ? 'text-teal-800 font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
+              type="button"
+              disabled={actionLoading}
+              onClick={() => handleBulkAction('REJECT')}
+              style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
+              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
             >
-              <span>Approved</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-                {counts.approved}
-              </span>
-              {currentTab === 'approved' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-              )}
+              <X className="h-3.5 w-3.5" />
+              <span>Reject</span>
             </button>
 
             <button
-              onClick={() => {
-                setCurrentTab('held')
-                setSelectedIds(new Set())
-              }}
-              className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-                currentTab === 'held'
-                  ? 'text-teal-800 font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
+              type="button"
+              disabled={actionLoading}
+              onClick={() => handleBulkAction('HOLD')}
+              style={{ backgroundColor: '#475569', color: '#ffffff' }}
+              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
             >
-              <span>On Hold</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-                {counts.held}
-              </span>
-              {currentTab === 'held' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-              )}
+              <Clock className="h-3.5 w-3.5" />
+              <span>Hold</span>
             </button>
 
-            <button
-              onClick={() => {
-                setCurrentTab('sent_back')
-                setSelectedIds(new Set())
-              }}
-              className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-                currentTab === 'sent_back'
-                  ? 'text-teal-800 font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <span>Sent Back</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                counts.sentBack > 0
-                  ? 'bg-amber-600 text-white'
-                  : 'bg-slate-100 text-slate-600'
-              }`}>
-                {counts.sentBack}
-              </span>
-              {currentTab === 'sent_back' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-              )}
-            </button>
+            {isDeveloper && (
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => handleBulkAction('RESET')}
+                style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
+                className="flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
 
             <button
-              onClick={() => {
-                setCurrentTab('rejected')
-                setSelectedIds(new Set())
-              }}
-              className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-                currentTab === 'rejected'
-                  ? 'text-teal-800 font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="h-8 px-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer border-none bg-transparent"
             >
-              <span>Rejected</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-                {counts.rejected}
-              </span>
-              {currentTab === 'rejected' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-              )}
+              Cancel
             </button>
           </div>
         </div>
+      )}
 
-        {/* Filter Bar */}
-        <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-          <div className="flex flex-col md:flex-row items-center gap-2.5">
-            <div className="relative flex-1 w-full">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-3" />
-              <Input
-                type="text"
-                placeholder="Search by vehicle, VIN, submitter or request #..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 text-xs rounded-xl h-9 border-slate-200"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+      {/* Content Section: Table & Mobile Cards */}
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center p-16 bg-white rounded-2xl border border-slate-200">
+          <Loader2 className="w-6 h-6 animate-spin text-teal-700 mb-2" />
+          <span className="text-xs font-semibold text-slate-600">Loading fuel orders...</span>
+        </div>
+      ) : items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center p-16 bg-white rounded-2xl border border-slate-200 text-center">
+          <Fuel className="w-8 h-8 text-slate-300 mb-2" />
+          <p className="text-sm font-bold text-slate-800">
+            {currentTab === 'pending' ? 'No orders awaiting your approval' : 'No fuel records found'}
+          </p>
+          <p className="text-xs text-slate-500 mt-1 max-w-sm">
+            {currentTab === 'pending'
+              ? 'When dealership staff submit fuel requests requiring your review, they will show up here.'
+              : 'No requests match your selected filters. Try changing or resetting the filters.'}
+          </p>
+        </div>
+      ) : (
+        <div>
+          {/* Mobile View: High-contrast cards */}
+          <div className="grid grid-cols-1 gap-3 sm:hidden">
+            {items.map((record) => {
+              const canAct = canActOnRecord(record)
+              const isActionBusy = inlineActionId === record.id && actionLoading
+              const isSelected = selectedIds.has(record.id)
+
+              return (
+                <div
+                  key={record.id}
+                  onClick={() => setSelectedRecord(record)}
+                  className={`p-4 rounded-2xl bg-white border shadow-2xs space-y-3 cursor-pointer transition-colors ${
+                    isSelected ? 'border-teal-500 bg-teal-50/20' : 'border-slate-200 hover:border-slate-300'
+                  }`}
                 >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-              <select
-                value={selectedLocation}
-                onChange={(e) => setSelectedLocation(e.target.value)}
-                className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 cursor-pointer"
-              >
-                <option value="ALL">All Dealerships</option>
-                {FUEL_LOCATIONS.map((loc) => (
-                  <option key={loc.value} value={loc.value}>
-                    {loc.label}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={selectedPurpose}
-                onChange={(e) => setSelectedPurpose(e.target.value)}
-                className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 cursor-pointer"
-              >
-                <option value="ALL">All Purposes</option>
-                {FUEL_REQUIRED_FOR_OPTIONS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={selectedFuelType}
-                onChange={(e) => setSelectedFuelType(e.target.value)}
-                className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 cursor-pointer"
-              >
-                <option value="ALL">All Fuel Types</option>
-                <option value="PETROL">Petrol</option>
-                <option value="DIESEL">Diesel</option>
-              </select>
-
-              {(selectedLocation !== 'ALL' || selectedPurpose !== 'ALL' || selectedFuelType !== 'ALL' || searchQuery) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedLocation('ALL')
-                    setSelectedPurpose('ALL')
-                    setSelectedFuelType('ALL')
-                    setSearchQuery('')
-                  }}
-                  className="h-9 px-2 text-xs text-slate-500 hover:text-slate-900 cursor-pointer"
-                >
-                  Reset
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Floating Bulk Action Bar */}
-        {selectedIds.size > 0 && (
-          <div className="p-3 bg-teal-50 border-2 border-teal-400 rounded-2xl shadow-lg flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-teal-700 text-white font-bold text-xs flex items-center justify-center">
-                {selectedIds.size}
-              </span>
-              <span className="text-xs font-bold text-teal-900">
-                Orders Selected
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={actionLoading}
-                onClick={() => handleBulkAction('APPROVE')}
-                style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
-              >
-                {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5 stroke-[2.5]" />}
-                <span>Approve</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={actionLoading}
-                onClick={() => setBulkPromptAction('SEND_BACK')}
-                style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
-                className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
-              >
-                <CornerUpLeft className="h-3.5 w-3.5" />
-                <span>Send Back</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={actionLoading}
-                onClick={() => setBulkPromptAction('REJECT')}
-                style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
-                className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
-              >
-                <X className="h-3.5 w-3.5" />
-                <span>Reject</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={actionLoading}
-                onClick={() => handleBulkAction('HOLD')}
-                style={{ backgroundColor: '#475569', color: '#ffffff' }}
-                className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
-              >
-                <Clock className="h-3.5 w-3.5" />
-                <span>Hold</span>
-              </button>
-
-              {isDeveloper && (
-                <button
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => handleBulkAction('RESET')}
-                  style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
-                  className="flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
-                >
-                  <Undo2 className="h-3.5 w-3.5" />
-                  <span>Reset</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setSelectedIds(new Set())}
-                className="h-8 px-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer border-none bg-transparent"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Content Section: Table & Mobile Cards */}
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center p-16 bg-white rounded-2xl border border-slate-200">
-            <Loader2 className="w-6 h-6 animate-spin text-teal-700 mb-2" />
-            <span className="text-xs font-semibold text-slate-600">Loading fuel orders...</span>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-16 bg-white rounded-2xl border border-slate-200 text-center">
-            <Fuel className="w-8 h-8 text-slate-300 mb-2" />
-            <p className="text-sm font-bold text-slate-800">
-              {currentTab === 'pending' ? 'No orders awaiting your approval' : 'No fuel records found'}
-            </p>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm">
-              {currentTab === 'pending'
-                ? 'When dealership staff submit fuel requests requiring your review, they will show up here.'
-                : 'No requests match your selected filters. Try changing or resetting the filters.'}
-            </p>
-          </div>
-        ) : (
-          <div>
-            {/* Mobile View: High-contrast, tactile cards */}
-            <div className="grid grid-cols-1 gap-3 sm:hidden">
-              {items.map((record) => {
-                const canAct = canActOnRecord(record)
-                const isActionBusy = inlineActionId === record.id && actionLoading
-                const isSelected = selectedIds.has(record.id)
-
-                return (
-                  <div
-                    key={record.id}
-                    onClick={() => setSelectedRecord(record)}
-                    className={`p-4 rounded-2xl bg-white border shadow-2xs space-y-3 cursor-pointer transition-colors ${
-                      isSelected ? 'border-teal-500 bg-teal-50/20' : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {}}
-                          onClick={(e) => toggleSelectRow(record.id, e)}
-                          className="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 cursor-pointer"
-                        />
-                        <span className="text-xs font-mono font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
-                          {record.requestNumber}
-                        </span>
-                      </div>
-                      {getStatusBadge(record.status)}
-                    </div>
-
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 line-clamp-1">
-                        {record.vehRegNo}
-                      </h4>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        {getLocationBadge(record.location)}
-                        {getPurposeBadge(record.fuelRequiredFor)}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-black text-slate-900">
-                          {record.fuelFilledLtrs} L
-                        </span>
-                        {getFuelTypeTag(record.fuelType)}
-                      </div>
-
-                      <span className="text-[11px] text-slate-600 font-semibold flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-slate-400" />
-                        {istDate(record.fuelFilledDate)}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}}
+                        onClick={(e) => toggleSelectRow(record.id, e)}
+                        className="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 cursor-pointer"
+                      />
+                      <span className="text-xs font-mono font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
+                        {record.requestNumber}
                       </span>
                     </div>
+                    {getStatusBadge(record.status)}
+                  </div>
 
-                    {/* All Buttons Visible on Mobile */}
-                    <div
-                      className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {canAct && record.status !== 'approved' && record.status !== 'rejected' && (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isActionBusy}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleStageAction(record.id, 'APPROVE')
-                            }}
-                            style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                            className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
-                          >
-                            {isActionBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
-                            <span>{getStageActionLabel(record.currentStage)}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isActionBusy}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleStageAction(record.id, 'SEND_BACK')
-                            }}
-                            style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
-                            className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
-                          >
-                            <CornerUpLeft className="w-3.5 h-3.5" />
-                            <span>Send Back</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isActionBusy}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleStageAction(record.id, 'REJECT')
-                            }}
-                            style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
-                            className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            <span>Reject</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isActionBusy}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleStageAction(record.id, 'HOLD')
-                            }}
-                            style={{ backgroundColor: '#475569', color: '#ffffff' }}
-                            className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
-                          >
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>Hold</span>
-                          </button>
-                        </>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (record.fuelSlipUrl) window.open(record.fuelSlipUrl, '_blank')
-                          else setSelectedRecord(record)
-                        }}
-                        style={{ backgroundColor: '#ffffff', color: '#334155' }}
-                        className="h-8 px-2.5 rounded-xl text-xs font-bold border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 cursor-pointer ml-auto flex items-center gap-1 shadow-xs"
-                      >
-                        <Paperclip className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Slip</span>
-                      </button>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 line-clamp-1">
+                      {record.vehRegNo}
+                    </h4>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {getLocationBadge(record.location)}
+                      {getPurposeBadge(record.fuelRequiredFor)}
                     </div>
                   </div>
-                )
-              })}
-            </div>
 
-            {/* Desktop View: Colorful, high-craft table with all action buttons visible */}
-            <div className="hidden sm:block overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs fuel-approvals-clean-table">
-                  <thead className="border-b border-slate-200">
-                    <tr>
-                      <th className="py-3 px-3 w-10">
-                        <input
-                          type="checkbox"
-                          checked={isAllSelected}
-                          ref={(el) => {
-                            if (el) el.indeterminate = isSomeSelected
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-black text-slate-900">
+                        {record.fuelFilledLtrs} L
+                      </span>
+                      {getFuelTypeTag(record.fuelType)}
+                    </div>
+
+                    <span className="text-[11px] text-slate-600 font-semibold flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-slate-400" />
+                      {istDate(record.fuelFilledDate)}
+                    </span>
+                  </div>
+
+                  {/* All Buttons Visible on Mobile */}
+                  <div
+                    className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {canAct && record.status !== 'approved' && record.status !== 'rejected' && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={isActionBusy}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStageAction(record.id, 'APPROVE')
                           }}
-                          onChange={toggleSelectAll}
-                          className="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 cursor-pointer"
-                        />
-                      </th>
-                      <th className="py-3 px-3">Request #</th>
-                      <th className="py-3 px-3">Vehicle / Equipment</th>
-                      <th className="py-3 px-3">VIN / Chassis</th>
-                      <th className="py-3 px-3">Location</th>
-                      <th className="py-3 px-3">Purpose</th>
-                      <th className="py-3 px-3">Quantity</th>
-                      <th className="py-3 px-3">Fill Date</th>
-                      <th className="py-3 px-3">Submitter</th>
-                      <th className="py-3 px-3">Stage Status</th>
-                      <th className="py-3 px-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {items.map((record) => {
-                      const canAct = canActOnRecord(record)
-                      const isActionBusy = inlineActionId === record.id && actionLoading
-                      const isSelected = selectedIds.has(record.id)
-
-                      return (
-                        <tr
-                          key={record.id}
-                          onClick={() => setSelectedRecord(record)}
-                          className={`hover:bg-teal-50/30 transition-colors cursor-pointer ${
-                            isSelected ? 'bg-teal-50/40' : ''
-                          }`}
+                          style={{ backgroundColor: '#055B65', color: '#ffffff' }}
+                          className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
                         >
-                          <td
-                            className="py-3 px-3 w-10"
+                          {isActionBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+                          <span>{getStageActionLabel(record.currentStage)}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isActionBusy}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStageAction(record.id, 'SEND_BACK')
+                          }}
+                          style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
+                          className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                        >
+                          <CornerUpLeft className="w-3.5 h-3.5" />
+                          <span>Send Back</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isActionBusy}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStageAction(record.id, 'REJECT')
+                          }}
+                          style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
+                          className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Reject</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isActionBusy}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStageAction(record.id, 'HOLD')
+                          }}
+                          style={{ backgroundColor: '#475569', color: '#ffffff' }}
+                          className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>Hold</span>
+                        </button>
+                      </>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (record.fuelSlipUrl) window.open(record.fuelSlipUrl, '_blank')
+                        else setSelectedRecord(record)
+                      }}
+                      style={{ backgroundColor: '#ffffff', color: '#334155' }}
+                      className="h-8 px-2.5 rounded-xl text-xs font-bold border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 cursor-pointer ml-auto flex items-center gap-1 shadow-xs"
+                    >
+                      <Paperclip className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Slip</span>
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Desktop View: Clean executive table */}
+          <div className="hidden sm:block overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs fuel-approvals-clean-table">
+                <thead className="border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = isSomeSelected
+                        }}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 cursor-pointer"
+                      />
+                    </th>
+                    <th className="py-3 px-3">Request #</th>
+                    <th className="py-3 px-3">Vehicle / Equipment</th>
+                    <th className="py-3 px-3">VIN / Chassis</th>
+                    <th className="py-3 px-3">Location</th>
+                    <th className="py-3 px-3">Purpose</th>
+                    <th className="py-3 px-3">Quantity</th>
+                    <th className="py-3 px-3">Fill Date</th>
+                    <th className="py-3 px-3">Submitter</th>
+                    <th className="py-3 px-3">Stage Status</th>
+                    <th className="py-3 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {items.map((record) => {
+                    const canAct = canActOnRecord(record)
+                    const isActionBusy = inlineActionId === record.id && actionLoading
+                    const isSelected = selectedIds.has(record.id)
+
+                    return (
+                      <tr
+                        key={record.id}
+                        onClick={() => setSelectedRecord(record)}
+                        className={`hover:bg-teal-50/30 transition-colors cursor-pointer ${
+                          isSelected ? 'bg-teal-50/40' : ''
+                        }`}
+                      >
+                        <td
+                          className="py-3 px-3 w-10"
+                          onClick={(e) => toggleSelectRow(record.id, e)}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
                             onClick={(e) => toggleSelectRow(record.id, e)}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => {}}
-                              onClick={(e) => toggleSelectRow(record.id, e)}
-                              className="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 cursor-pointer"
-                            />
-                          </td>
+                            className="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 cursor-pointer"
+                          />
+                        </td>
 
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <span className="font-mono font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md hover:underline">
-                              {record.requestNumber}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="font-mono font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md hover:underline">
+                            {record.requestNumber}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 font-bold text-slate-900 max-w-[220px] truncate">
+                          {record.vehRegNo}
+                        </td>
+
+                        <td className="py-3 px-3 font-mono text-slate-700">
+                          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[11px] font-semibold">
+                            {record.vinNo}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          {getLocationBadge(record.location)}
+                        </td>
+
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          {getPurposeBadge(record.fuelRequiredFor)}
+                        </td>
+
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-black text-slate-900 text-xs">
+                              {record.fuelFilledLtrs} L
                             </span>
-                          </td>
+                            {getFuelTypeTag(record.fuelType)}
+                          </div>
+                        </td>
 
-                          <td className="py-3 px-3 font-bold text-slate-900 max-w-[220px] truncate">
-                            {record.vehRegNo}
-                          </td>
+                        <td className="py-3 px-3 text-slate-700 whitespace-nowrap font-medium">
+                          {istDate(record.fuelFilledDate)}
+                        </td>
 
-                          <td className="py-3 px-3 font-mono text-slate-700">
-                            <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[11px] font-semibold">
-                              {record.vinNo}
-                            </span>
-                          </td>
-
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            {getLocationBadge(record.location)}
-                          </td>
-
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            {getPurposeBadge(record.fuelRequiredFor)}
-                          </td>
-
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-black text-slate-900 text-xs">
-                                {record.fuelFilledLtrs} L
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-teal-100 text-teal-800 font-bold text-[10px] flex items-center justify-center shrink-0">
+                              {record.submittedByName?.charAt(0).toUpperCase() || 'U'}
+                            </div>
+                            <div>
+                              <span className="font-bold text-slate-900 block text-xs">
+                                {record.submittedByName}
                               </span>
-                              {getFuelTypeTag(record.fuelType)}
+                              <span className="text-[10px] text-slate-400 block">
+                                {record.submittedByEmail}
+                              </span>
                             </div>
-                          </td>
+                          </div>
+                        </td>
 
-                          <td className="py-3 px-3 text-slate-700 whitespace-nowrap font-medium">
-                            {istDate(record.fuelFilledDate)}
-                          </td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          {getStatusBadge(record.status)}
+                        </td>
 
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-full bg-teal-100 text-teal-800 font-bold text-[10px] flex items-center justify-center shrink-0">
-                                {record.submittedByName?.charAt(0).toUpperCase() || 'U'}
-                              </div>
-                              <div>
-                                <span className="font-bold text-slate-900 block text-xs">
-                                  {record.submittedByName}
-                                </span>
-                                <span className="text-[10px] text-slate-400 block">
-                                  {record.submittedByEmail}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            {getStatusBadge(record.status)}
-                          </td>
-
-                          {/* ALL ACTION BUTTONS DIRECTLY VISIBLE ON ROW */}
-                          <td
-                            className="py-3 px-3 text-right whitespace-nowrap"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className="flex items-center justify-end gap-1">
-                              {canAct && record.status !== 'approved' && record.status !== 'rejected' ? (
-                                <>
-                                  {/* 1. APPROVE BUTTON */}
-                                  <button
-                                    type="button"
-                                    disabled={isActionBusy}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleStageAction(record.id, 'APPROVE')
-                                    }}
-                                    style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                                    className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
-                                    title={`Approve request at ${record.currentStage.toUpperCase()} stage`}
-                                  >
-                                    {isActionBusy ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      <Check className="w-3 h-3 stroke-[2.5]" />
-                                    )}
-                                    <span>{getStageActionLabel(record.currentStage)}</span>
-                                  </button>
-
-                                  {/* 2. SEND BACK BUTTON */}
-                                  <button
-                                    type="button"
-                                    disabled={isActionBusy}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleStageAction(record.id, 'SEND_BACK')
-                                    }}
-                                    style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
-                                    className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
-                                    title="Send Back to Submitter for Revision"
-                                  >
-                                    <CornerUpLeft className="w-3 h-3" />
-                                    <span>Send Back</span>
-                                  </button>
-
-                                  {/* 3. REJECT BUTTON */}
-                                  <button
-                                    type="button"
-                                    disabled={isActionBusy}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleStageAction(record.id, 'REJECT')
-                                    }}
-                                    style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
-                                    className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
-                                    title="Reject / Deny Request"
-                                  >
-                                    <X className="w-3 h-3" />
-                                    <span>Reject</span>
-                                  </button>
-
-                                  {/* 4. HOLD BUTTON */}
-                                  <button
-                                    type="button"
-                                    disabled={isActionBusy}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleStageAction(record.id, 'HOLD')
-                                    }}
-                                    style={{ backgroundColor: '#475569', color: '#ffffff' }}
-                                    className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
-                                    title="Place order on hold"
-                                  >
-                                    <Clock className="w-3 h-3" />
-                                    <span>Hold</span>
-                                  </button>
-
-                                  {/* 5. SLIP BUTTON */}
-                                  <button
-                                    type="button"
-                                    title="View Fuel Slip"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      if (record.fuelSlipUrl) window.open(record.fuelSlipUrl, '_blank')
-                                      else setSelectedRecord(record)
-                                    }}
-                                    style={{ backgroundColor: '#ffffff', color: '#334155' }}
-                                    className="h-7 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
-                                  >
-                                    <Paperclip className="w-3 h-3 text-slate-500" />
-                                    <span>Slip</span>
-                                  </button>
-                                </>
-                              ) : (
+                        {/* ALL ACTION BUTTONS DIRECTLY VISIBLE ON ROW */}
+                        <td
+                          className="py-3 px-3 text-right whitespace-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            {canAct && record.status !== 'approved' && record.status !== 'rejected' ? (
+                              <>
+                                {/* 1. APPROVE BUTTON */}
                                 <button
                                   type="button"
+                                  disabled={isActionBusy}
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    setSelectedRecord(record)
+                                    handleStageAction(record.id, 'APPROVE')
+                                  }}
+                                  style={{ backgroundColor: '#055B65', color: '#ffffff' }}
+                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
+                                  title={`Approve request at ${record.currentStage.toUpperCase()} stage`}
+                                >
+                                  {isActionBusy ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3 h-3 stroke-[2.5]" />
+                                  )}
+                                  <span>{getStageActionLabel(record.currentStage)}</span>
+                                </button>
+
+                                {/* 2. SEND BACK BUTTON */}
+                                <button
+                                  type="button"
+                                  disabled={isActionBusy}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleStageAction(record.id, 'SEND_BACK')
+                                  }}
+                                  style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
+                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
+                                  title="Send Back to Submitter for Revision"
+                                >
+                                  <CornerUpLeft className="w-3 h-3" />
+                                  <span>Send Back</span>
+                                </button>
+
+                                {/* 3. REJECT BUTTON */}
+                                <button
+                                  type="button"
+                                  disabled={isActionBusy}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleStageAction(record.id, 'REJECT')
+                                  }}
+                                  style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
+                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
+                                  title="Reject / Deny Request"
+                                >
+                                  <X className="w-3 h-3" />
+                                  <span>Reject</span>
+                                </button>
+
+                                {/* 4. HOLD BUTTON */}
+                                <button
+                                  type="button"
+                                  disabled={isActionBusy}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleStageAction(record.id, 'HOLD')
+                                  }}
+                                  style={{ backgroundColor: '#475569', color: '#ffffff' }}
+                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
+                                  title="Place order on hold"
+                                >
+                                  <Clock className="w-3 h-3" />
+                                  <span>Hold</span>
+                                </button>
+
+                                {/* 5. SLIP BUTTON */}
+                                <button
+                                  type="button"
+                                  title="View Fuel Slip"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (record.fuelSlipUrl) window.open(record.fuelSlipUrl, '_blank')
+                                    else setSelectedRecord(record)
                                   }}
                                   style={{ backgroundColor: '#ffffff', color: '#334155' }}
-                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                                  className="h-7 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
                                 >
-                                  <Eye className="w-3 h-3 text-slate-500" />
-                                  <span>View</span>
+                                  <Paperclip className="w-3 h-3 text-slate-500" />
+                                  <span>Slip</span>
                                 </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedRecord(record)
+                                }}
+                                style={{ backgroundColor: '#ffffff', color: '#334155' }}
+                                className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                              >
+                                <Eye className="w-3 h-3 text-slate-500" />
+                                <span>View</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Bulk Remarks Prompt Modal */}
       {bulkPromptAction && (
@@ -1320,7 +1300,7 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
                     </div>
 
                     <p className="text-[11px] text-teal-800">
-                      Simulate moving this record through each stage of the approval pipeline:
+                      Simulate moving this record through each stage of the approval pipeline (Submit → CEO → EA → MD):
                     </p>
 
                     <div className="flex flex-wrap gap-1.5 pt-1">
@@ -1341,19 +1321,19 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
                         disabled={actionLoading}
                         onClick={() => handleStageAction(selectedRecord.id, 'RESET')}
                         className="h-7 text-xs font-semibold border-teal-300 text-teal-800 hover:bg-teal-100 rounded-lg px-2.5 cursor-pointer flex items-center gap-1"
-                        title="Reset to ED pending"
+                        title="Reset to CEO pending"
                       >
                         <Undo2 className="w-3 h-3" />
-                        Reset to ED
+                        Reset to CEO
                       </Button>
                     </div>
                   </div>
                 )}
 
-                {/* Approval Progress Tracker */}
+                {/* Approval Progress Tracker (Submit → CEO → EA → MD) */}
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-3">
-                    Approval Track (ED → HR → MD)
+                    Approval Track (Submit → CEO → EA → MD)
                   </span>
 
                   <div className="space-y-3">
@@ -1375,63 +1355,71 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
                       </div>
                     </div>
 
-                    {/* Step 2: ED */}
+                    {/* Step 2: CEO */}
                     <div className="flex items-start gap-3">
                       <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5 shrink-0 ${
-                        selectedRecord.edApprovedAt
+                        selectedRecord.ceoApprovedAt || selectedRecord.edApprovedAt
                           ? 'bg-teal-700 text-white'
-                          : selectedRecord.status === 'ed_pending'
-                          ? 'border-2 border-teal-700 text-teal-800 font-bold'
+                          : selectedRecord.status === 'ceo_pending' || selectedRecord.status === 'ed_pending'
+                          ? 'border-2 border-blue-700 text-blue-800 font-bold'
                           : 'bg-slate-200 text-slate-400'
                       }`}>
-                        {selectedRecord.edApprovedAt ? '✓' : '2'}
+                        {selectedRecord.ceoApprovedAt || selectedRecord.edApprovedAt ? '✓' : '2'}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                          <span>ED Approval</span>
+                          <span>CEO Approval</span>
                           <span className="text-[10px] font-normal text-slate-500">
-                            {selectedRecord.edApprovedAt ? istDate(selectedRecord.edApprovedAt) : 'Pending'}
+                            {selectedRecord.ceoApprovedAt
+                              ? istDate(selectedRecord.ceoApprovedAt)
+                              : selectedRecord.edApprovedAt
+                              ? istDate(selectedRecord.edApprovedAt)
+                              : 'Pending'}
                           </span>
                         </div>
-                        {selectedRecord.edApprovedByName && (
+                        {(selectedRecord.ceoApprovedByName || selectedRecord.edApprovedByName) && (
                           <p className="text-[11px] text-slate-500">
-                            By {selectedRecord.edApprovedByName}
+                            By {selectedRecord.ceoApprovedByName || selectedRecord.edApprovedByName}
                           </p>
                         )}
-                        {selectedRecord.edRemarks && (
+                        {(selectedRecord.ceoRemarks || selectedRecord.edRemarks) && (
                           <p className="text-[11px] text-slate-600 italic mt-0.5">
-                            "{selectedRecord.edRemarks}"
+                            "{selectedRecord.ceoRemarks || selectedRecord.edRemarks}"
                           </p>
                         )}
                       </div>
                     </div>
 
-                    {/* Step 3: HR */}
+                    {/* Step 3: EA */}
                     <div className="flex items-start gap-3">
                       <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5 shrink-0 ${
-                        selectedRecord.hrApprovedAt
+                        selectedRecord.eaApprovedAt || selectedRecord.hrApprovedAt
                           ? 'bg-teal-700 text-white'
-                          : selectedRecord.status === 'hr_pending'
+                          : selectedRecord.status === 'ea_pending' || selectedRecord.status === 'hr_pending'
                           ? 'border-2 border-purple-700 text-purple-800 font-bold'
                           : 'bg-slate-200 text-slate-400'
                       }`}>
-                        {selectedRecord.hrApprovedAt ? '✓' : '3'}
+                        {selectedRecord.eaApprovedAt || selectedRecord.hrApprovedAt ? '✓' : '3'}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                          <span>HR Approval</span>
+                          <span>EA Approval</span>
                           <span className="text-[10px] font-normal text-slate-500">
-                            {selectedRecord.hrApprovedAt ? istDate(selectedRecord.hrApprovedAt) : 'Pending'}
+                            {selectedRecord.eaApprovedAt
+                              ? istDate(selectedRecord.eaApprovedAt)
+                              : selectedRecord.hrApprovedAt
+                              ? istDate(selectedRecord.hrApprovedAt)
+                              : 'Pending'}
                           </span>
                         </div>
-                        {selectedRecord.hrApprovedByName && (
+                        {(selectedRecord.eaApprovedByName || selectedRecord.hrApprovedByName) && (
                           <p className="text-[11px] text-slate-500">
-                            By {selectedRecord.hrApprovedByName}
+                            By {selectedRecord.eaApprovedByName || selectedRecord.hrApprovedByName}
                           </p>
                         )}
-                        {selectedRecord.hrRemarks && (
+                        {(selectedRecord.eaRemarks || selectedRecord.hrRemarks) && (
                           <p className="text-[11px] text-slate-600 italic mt-0.5">
-                            "{selectedRecord.hrRemarks}"
+                            "{selectedRecord.eaRemarks || selectedRecord.hrRemarks}"
                           </p>
                         )}
                       </div>
@@ -1675,6 +1663,19 @@ export function FuelApprovalsClient({ currentUser }: FuelApprovalsClientProps) {
           await refetch()
         }}
       />
+    </div>
+  )
+
+  if (embedded) {
+    return mainContent
+  }
+
+  return (
+    <MainLayout
+      title="Fuel Approvals"
+      subtitle="Requisition, slip verification and multi-stage workflow (Submit → CEO → EA → MD)"
+    >
+      {mainContent}
     </MainLayout>
   )
 }

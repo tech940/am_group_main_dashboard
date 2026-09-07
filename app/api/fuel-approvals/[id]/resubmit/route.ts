@@ -86,8 +86,8 @@ export async function POST(
         fuelFilledLtrs: parsedLtrs.toFixed(2),
         fuelSlipUrl: fuelSlipUrl || existing.fuelSlipUrl,
         remarks: remarks || existing.remarks,
-        status: 'ed_pending',
-        currentStage: 'ed',
+        status: 'ceo_pending',
+        currentStage: 'ceo',
         sendBackReason: null,
         history: [...existingHistory, historyItem],
         updatedAt: nowTimestamp,
@@ -97,7 +97,7 @@ export async function POST(
 
     return NextResponse.json({
       item: updated,
-      message: 'Fuel request re-submitted successfully to ED for review',
+      message: 'Fuel request re-submitted successfully to CEO for review',
     })
   } catch (error) {
     console.error('Error re-submitting fuel approval:', error)
