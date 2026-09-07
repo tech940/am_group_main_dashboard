@@ -4,7 +4,7 @@ import type { AppUser } from '@/lib/auth/app-user'
 import { canAccessBrand } from '@/lib/auth/brand-access'
 import { parseUserDealers } from '@/lib/dealers/registry'
 import { approvalBranchTokens, expandBranchSynonyms } from '@/lib/kia/approval-branches'
-import { isServiceApproval, usesGroupServiceManager } from '@/lib/approvals/first-stage-approver'
+import { isServiceApproval, usesGroupServiceManager, usesVpService } from '@/lib/approvals/first-stage-approver'
 import { isSuperAdminRole } from '@/lib/auth/roles'
 import { resolveBranchScope } from '@/lib/auth/default-branch-scope'
 import { hasAllBranchAccess, type BranchValue } from '@/lib/branches'
@@ -244,8 +244,9 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
    * ⚠️ Still gated by canAccessBrand above, so this is TWO brands, not the group. A KIA service
    * request is not his.
    */
-  if (role === 'group_service_manager'
-    && usesGroupServiceManager(rowBrand)
+  const isVpOrGsm = role === 'vp' || role === 'vice_president' || role === 'group_service_manager'
+  if (isVpOrGsm
+    && (usesVpService(rowBrand) || rowBrand === 'kia')
     && isServiceApproval(row.department, row.approvalType)) {
     return true
   }

@@ -1,4 +1,4 @@
-import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval, usesVpService } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
@@ -29,7 +29,7 @@ const SEND_BACK_STAGE_LABELS: Record<string, string> = {
   ea: 'EA',
   md: 'MD',
   accounts: 'Accounts',
-  payment_done: 'Payment',
+  payment_done: 'Accounts',
 }
 
 export const dynamic = 'force-dynamic'
@@ -37,15 +37,15 @@ export const maxDuration = 60
 
 export async function POST(
   request: Request,
-  context: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const appUser = await getAuthenticatedAppUser()
     if (!appUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await context.params
     const body = await request.json().catch(() => ({}))
     const { 
       action, 
@@ -56,7 +56,7 @@ export async function POST(
       glAccountId,
       utrNumber,
       paymentProofUrl
-    } = body // action: 'APPROVE' | 'REJECT' | 'HOLD' | 'SEND_BACK', stage: 'sales_manager' | 'accounts' | 'ea' | 'md' | 'payment_done'
+    } = body
 
     if (!action || !['APPROVE', 'REJECT', 'HOLD', 'SEND_BACK'].includes(action)) {
       return NextResponse.json({ error: 'Invalid action. Must be APPROVE, REJECT, HOLD, or SEND_BACK.' }, { status: 400 })
@@ -118,7 +118,7 @@ export async function POST(
       if (!brandHasEd(requestRow.brand)) {
         /*
          * NON-KIA: there is no Executive Director at this brand, so the first stage belongs to the
-         * General Manager for the relevant side — Sales or Service. ED is not merely unauthorised
+         * General Manager for the relevant side — Sales or Service (VP for Hyundai/Platinum). ED is not merely unauthorised
          * here, it does not exist.
          *
          * The KIA branches below are deliberately left exactly as they were: this change is about
@@ -129,7 +129,7 @@ export async function POST(
           requestRow.brand,
           isServiceCategory ? 'service' : 'sales',
         )
-        isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower)
+        isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower) || (allowedRoles.includes('vp') && isVp) || (allowedRoles.includes('general_manager') && isGeneralSalesManager)
       } else if (isServiceCategory) {
         // SERVICE ORDER: ONLY VP, SuperUser, or Admin/Developer can approve
         isAuthorized = isTester || isVp || isSuperUser
@@ -165,14 +165,11 @@ export async function POST(
     if (!isAuthorized) {
       return NextResponse.json({ 
         /*
-         * Name the approver this BRAND actually has. The old message said "requires VP" for any
-         * service request — telling a Hyundai General Service Manager they lacked a role that this
-         * very route had just authorised them for, and pointing them at a role their brand has
-         * nobody in.
+         * Name the approver this BRAND actually has.
          */
         error: `Your role (${appUser.role}) is not authorized to act on ${
           isServiceCategory
-            ? (brandHasEd(requestRow.brand) ? 'Service (requires VP)' : 'Service (requires the General Service Manager)')
+            ? (brandHasEd(requestRow.brand) || usesVpService(requestRow.brand) ? 'Service (requires VP)' : 'Service (requires the General Service Manager)')
             : (brandHasEd(requestRow.brand) ? 'Sales (requires CEO or General Sales Manager)' : 'Sales (requires the General Sales Manager)')
         } requests at the ${stage} stage.`
       }, { status: 403 })

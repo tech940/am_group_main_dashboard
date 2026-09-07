@@ -187,7 +187,7 @@ export async function POST(request: Request) {
           row.brand,
           isServiceCategory ? 'service' : 'sales',
         )
-        isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower)
+        isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower) || (allowedRoles.includes('vp') && isVp) || (allowedRoles.includes('general_manager') && isGeneralSalesManager)
       } else if (isServiceCategory) {
           isAuthorized = isTester || isVp || isSuperUser
         } else {

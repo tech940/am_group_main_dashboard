@@ -39,13 +39,17 @@ export const ED_BRANDS = ['kia'] as const
  * this module, so a change here that ignores that distinction silently re-adds a gate the MD asked
  * to remove.
  */
-export const GROUP_SERVICE_BRANDS = ['hyundai', 'platinum'] as const
+export const VP_SERVICE_BRANDS = ['hyundai', 'platinum'] as const
+export const GROUP_SERVICE_BRANDS = VP_SERVICE_BRANDS
 
-/** Does this brand's SERVICE side route to the Group Service Manager? */
-export function usesGroupServiceManager(brand: unknown): boolean {
+/** Does this brand's SERVICE side route to the Vice President? */
+export function usesVpService(brand: unknown): boolean {
   const b = norm(brand)
-  return (GROUP_SERVICE_BRANDS as readonly string[]).some((known) => b === known || b.startsWith(known))
+  return (VP_SERVICE_BRANDS as readonly string[]).some((known) => b === known || b.startsWith(known))
 }
+
+/** Legacy alias for backward compatibility. */
+export const usesGroupServiceManager = usesVpService
 
 export type FirstStageTrack = 'sales' | 'service' | 'unknown'
 
@@ -137,7 +141,7 @@ export function trackForDepartment(department: unknown): FirstStageTrack {
  */
 export function firstStageApproverRoles(brand: unknown, department: unknown): string[] {
   if (brandHasEd(brand)) return ['ceo']
-  const serviceRole = usesGroupServiceManager(brand) ? 'group_service_manager' : 'service_general_manager'
+  const serviceRole = usesVpService(brand) ? 'vp' : 'service_general_manager'
   switch (trackForDepartment(department)) {
     case 'sales': return ['general_manager']
     case 'service': return [serviceRole]
@@ -156,7 +160,7 @@ export function firstStageApproverRoles(brand: unknown, department: unknown): st
  */
 export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStageTrack): string[] {
   if (brandHasEd(brand)) return ['ceo']
-  const serviceRole = usesGroupServiceManager(brand) ? 'group_service_manager' : 'service_general_manager'
+  const serviceRole = usesVpService(brand) ? 'vp' : 'service_general_manager'
   switch (track) {
     case 'sales': return ['general_manager']
     case 'service': return [serviceRole]
@@ -176,7 +180,7 @@ export function firstStageLabel(brand: unknown, department: unknown): string {
   if (brandHasEd(brand)) return 'CEO Approval'
   switch (trackForDepartment(department)) {
     case 'sales': return 'GSM Approval (Sales)'
-    case 'service': return usesGroupServiceManager(brand) ? 'Group Service Manager Approval' : 'GSM Approval (Service)'
+    case 'service': return usesVpService(brand) ? 'VP Approval' : 'GSM Approval (Service)'
     default: return 'GSM Approval'
   }
 }
@@ -186,8 +190,8 @@ export function firstStageLabel(brand: unknown, department: unknown): string {
  */
 export function firstStageShortLabel(brand: unknown, department: unknown, approvalType?: unknown): string {
   if (brandHasEd(brand)) return 'CEO'
-  if (usesGroupServiceManager(brand) && isServiceApproval(department, approvalType)) {
-    return 'Group Service Manager'
+  if (usesVpService(brand) && isServiceApproval(department, approvalType)) {
+    return 'VP'
   }
   return 'GSM'
 }

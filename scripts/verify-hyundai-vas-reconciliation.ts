@@ -1,5 +1,7 @@
 import 'dotenv/config'
 import assert from 'node:assert/strict'
+import { sql } from 'drizzle-orm'
+import { analyticsDb as db } from '../lib/analytics/db'
 import { fetchHyundaiMonthlyOperationMetrics } from '../lib/hyundai/business-excellence-operations'
 
 /**
@@ -69,9 +71,22 @@ async function main() {
   )
   assert.equal(april.available, false, 'Jammu April 2026 must not report itself as available')
 
+  // August 2026 assertion: Must select the 28-day monthly cumulative file (~15 Lakhs), not the 4-day stub (~1.5 Lakhs)
+  const aug = await fetchHyundaiMonthlyOperationMetrics('2026-08-31', null)
+  assert.ok(aug.available, 'August 2026 group metrics unavailable')
+  assert.equal(aug.periodStart, '2026-08-01', 'August must anchor to the 1st of the month')
+  assert.ok(aug.vasAmount > 1400000, `August VAS should be ~₹15 Lakhs, got ${inr(aug.vasAmount)}`)
+
+  // June 2026 assertion: Must select the 28-day upload, not the 3-row stub
+  const june = await fetchHyundaiMonthlyOperationMetrics('2026-06-30', null)
+  assert.ok(june.available, 'June 2026 group metrics unavailable')
+  assert.equal(june.periodStart, '2026-06-01', 'June must anchor to the 1st of the month')
+  assert.ok(june.vasAmount > 1500000, `June VAS should be ~₹16.4 Lakhs, got ${inr(june.vasAmount)}`)
+
   console.log(
     `OK  group=${inr(group.vasAmount)}  jammu=${inr(jammu.vasAmount)}  `
-    + `branches=${inr(branchSum)}  WA=${Math.round(group.waCount)}  WB=${Math.round(group.wbCount)}`,
+    + `branches=${inr(branchSum)}  WA=${Math.round(group.waCount)}  WB=${Math.round(group.wbCount)}  `
+    + `aug=${inr(aug.vasAmount)}  june=${inr(june.vasAmount)}`,
   )
 }
 

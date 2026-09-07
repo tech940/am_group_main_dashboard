@@ -27,6 +27,7 @@ import { firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
 const STAGE_LABELS: Record<string, string> = {
   ed: 'CEO',
   ceo: 'CEO',
+  vp: 'VP',
   hr: 'HR',
   ea: 'EA',
   md: 'MD',

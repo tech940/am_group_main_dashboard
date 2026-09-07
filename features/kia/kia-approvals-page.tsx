@@ -1305,9 +1305,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const firstStageDisplayLabel = (req?: ApprovalRequest | null): string => {
     const isService = req ? isServiceCategory(req.department, req.approvalType) : false
     if (req && !brandHasEd(req.brand)) {
-      // Hyundai and Platinum service is owned by ONE person across both brands, so naming the
+      // Hyundai and Platinum service is owned by Vice President (VP), so naming the
       // brand's own "GSM (Service)" would point the submitter at the wrong desk.
-      if (isService) return usesGroupServiceManager(req.brand) ? 'Group Service Manager' : 'GSM (Service)'
+      if (isService) return usesGroupServiceManager(req.brand) ? 'VP' : 'GSM (Service)'
       return 'GSM (Sales)'
     }
     return isService ? 'VP' : 'CEO / GSM (Sales)'
@@ -4510,7 +4510,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               const firstStageLabel = brandHasEd(req.brand)
                 ? (isService ? 'VP Approval' : 'CEO / GSM')
                 : (isService
-                  ? (usesGroupServiceManager(req.brand) ? 'Group Service Mgr' : 'GSM (Service)')
+                  ? (usesGroupServiceManager(req.brand) ? 'VP Approval' : 'GSM (Service)')
                   : 'GSM (Sales)')
               const requiresHrStage = isHrApprovalRequired(req.approvalType, req.brand)
               const stages = [

@@ -155,9 +155,15 @@ export async function fetchHyundaiMonthlyOperationMetrics(
         AND report_type = 'Operation'
       GROUP BY report_period_start::date, report_period_end::date
       ORDER BY
-        (COUNT(*) > 100) DESC,
-        report_period_end::date DESC,
-        report_period_start::date DESC
+        -- Prefer periods that start on the 1st of the month (or closest to month start)
+        ABS(report_period_start::date - ${monthStart}::date) ASC,
+        -- Prefer substantial uploads over stub / 1-row uploads
+        (COUNT(*) >= 50) DESC,
+        -- Prefer wider date coverage (duration in days)
+        (report_period_end::date - report_period_start::date) DESC,
+        -- Prefer more complete uploads (more rows)
+        COUNT(*) DESC,
+        report_period_end::date DESC
       LIMIT 1
     ),
     -- The same (dealer, period, report_type) is uploaded more than once: a truncated early

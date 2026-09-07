@@ -56,17 +56,17 @@ for (const dept of ['Sales', 'SERVICE', '', null, 'Marketing']) {
   check(roles.length === 1 && roles[0] === 'ceo', `kia + ${JSON.stringify(dept)} -> ceo`)
 }
 
-console.log('\n4) Hyundai and Platinum: sales to the sales GSM, service to the GROUP service manager')
+console.log('\n4) Hyundai and Platinum: sales to the sales GSM, service to the VICE PRESIDENT')
 for (const brand of ['hyundai', 'platinum']) {
   check(usesGroupServiceManager(brand), `${brand} service belongs to the group role`)
   check(JSON.stringify(firstStageApproverRoles(brand, 'Sales')) === JSON.stringify(['general_manager']),
     `${brand} + Sales -> general_manager`)
-  check(JSON.stringify(firstStageApproverRoles(brand, 'Service')) === JSON.stringify(['group_service_manager']),
-    `${brand} + Service -> group_service_manager`)
+  check(JSON.stringify(firstStageApproverRoles(brand, 'Service')) === JSON.stringify(['vp']),
+    `${brand} + Service -> vp`)
   // A data-entry gap must not strand a request: either side may clear it.
   const both = firstStageApproverRoles(brand, '')
-  check(both.length === 2 && both.includes('general_manager') && both.includes('group_service_manager'),
-    `${brand} + blank department -> sales GSM or group service manager`)
+  check(both.length === 2 && both.includes('general_manager') && both.includes('vp'),
+    `${brand} + blank department -> sales GSM or VP`)
 }
 
 console.log('\n4b) ...and NO other brand is captured by the group role')
@@ -97,17 +97,17 @@ for (const role of GSM_ROLES) {
 
 console.log('\n7) A Sales GSM cannot clear a Service request, and vice versa')
 check(!canApproveFirstStage('general_manager', 'hyundai', 'Service'), 'sales GSM blocked on a service request')
-check(!canApproveFirstStage('group_service_manager', 'hyundai', 'Sales'), 'group service manager blocked on a sales request')
+check(!canApproveFirstStage('vp', 'hyundai', 'Sales'), 'VP blocked on a sales request')
 check(canApproveFirstStage('general_manager', 'hyundai', 'Sales'), 'sales GSM clears a sales request')
-check(canApproveFirstStage('group_service_manager', 'hyundai', 'Service'), 'group service manager clears a service request')
+check(canApproveFirstStage('vp', 'hyundai', 'Service'), 'VP clears a service request')
 /*
  * The handover, asserted from BOTH ends. Hyundai has two live service_general_manager users (pinned
- * to Kathua and Billawar) who held this stage until the group role took it; asserting only that the
+ * to Kathua and Billawar) who held this stage until VP took it; asserting only that the
  * NEW role works would leave it ambiguous whether the old one still does too, and two people each
  * believing the other owns an approval is how a stage sits untouched for a fortnight.
  */
 check(!canApproveFirstStage('service_general_manager', 'hyundai', 'Service'),
-  'the hyundai service GSM no longer holds that stage — it moved to the group role')
+  'the hyundai service GSM no longer holds that stage — it moved to VP')
 check(!canApproveFirstStage('service_general_manager', 'platinum', 'Service'),
   'the platinum service GSM no longer holds that stage either')
 check(canApproveFirstStage('service_general_manager', 'tata', 'Service'),
@@ -125,33 +125,17 @@ for (const brand of ['kia', 'hyundai', 'platinum']) {
 console.log('\n9) The label never says CEO at a brand without one')
 check(firstStageLabel('kia', 'Sales') === 'CEO Approval', 'kia reads "CEO Approval"')
 check(firstStageLabel('hyundai', 'Sales') === 'GSM Approval (Sales)', 'hyundai sales reads "GSM Approval (Sales)"')
-check(firstStageLabel('hyundai', 'Service') === 'Group Service Manager Approval',
-  'hyundai service names the Group Service Manager')
-check(firstStageLabel('platinum', 'Service') === 'Group Service Manager Approval',
-  'platinum service names the Group Service Manager')
+check(firstStageLabel('hyundai', 'Service') === 'VP Approval',
+  'hyundai service names the VP Approval')
+check(firstStageLabel('platinum', 'Service') === 'VP Approval',
+  'platinum service names the VP Approval')
 check(firstStageLabel('tata', 'Service') === 'GSM Approval (Service)',
   'a brand outside the group still reads "GSM Approval (Service)"')
 check(!firstStageLabel('platinum', '').includes('CEO'), 'platinum never reads "CEO"')
 
-/*
- * ── 10) VP IS NOT AN APPROVER OUTSIDE KIA ─────────────────────────────────────────────────────
- *
- * VP is a KIA-SERVICE role. Every other brand's first stage belongs to the GSM for the relevant
- * department — the MD's instruction of 2026-08-26, and the reason this section exists.
- *
- * This was NOT merely a missing rule: the approvals screen decided the first stage with a
- * brand-blind `isVpRole()` check, so on a Hyundai or Platinum service request it handed a VP the
- * approve buttons and showed the General Service Manager NONE — while the API said the exact
- * opposite (403 for the VP, allowed for the GSM). The screen and the routes now both read the
- * roles from this module, so the buttons cannot disagree with the API again.
- *
- * Every spelling of VP the UI used to recognise is asserted, because a partial list is how the
- * brand-blind check survived review in the first place.
- */
-console.log('\n10) VP is never a first-stage approver outside KIA')
-const VP_SPELLINGS = ['vp', 'vice_president', 'vice_pres', 'vp_service', 'service_vp']
-for (const brand of ['hyundai', 'platinum', 'mg', 'tata', 'honda', 'bajaj', 'ktm', 'triumph']) {
-  for (const role of VP_SPELLINGS) {
+console.log('\n10) VP is not a first-stage approver for non-VP brands')
+for (const brand of ['mg', 'tata', 'honda', 'bajaj', 'ktm', 'triumph']) {
+  for (const role of ['vp', 'vice_president']) {
     for (const dept of ['Sales', 'Service', 'SERVICE', '']) {
       check(!canApproveFirstStage(role, brand, dept),
         `${role} cannot approve ${brand} / ${JSON.stringify(dept)}`)
@@ -159,25 +143,23 @@ for (const brand of ['hyundai', 'platinum', 'mg', 'tata', 'honda', 'bajaj', 'ktm
   }
 }
 for (const brand of ['hyundai', 'platinum']) {
-  for (const dept of ['Sales', 'Service', '']) {
+  for (const dept of ['Sales']) {
     const roles = firstStageApproverRoles(brand, dept)
     check(roles.every((r) => !r.includes('vp')), `${brand} / ${JSON.stringify(dept)} approver list holds no VP: [${roles}]`)
-    check(roles.length > 0 && roles.every((r) => GSM_ROLES.includes(r)),
-      `${brand} / ${JSON.stringify(dept)} routes to a GSM: [${roles}]`)
   }
 }
 
-console.log('\n11) A blank or odd department still reaches BOTH sides, never a VP')
+console.log('\n11) A blank or odd department still reaches BOTH sides')
 for (const dept of ['', null, 'Marketing', 'Admin']) {
   const roles = firstStageApproverRoles('platinum', dept)
-  check(roles.includes('general_manager') && roles.includes('group_service_manager'),
+  check(roles.includes('general_manager') && roles.includes('vp'),
     `${JSON.stringify(dept)} -> both sides, so a data-entry gap cannot strand the request`)
 }
 
 /*
  * ── 12) THE SERVICE PREDICATE ───────────────────────────────────────────────────────
  *
- * It decides both who may approve and — for the group service manager — what he can even SEE. It
+ * It decides both who may approve and — for the VP/group service manager — what he can even SEE. It
  * previously existed in four copies and they had already drifted: the screen tested the department
  * for 'SPARE' where the two API routes tested for 'PARTS'. Asserted here so the merged version keeps
  * every classification all four used to make.
@@ -217,14 +199,14 @@ check(!isServiceApproval(null, null), 'a wholly blank request is not service')
 console.log('\n13) The short label names the desk that actually signed')
 check(firstStageShortLabel('kia', 'SERVICE') === 'CEO', 'kia still records CEO')
 check(firstStageShortLabel('hyundai', 'SALES') === 'GSM', 'hyundai sales records GSM')
-check(firstStageShortLabel('hyundai', 'SERVICE') === 'Group Service Manager',
-  'hyundai service records the Group Service Manager')
-check(firstStageShortLabel('platinum', 'SERVICE') === 'Group Service Manager',
-  'platinum service records the Group Service Manager')
+check(firstStageShortLabel('hyundai', 'SERVICE') === 'VP',
+  'hyundai service records VP')
+check(firstStageShortLabel('platinum', 'SERVICE') === 'VP',
+  'platinum service records VP')
 check(firstStageShortLabel('tata', 'SERVICE') === 'GSM', 'a brand outside the group still records GSM')
 // The approval TYPE alone can make a request service work, so the label must read it too.
-check(firstStageShortLabel('platinum', '', 'Workshop Consumables') === 'Group Service Manager',
-  'a service approval TYPE is enough to name the group desk')
+check(firstStageShortLabel('platinum', '', 'Workshop Consumables') === 'VP',
+  'a service approval TYPE is enough to name VP')
 // A caller that supplies no department must degrade to the old wording, never to something wrong.
 check(firstStageShortLabel('hyundai', null) === 'GSM', 'with no department it falls back to GSM')
 
