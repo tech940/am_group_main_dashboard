@@ -1,4 +1,4 @@
-import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { sendApprovalDecisionEmail } from '@/lib/approvals/decision-emails'
@@ -90,6 +90,7 @@ export async function POST(request: Request) {
       let activeStageKey: 'sales_manager' | 'ceo' | 'hr' | 'ea' | 'accounts' | 'md' | null = null
       
       const isKia = String(row.brand || 'kia').toLowerCase() === 'kia'
+      const hasFirstStage = brandHasFirstStage(row.brand)
       const vpApp = row.vpApproval
       const ceoApp = row.ceoApproval
       const hrApp = row.hrApproval
@@ -100,7 +101,7 @@ export async function POST(request: Request) {
       const requiresHr = isHrApprovalRequired(row.approvalType, row.brand)
 
       // Determine what stage this request is currently in
-      if (!vpApp || vpApp === 'HELD' || vpApp === 'NOT APPROVED') {
+      if (hasFirstStage && (!vpApp || vpApp === 'HELD' || vpApp === 'NOT APPROVED')) {
         activeStageKey = 'sales_manager'
       } else if (isKia && (!ceoApp || ceoApp === 'HELD' || ceoApp === 'NOT APPROVED')) {
         activeStageKey = 'ceo'

@@ -2,24 +2,10 @@
  * Who signs off the FIRST approval stage — for Petty Cash and for Vendor Payment Approvals alike.
  *
  * ── The rule ──────────────────────────────────────────────────────────────────────────────────
- * Only KIA has an Executive Director. Every other brand routes that same first stage to the
- * General Manager for the relevant side of the business:
- *
- *   KIA                submitted → ED  → EA → MD → Accounts
- *   Hyundai/Platinum   submitted → sales GSM, or the GROUP SERVICE MANAGER on service → EA → MD → …
- *   all others         submitted → GSM → EA → MD → Accounts     (GSM = Sales or Service, per department)
- *
- * Hyundai and Platinum are two legal entities but ONE service operation, so a single
- * `group_service_manager` owns the service side of that stage across both — their own service GSMs
- * no longer hold it. Sales at those brands is untouched, and so is every other brand.
- *
- * ── Why this reuses the existing stage rather than adding one ─────────────────────────────────
- * The first stage slot already exists in both workflows (`ed_approval` in petty cash,
- * `vp_approval` / stage key `sales_manager` in approvals). Only the person who may act on it, and
- * what it is called, differ by brand. Adding a parallel `gsm_approval` stage would mean new values
- * in `petty_cash_request_status` and `petty_cash_expense_status` — and a missing ALTER TYPE on a
- * Postgres enum has already taken this app down once. Reusing the slot needs no migration and no
- * enum change.
+ * - KIA:               submitted → ED / GSM → CEO → HR (if required) → EA → MD → Accounts
+ * - Hyundai:           submitted → sales GSM, or the GROUP SERVICE MANAGER on service → EA → MD → Accounts
+ * - Platinum:          submitted → EA → MD → Accounts (No first stage GSM/VP; routes directly to EA)
+ * - all others:        submitted → GSM → EA → MD → Accounts (GSM = Sales or Service, per department)
  *
  * Client-safe: no server-only imports, so the UI and the API enforce the identical rule.
  */
@@ -28,18 +14,11 @@
 export const ED_BRANDS = ['kia'] as const
 
 /**
- * Brands whose SERVICE approvals belong to the Group Service Manager.
- *
- * Hyundai and Platinum are two legal entities but one service operation, so their service approvals
- * are owned together by `group_service_manager` rather than by each brand's own GSM. Sales at those
- * brands is unaffected and still routes to the sales GSM.
- *
- * ⚠️ This governs the APPROVALS (vendor payment) chain only. Petty cash outside KIA has no first
- * stage at all — see pettyCashHasFirstStage in lib/petty-cash/constants.ts. The two workflows share
- * this module, so a change here that ignores that distinction silently re-adds a gate the MD asked
- * to remove.
+ * Brands whose SERVICE approvals belong to the Group Service Manager (VP).
+ * Hyundai service approvals route to the VP (Group Service Manager).
+ * Platinum routes directly to EA -> MD -> Accounts.
  */
-export const VP_SERVICE_BRANDS = ['hyundai', 'platinum'] as const
+export const VP_SERVICE_BRANDS = ['hyundai'] as const
 export const GROUP_SERVICE_BRANDS = VP_SERVICE_BRANDS
 
 /** Does this brand's SERVICE side route to the Vice President? */
@@ -56,30 +35,21 @@ export type FirstStageTrack = 'sales' | 'service' | 'unknown'
 const norm = (value: unknown) => String(value ?? '').trim().toLowerCase()
 
 /**
+ * Does this brand have a first-stage approval (ED / GSM / VP)?
+ *
+ * ⚠️ PLATINUM HAS NO FIRST STAGE.
+ * Platinum vendor payment requests route directly: Submit → EA → MD → Accounts.
+ * Other brands (KIA, Hyundai, MG, etc.) retain their respective first-stage review.
+ */
+export function brandHasFirstStage(brand: unknown): boolean {
+  const b = norm(brand)
+  if (!b) return true // default fallback is KIA
+  if (b === 'platinum' || b.startsWith('platinum')) return false
+  return true
+}
+
+/**
  * Is this request SERVICE work? The one definition, for every surface.
- *
- * ── Why it moved here ─────────────────────────────────────────────────────────────────────────
- * This predicate existed in FOUR places — the action route, the bulk-action route, the approvals
- * screen and lib/kia/approval-scope.ts — and the screen's copy had already drifted: it tested the
- * department for 'SPARE' where the two servers tested for 'PARTS'. A department of 'PARTS' would
- * therefore have shown the service approver no buttons while the API accepted their approval, and a
- * 'SPARE' department the exact reverse — the screen offering a button the server would 403. That is
- * the same class of desync that made a VP the visible approver on Hyundai rows the server had
- * already reassigned.
- *
- * The list below is the UNION of the four, so no surface loses a classification it already made.
- * Measured before merging: every one of the 168 live requests carries department 'SALES', 'Sales'
- * or 'SERVICE', and none contains 'SPARE' or 'PARTS' — so the union changes no existing row's track
- * and only closes the gap for departments not yet typed.
- *
- * ⚠️ Substring matching on free text is deliberate. `department` and `approval_type` are typed into
- * a public form, so 'Service', 'SERVICE' and 'Body Shop' all occur; an exact match would silently
- * drop a service request onto the sales approver.
- *
- * ⚠️ The callers treat this as BINARY — not-service means sales, never 'unknown'. A blank department
- * therefore routes to the sales GSM, which is the behaviour that already shipped. Returning
- * 'unknown' here instead would widen the approver set for every blank-department row, so callers
- * keep their own `isServiceApproval(...) ? 'service' : 'sales'`.
  */
 const SERVICE_DEPARTMENT_MARKERS = ['service', 'parts', 'spare', 'body', 'bodyshop', 'workshop', 'labour']
 const SERVICE_TYPE_MARKERS = ['parts', 'workshop', 'labour', 'service', 'spare', 'bodyshop', 'maintenance']
@@ -117,9 +87,6 @@ export function brandHasEd(brand: unknown): boolean {
 
 /**
  * Sales or service, from the free-text `department` both tables carry.
- *
- * ⚠️ Case-insensitive and substring-based on purpose: live data holds 'Sales', 'SALES', 'Service'
- * and 'SERVICE' already, and an exact match would silently drop a request into 'unknown'.
  */
 export function trackForDepartment(department: unknown): FirstStageTrack {
   const d = norm(department)
@@ -131,35 +98,24 @@ export function trackForDepartment(department: unknown): FirstStageTrack {
 
 /**
  * The roles that may act on the first approval stage for this request.
- *
- * Excludes the blanket admin/developer/MD overrides — those are applied by each caller's own
- * existing checks, and folding them in here would hide them from anyone reading this rule.
- *
- * An UNKNOWN department returns BOTH GSMs rather than guessing. A blank department is a data-entry
- * gap, and a request must not be stuck behind one; whichever GSM picks it up, a GSM has still seen
- * it before it reaches EA.
  */
 export function firstStageApproverRoles(brand: unknown, department: unknown): string[] {
   const b = norm(brand)
+  if (!brandHasFirstStage(b)) return []
   const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (trackForDepartment(department)) {
     case 'sales': return ['general_manager']
     case 'service': return [serviceRole]
-    // An unknown department returns BOTH sides rather than guessing — see the note above.
     default: return ['general_manager', serviceRole]
   }
 }
 
 /**
  * Same rule, for a caller that has ALREADY worked out the track.
- *
- * The Approvals section classifies service work more richly than `department` alone — it also reads
- * approval-type keywords (PARTS, WORKSHOP, LABOUR, MAINTENANCE). That classification is better than
- * anything this module could infer, so it passes its answer in rather than having it re-derived and
- * silently disagree.
  */
 export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStageTrack): string[] {
   const b = norm(brand)
+  if (!brandHasFirstStage(b)) return []
   const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (track) {
     case 'sales': return ['general_manager']
@@ -170,6 +126,7 @@ export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStag
 
 /** May this role sign off the first stage of this request? */
 export function canApproveFirstStage(role: unknown, brand: unknown, department: unknown): boolean {
+  if (!brandHasFirstStage(brand)) return false
   return firstStageApproverRoles(brand, department).includes(norm(role))
 }
 
@@ -178,6 +135,7 @@ export function canApproveFirstStage(role: unknown, brand: unknown, department: 
  */
 export function firstStageLabel(brand: unknown, department: unknown): string {
   const b = norm(brand)
+  if (!brandHasFirstStage(b)) return 'EA Approval'
   switch (trackForDepartment(department)) {
     case 'sales': return 'GSM Approval (Sales)'
     case 'service': return (usesVpService(b) || b === 'kia') ? 'VP Approval' : 'GSM Approval (Service)'
@@ -190,6 +148,7 @@ export function firstStageLabel(brand: unknown, department: unknown): string {
  */
 export function firstStageShortLabel(brand: unknown, department: unknown, approvalType?: unknown): string {
   const b = norm(brand)
+  if (!brandHasFirstStage(b)) return 'EA'
   if ((usesVpService(b) || b === 'kia') && isServiceApproval(department, approvalType)) {
     return 'VP'
   }

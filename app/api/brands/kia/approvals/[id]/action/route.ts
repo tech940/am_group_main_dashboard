@@ -1,4 +1,4 @@
-import { brandHasEd, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval, usesVpService } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval, usesVpService } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
@@ -166,27 +166,32 @@ export async function POST(
 
 
     // Check steps order
-    // Flow: 1: GSM / VP -> 2: CEO (KIA) -> 3: HR (if required) -> 4: EA -> 5: MD -> 6: Accounts
+    // Flow: 1: GSM / VP (if brand has first stage) -> 2: CEO (KIA) -> 3: HR (if required) -> 4: EA -> 5: MD -> 6: Accounts
     if (action !== 'SEND_BACK') {
       const isKia = String(requestRow.brand || 'kia').toLowerCase() === 'kia'
+      const hasFirstStage = brandHasFirstStage(requestRow.brand)
       const requiresHr = isHrApprovalRequired(requestRow.approvalType, requestRow.brand)
       const firstStageName = firstStageShortLabel(
         requestRow.brand, requestRow.department, requestRow.approvalType,
       )
 
+      if (stage === 'sales_manager' && !hasFirstStage) {
+        return NextResponse.json({ error: 'This brand does not have a first stage approval.' }, { status: 400 })
+      }
+
       if (stage === 'ceo' && !isTester && !isSuperUser) {
-        if (requestRow.vpApproval !== 'APPROVED') {
+        if (hasFirstStage && requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: `${firstStageName} approval is pending.` }, { status: 400 })
         }
       } else if (stage === 'hr' && !isTester && !isSuperUser) {
-        if (requestRow.vpApproval !== 'APPROVED') {
+        if (hasFirstStage && requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: `${firstStageName} approval is pending.` }, { status: 400 })
         }
         if (isKia && requestRow.ceoApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'CEO approval is pending.' }, { status: 400 })
         }
       } else if (stage === 'ea' && !isTester && !isSuperUser) {
-        if (requestRow.vpApproval !== 'APPROVED') {
+        if (hasFirstStage && requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: `${firstStageName} approval is pending.` }, { status: 400 })
         }
         if (isKia && requestRow.ceoApproval !== 'APPROVED') {
@@ -196,7 +201,7 @@ export async function POST(
           return NextResponse.json({ error: 'HR approval is pending.' }, { status: 400 })
         }
       } else if (stage === 'md' && !isTester) {
-        if (requestRow.vpApproval !== 'APPROVED') {
+        if (hasFirstStage && requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: `${firstStageName} approval must be completed first.` }, { status: 400 })
         }
         if (isKia && requestRow.ceoApproval !== 'APPROVED') {
@@ -210,7 +215,7 @@ export async function POST(
         }
       } else if ((stage === 'accounts' || stage === 'payment_done') && !isTester) {
         if (
-          requestRow.vpApproval !== 'APPROVED' ||
+          (hasFirstStage && requestRow.vpApproval !== 'APPROVED') ||
           requestRow.eaApproval !== 'APPROVED' ||
           requestRow.managementApproval !== 'APPROVED'
         ) {

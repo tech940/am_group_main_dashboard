@@ -69,7 +69,7 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { brandHasHrStage, isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
-import { brandHasEd, firstStageApproverRolesForTrack, isServiceApproval, usesGroupServiceManager } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, isServiceApproval, usesGroupServiceManager } from '@/lib/approvals/first-stage-approver'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
 /*
@@ -1351,14 +1351,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
   const getPendingStageLabel = (req: ApprovalRequest): string => {
+    const hasFirstStage = brandHasFirstStage(req.brand)
     const firstStage = firstStageDisplayLabel(req)
     const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
 
-    if (req.vpApproval === 'NOT APPROVED') {
-      return `Rejected by ${firstStage}`
-    }
-    if (req.vpApproval === 'HELD') {
-      return `Held by ${firstStage}`
+    if (hasFirstStage) {
+      if (req.vpApproval === 'NOT APPROVED') {
+        return `Rejected by ${firstStage}`
+      }
+      if (req.vpApproval === 'HELD') {
+        return `Held by ${firstStage}`
+      }
     }
 
     if (isKia) {
@@ -1387,7 +1390,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return 'Pending Accounts'
     }
 
-    if (!req.vpApproval || req.vpApproval === '') {
+    if (hasFirstStage && (!req.vpApproval || req.vpApproval === '')) {
       return `Pending ${firstStage}`
     }
 
@@ -2320,15 +2323,16 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const renderWorkflowStepper = (req: ApprovalRequest) => {
     const pendingLabel = getPendingStageLabel(req)
     const requiresHr = isHrApprovalRequired(req.approvalType, req.brand)
+    const hasFirstStage = brandHasFirstStage(req.brand)
     
     const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
     const stages = [
-      { key: 'sales_manager', label: firstStageDisplayLabel(req), status: req.vpApproval },
+      ...(hasFirstStage ? [{ key: 'sales_manager', label: firstStageDisplayLabel(req), status: req.vpApproval }] : []),
       ...(isKia ? [{ key: 'ceo', label: 'CEO', status: req.ceoApproval }] : []),
       ...(requiresHr ? [{ key: 'hr', label: 'HR', status: req.hrApproval }] : []),
-      { key: 'accounts', label: 'Accounts (Invoice)', status: req.accountApproval },
       { key: 'ea', label: 'EA', status: req.eaApproval },
       { key: 'md', label: 'MD', status: req.managementApproval },
+      { key: 'accounts', label: 'Accounts (Invoice)', status: req.accountApproval },
       { key: 'payment_done', label: 'Payment', status: req.paymentStatus === 'PAID' ? 'APPROVED' : null },
     ]
 
@@ -4557,9 +4561,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
               const firstStageLabel = isService ? 'VP Approval' : 'GSM (Sales)'
               const requiresHrStage = isHrApprovalRequired(req.approvalType, req.brand)
+              const hasFirstStage = brandHasFirstStage(req.brand)
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
-                { key: 'sales_manager', label: firstStageLabel, status: req.vpApproval },
+                ...(hasFirstStage ? [{ key: 'sales_manager', label: firstStageLabel, status: req.vpApproval }] : []),
                 ...(isKia ? [{ key: 'ceo', label: 'CEO Approval', status: req.ceoApproval }] : []),
                 ...(requiresHrStage ? [{ key: 'hr', label: 'HR', status: req.hrApproval }] : []),
                 { key: 'ea', label: 'EA Review', status: req.eaApproval },

@@ -18,7 +18,7 @@
  */
 
 import { isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
-import { firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
+import { firstStageShortLabel, brandHasFirstStage } from '@/lib/approvals/first-stage-approver'
 
 /**
  * Does this payment type route through HR? Aliased from the ONE shared definition in
@@ -77,18 +77,20 @@ function needsAction(value: string | null | undefined): boolean {
 
 /**
  * The stage this request is currently waiting on — strict ordering:
- * Non-KIA: first stage (GSM/VP) → EA → MD → Accounts.
- * KIA:     first stage (GSM/VP) → CEO (Sales & Service) → HR (if required) → EA → MD → Accounts.
+ * - Platinum: Submit → EA → MD → Accounts (First stage GSM/VP is bypassed).
+ * - Other Non-KIA: first stage (GSM/VP) → EA → MD → Accounts.
+ * - KIA: first stage (GSM/VP) → CEO (Sales & Service) → HR (if required) → EA → MD → Accounts.
  *
  * EA approval is strictly required before a request reaches the MD stage.
  */
 export function vendorPaymentActiveStage(row: VendorPaymentStageInput): VendorPaymentStageKey {
   const brand = String(row.brand || 'kia').trim().toLowerCase()
   const isKia = brand === 'kia' || brand.startsWith('kia')
+  const hasFirstStage = brandHasFirstStage(row.brand)
   const requiresHr = vendorPaymentRequiresHr(row.approvalType, row.brand)
 
-  // Stage 1: Department head (GSM for Sales, VP for Service)
-  if (needsAction(row.vpApproval)) return 'sales_manager'
+  // Stage 1: Department head (GSM for Sales, VP for Service) - Skipped for Platinum
+  if (hasFirstStage && needsAction(row.vpApproval)) return 'sales_manager'
 
   // Stage 2: CEO (KIA ONLY - for both Sales and Service)
   if (isKia && needsAction(row.ceoApproval) && !isApproved(row.managementApproval)) return 'ceo'
@@ -111,10 +113,6 @@ export function isAwaitingVendorPaymentMd(row: VendorPaymentStageInput): boolean
 
 /**
  * Human label for whose desk a request is on — used when browsing in "All" scope.
- *
- * ⚠️ KEPT ONLY FOR THE STAGES WHOSE OWNER IS THE SAME EVERYWHERE. `sales_manager` is deliberately
- * absent: that desk is a different person per brand and per department, so a constant cannot name
- * it. Use `vendorPaymentStageLabel(row)` instead, which reads the brand and the department.
  */
 const FIXED_STAGE_LABEL: Record<Exclude<VendorPaymentStageKey, 'sales_manager'>, string> = {
   ceo: 'CEO',
@@ -142,12 +140,6 @@ function valueAtStage(stage: VendorPaymentStageKey, row: VendorPaymentStageInput
 export function vendorPaymentStageDesk(row: VendorPaymentStageInput): string {
   const stage = vendorPaymentActiveStage(row)
   if (stage === 'sales_manager') {
-    /*
-     * ⚠️ This used to be the literal 'ED'. Only KIA has an Executive Director, so every Hyundai and
-     * Platinum request at stage one was reported to the MD as "With ED" — naming a desk that brand
-     * does not have, and hiding that Hyundai/Platinum SERVICE requests belong to the Group Service
-     * Manager. The Approvals screen already renders these rows correctly; only this aggregate lied.
-     */
     return firstStageShortLabel(row.brand, row.department, row.approvalType)
   }
   return FIXED_STAGE_LABEL[stage]
@@ -155,13 +147,6 @@ export function vendorPaymentStageDesk(row: VendorPaymentStageInput): string {
 
 /**
  * The label the MD sees, naming the right desk AND what that desk did.
- *
- * ⚠️ HELD and REJECTED must survive into the label. `needsAction` deliberately returns a held or
- * rejected request to its owner's stage, so without this a request the approver REFUSED reads
- * identically to one nobody has touched — and the MD Approvals client's only held-state affordance
- * is `stageLabel.startsWith('Held')`, which a bare "With ..." can never satisfy. The other two
- * sources already produce 'Held by MD', so vendor payments were the only place the distinction was
- * being lost.
  */
 export function vendorPaymentStageLabel(row: VendorPaymentStageInput): string {
   const stage = vendorPaymentActiveStage(row)
