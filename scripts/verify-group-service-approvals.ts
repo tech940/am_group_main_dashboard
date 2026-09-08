@@ -19,7 +19,7 @@ import { join } from 'node:path'
 import { analyticsExecute } from '../lib/analytics/db'
 import { sql } from 'drizzle-orm'
 import { isApprovalVisibleTo } from '../lib/kia/approval-scope'
-import { vendorPaymentActiveStage, vendorPaymentStageLabel } from '../lib/md-approvals/vendor-payments-stage'
+import { approvalStageHistoryLabel, vendorPaymentActiveStage, vendorPaymentStageLabel } from '../lib/md-approvals/vendor-payments-stage'
 import { isAmFinanceViewRole, isPettyCashViewRole } from '../lib/permissions/legacy-module-roles'
 import { canCreatePettyCashRequest } from '../lib/petty-cash/access'
 import {
@@ -206,10 +206,26 @@ async function main() {
     check(sendBackBlock.slice(0, sendBackBlock.indexOf('continue')).includes('recordHistory()'),
       'a bulk SEND_BACK writes a history entry before it returns')
 
-    // 'ea' had no arm and fell through to 'MD', so bulk EA decisions were recorded — and displayed
-    // in the stepper — as the MD's.
-    check(/activeStageKey === 'ea' \? 'EA'/.test(bulk),
-      "the history role ternary has an 'ea' arm, so an EA action is not recorded as the MD's")
+    /*
+     * 'ea' had no arm and fell through to 'MD', so bulk EA decisions were recorded — and displayed
+     * in the stepper — as the MD's.
+     *
+     * ⚠️ This assertion used to grep for the literal ternary `activeStageKey === 'ea' ? 'EA'`,
+     * which pinned it to one spelling of the fix rather than to the fix. The identical bug then
+     * surfaced for 'ceo' in the OTHER route — a CEO approval stored as `{role:'MD', roleKey:'ceo'}`,
+     * which the workflow strip rendered as the MD's signature on KIA_0203 — and the cure was to
+     * delete both ternary chains for one shared map. A grep for the old syntax fails the corrected
+     * code and passes a chain that is missing some other stage's arm: wrong in both directions.
+     * Assert the guarantee instead, for every stage at once.
+     */
+    check(bulk.includes('approvalStageHistoryLabel'),
+      'bulk-action labels history from the one shared map, not its own ternary chain')
+    const distinctLabels = new Set(
+      (['sales_manager', 'ceo', 'hr', 'ea', 'md', 'accounts'] as const).map((s) =>
+        approvalStageHistoryLabel(s, { brand: 'kia', department: 'SALES' })),
+    )
+    check(distinctLabels.size === 6,
+      `every stage gets its own label, so no stage's action is recorded as another's (${[...distinctLabels].join(', ')})`)
 
     // A sent-back request belongs to the submitter; SEND_BACK nulls every column so the stage
     // inference makes it look approvable again.

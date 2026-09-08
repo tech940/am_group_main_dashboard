@@ -1,6 +1,6 @@
 import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval, usesVpService } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
-import { VENDOR_PAYMENT_ACTIONABLE_STAGES } from '@/lib/md-approvals/vendor-payments-stage'
+import { VENDOR_PAYMENT_ACTIONABLE_STAGES, approvalStageHistoryLabel } from '@/lib/md-approvals/vendor-payments-stage'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
@@ -98,6 +98,14 @@ export async function POST(
 
     // Role-based Authorization Checks
     const isSuperUser = ['ceo', 'md'].includes(appUser.role)
+    /*
+     * The MD alone.
+     *
+     * ⚠️ DO NOT narrow `isSuperUser` itself to fix the md stage — it is still read by the
+     * sales_manager, ceo, hr and ea branches below, where a CEO legitimately belongs. Narrowing it
+     * would silently strip the CEO from four stages nobody asked to change.
+     */
+    const isMd = appUser.role === 'md'
     const isTester = ['developer', 'admin'].includes(appUser.role)
     const userRoleLower = (appUser.role || '').toLowerCase()
     const isAccountsUser = 
@@ -148,8 +156,23 @@ export async function POST(
       // EA/EBA/MD/CEO are authorized at the EA stage. If EBA or EA is absent/present, either can approve.
       isAuthorized = isTester || ['ea', 'eba'].includes(appUser.role) || isSuperUser
     } else if (stage === 'md') {
-      // The stage where MD/CEO are the intended approver.
-      isAuthorized = isTester || isSuperUser
+      /*
+       * SEPARATION OF DUTIES — `isSuperUser` (ceo/md) is DELIBERATELY NOT USED here, the same rule
+       * already applied to `accounts` and `payment_done`.
+       *
+       * ⚠️ The MD stage is the MD's OWN desk. A CEO reaching it signs a SECOND time, having already
+       * signed the ceo stage above — and because the APPROVE branch below back-stamps
+       * `ceoApproval = 'APPROVED'`, that second signature also clears his own first one. It really
+       * happened: on KIA_0203 and KIA_0201 the CEO approved the MD stage ~20 seconds after the EA
+       * cleared it, so the MD never saw either request. Both were returned to the MD queue by
+       * `scripts/revert-ceo-md-approvals.ts`.
+       *
+       * This one boolean gates APPROVE, REJECT, HOLD **and** SEND_BACK: the action switch further
+       * down is a WRITE switch, not a second authorisation check.
+       *
+       * developer/admin (`isTester`) stay, for support only.
+       */
+      isAuthorized = isTester || isMd
     } else if (stage === 'payment_done') {
       // SEPARATION OF DUTIES — see the `accounts` stage above.
       isAuthorized = isTester || isAccountsUser
@@ -373,13 +396,13 @@ export async function POST(
 
     // Build history entry
     const historyList = Array.isArray(requestRow.history) ? [...requestRow.history] : []
-    const roleLabel = 
-      stage === 'sales_manager' ? firstStageShortLabel(requestRow.brand, requestRow.department, requestRow.approvalType) : 
-      stage === 'hr' ? 'HR' :
-      stage === 'accounts' ? 'Accounts (Invoice)' : 
-      stage === 'ea' ? 'EA' : 
-      stage === 'payment_done' ? 'Accounts (Payment)' :
-      'MD'
+    /*
+     * ⚠️ This was a hand-written chain of ternaries with NO 'ceo' branch, so every CEO action fell
+     * through to the trailing `: 'MD'` and was filed as `{ role: 'MD', roleKey: 'ceo' }` — 17 live
+     * entries. The workflow strip then matched that entry to the MD step and showed the CEO's name
+     * and time there. Now resolved from the one shared map.
+     */
+    const roleLabel = approvalStageHistoryLabel(stage, requestRow)
 
     // Update GL account if changed and log history
     if (glAccountId && glAccountId !== requestRow.glAccountId) {

@@ -7,6 +7,7 @@ import { db } from '@/lib/db'
 import { kiaApprovalRequests } from '@/lib/db/schema'
 import { eq, inArray } from 'drizzle-orm'
 import { brandHasHrStage, isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
+import { approvalStageHistoryLabel } from '@/lib/md-approvals/vendor-payments-stage'
 import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
 
 export const dynamic = 'force-dynamic'
@@ -51,6 +52,9 @@ export async function POST(request: Request) {
 
     // Role mapping: get user's effective role and target stage
     const isSuperUser = ['ceo', 'md'].includes(appUser.role)
+    // The MD alone. ⚠️ Do NOT narrow `isSuperUser` — the sales_manager, ceo, hr and ea branches
+    // below still read it, and a CEO belongs on those. See the `md` branch.
+    const isMd = appUser.role === 'md'
     const isTester = ['developer', 'admin'].includes(appUser.role)
 
     // Retrieve all targeted requests
@@ -190,8 +194,17 @@ export async function POST(request: Request) {
       } else if (activeStageKey === 'ea') {
         isAuthorized = isTester || ['ea', 'eba'].includes(appUser.role) || isSuperUser
       } else if (activeStageKey === 'md') {
-        // Stage where MD/CEO are the intended approver.
-        isAuthorized = isTester || isSuperUser
+        /*
+         * SEPARATION OF DUTIES — `isSuperUser` (ceo/md) is DELIBERATELY EXCLUDED, matching the
+         * single-row route. The MD stage is the MD's own desk; a CEO reaching it signs a request
+         * twice, having already signed the ceo stage above.
+         *
+         * ⚠️ Fixing only the single-row route would leave this one wide open: the toolbar's Bulk
+         * Approve posts here, so a CEO could still clear MD-stage rows a page at a time. This
+         * branch also gates the SEND_BACK block further down, which nulls managementApproval.
+         * Both routes or neither.
+         */
+        isAuthorized = isTester || isMd
       }
 
       if (!isAuthorized) {
@@ -210,13 +223,12 @@ export async function POST(request: Request) {
        * The audit entry, built for EVERY action including SEND_BACK.
        */
       const historyList = Array.isArray(row.history) ? [...row.history] : []
-      const roleLabel =
-        activeStageKey === 'sales_manager' ? firstStageShortLabel(row.brand, row.department, row.approvalType) :
-        activeStageKey === 'ceo' ? 'CEO' :
-        activeStageKey === 'hr' ? 'HR' :
-        activeStageKey === 'ea' ? 'EA' :
-        activeStageKey === 'accounts' ? 'Accounts' :
-        'MD'
+      /*
+       * From the one shared map. This copy had the 'ceo' branch the single-row route was missing,
+       * but wrote 'Accounts' where that route wrote 'Accounts (Invoice)' — so the same stage was
+       * named two different things depending on whether you approved one row or several.
+       */
+      const roleLabel = approvalStageHistoryLabel(activeStageKey, row)
 
       const recordHistory = () => {
         historyList.push({

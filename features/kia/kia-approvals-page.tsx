@@ -259,6 +259,64 @@ const isMdOrDevUser = (roleKey?: string | null, role?: string | null): boolean =
          rName.includes('md') || rName.includes('management') || rName.includes('developer') || rName.includes('ceo')
 }
 
+/**
+ * The history entry belonging to a workflow stage.
+ *
+ * ⚠️ MATCH ON `roleKey`, NEVER ON THE `role` LABEL. Every stage used to be resolved with
+ * `h.role.toLowerCase().includes(key)` against a free-text label, and that is how the CEO's
+ * signature appeared in the MD column: the server was writing CEO actions as
+ * `{ role: 'MD', roleKey: 'ceo' }` (its label map had no 'ceo' branch and fell through to 'MD'),
+ * the CEO entry sits earlier in the array than the real MD entry, and `.find()` returns the first
+ * match — so KIA_0203 rendered its MD step as the CEO, timestamped 06:04 pm, two minutes BEFORE
+ * the 06:06 pm EA step that precedes it in the chain.
+ *
+ * The label is a display string. It is not, and never was, the stage.
+ *
+ * A substring test is wrong even with the labels repaired: 'md' is inside 'management', 'ea' is
+ * inside plenty of free text, and five live `sales_manager` entries carry the label 'CEO'.
+ */
+const APPROVED_ACTIONS = (action: string) => action === 'APPROVED' || action === 'APPROVE'
+
+/**
+ * Labels used before `roleKey` was written, matched exactly rather than by substring. Consulted
+ * ONLY for entries that carry no roleKey at all: an entry that has one has already been offered to
+ * its own stage and must never be borrowed by a different one. (Every entry in the table today does
+ * carry a roleKey, so this is a safety net for old rows, not a live path.)
+ */
+const STAGE_LEGACY_LABELS: Record<string, (label: string) => boolean> = {
+  sales_manager: (l) => ['vp', 'ed', 'gsm', 'dgm'].includes(l) || l.includes('group service manager'),
+  ceo: (l) => l === 'ceo',
+  hr: (l) => l === 'hr',
+  ea: (l) => l === 'ea',
+  md: (l) => l === 'md' || l.includes('management'),
+  accounts: (l) => l.includes('account'),
+}
+
+const findStageEntry = (
+  history: any[] | null | undefined,
+  stageKey: string,
+  actionMatches: (action: string) => boolean = APPROVED_ACTIONS,
+): any | null => {
+  const list = Array.isArray(history) ? history : []
+  /*
+   * LAST match, not first. A stage can be acted on more than once — held then approved, or approved,
+   * sent back, and approved again — and the current state is described by the MOST RECENT action,
+   * not the oldest one. `.find()` would name whoever touched it first.
+   */
+  const exact = list.filter((h: any) => h?.roleKey === stageKey && actionMatches(String(h?.action || ''))).pop()
+  if (exact) return exact
+  const legacy = STAGE_LEGACY_LABELS[stageKey]
+  if (!legacy) return null
+  return (
+    list
+      .filter(
+        (h: any) =>
+          !h?.roleKey && legacy(String(h?.role || '').toLowerCase()) && actionMatches(String(h?.action || '')),
+      )
+      .pop() ?? null
+  )
+}
+
 const getMdRemarksList = (req: ApprovalRequest | null | undefined): { user: string; role: string; remark: string; date?: string }[] => {
   if (!req) return []
   const list: { user: string; role: string; remark: string; date?: string }[] = []
@@ -1483,7 +1541,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     }
     if (stage === 'hr') return isHrRole || isSuperUser
     if (stage === 'ea') return ['ea', 'eba'].includes(effectiveRole) || ['ea', 'eba'].includes(currentUser.role) || isSuperUser
-    if (stage === 'md') return isSuperUser
+    /*
+     * SEPARATION OF DUTIES — the MD stage is the MD's own desk, so `isSuperUser` (md+ceo) is
+     * deliberately not used. Mirrors the server: `stage === 'md'` → `isTester || isMd` in BOTH
+     * app/api/brands/kia/approvals/[id]/action/route.ts and .../bulk-action/route.ts.
+     * developer/admin are already returned true at the top of this function, and `effectiveRole`
+     * maps them onto 'md' anyway (line ~430).
+     */
+    if (stage === 'md') return effectiveRole === 'md' || currentUser.role === 'md'
     if (stage === 'accounts' || stage === 'payment_done') return isAccountsRole
     return false
   }
@@ -1516,8 +1581,18 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return ['ea', 'eba'].includes(effectiveRole) || ['ea', 'eba'].includes(currentUser.role) || ['developer', 'admin'].includes(currentUser.role)
     }
 
+    /*
+     * ⚠️ THE BUTTON GATE. This function — not `isUserAuthorizedForStage` — is what decides whether
+     * a row appears in "Pending My Approval" and whether its Approve button renders at all. It is
+     * evaluated INDEPENDENTLY of the authorisation helper and never consults it, which is exactly
+     * how the last separation-of-duties fix missed four sites: the button still rendered and merely
+     * 403'd on click. It feeds the pending count, the tab filter, the select-all checkbox, the row
+     * action cluster, the mobile card and the bulk toolbar — all of them follow from this one line.
+     *
+     * md ONLY, matching the server. A CEO has his own stage earlier in the chain.
+     */
     if (pendingLabel === 'Pending MD' || pendingLabel === 'Held by MD') {
-      return ['md', 'ceo'].includes(effectiveRole) || ['md', 'ceo'].includes(currentUser.role) || ['developer', 'admin'].includes(currentUser.role)
+      return effectiveRole === 'md' || currentUser.role === 'md' || ['developer', 'admin'].includes(currentUser.role)
     }
 
     // Also check if MD approved and Accounts approval is still pending.
@@ -4582,43 +4657,66 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     return { date: istShortDate(req.paymentCompletedAt), time: istTime(req.paymentCompletedAt), user: req.paymentCompletedBy || 'Accounts' }
                   }
                   if (req.accountApproval === 'APPROVED') {
-                    const accEntry = (req.history || []).find((h: any) => (h.roleKey === 'accounts' || h.role?.toLowerCase()?.includes('account')) && (h.action === 'APPROVED' || h.action === 'APPROVE' || h.action === 'PAID'))
+                    const accEntry = findStageEntry(
+                      req.history,
+                      'accounts',
+                      (a) => a === 'APPROVED' || a === 'APPROVE' || a === 'PAID',
+                    )
                     const ts = accEntry?.timestamp || req.updatedAt
                     return { date: istShortDate(ts), time: istTime(ts), user: accEntry?.user || 'Accounts' }
                   }
                   return { date: null, time: null, user: null }
                 }
 
-                const entry = (req.history || []).find((h: any) => (h.roleKey === key || h.role?.toLowerCase()?.includes(key)) && (h.action === 'APPROVED' || h.action === 'APPROVE'))
+                const stageColumn: Record<string, { value: string | null | undefined; desk: string }> = {
+                  sales_manager: { value: req.vpApproval, desk: 'Sales Mgr' },
+                  ceo: { value: req.ceoApproval, desk: 'CEO' },
+                  hr: { value: req.hrApproval, desk: 'HR Team' },
+                  ea: { value: req.eaApproval, desk: 'EA Team' },
+                  md: { value: req.managementApproval, desk: 'Management' },
+                  accounts: { value: req.accountApproval, desk: 'Accounts' },
+                }
+                const column = stageColumn[key]
+                const columnValue = String(column?.value ?? '').trim()
+
+                /*
+                 * ⚠️ THE COLUMN DECIDES, NOT THE HISTORY. A stage whose column is '' or null has not
+                 * been acted on, and must render as Pending with NO name — even when a history entry
+                 * for it still exists.
+                 *
+                 * This gate is what makes an undone approval actually look undone. The MD stage on
+                 * KIA_0203 was signed by the CEO and then reverted; the CEO's history entry stays
+                 * (audit is append-only), so without this check the strip kept rendering
+                 * "Mohan Sharma 06:06 pm" under MD APPROVAL on a request that was back in the MD's
+                 * queue. Reverting the data is not enough on its own.
+                 */
+                if (!columnValue) return { date: null, time: null, user: null }
+
+                /*
+                 * Match the entry to what the column says HAPPENED, so a held or rejected stage names
+                 * the person who held or rejected it rather than going blank, and a stage that was
+                 * held and later approved names the approval.
+                 */
+                const entry = findStageEntry(
+                  req.history,
+                  key,
+                  (a) => a === columnValue || (columnValue === 'APPROVED' && a === 'APPROVE'),
+                )
                 if (entry) {
                   return { date: istShortDate(entry.timestamp), time: istTime(entry.timestamp), user: entry.user || null }
                 }
-                if (key === 'sales_manager' && req.vpApproval === 'APPROVED') {
-                  const smEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('vp') || h.role?.toLowerCase()?.includes('ed') || h.role?.toLowerCase()?.includes('gsm') || h.roleKey === 'sales_manager') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
-                  return { date: istShortDate(smEntry?.timestamp || req.updatedAt), time: istTime(smEntry?.timestamp || req.updatedAt), user: smEntry?.user || 'Sales Mgr' }
-                }
-                if (key === 'ceo' && req.ceoApproval === 'APPROVED') {
-                  const ceoEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('ceo') || h.roleKey === 'ceo') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
-                  return { date: istShortDate(ceoEntry?.timestamp || req.updatedAt), time: istTime(ceoEntry?.timestamp || req.updatedAt), user: ceoEntry?.user || 'CEO' }
-                }
-                if (key === 'hr' && req.hrApproval === 'APPROVED') {
-                  const hrEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('hr') || h.roleKey === 'hr') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
-                  return { date: istShortDate(hrEntry?.timestamp || req.updatedAt), time: istTime(hrEntry?.timestamp || req.updatedAt), user: hrEntry?.user || 'HR Team' }
-                }
-                if (key === 'ea' && req.eaApproval === 'APPROVED') {
-                  const eaEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('ea') || h.roleKey === 'ea') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
-                  return { date: istShortDate(eaEntry?.timestamp || req.updatedAt), time: istTime(eaEntry?.timestamp || req.updatedAt), user: eaEntry?.user || 'EA Team' }
-                }
-                if (key === 'md' && req.managementApproval === 'APPROVED') {
-                  const mdEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('md') || h.role?.toLowerCase()?.includes('management') || h.roleKey === 'md') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
-                  return { date: istShortDate(mdEntry?.timestamp || req.updatedAt), time: istTime(mdEntry?.timestamp || req.updatedAt), user: mdEntry?.user || 'Management' }
-                }
-                if (key === 'accounts' && req.accountApproval === 'APPROVED') {
-                  const accEntry = (req.history || []).find((h: any) => (h.role?.toLowerCase()?.includes('account') || h.roleKey === 'accounts') && (h.action === 'APPROVED' || h.action === 'APPROVE'))
-                  return { date: istShortDate(accEntry?.timestamp || req.updatedAt), time: istTime(accEntry?.timestamp || req.updatedAt), user: accEntry?.user || 'Accounts' }
-                }
 
-                return { date: null, time: null, user: null }
+                /*
+                 * The column says somebody acted but no history entry claims this stage — a row
+                 * repaired by hand, or one predating the entry. Fall back to the request's own
+                 * timestamp and a generic desk name.
+                 *
+                 * ⚠️ Do NOT widen the search here. This used to be six blocks that each re-ran the
+                 * lookup with a looser substring matcher, and that second pass is precisely what
+                 * put another stage's actor into this stage's slot. Showing 'Management' is honest;
+                 * showing the CEO's name under MD APPROVAL is not.
+                 */
+                return { date: istShortDate(req.updatedAt), time: istTime(req.updatedAt), user: column.desk }
               }
 
               return (

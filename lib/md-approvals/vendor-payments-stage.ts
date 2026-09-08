@@ -183,3 +183,51 @@ export function vendorPaymentStageLabel(row: VendorPaymentStageInput): string {
   if (value === 'NOT APPROVED') return `Rejected by ${desk}`
   return stage === 'md' ? 'Awaiting MD' : `With ${desk}`
 }
+
+/**
+ * The label written into a history entry's `role`, for the stage that was acted on.
+ *
+ * ⚠️ THIS IS THE ONE DEFINITION, and it exists because the copies drifted with money on the line.
+ * The same map was written out by hand in FOUR places — `[id]/action/route.ts` (history),
+ * `[id]/action/route.ts` (SEND_BACK_STAGE_LABELS), `bulk-action/route.ts` and `remark/route.ts` —
+ * and exactly one of them, the single-row action route's history label, was missing its `'ceo'`
+ * branch. A CEO approval therefore fell through the chain of ternaries to the trailing `: 'MD'` and
+ * was recorded as `{ role: 'MD', roleKey: 'ceo' }`.
+ *
+ * That mislabel was then read back by the workflow strip, which matched history to a stage with
+ * `h.role.toLowerCase().includes(key)`. For the MD step that substring test hit the CEO's entry —
+ * earlier in the array, so `.find()` returned it — and the MD column rendered the CEO's name and
+ * the CEO's timestamp. On KIA_0203 the MD step displayed 06:04 pm, which is BEFORE the 06:06 pm EA
+ * step preceding it: a chain that had visibly gone backwards in time.
+ *
+ * The reader is fixed to key off `roleKey`, but the label still has to be right, because it is what
+ * a human reads in the activity log and in every approval email.
+ *
+ * `row` is only consulted for the first stage, whose name is brand- and department-dependent
+ * (ED / GSM / VP / DGM). Every other stage has a fixed name.
+ */
+export function approvalStageHistoryLabel(
+  stage: string,
+  row: Pick<VendorPaymentStageInput, 'brand' | 'department' | 'approvalType'>,
+): string {
+  switch (stage) {
+    case 'sales_manager':
+      return firstStageShortLabel(row.brand, row.department, row.approvalType)
+    case 'ceo':
+      return 'CEO'
+    case 'hr':
+      return 'HR'
+    case 'ea':
+      return 'EA'
+    case 'md':
+      return 'MD'
+    // The two Accounts actions are distinguished on purpose: one records the invoice, the other
+    // records that the money actually moved. Collapsing them to 'Accounts' loses that.
+    case 'accounts':
+      return 'Accounts (Invoice)'
+    case 'payment_done':
+      return 'Accounts (Payment)'
+    default:
+      return stage.toUpperCase()
+  }
+}

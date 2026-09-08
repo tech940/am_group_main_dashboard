@@ -29,7 +29,15 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const allowedRoles = ['md', 'ceo', 'developer', 'admin']
+    /*
+     * ⚠️ 'ceo' REMOVED. This endpoint bulk-writes `managementApproval = 'APPROVED'` with a
+     * `{role:'MD', roleKey:'md'}` history entry stamped in the caller's name — i.e. it manufactures
+     * MD approvals wholesale. Leaving the CEO on this list would hand back in one request exactly
+     * the authority just removed from the md stage in the two action routes.
+     *
+     * developer/admin keep it as the support escape hatch. This migration has never been run.
+     */
+    const allowedRoles = ['md', 'developer', 'admin']
     if (!allowedRoles.includes(appUser.role)) {
       return NextResponse.json(
         { error: `Your role (${appUser.role}) cannot run this migration.` },
