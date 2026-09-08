@@ -90,3 +90,74 @@ export function getLocationsForBrand(brandKey: ShowroomBrandKey): readonly strin
   const cfg = getShowroomBrandConfig(brandKey)
   return cfg?.locations || []
 }
+
+export type ShowroomDepartmentKey = 'sales' | 'service'
+
+export type ShowroomDepartmentConfig = {
+  key: ShowroomDepartmentKey
+  label: string
+  badgeClass: string
+}
+
+export const SHOWROOM_DEPARTMENTS: readonly ShowroomDepartmentConfig[] = [
+  {
+    key: 'sales',
+    label: 'Sales',
+    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  },
+  {
+    key: 'service',
+    label: 'Service',
+    badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  },
+] as const
+
+export function getShowroomDepartmentConfig(key: string | null | undefined): ShowroomDepartmentConfig | null {
+  if (!key) return null
+  const normalized = key.trim().toLowerCase()
+  return SHOWROOM_DEPARTMENTS.find((d) => d.key === normalized) || null
+}
+
+export type ShowroomCategoryKey = 'vehicles' | 'tv' | 'bathroom'
+
+export type ShowroomCategoryConfig = {
+  key: ShowroomCategoryKey
+  label: string
+  shortLabel: string
+  description: string
+  slotCount: number
+  badgeClass: string
+}
+
+export const SHOWROOM_CATEGORIES: readonly ShowroomCategoryConfig[] = [
+  {
+    key: 'vehicles',
+    label: 'Vehicles',
+    shortLabel: 'Vehicle',
+    description: 'Display & showroom floor vehicles',
+    slotCount: 2,
+    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+  },
+  {
+    key: 'tv',
+    label: 'TV Display',
+    shortLabel: 'TV',
+    description: 'Showroom customer lounge / display TV screens',
+    slotCount: 2,
+    badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+  },
+  {
+    key: 'bathroom',
+    label: 'Bathroom',
+    shortLabel: 'Bathroom',
+    description: 'Customer & staff washroom cleanliness',
+    slotCount: 2,
+    badgeClass: 'bg-teal-50 text-teal-700 border-teal-200',
+  },
+] as const
+
+export function getShowroomCategoryConfig(key: string | null | undefined): ShowroomCategoryConfig | null {
+  if (!key) return null
+  const normalized = key.trim().toLowerCase()
+  return SHOWROOM_CATEGORIES.find((c) => c.key === normalized) || null
+}

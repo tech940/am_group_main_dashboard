@@ -8,6 +8,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl
     const brand = searchParams.get('brand') || undefined
     const location = searchParams.get('location') || undefined
+    const department = searchParams.get('department') || undefined
+    const category = searchParams.get('category') || undefined
     const startDate = searchParams.get('startDate') || undefined
     const endDate = searchParams.get('endDate') || undefined
     const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 50
@@ -15,6 +17,8 @@ export async function GET(req: NextRequest) {
     const data = await getShowroomGallerySessions({
       brand,
       location,
+      department,
+      category,
       startDate,
       endDate,
       limit: Number.isNaN(limit) ? 50 : limit,

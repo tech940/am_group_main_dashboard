@@ -1,8 +1,10 @@
 import { db } from '@/lib/db'
 import { showroomImages } from '@/lib/db/schema'
-import { desc, eq, and, gte, lte, sql } from 'drizzle-orm'
+import { desc, eq, and, gte, lte } from 'drizzle-orm'
 import {
   type ShowroomBrandKey,
+  type ShowroomDepartmentKey,
+  type ShowroomCategoryKey,
   getShowroomBucketForBrand,
   isValidShowroomBrand,
   getLocationsForBrand,
@@ -13,6 +15,9 @@ export type ShowroomImageRecord = {
   sessionId: string
   brand: string
   location: string
+  department: string
+  category: string
+  categorySlot: number | null
   bucketId: string
   storagePath: string
   fileSize: number | null
@@ -29,10 +34,16 @@ export type ShowroomUploadSession = {
   sessionId: string
   brand: string
   location: string
+  department: string
   capturedAt: string
   uploaderName: string | null
   totalImages: number
   images: ShowroomImageRecord[]
+  byCategory: {
+    vehicles: ShowroomImageRecord[]
+    tv: ShowroomImageRecord[]
+    bathroom: ShowroomImageRecord[]
+  }
 }
 
 function getStorageUrl(bucketId: string, storagePath: string): string {
@@ -43,13 +54,21 @@ function getStorageUrl(bucketId: string, storagePath: string): string {
 export async function uploadShowroomImages({
   brand,
   location,
+  department = 'sales',
   uploaderName,
   files,
 }: {
   brand: ShowroomBrandKey
   location: string
+  department?: ShowroomDepartmentKey | string
   uploaderName?: string | null
-  files: Array<{ buffer: Buffer; mimeType?: string; size?: number }>
+  files: Array<{
+    buffer: Buffer
+    category?: string
+    categorySlot?: number
+    mimeType?: string
+    size?: number
+  }>
 }) {
   if (!isValidShowroomBrand(brand)) {
     throw new Error(`Invalid brand: ${brand}`)
@@ -63,6 +82,8 @@ export async function uploadShowroomImages({
   if (!files || files.length === 0) {
     throw new Error('At least one photo is required.')
   }
+
+  const validDept = department.toLowerCase() === 'service' ? 'service' : 'sales'
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -79,9 +100,11 @@ export async function uploadShowroomImages({
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i]
+    const cat = file.category || 'vehicles'
+    const slot = file.categorySlot || (i % 2) + 1
     const ext = file.mimeType?.includes('jpeg') || file.mimeType?.includes('jpg') ? 'jpg' : 'webp'
-    const fileName = `${Date.now()}_${i + 1}.${ext}`
-    const storagePath = `${sanitizedLocation}/${sessionId}/${fileName}`
+    const fileName = `${Date.now()}_${cat}_${slot}_${i + 1}.${ext}`
+    const storagePath = `${sanitizedLocation}/${validDept}/${sessionId}/${fileName}`
 
     // Upload to brand bucket
     const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/${bucketId}/${storagePath}`, {
@@ -107,6 +130,9 @@ export async function uploadShowroomImages({
         sessionId,
         brand,
         location,
+        department: validDept,
+        category: cat,
+        categorySlot: slot,
         bucketId,
         storagePath,
         fileSize: file.size || file.buffer.length,
@@ -121,6 +147,9 @@ export async function uploadShowroomImages({
       sessionId: inserted.sessionId,
       brand: inserted.brand,
       location: inserted.location,
+      department: inserted.department,
+      category: inserted.category,
+      categorySlot: inserted.categorySlot,
       bucketId: inserted.bucketId,
       storagePath: inserted.storagePath,
       fileSize: inserted.fileSize,
@@ -134,25 +163,37 @@ export async function uploadShowroomImages({
     })
   }
 
+  const byCat = {
+    vehicles: insertedRows.filter((r) => r.category === 'vehicles'),
+    tv: insertedRows.filter((r) => r.category === 'tv'),
+    bathroom: insertedRows.filter((r) => r.category === 'bathroom'),
+  }
+
   return {
     sessionId,
     brand,
     location,
+    department: validDept,
     uploaderName: uploaderName || null,
     totalImages: insertedRows.length,
     images: insertedRows,
+    byCategory: byCat,
   }
 }
 
 export async function getShowroomGallerySessions({
   brand,
   location,
+  department,
+  category,
   startDate,
   endDate,
   limit = 50,
 }: {
   brand?: string | null
   location?: string | null
+  department?: string | null
+  category?: string | null
   startDate?: string | null
   endDate?: string | null
   limit?: number
@@ -167,6 +208,14 @@ export async function getShowroomGallerySessions({
     conditions.push(eq(showroomImages.location, location.trim()))
   }
 
+  if (department && department !== 'all') {
+    conditions.push(eq(showroomImages.department, department.trim().toLowerCase()))
+  }
+
+  if (category && category !== 'all') {
+    conditions.push(eq(showroomImages.category, category.trim().toLowerCase()))
+  }
+
   if (startDate) {
     const start = new Date(startDate)
     if (!Number.isNaN(start.getTime())) {
@@ -177,7 +226,6 @@ export async function getShowroomGallerySessions({
   if (endDate) {
     const end = new Date(endDate)
     if (!Number.isNaN(end.getTime())) {
-      // Set to end of day if only date is passed
       end.setHours(23, 59, 59, 999)
       conditions.push(lte(showroomImages.capturedAt, end))
     }
@@ -190,7 +238,7 @@ export async function getShowroomGallerySessions({
     .from(showroomImages)
     .where(whereClause)
     .orderBy(desc(showroomImages.capturedAt))
-    .limit(Math.min(limit * 20, 500))
+    .limit(Math.min(limit * 30, 600))
 
   // Group by session_id
   const sessionMap = new Map<string, ShowroomUploadSession>()
@@ -201,6 +249,9 @@ export async function getShowroomGallerySessions({
       sessionId: row.sessionId,
       brand: row.brand,
       location: row.location,
+      department: row.department,
+      category: row.category,
+      categorySlot: row.categorySlot,
       bucketId: row.bucketId,
       storagePath: row.storagePath,
       fileSize: row.fileSize,
@@ -219,16 +270,30 @@ export async function getShowroomGallerySessions({
         sessionId: row.sessionId,
         brand: row.brand,
         location: row.location,
+        department: row.department,
         capturedAt: row.capturedAt.toISOString(),
         uploaderName: row.uploaderName,
         totalImages: 0,
         images: [],
+        byCategory: {
+          vehicles: [],
+          tv: [],
+          bathroom: [],
+        },
       }
       sessionMap.set(row.sessionId, session)
     }
 
     session.images.push(imgRecord)
     session.totalImages = session.images.length
+
+    if (row.category === 'vehicles') {
+      session.byCategory.vehicles.push(imgRecord)
+    } else if (row.category === 'tv') {
+      session.byCategory.tv.push(imgRecord)
+    } else if (row.category === 'bathroom') {
+      session.byCategory.bathroom.push(imgRecord)
+    }
   }
 
   const sessions = Array.from(sessionMap.values()).slice(0, limit)

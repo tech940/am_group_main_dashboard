@@ -26,12 +26,22 @@ import {
   ExternalLink,
   Copy,
   Check,
+  Briefcase,
+  Wrench,
+  Tv,
+  Car,
 } from 'lucide-react'
 import {
   SHOWROOM_BRANDS,
+  SHOWROOM_DEPARTMENTS,
+  SHOWROOM_CATEGORIES,
   type ShowroomBrandKey,
+  type ShowroomDepartmentKey,
+  type ShowroomCategoryKey,
   getLocationsForBrand,
   getShowroomBrandConfig,
+  getShowroomDepartmentConfig,
+  getShowroomCategoryConfig,
 } from '@/lib/showroom-images/constants'
 import type { ShowroomUploadSession, ShowroomImageRecord } from '@/lib/showroom-images/server'
 import { Button } from '@/components/ui/button'
@@ -61,6 +71,8 @@ export function ShowroomGalleryClient({
 }) {
   const [selectedBrand, setSelectedBrand] = useState<string>('all')
   const [selectedLocation, setSelectedLocation] = useState<string>('all')
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('all')
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [dateFilter, setDateFilter] = useState<string>('all')
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
@@ -120,11 +132,21 @@ export function ShowroomGalleryClient({
     isRefetching,
     refetch,
   } = useQuery({
-    queryKey: ['showroom-images', selectedBrand, selectedLocation, startDate, endDate],
+    queryKey: [
+      'showroom-images',
+      selectedBrand,
+      selectedLocation,
+      selectedDepartment,
+      selectedCategory,
+      startDate,
+      endDate,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (selectedBrand !== 'all') params.set('brand', selectedBrand)
       if (selectedLocation !== 'all') params.set('location', selectedLocation)
+      if (selectedDepartment !== 'all') params.set('department', selectedDepartment)
+      if (selectedCategory !== 'all') params.set('category', selectedCategory)
       if (startDate) params.set('startDate', startDate)
       if (endDate) params.set('endDate', endDate)
 
@@ -171,9 +193,13 @@ export function ShowroomGalleryClient({
   }, [lightboxOpen, activeSessionImages.length])
 
   // Direct public upload link
-  const uploadUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/showroom-upload${selectedBrand !== 'all' ? `?brand=${selectedBrand}` : ''}`
-    : '/showroom-upload'
+  const uploadUrl = useMemo(() => {
+    if (typeof window === 'undefined') return '/showroom-upload'
+    const url = new URL('/showroom-upload', window.location.origin)
+    if (selectedBrand !== 'all') url.searchParams.set('brand', selectedBrand)
+    if (selectedDepartment !== 'all') url.searchParams.set('dept', selectedDepartment)
+    return url.toString()
+  }, [selectedBrand, selectedDepartment])
 
   useEffect(() => {
     if (uploadUrl) {
@@ -197,20 +223,20 @@ export function ShowroomGalleryClient({
 
   return (
     <div className="space-y-6 pb-16">
-      {/* Header & Metric Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      {/* Top Action Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-indigo-600" />
+              <Building2 className="w-5 h-5 text-slate-800" />
               Showroom Images
             </h1>
-            <span className="bg-indigo-50 text-indigo-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-indigo-100">
+            <span className="bg-slate-100 text-slate-800 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-slate-200">
               Live Feed
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Real-time inspection of daily showroom condition and displays across all brands and dealerships.
+            Real-time inspection of vehicles, TV displays, and washrooms across all AM Group dealerships.
           </p>
         </div>
 
@@ -220,7 +246,7 @@ export function ShowroomGalleryClient({
             size="sm"
             onClick={() => refetch()}
             disabled={isRefetching}
-            className="text-xs h-9 rounded-xl border-slate-200"
+            className="text-xs h-9 rounded-xl border-slate-200 hover:bg-slate-50 cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefetching ? 'animate-spin' : ''}`} />
             Refresh
@@ -228,7 +254,7 @@ export function ShowroomGalleryClient({
 
           <Button
             onClick={() => setQrModalOpen(true)}
-            className="text-xs h-9 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm"
+            className="text-xs h-9 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold shadow-sm cursor-pointer"
           >
             <Camera className="w-3.5 h-3.5 mr-1.5" />
             Upload / Scan QR
@@ -241,9 +267,9 @@ export function ShowroomGalleryClient({
         <button
           type="button"
           onClick={() => handleBrandChange('all')}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             selectedBrand === 'all'
-              ? 'bg-slate-900 text-white shadow-sm'
+              ? 'bg-slate-900 text-white shadow-xs'
               : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
           }`}
         >
@@ -257,9 +283,9 @@ export function ShowroomGalleryClient({
               key={b.key}
               type="button"
               onClick={() => handleBrandChange(b.key)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
                 isActive
-                  ? 'bg-indigo-600 text-white shadow-sm'
+                  ? 'bg-slate-900 text-white shadow-xs'
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
@@ -273,9 +299,64 @@ export function ShowroomGalleryClient({
         })}
       </div>
 
-      {/* Filters Bar: Location & Date Range */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      {/* Filters Bar: Department, Category, Location & Date Range */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
+          {/* Department Filter Toggle */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setSelectedDepartment('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                selectedDepartment === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              All Depts
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedDepartment('sales')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                selectedDepartment === 'sales'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Briefcase className="w-3 h-3" /> Sales
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedDepartment('service')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                selectedDepartment === 'service'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Wrench className="w-3 h-3" /> Service
+            </button>
+          </div>
+
+          {/* Category Filter */}
+          <div className="flex items-center gap-2">
+            <Label className="text-xs font-semibold text-slate-500 shrink-0 flex items-center gap-1">
+              <Filter className="w-3.5 h-3.5 text-slate-400" /> Category:
+            </Label>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="h-9 w-36 text-xs font-semibold bg-slate-50 border-slate-200 rounded-lg">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="text-xs font-medium">All Categories</SelectItem>
+                <SelectItem value="vehicles" className="text-xs font-medium">🚗 Vehicles (2)</SelectItem>
+                <SelectItem value="tv" className="text-xs font-medium">📺 TV Display (2)</SelectItem>
+                <SelectItem value="bathroom" className="text-xs font-medium">🚻 Bathroom (2)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Location Filter */}
           {selectedBrand !== 'all' && availableLocations.length > 0 && (
             <div className="flex items-center gap-2">
@@ -283,15 +364,15 @@ export function ShowroomGalleryClient({
                 <MapPin className="w-3.5 h-3.5 text-slate-400" /> Location:
               </Label>
               <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-                <SelectTrigger className="h-9 w-44 text-xs font-medium bg-slate-50 border-slate-200 rounded-lg">
+                <SelectTrigger className="h-9 w-40 text-xs font-semibold bg-slate-50 border-slate-200 rounded-lg">
                   <SelectValue placeholder="All Locations" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all" className="text-xs">
+                  <SelectItem value="all" className="text-xs font-medium">
                     All Locations
                   </SelectItem>
                   {availableLocations.map((loc) => (
-                    <SelectItem key={loc} value={loc} className="text-xs">
+                    <SelectItem key={loc} value={loc} className="text-xs font-medium">
                       {loc}
                     </SelectItem>
                   ))}
@@ -306,15 +387,15 @@ export function ShowroomGalleryClient({
               <Calendar className="w-3.5 h-3.5 text-slate-400" /> Date:
             </Label>
             <Select value={dateFilter} onValueChange={setDateFilter}>
-              <SelectTrigger className="h-9 w-36 text-xs font-medium bg-slate-50 border-slate-200 rounded-lg">
+              <SelectTrigger className="h-9 w-32 text-xs font-semibold bg-slate-50 border-slate-200 rounded-lg">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-xs">All Time</SelectItem>
-                <SelectItem value="today" className="text-xs">Today</SelectItem>
-                <SelectItem value="yesterday" className="text-xs">Yesterday</SelectItem>
-                <SelectItem value="last7days" className="text-xs">Last 7 Days</SelectItem>
-                <SelectItem value="custom" className="text-xs">Custom Date</SelectItem>
+                <SelectItem value="all" className="text-xs font-medium">All Time</SelectItem>
+                <SelectItem value="today" className="text-xs font-medium">Today</SelectItem>
+                <SelectItem value="yesterday" className="text-xs font-medium">Yesterday</SelectItem>
+                <SelectItem value="last7days" className="text-xs font-medium">Last 7 Days</SelectItem>
+                <SelectItem value="custom" className="text-xs font-medium">Custom Date</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -326,14 +407,14 @@ export function ShowroomGalleryClient({
                 type="date"
                 value={customStartDate}
                 onChange={(e) => setCustomStartDate(e.target.value)}
-                className="h-9 text-xs bg-slate-50 w-36 rounded-lg"
+                className="h-9 text-xs bg-slate-50 w-36 rounded-lg font-medium"
               />
               <span className="text-xs text-slate-400">to</span>
               <Input
                 type="date"
                 value={customEndDate}
                 onChange={(e) => setCustomEndDate(e.target.value)}
-                className="h-9 text-xs bg-slate-50 w-36 rounded-lg"
+                className="h-9 text-xs bg-slate-50 w-36 rounded-lg font-medium"
               />
             </div>
           )}
@@ -341,33 +422,33 @@ export function ShowroomGalleryClient({
 
         {/* Count Summary */}
         <div className="text-xs text-slate-500 font-medium">
-          Showing <strong>{sessions.length}</strong> upload {sessions.length === 1 ? 'session' : 'sessions'} (<strong>{totalImages}</strong> photos)
+          Showing <strong>{sessions.length}</strong> {sessions.length === 1 ? 'session' : 'sessions'} (<strong>{totalImages}</strong> photos)
         </div>
       </div>
 
       {/* Gallery Feed Loading */}
       {isLoading && (
         <div className="h-64 flex flex-col items-center justify-center text-slate-400 space-y-3">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-slate-900" />
           <p className="text-xs font-medium">Loading showroom photo sessions…</p>
         </div>
       )}
 
       {/* Gallery Feed Empty State */}
       {!isLoading && sessions.length === 0 && (
-        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center space-y-4 shadow-sm">
-          <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto">
+        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center space-y-4 shadow-xs">
+          <div className="w-14 h-14 bg-slate-100 text-slate-800 rounded-2xl flex items-center justify-center mx-auto border border-slate-200">
             <ImageIcon className="w-7 h-7" />
           </div>
           <div className="max-w-md mx-auto space-y-1">
             <h3 className="text-base font-bold text-slate-900">No Showroom Photos Found</h3>
             <p className="text-xs text-slate-500">
-              No photos have been recorded yet matching this filter criteria. Staff can scan the QR code to snap live photos.
+              No photos recorded matching this filter. Staff can open the camera form to upload showroom condition photos.
             </p>
           </div>
           <Button
             onClick={() => setQrModalOpen(true)}
-            className="text-xs h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+            className="text-xs h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold cursor-pointer"
           >
             <Camera className="w-3.5 h-3.5 mr-1.5" />
             Open Mobile Camera / Scan QR
@@ -380,6 +461,7 @@ export function ShowroomGalleryClient({
         <div className="space-y-6">
           {sessions.map((session) => {
             const brandCfg = getShowroomBrandConfig(session.brand)
+            const isService = session.department === 'service'
             const dateStr = new Date(session.capturedAt).toLocaleString('en-IN', {
               timeZone: 'Asia/Kolkata',
               day: '2-digit',
@@ -393,7 +475,7 @@ export function ShowroomGalleryClient({
             return (
               <div
                 key={session.sessionId}
-                className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all space-y-4 p-5"
+                className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition-all space-y-4 p-5"
               >
                 {/* Session Header */}
                 <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -405,6 +487,12 @@ export function ShowroomGalleryClient({
                       }`}
                     >
                       {brandCfg?.label || session.brand.toUpperCase()}
+                    </span>
+
+                    {/* Department Badge */}
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full border bg-slate-100 text-slate-800 border-slate-200 flex items-center gap-1.5">
+                      {isService ? <Wrench className="w-3 h-3 text-slate-700" /> : <Briefcase className="w-3 h-3 text-slate-700" />}
+                      {isService ? 'Service' : 'Sales'}
                     </span>
 
                     {/* Location Badge */}
@@ -425,35 +513,142 @@ export function ShowroomGalleryClient({
                     <span className="text-xs text-slate-400 font-medium">
                       {dateStr} IST
                     </span>
-                    <span className="bg-slate-900 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
+                    <span className="bg-slate-900 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full">
                       {session.totalImages} {session.totalImages === 1 ? 'photo' : 'photos'}
                     </span>
                   </div>
                 </div>
 
-                {/* Photo Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                  {session.images.map((img, idx) => (
-                    <div
-                      key={img.id}
-                      onClick={() => openLightbox(session.images, idx)}
-                      className="group relative aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 bg-slate-100 cursor-pointer shadow-sm hover:scale-[1.02] transition-transform"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={img.url}
-                        alt={`Showroom photo ${idx + 1}`}
-                        className="w-full h-full object-cover group-hover:brightness-90 transition-all"
-                        loading="lazy"
-                      />
-                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <ZoomIn className="w-6 h-6 text-white drop-shadow" />
-                      </div>
-                      <span className="absolute bottom-1 left-1 bg-black/60 backdrop-blur-sm text-white text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
-                        #{idx + 1}
-                      </span>
+                {/* Categorized Photo Sections with Ultra-Prominent Badges */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                  {/* Category 1: Vehicles */}
+                  <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
+                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Car className="w-4 h-4 text-slate-800" />
+                        Vehicles ({session.byCategory?.vehicles?.length || 0}/2)
+                      </h4>
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Floor Cars</span>
                     </div>
-                  ))}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {session.byCategory?.vehicles?.length ? (
+                        session.byCategory.vehicles.map((img, idx) => (
+                          <div
+                            key={img.id}
+                            onClick={() => {
+                              const globalIdx = session.images.findIndex((i) => i.id === img.id)
+                              openLightbox(session.images, globalIdx >= 0 ? globalIdx : 0)
+                            }}
+                            className="group relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-slate-200 bg-slate-900 cursor-pointer shadow-xs hover:border-slate-400 hover:scale-[1.02] transition-all"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={img.url} alt={`Vehicle photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                            
+                            {/* Prominent High-Contrast Label Badge */}
+                            <div className="absolute top-1.5 left-1.5 z-10 bg-slate-950/90 text-white font-bold text-[10px] px-2 py-0.5 rounded-md shadow-md flex items-center gap-1 border border-white/20">
+                              <span>🚗 Vehicle #{img.categorySlot || idx + 1}</span>
+                            </div>
+
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <ZoomIn className="w-5 h-5 text-white" />
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="col-span-2 h-20 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-[11px] text-slate-400 bg-white">
+                          <Car className="w-4 h-4 mb-1 text-slate-300" />
+                          No vehicle photos
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Category 2: TV Display */}
+                  <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
+                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Tv className="w-4 h-4 text-slate-800" />
+                        TV Display ({session.byCategory?.tv?.length || 0}/2)
+                      </h4>
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Screen Status</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {session.byCategory?.tv?.length ? (
+                        session.byCategory.tv.map((img, idx) => (
+                          <div
+                            key={img.id}
+                            onClick={() => {
+                              const globalIdx = session.images.findIndex((i) => i.id === img.id)
+                              openLightbox(session.images, globalIdx >= 0 ? globalIdx : 0)
+                            }}
+                            className="group relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-slate-200 bg-slate-900 cursor-pointer shadow-xs hover:border-slate-400 hover:scale-[1.02] transition-all"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={img.url} alt={`TV photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                            
+                            {/* Prominent High-Contrast Label Badge */}
+                            <div className="absolute top-1.5 left-1.5 z-10 bg-slate-950/90 text-white font-bold text-[10px] px-2 py-0.5 rounded-md shadow-md flex items-center gap-1 border border-white/20">
+                              <span>📺 TV Screen #{img.categorySlot || idx + 1}</span>
+                            </div>
+
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <ZoomIn className="w-5 h-5 text-white" />
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="col-span-2 h-20 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-[11px] text-slate-400 bg-white">
+                          <Tv className="w-4 h-4 mb-1 text-slate-300" />
+                          No TV display photos
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Category 3: Bathroom */}
+                  <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
+                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-slate-800" />
+                        Bathroom ({session.byCategory?.bathroom?.length || 0}/2)
+                      </h4>
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Cleanliness</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {session.byCategory?.bathroom?.length ? (
+                        session.byCategory.bathroom.map((img, idx) => (
+                          <div
+                            key={img.id}
+                            onClick={() => {
+                              const globalIdx = session.images.findIndex((i) => i.id === img.id)
+                              openLightbox(session.images, globalIdx >= 0 ? globalIdx : 0)
+                            }}
+                            className="group relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-slate-200 bg-slate-900 cursor-pointer shadow-xs hover:border-slate-400 hover:scale-[1.02] transition-all"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={img.url} alt={`Bathroom photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                            
+                            {/* Prominent High-Contrast Label Badge */}
+                            <div className="absolute top-1.5 left-1.5 z-10 bg-slate-950/90 text-white font-bold text-[10px] px-2 py-0.5 rounded-md shadow-md flex items-center gap-1 border border-white/20">
+                              <span>🚻 Bathroom #{img.categorySlot || idx + 1}</span>
+                            </div>
+
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <ZoomIn className="w-5 h-5 text-white" />
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="col-span-2 h-20 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-[11px] text-slate-400 bg-white">
+                          <Sparkles className="w-4 h-4 mb-1 text-slate-300" />
+                          No bathroom photos
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )
@@ -471,8 +666,14 @@ export function ShowroomGalleryClient({
                 {activeImageIndex + 1} / {activeSessionImages.length}
               </span>
               <div>
-                <h3 className="text-sm font-bold capitalize">
-                  {activeImage.brand.toUpperCase()} · {activeImage.location}
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                  <span>{activeImage.brand.toUpperCase()} · {activeImage.location}</span>
+                  <span className="bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded-full uppercase border border-white/20">
+                    {activeImage.department}
+                  </span>
+                  <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full uppercase">
+                    {activeImage.category} #{activeImage.categorySlot || 1}
+                  </span>
                 </h3>
                 <p className="text-[11px] text-white/60">
                   {new Date(activeImage.capturedAt).toLocaleString('en-IN', {
@@ -495,7 +696,7 @@ export function ShowroomGalleryClient({
                 variant="ghost"
                 size="sm"
                 onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))}
-                className="text-white hover:bg-white/20 h-9 w-9 p-0"
+                className="text-white hover:bg-white/20 h-9 w-9 p-0 cursor-pointer"
                 title="Zoom Out"
               >
                 <ZoomOut className="w-4 h-4" />
@@ -504,7 +705,7 @@ export function ShowroomGalleryClient({
                 variant="ghost"
                 size="sm"
                 onClick={() => setZoomLevel((z) => Math.min(3, z + 0.25))}
-                className="text-white hover:bg-white/20 h-9 w-9 p-0"
+                className="text-white hover:bg-white/20 h-9 w-9 p-0 cursor-pointer"
                 title="Zoom In"
               >
                 <ZoomIn className="w-4 h-4" />
@@ -513,18 +714,18 @@ export function ShowroomGalleryClient({
                 variant="ghost"
                 size="sm"
                 onClick={() => setRotation((r) => (r + 90) % 360)}
-                className="text-white hover:bg-white/20 h-9 w-9 p-0"
-                title="Rotate"
+                className="text-white hover:bg-white/20 h-9 w-9 p-0 cursor-pointer"
+                title="Rotate Clockwise"
               >
                 <RotateCw className="w-4 h-4" />
               </Button>
               <a
                 href={activeImage.url}
+                download={`showroom_${activeImage.brand}_${activeImage.category}_${Date.now()}.webp`}
                 target="_blank"
                 rel="noreferrer"
-                download={`showroom_${activeImage.brand}_${activeImage.location}_${activeImageIndex + 1}.webp`}
-                className="inline-flex items-center justify-center text-white hover:bg-white/20 h-9 w-9 rounded-md transition-colors"
-                title="Download High-Res"
+                className="inline-flex items-center justify-center text-white hover:bg-white/20 h-9 w-9 rounded-lg transition-colors cursor-pointer"
+                title="Download Photo"
               >
                 <Download className="w-4 h-4" />
               </a>
@@ -532,15 +733,15 @@ export function ShowroomGalleryClient({
                 variant="ghost"
                 size="sm"
                 onClick={() => setLightboxOpen(false)}
-                className="text-white hover:bg-white/20 h-9 w-9 p-0 rounded-full"
-                title="Close (Esc)"
+                className="text-white hover:bg-rose-600/80 h-9 w-9 p-0 rounded-lg ml-2 cursor-pointer"
+                title="Close"
               >
                 <X className="w-5 h-5" />
               </Button>
             </div>
           </div>
 
-          {/* Lightbox Center Image View */}
+          {/* Lightbox Center Image Viewport */}
           <div className="relative flex-1 w-full flex items-center justify-center overflow-hidden py-4">
             {/* Left Nav Button */}
             <button
@@ -550,7 +751,7 @@ export function ShowroomGalleryClient({
                 setZoomLevel(1)
                 setRotation(0)
               }}
-              className="absolute left-2 sm:left-6 z-20 bg-black/60 hover:bg-black/90 text-white p-3 rounded-full border border-white/20 shadow-lg transition-all"
+              className="absolute left-2 sm:left-6 z-20 bg-black/60 hover:bg-black/90 text-white p-3 rounded-full border border-white/20 shadow-lg transition-all cursor-pointer"
             >
               <ChevronLeft className="w-6 h-6" />
             </button>
@@ -574,7 +775,7 @@ export function ShowroomGalleryClient({
                 setZoomLevel(1)
                 setRotation(0)
               }}
-              className="absolute right-2 sm:right-6 z-20 bg-black/60 hover:bg-black/90 text-white p-3 rounded-full border border-white/20 shadow-lg transition-all"
+              className="absolute right-2 sm:right-6 z-20 bg-black/60 hover:bg-black/90 text-white p-3 rounded-full border border-white/20 shadow-lg transition-all cursor-pointer"
             >
               <ChevronRight className="w-6 h-6" />
             </button>
@@ -591,8 +792,8 @@ export function ShowroomGalleryClient({
                   setZoomLevel(1)
                   setRotation(0)
                 }}
-                className={`w-14 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
-                  activeImageIndex === i ? 'border-indigo-500 scale-105' : 'border-transparent opacity-50 hover:opacity-100'
+                className={`w-14 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                  activeImageIndex === i ? 'border-white scale-105 shadow-md' : 'border-transparent opacity-50 hover:opacity-100'
                 }`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -607,12 +808,12 @@ export function ShowroomGalleryClient({
       <Dialog open={qrModalOpen} onOpenChange={setQrModalOpen}>
         <DialogContent className="sm:max-w-md text-center">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold flex items-center justify-center gap-2">
-              <QrCode className="w-5 h-5 text-indigo-600" />
+            <DialogTitle className="text-xl font-bold flex items-center justify-center gap-2 text-slate-900">
+              <QrCode className="w-5 h-5 text-slate-800" />
               Capture Showroom Photos
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Scan this QR code with any mobile device to open the camera-only showroom capture form.
+              Scan this QR code with any mobile device to open the guided 6-photo showroom camera form.
             </DialogDescription>
           </DialogHeader>
 
@@ -630,8 +831,13 @@ export function ShowroomGalleryClient({
             </div>
 
             <div className="text-center space-y-1">
-              <p className="text-xs font-bold text-slate-800">
-                {selectedBrand !== 'all' ? getShowroomBrandConfig(selectedBrand)?.label : 'All Brands'}
+              <p className="text-xs font-bold text-slate-800 flex items-center justify-center gap-1.5">
+                <span>{selectedBrand !== 'all' ? getShowroomBrandConfig(selectedBrand)?.label : 'All Brands'}</span>
+                {selectedDepartment !== 'all' && (
+                  <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded-full border border-slate-200 text-[10px] uppercase font-bold">
+                    {selectedDepartment}
+                  </span>
+                )}
               </p>
               <p className="text-[11px] text-slate-500 max-w-xs break-all font-mono">
                 {uploadUrl}
@@ -642,9 +848,9 @@ export function ShowroomGalleryClient({
               <Button
                 variant="outline"
                 onClick={copyUploadLink}
-                className="flex-1 text-xs h-11 rounded-xl"
+                className="flex-1 text-xs h-11 rounded-xl cursor-pointer border-slate-200"
               >
-                {copiedLink ? <Check className="w-4 h-4 mr-1.5 text-emerald-600" /> : <Copy className="w-4 h-4 mr-1.5" />}
+                {copiedLink ? <Check className="w-4 h-4 mr-1.5 text-slate-900" /> : <Copy className="w-4 h-4 mr-1.5" />}
                 {copiedLink ? 'Copied' : 'Copy Link'}
               </Button>
 
@@ -652,7 +858,7 @@ export function ShowroomGalleryClient({
                 href={uploadUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex-1 inline-flex items-center justify-center text-xs h-11 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-colors"
+                className="flex-1 inline-flex items-center justify-center text-xs h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold transition-colors cursor-pointer"
               >
                 <ExternalLink className="w-4 h-4 mr-1.5" />
                 Open in Browser

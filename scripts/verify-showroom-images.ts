@@ -65,8 +65,8 @@ async function runVerification() {
       console.log(`  [PASS] Bucket '${b.bucketId}' exists and is accessible`)
     }
 
-    // 4. Test Multi-Photo Upload Session
-    console.log('\n4. Testing Multi-Photo Upload Session:')
+    // 4. Test Multi-Photo Upload Session with Department & Categories
+    console.log('\n4. Testing Multi-Photo Upload Session (Sales & Service + Categories):')
     const dummyImageBuffer = Buffer.from(
       'UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA=',
       'base64'
@@ -75,31 +75,43 @@ async function runVerification() {
     const uploadResult = await uploadShowroomImages({
       brand: 'kia',
       location: 'Jammu',
+      department: 'sales',
       uploaderName: 'Automated Test User',
       files: [
-        { buffer: dummyImageBuffer, mimeType: 'image/webp', size: dummyImageBuffer.length },
-        { buffer: dummyImageBuffer, mimeType: 'image/webp', size: dummyImageBuffer.length },
+        { buffer: dummyImageBuffer, category: 'vehicles', categorySlot: 1, mimeType: 'image/webp', size: dummyImageBuffer.length },
+        { buffer: dummyImageBuffer, category: 'vehicles', categorySlot: 2, mimeType: 'image/webp', size: dummyImageBuffer.length },
+        { buffer: dummyImageBuffer, category: 'tv', categorySlot: 1, mimeType: 'image/webp', size: dummyImageBuffer.length },
+        { buffer: dummyImageBuffer, category: 'tv', categorySlot: 2, mimeType: 'image/webp', size: dummyImageBuffer.length },
+        { buffer: dummyImageBuffer, category: 'bathroom', categorySlot: 1, mimeType: 'image/webp', size: dummyImageBuffer.length },
+        { buffer: dummyImageBuffer, category: 'bathroom', categorySlot: 2, mimeType: 'image/webp', size: dummyImageBuffer.length },
       ],
     })
 
-    if (uploadResult.totalImages !== 2) {
-      throw new Error(`Expected 2 uploaded images, got ${uploadResult.totalImages}`)
+    if (uploadResult.totalImages !== 6) {
+      throw new Error(`Expected 6 uploaded images, got ${uploadResult.totalImages}`)
     }
-    console.log(`  [PASS] Successfully uploaded session ${uploadResult.sessionId} with 2 photos`)
+    if (uploadResult.byCategory.vehicles.length !== 2) throw new Error('Expected 2 vehicle photos')
+    if (uploadResult.byCategory.tv.length !== 2) throw new Error('Expected 2 tv photos')
+    if (uploadResult.byCategory.bathroom.length !== 2) throw new Error('Expected 2 bathroom photos')
+    console.log(`  [PASS] Successfully uploaded 6 categorized photos across Vehicles (2), TV (2), Bathroom (2)`)
 
     // 5. Test Gallery Query & Filter
-    console.log('\n5. Testing Gallery Fetch & Filters:')
+    console.log('\n5. Testing Gallery Fetch & Department/Category Filters:')
     const galleryResult = await getShowroomGallerySessions({
       brand: 'kia',
       location: 'Jammu',
+      department: 'sales',
       limit: 10,
     })
 
     const foundSession = galleryResult.sessions.find((s) => s.sessionId === uploadResult.sessionId)
     if (!foundSession) throw new Error('Uploaded test session not found in gallery query')
-    if (foundSession.images.length !== 2) throw new Error(`Expected 2 images in session, got ${foundSession.images.length}`)
-    console.log(`  [PASS] Found session with ${foundSession.images.length} images`)
-    console.log(`  [PASS] Sample image URL: ${foundSession.images[0].url}`)
+    if (foundSession.images.length !== 6) throw new Error(`Expected 6 images in session, got ${foundSession.images.length}`)
+    if (foundSession.byCategory.vehicles.length !== 2) throw new Error('Expected 2 vehicles in gallery session')
+    if (foundSession.byCategory.tv.length !== 2) throw new Error('Expected 2 tv photos in gallery session')
+    if (foundSession.byCategory.bathroom.length !== 2) throw new Error('Expected 2 bathroom photos in gallery session')
+    console.log(`  [PASS] Found session with ${foundSession.images.length} images grouped by category`)
+    console.log(`  [PASS] Sample vehicle image URL: ${foundSession.byCategory.vehicles[0].url}`)
 
     // 6. Clean up test records and storage files
     console.log('\n6. Cleaning up test data:')

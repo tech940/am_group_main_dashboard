@@ -2853,6 +2853,9 @@ export const showroomImages = pgTable('showroom_images', {
   sessionId: uuid('session_id').notNull(),
   brand: text('brand').notNull(),
   location: text('location').notNull(),
+  department: text('department').notNull().default('sales'),
+  category: text('category').notNull().default('vehicles'),
+  categorySlot: integer('category_slot').default(1),
   bucketId: text('bucket_id').notNull(),
   storagePath: text('storage_path').notNull(),
   fileSize: integer('file_size'),
@@ -2864,6 +2867,7 @@ export const showroomImages = pgTable('showroom_images', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   showroomImagesBrandLocationIdx: index('idx_showroom_images_brand_location').on(table.brand, table.location),
+  showroomImagesDeptCatIdx: index('idx_showroom_images_dept_cat').on(table.department, table.category),
   showroomImagesSessionIdx: index('idx_showroom_images_session').on(table.sessionId),
   showroomImagesCapturedAtIdx: index('idx_showroom_images_captured_at').on(table.capturedAt),
 }))
