@@ -142,6 +142,8 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const slotPhotosRef = useRef<Record<string, SnappedPhoto>>({})
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const targetSlotKeyForFileRef = useRef<string>('vehicles_1')
 
   // Keep ref synced
   slotPhotosRef.current = slotPhotos
@@ -174,7 +176,8 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
   const startCamera = useCallback(async () => {
     setCameraError('')
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Camera API is not supported on this browser or connection is not HTTPS.')
+      setCameraError('Live browser camera requires HTTPS or is disabled in your browser. You can still take photos directly with your phone camera below!')
+      setCameraActive(false)
       return
     }
 
@@ -195,14 +198,21 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
       streamRef.current = media
       setStream(media)
       setCameraActive(true)
-    } catch (err) {
-      console.error('Camera access error:', err)
-      setCameraError('Camera permission denied or unavailable. Please allow camera access and try again.')
+    } catch (err: unknown) {
+      console.warn('Camera access error:', err)
+      const errorObj = err as { name?: string; message?: string }
+      if (errorObj?.name === 'NotAllowedError' || errorObj?.name === 'PermissionDeniedError') {
+        setCameraError('Camera access was blocked in browser settings. You can tap "Take Photo with Phone Camera" below, or allow camera in Chrome site settings.')
+      } else if (errorObj?.name === 'NotFoundError' || errorObj?.name === 'DevicesNotFoundError') {
+        setCameraError('No video camera detected. Tap "Take Photo with Phone Camera" below.')
+      } else {
+        setCameraError('Live camera stream unavailable. You can tap "Take Photo with Phone Camera" below.')
+      }
       setCameraActive(false)
     }
   }, [])
 
-  // Auto-start camera on mount
+  // Auto-start camera on mount (gracefully handles blocked/insecure contexts)
   useEffect(() => {
     startCamera()
   }, [startCamera])
@@ -227,7 +237,67 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     }
   }, [])
 
-  // Rapid snap photo with IST watermark burning & WebP compression
+  // Burn IST Watermark & Save Snapped Photo (Used for both WebRTC stream & native file capture)
+  const saveProcessedPhoto = useCallback(
+    (canvas: HTMLCanvasElement, targetSlot: typeof SLOT_DEFINITIONS[number]) => {
+      canvas.toBlob(
+        (blob) => {
+          setIsSnapping(false)
+          if (!blob) return
+
+          const id = crypto.randomUUID()
+          const previewUrl = URL.createObjectURL(blob)
+
+          const stamp = new Date().toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+          })
+
+          // If existing photo in this slot, revoke its URL
+          const existing = slotPhotos[targetSlot.key]
+          if (existing) URL.revokeObjectURL(existing.previewUrl)
+
+          const newPhoto: SnappedPhoto = {
+            id,
+            blob,
+            previewUrl,
+            timestamp: stamp,
+            category: targetSlot.category,
+            slot: targetSlot.slotNumber,
+          }
+
+          setSlotPhotos((prev) => ({
+            ...prev,
+            [targetSlot.key]: newPhoto,
+          }))
+
+          // Auto-advance to next empty slot
+          const currentIdx = SLOT_DEFINITIONS.findIndex((s) => s.key === targetSlot.key)
+          const nextEmpty =
+            SLOT_DEFINITIONS.find((s, idx) => idx > currentIdx && !slotPhotos[s.key]) ||
+            SLOT_DEFINITIONS.find((s) => !slotPhotos[s.key] && s.key !== targetSlot.key)
+
+          if (nextEmpty) {
+            setActiveSlotKey(nextEmpty.key)
+          } else {
+            const nextSequential = SLOT_DEFINITIONS[(currentIdx + 1) % SLOT_DEFINITIONS.length]
+            setActiveSlotKey(nextSequential.key)
+          }
+        },
+        'image/webp',
+        0.82
+      )
+    },
+    [slotPhotos]
+  )
+
+  // Rapid snap photo from live video stream
   const snapPhoto = () => {
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -251,7 +321,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     // Draw frame
     ctx.drawImage(video, 0, 0, w, h)
 
-    // IST Timestamp
+    // IST Timestamp Watermark
     const stamp = new Date().toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata',
       day: '2-digit',
@@ -269,66 +339,122 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     const catLabel = activeSlot.categoryLabel.toUpperCase()
     const watermarkText = `${brandLabel.toUpperCase()} · ${location.toUpperCase()} · ${deptLabel} · ${catLabel} #${activeSlot.slotNumber} · ${stamp} IST`
 
-    // Watermark bar styling
     const barHeight = Math.max(38, Math.round(h * 0.058))
     const fontSize = Math.round(barHeight * 0.42)
 
-    // Dark sleek gradient bar at bottom of photo
     ctx.fillStyle = 'rgba(15, 23, 42, 0.90)'
     ctx.fillRect(0, h - barHeight, w, barHeight)
 
-    // Brand accent color block
     ctx.fillStyle = brandCfg?.accentColor || '#0284c7'
     ctx.fillRect(0, h - barHeight, Math.max(8, Math.round(w * 0.012)), barHeight)
 
-    // Text overlay
     ctx.font = `700 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
     ctx.textBaseline = 'middle'
     ctx.fillStyle = '#ffffff'
     ctx.fillText(watermarkText, Math.round(barHeight * 0.45), h - Math.round(barHeight / 2))
 
-    // Compress to WebP (quality 0.82)
-    canvas.toBlob(
-      (blob) => {
+    saveProcessedPhoto(canvas, activeSlot)
+  }
+
+  // Trigger universal native device camera
+  const triggerNativeCamera = (slotKey?: string) => {
+    const keyToUse = slotKey || activeSlotKey
+    setActiveSlotKey(keyToUse)
+    targetSlotKeyForFileRef.current = keyToUse
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+      fileInputRef.current.click()
+    }
+  }
+
+  // Process photo captured from native phone camera app
+  const handleNativeCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const slotKey = targetSlotKeyForFileRef.current || activeSlotKey
+    const targetSlot = SLOT_DEFINITIONS.find((s) => s.key === slotKey) || activeSlot
+
+    setIsSnapping(true)
+
+    const img = new Image()
+    const objectUrl = URL.createObjectURL(file)
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      const canvas = canvasRef.current || document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
         setIsSnapping(false)
-        if (!blob) return
+        return
+      }
 
-        const id = crypto.randomUUID()
-        const previewUrl = URL.createObjectURL(blob)
+      // Max 1920px width/height to keep optimal performance & quality
+      const maxDim = 1920
+      let w = img.naturalWidth || img.width
+      let h = img.naturalHeight || img.height
 
-        // If existing photo in this slot, revoke its URL
-        const existing = slotPhotos[activeSlot.key]
-        if (existing) URL.revokeObjectURL(existing.previewUrl)
-
-        const newPhoto: SnappedPhoto = {
-          id,
-          blob,
-          previewUrl,
-          timestamp: stamp,
-          category: activeSlot.category,
-          slot: activeSlot.slotNumber,
-        }
-
-        setSlotPhotos((prev) => ({
-          ...prev,
-          [activeSlot.key]: newPhoto,
-        }))
-
-        // Auto-advance to next empty slot
-        const currentIdx = SLOT_DEFINITIONS.findIndex((s) => s.key === activeSlot.key)
-        const nextEmpty = SLOT_DEFINITIONS.find((s, idx) => idx > currentIdx && !slotPhotos[s.key])
-          || SLOT_DEFINITIONS.find((s) => !slotPhotos[s.key] && s.key !== activeSlot.key)
-
-        if (nextEmpty) {
-          setActiveSlotKey(nextEmpty.key)
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w)
+          w = maxDim
         } else {
-          const nextSequential = SLOT_DEFINITIONS[(currentIdx + 1) % SLOT_DEFINITIONS.length]
-          setActiveSlotKey(nextSequential.key)
+          w = Math.round((w * maxDim) / h)
+          h = maxDim
         }
-      },
-      'image/webp',
-      0.82
-    )
+      }
+
+      canvas.width = w
+      canvas.height = h
+
+      ctx.drawImage(img, 0, 0, w, h)
+
+      // Burn Watermark
+      const stamp = new Date().toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      })
+
+      const brandCfg = getShowroomBrandConfig(brand)
+      const brandLabel = brandCfg?.label || brand.toUpperCase()
+      const deptLabel = department.toUpperCase()
+      const catLabel = targetSlot.categoryLabel.toUpperCase()
+      const watermarkText = `${brandLabel.toUpperCase()} · ${location.toUpperCase()} · ${deptLabel} · ${catLabel} #${targetSlot.slotNumber} · ${stamp} IST`
+
+      const barHeight = Math.max(38, Math.round(h * 0.058))
+      const fontSize = Math.round(barHeight * 0.42)
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.90)'
+      ctx.fillRect(0, h - barHeight, w, barHeight)
+
+      ctx.fillStyle = brandCfg?.accentColor || '#0284c7'
+      ctx.fillRect(0, h - barHeight, Math.max(8, Math.round(w * 0.012)), barHeight)
+
+      ctx.font = `700 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+      ctx.textBaseline = 'middle'
+      ctx.fillStyle = '#ffffff'
+      ctx.fillText(watermarkText, Math.round(barHeight * 0.45), h - Math.round(barHeight / 2))
+
+      saveProcessedPhoto(canvas, targetSlot)
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      setIsSnapping(false)
+      toast({
+        title: 'Image Error',
+        description: 'Failed to process camera capture. Please try again.',
+        variant: 'error',
+      })
+    }
+
+    img.src = objectUrl
   }
 
   // Remove single photo from slot
@@ -474,6 +600,16 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center justify-start pb-16">
+      {/* Universal Hidden Native HTML5 Camera Input (Works on 100% of devices regardless of browser permissions/HTTPS) */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleNativeCameraCapture}
+        className="hidden"
+      />
+
       {/* Top Header */}
       <header className="w-full bg-white border-b border-slate-200 px-4 sm:px-6 py-3.5 sticky top-0 z-30 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-3">
@@ -705,52 +841,47 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
             }`}
           />
 
-          {/* Camera Disabled / Error State */}
+          {/* Camera Disabled / Error / Native Fallback State */}
           {!cameraActive && (
-            <div className="p-6 text-center space-y-4 max-w-xs text-white">
-              {cameraError ? (
-                <>
-                  <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto border border-amber-500/30">
-                    <AlertTriangle className="w-7 h-7" />
-                  </div>
-                  <p className="text-xs text-amber-200 font-medium leading-relaxed">
-                    {cameraError}
-                  </p>
-                  <Button
-                    type="button"
-                    onClick={startCamera}
-                    variant="outline"
-                    className="rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 text-xs h-10"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Try Again
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div className="w-16 h-16 rounded-2xl bg-white/10 text-white flex items-center justify-center mx-auto border border-white/20 shadow-inner">
-                    <Camera className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white">Live Camera</h3>
-                    <p className="text-[11px] text-slate-300 mt-1">
-                      Tap below to open camera and snap live showroom photos.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    onClick={startCamera}
-                    className="w-full rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs h-11 shadow-lg cursor-pointer"
-                  >
-                    <Camera className="w-4 h-4 mr-2" /> Start Camera
-                  </Button>
-                </>
-              )}
+            <div className="p-5 text-center space-y-3.5 max-w-xs text-white z-10">
+              <div className="w-14 h-14 rounded-2xl bg-white/10 text-white flex items-center justify-center mx-auto border border-white/20 shadow-inner">
+                <Camera className="w-7 h-7" />
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  Snap {activeSlot.title}
+                </h3>
+                <p className="text-[11px] text-slate-300 mt-1 leading-snug">
+                  {cameraError || 'Tap below to take a live photo with your device camera.'}
+                </p>
+              </div>
+
+              {/* 100% Universal Native Phone Camera Button */}
+              <Button
+                type="button"
+                onClick={() => triggerNativeCamera(activeSlotKey)}
+                className="w-full rounded-2xl bg-white hover:bg-slate-100 text-slate-950 font-bold text-xs h-12 shadow-lg cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Camera className="w-4 h-4 text-slate-900" />
+                Take Photo with Camera
+              </Button>
+
+              <div className="flex items-center justify-center gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" /> Try Live Browser Viewfinder
+                </button>
+              </div>
             </div>
           )}
 
           {/* Live Watermark Preview Banner (Bottom overlay on camera) */}
           {cameraActive && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-3.5 py-2.5 flex items-center justify-between text-[11px] font-bold text-white">
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-3.5 py-2.5 flex items-center justify-between text-[11px] font-bold text-white z-10">
               <span className="flex items-center gap-2 drop-shadow-sm">
                 <span className="w-2 h-2 rounded-full bg-slate-300 animate-pulse" />
                 <span>
@@ -765,49 +896,80 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
           {/* Quick 120ms Shutter Flash */}
           {flashEffect && (
-            <div className="absolute inset-0 bg-white/70 pointer-events-none transition-opacity duration-100" />
+            <div className="absolute inset-0 bg-white/70 pointer-events-none transition-opacity duration-100 z-20" />
           )}
         </div>
+
+        {/* Browser Permission Help Card (Shows if camera error occurred) */}
+        {!cameraActive && cameraError && (
+          <div className="bg-slate-100 border border-slate-200 rounded-2xl p-3.5 text-left text-xs text-slate-700 space-y-2 shadow-xs">
+            <div className="flex items-center gap-2 font-bold text-slate-900">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Camera not opening in Chrome?</span>
+            </div>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              1. Tap the <strong>🔒 lock</strong> or <strong>⚙️ tune</strong> icon in Chrome&apos;s address bar.<br />
+              2. Tap <strong>Site settings / Permissions</strong> &rarr; Set <strong>Camera</strong> to <strong>Allow</strong>.<br />
+              3. Or simply tap <strong>&quot;Take Photo with Camera&quot;</strong> above to open your phone&apos;s camera directly!
+            </p>
+          </div>
+        )}
 
         {/* Hidden Canvas for Watermark & WebP Compression */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Camera Shutter & Actions */}
-        {cameraActive && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-4">
-            <div className="text-left">
-              <p className="text-xs font-bold text-slate-900">
-                Snap {activeSlot.title}
-              </p>
-              <p className="text-[11px] text-slate-500">
-                {slotPhotos[activeSlot.key] ? 'Tap shutter to retake photo' : 'Tap shutter to capture'}
-              </p>
-            </div>
-
-            {/* iOS Style Circular Shutter Button */}
-            <button
-              type="button"
-              onClick={snapPhoto}
-              disabled={isSnapping}
-              aria-label={`Take ${activeSlot.title} Photo`}
-              className="relative w-16 h-16 rounded-full border-4 border-slate-300 flex items-center justify-center bg-transparent active:scale-90 transition-transform cursor-pointer shadow-sm group hover:border-slate-400"
-            >
-              <span className="w-12 h-12 rounded-full bg-rose-600 group-hover:bg-rose-500 transition-colors shadow-inner flex items-center justify-center text-white">
-                <Camera className="w-5 h-5" />
-              </span>
-            </button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={stopCamera}
-              className="text-xs h-9 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-100"
-            >
-              Pause
-            </Button>
+        {/* Camera Shutter & Action Bar */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-4">
+          <div className="text-left">
+            <p className="text-xs font-bold text-slate-900">
+              {activeSlot.title}
+            </p>
+            <p className="text-[11px] text-slate-500">
+              {slotPhotos[activeSlot.key] ? 'Photo captured (tap to retake)' : 'Ready to capture'}
+            </p>
           </div>
-        )}
+
+          <div className="flex items-center gap-2">
+            {/* If live camera stream active, show rapid live shutter */}
+            {cameraActive ? (
+              <>
+                <button
+                  type="button"
+                  onClick={snapPhoto}
+                  disabled={isSnapping}
+                  aria-label={`Take ${activeSlot.title} Photo`}
+                  className="relative w-14 h-14 rounded-full border-4 border-slate-300 flex items-center justify-center bg-transparent active:scale-90 transition-transform cursor-pointer shadow-sm group hover:border-slate-400"
+                >
+                  <span className="w-10 h-10 rounded-full bg-slate-900 group-hover:bg-slate-800 transition-colors shadow-inner flex items-center justify-center text-white">
+                    <Camera className="w-4 h-4" />
+                  </span>
+                </button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => triggerNativeCamera(activeSlotKey)}
+                  className="text-xs h-9 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
+                  title="Use Phone Camera App"
+                >
+                  App
+                </Button>
+              </>
+            ) : (
+              /* If live camera not active, primary big native camera button */
+              <Button
+                type="button"
+                onClick={() => triggerNativeCamera(activeSlotKey)}
+                disabled={isSnapping}
+                className="text-xs h-11 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                <Camera className="w-4 h-4" />
+                {slotPhotos[activeSlot.key] ? 'Retake Photo' : 'Take Photo'}
+              </Button>
+            )}
+          </div>
+        </div>
 
         {/* 6-Photo Structured Slot Grid */}
         <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-sm">
@@ -838,7 +1000,12 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
               return (
                 <div
                   key={slot.key}
-                  onClick={() => setActiveSlotKey(slot.key)}
+                  onClick={() => {
+                    setActiveSlotKey(slot.key)
+                    if (!photo && !cameraActive) {
+                      triggerNativeCamera(slot.key)
+                    }
+                  }}
                   className={`relative rounded-2xl border p-2.5 transition-all cursor-pointer flex flex-col justify-between min-h-[130px] ${
                     isSelected
                       ? 'border-slate-900 bg-slate-100/70 shadow-xs ring-2 ring-slate-300'
@@ -864,7 +1031,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
                           clearSlot(slot.key)
                         }}
                         aria-label={`Remove ${slot.title}`}
-                        className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-xs transition-colors"
+                        className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-xs transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
