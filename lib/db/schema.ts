@@ -2843,3 +2843,27 @@ export const demoGatePassEventsRelations = relations(demoGatePassEvents, ({ one 
     references: [demoGatePasses.id],
   }),
 }))
+
+/*
+ * Showroom Images Store
+ * Stores multi-brand showroom photos captured from live cameras across all dealerships.
+ */
+export const showroomImages = pgTable('showroom_images', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id').notNull(),
+  brand: text('brand').notNull(),
+  location: text('location').notNull(),
+  bucketId: text('bucket_id').notNull(),
+  storagePath: text('storage_path').notNull(),
+  fileSize: integer('file_size'),
+  width: integer('width'),
+  height: integer('height'),
+  mimeType: text('mime_type').default('image/webp'),
+  uploaderName: text('uploader_name'),
+  capturedAt: timestamp('captured_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  showroomImagesBrandLocationIdx: index('idx_showroom_images_brand_location').on(table.brand, table.location),
+  showroomImagesSessionIdx: index('idx_showroom_images_session').on(table.sessionId),
+  showroomImagesCapturedAtIdx: index('idx_showroom_images_captured_at').on(table.capturedAt),
+}))

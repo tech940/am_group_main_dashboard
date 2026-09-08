@@ -68,7 +68,8 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 //      ⚠️ The bump is load-bearing for a RENAME as much as for a new role: every v36 snapshot was
 //      computed against a template keyed 'dcm', so without it the DGM resolves to no template at
 //      all for the full 75-minute TTL — the exact failure the v31 note records.
-const PERMISSION_CACHE_VERSION = 'v37'
+// v38: registers showroom_images (Showroom Images) in PERMISSION_GROUPS and SECTION_ROUTES.
+const PERMISSION_CACHE_VERSION = 'v38'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

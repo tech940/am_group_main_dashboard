@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Fuel,
   ScanLine,
+  Camera,
   Calculator,
   LogOut, UserSearch } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
@@ -585,6 +586,16 @@ export function Sidebar() {
         icon: ScanLine,
         external: true,
         active: pathname.startsWith('/gate-pass'),
+      })
+    }
+    if (hasPermission('showroom_images.view')) {
+      commonNodes.push({
+        key: '/showroom-images',
+        label: 'Showroom Images',
+        href: '/showroom-images',
+        icon: Camera,
+        external: true,
+        active: pathname.startsWith('/showroom-images'),
       })
     }
     if (isCaViewRole(userRole) || hasPermission('ca.view')) {

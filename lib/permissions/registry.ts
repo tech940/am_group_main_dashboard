@@ -817,6 +817,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'create', 'edit', 'approve', 'audit'],
   },
   {
+    key: 'showroom_images',
+    name: 'Showroom Images',
+    parentKey: null,
+    description: 'Multi-brand showroom photos captured across all dealerships, with brand & location filters and full-screen inspection.',
+    sortOrder: 61,
+    actions: ['view', 'create', 'delete'],
+  },
+  {
     key: 'finance',
     name: 'Finance',
     parentKey: null,
@@ -919,6 +927,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   // The guard-facing /gate/<token> page is deliberately NOT registered here. It is unauthenticated
   // by design (guards have no accounts) and is protected by an HMAC token, not by this section.
   gate_pass: { href: '/gate-pass' },
+  showroom_images: { href: '/showroom-images' },
   scrap_erp: { href: '/scrap-erp' },
   insurance_analysis: { href: '/insurance' },
   'kia.booking_payment_history': { href: '/brands/kia/booking-payment-history' },
@@ -992,7 +1001,7 @@ export const DEFAULT_VISIBLE_SECTIONS = new Set<string>([
   // Broadly visible on purpose: every user gets a personal task inbox. Who may DELEGATE is role-gated
   // (lib/delegation/access.ts), and the list only shows tasks a user created or was assigned.
   'delegation_tasks',
-  'purchase_orders', 'finance_orders', 'petty_cash', 'fuel_approvals', 'am_finance', 'user_management', 'scrap_erp',
+  'purchase_orders', 'finance_orders', 'petty_cash', 'fuel_approvals', 'am_finance', 'user_management', 'scrap_erp', 'showroom_images',
   'kia.business_excellence', 'kia.service_appointment', 'kia.demo_job_cards', 'kia.demo_cars_list',
   'kia.sales_report', 'kia.stock_report', 'kia.bookings', 'kia.proforma',
   'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.demo_job_cards',
