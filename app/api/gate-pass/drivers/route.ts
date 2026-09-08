@@ -87,19 +87,18 @@ export async function POST(request: NextRequest) {
     }
 
     const targetUserId = userId || access.appUser.id
-    if (targetUserId !== access.appUser.id) {
-      const elevated = await requireGatePassAccess('gate_pass.edit')
-      if (elevated.denied) {
-        throw new GatePassError('You can only record your own driving licence.', 403)
-      }
-    }
-
     if (!licenceNo.trim()) throw new GatePassError('A licence number is required.')
 
     const day = rawExpiry.slice(0, 10)
     const licenceExpiry = /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null
     if (rawExpiry && !licenceExpiry) {
       throw new GatePassError('That expiry date is not valid.')
+    }
+    if (licenceExpiry) {
+      const expDate = new Date(licenceExpiry)
+      if (!Number.isNaN(expDate.getTime()) && expDate.getTime() < Date.now()) {
+        throw new GatePassError(`This driving licence has expired (Expired on ${licenceExpiry}). Cannot use an expired license.`)
+      }
     }
 
     // Upload BEFORE the row is written, so a failed upload does not leave a record pointing at

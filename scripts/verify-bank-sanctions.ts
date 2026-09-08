@@ -92,13 +92,16 @@ console.log(`
   assert('KIA accounts sees kia', see('accounts', 'kia', 'kia'))
   assert('KIA accounts does NOT see honda', !see('accounts', 'kia', 'honda'))
   assert('KIA accounts does NOT see platinum', !see('accounts', 'kia', 'platinum'))
+  assert('Hyundai accounts sees hyundai', see('accounts', 'hyundai', 'hyundai'))
+  assert('Hyundai accounts does NOT see kia', !see('accounts', 'hyundai', 'kia'))
   assert('KIA EA does NOT see group-level', !see('ea', 'kia', null))
+  assert('Hyundai EA does NOT see group-level', !see('ea', 'hyundai', null))
   assert('a two-brand login sees both of its brands',
     see('accounts', 'kia,platinum', 'kia') && see('accounts', 'kia,platinum', 'platinum'))
   assert('a two-brand login still sees nothing else', !see('accounts', 'kia,platinum', 'tata'))
 
   // The 'all' rule is the subtle one and the whole reason the NULL case is handled separately.
-  assert("assignment 'all' sees every BRAND", see('ea', 'all', 'kia') && see('ea', 'all', 'honda'))
+  assert("assignment 'all' sees every BRAND", see('ea', 'all', 'kia') && see('ea', 'all', 'honda') && see('ea', 'all', 'hyundai'))
   assert("assignment 'all' does NOT see group-level (MD/Developer only)", !see('ea', 'all', null))
   assert("'all' is not a role escalation", !canViewAllBankSanctionBranches('ea'))
 
@@ -107,7 +110,7 @@ console.log(`
   assert('brand list resolution', JSON.stringify(bankSanctionBrandsFor('kia,honda')) === '["kia","honda"]')
   assert("'all' resolves to the sentinel, not a brand list", bankSanctionBrandsFor('all') === 'all-brands')
   assert('every seeded branch code is a known brand',
-    ['kia', 'honda', 'tata', 'bajaj', 'mg', 'ktm', 'triumph', 'platinum']
+    ['kia', 'hyundai', 'honda', 'tata', 'bajaj', 'mg', 'ktm', 'triumph', 'platinum']
       .every((b) => (BANK_SANCTION_BRANDS as readonly string[]).includes(b)))
 }
 

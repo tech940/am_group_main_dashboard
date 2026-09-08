@@ -54,6 +54,45 @@ export function getAppBaseUrl(request?: Request, explicitBaseUrl?: string | null
     return explicitBaseUrl.trim().replace(/\/$/, '')
   }
 
+  // 1. Explicit configured production domain in env (NEXT_PUBLIC_APP_URL, APP_URL, SITE_URL)
+  // When configured to a custom domain (not vercel.app and not localhost), always use this!
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.SITE_URL
+  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('vercel.app')) {
+    return envUrl.replace(/\/$/, '')
+  }
+
+  // 2. Check incoming request headers for a custom domain (non-vercel, non-localhost)
+  if (request) {
+    const origin = request.headers.get('origin')
+    if (origin && !origin.includes('localhost') && !origin.includes('vercel.app')) {
+      return origin.replace(/\/$/, '')
+    }
+    const forwardedHost = request.headers.get('x-forwarded-host')
+    const forwardedProto = request.headers.get('x-forwarded-proto') || 'https'
+    if (forwardedHost && !forwardedHost.includes('localhost') && !forwardedHost.includes('vercel.app')) {
+      return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, '')
+    }
+    const referer = request.headers.get('referer')
+    if (referer) {
+      try {
+        const refUrl = new URL(referer)
+        if (!refUrl.host.includes('localhost') && !refUrl.host.includes('vercel.app')) {
+          return `${refUrl.protocol}//${refUrl.host}`.replace(/\/$/, '')
+        }
+      } catch {}
+    }
+    const host = request.headers.get('host')
+    if (host && !host.includes('localhost') && !host.includes('vercel.app')) {
+      return `${forwardedProto}://${host}`.replace(/\/$/, '')
+    }
+  }
+
+  // 3. Fallback: If NEXT_PUBLIC_APP_URL is set (even if vercel), use it
+  if (envUrl && !envUrl.includes('localhost')) {
+    return envUrl.replace(/\/$/, '')
+  }
+
+  // 4. Request host fallback
   if (request) {
     const origin = request.headers.get('origin')
     if (origin && !origin.includes('localhost')) {
@@ -64,24 +103,10 @@ export function getAppBaseUrl(request?: Request, explicitBaseUrl?: string | null
     if (forwardedHost && !forwardedHost.includes('localhost')) {
       return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, '')
     }
-    const referer = request.headers.get('referer')
-    if (referer) {
-      try {
-        const refUrl = new URL(referer)
-        if (!refUrl.host.includes('localhost')) {
-          return `${refUrl.protocol}//${refUrl.host}`.replace(/\/$/, '')
-        }
-      } catch {}
-    }
     const host = request.headers.get('host')
     if (host && !host.includes('localhost')) {
       return `${forwardedProto}://${host}`.replace(/\/$/, '')
     }
-  }
-
-  const envUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.SITE_URL
-  if (envUrl && !envUrl.includes('localhost')) {
-    return envUrl.replace(/\/$/, '')
   }
 
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {

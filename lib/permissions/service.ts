@@ -61,7 +61,14 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 //      it to sales_manager / general_manager (approve) and sales_executive / manager (create).
 //      A new section key is absent from every v34 snapshot, so the Sales Manager who is the
 //      approver would see no sidebar link and a forbidden() page for the first 75 minutes.
-const PERMISSION_CACHE_VERSION = 'v35'
+// v36: added a first approval stage to Platinum SERVICE. Shipped under the wrong acronym ('dcm');
+//      superseded by v37 below. Left in this log because the enum value it created is permanent.
+// v37: that role is 'dgm' (Deputy General Manager), not 'dcm'. The chain is unchanged —
+//      Platinum SERVICE: DGM → EA → MD → Accounts; Platinum SALES: EA → MD → Accounts.
+//      ⚠️ The bump is load-bearing for a RENAME as much as for a new role: every v36 snapshot was
+//      computed against a template keyed 'dcm', so without it the DGM resolves to no template at
+//      all for the full 75-minute TTL — the exact failure the v31 note records.
+const PERMISSION_CACHE_VERSION = 'v37'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -248,7 +255,10 @@ function constrainSnapshotToBranch(
 //
 // 'crm' STAYS even though it is retired: removing it would widen any lingering crm user from 2 keys
 // to ~28 on their way out the door.
-const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'cxm', 'ccm'])
+// 'dgm' is here deliberately: it owns ONE approval stage on Platinum service. Without membership
+// the per-brand blanket below grants it every section of its assigned brand — the mechanism that
+// silently handed cxm 27 keys and ccm 30, including kia.proforma.approve.
+const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'cxm', 'ccm', 'dgm'])
 
 // Sensitive analytics (Sales Report, Stock Report) are visible by default ONLY to top management:
 // super admins (MD/Developer) and EBA. Every other role — including CEO/EA and all brand roles — is
@@ -372,57 +382,68 @@ export async function ensurePermissionRegistrySynced(): Promise<void> {
 
 async function syncPermissionRegistry() {
   const now = new Date()
+  const CHUNK_SIZE = 100
 
   if (PERMISSION_GROUPS.length > 0) {
-    await db.insert(permissionGroups)
-      .values(PERMISSION_GROUPS.map((group) => ({
-        key: group.key,
-        name: group.name,
-        parentKey: group.parentKey,
-        description: group.description,
-        sortOrder: group.sortOrder,
-        isActive: true,
-        updatedAt: now,
-      })))
-      .onConflictDoUpdate({
-        target: permissionGroups.key,
-        set: {
-          name: sql`excluded.name`,
-          parentKey: sql`excluded.parent_key`,
-          description: sql`excluded.description`,
-          sortOrder: sql`excluded.sort_order`,
-          isActive: true,
-          updatedAt: now,
-        },
-      })
+    const groupRows = PERMISSION_GROUPS.map((group) => ({
+      key: group.key,
+      name: group.name,
+      parentKey: group.parentKey,
+      description: group.description,
+      sortOrder: group.sortOrder,
+      isActive: true,
+      updatedAt: now,
+    }))
+
+    for (let i = 0; i < groupRows.length; i += CHUNK_SIZE) {
+      const chunk = groupRows.slice(i, i + CHUNK_SIZE)
+      await db.insert(permissionGroups)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: permissionGroups.key,
+          set: {
+            name: sql`excluded.name`,
+            parentKey: sql`excluded.parent_key`,
+            description: sql`excluded.description`,
+            sortOrder: sql`excluded.sort_order`,
+            isActive: true,
+            updatedAt: now,
+          },
+        })
+    }
   }
 
   if (PERMISSIONS.length > 0) {
-    await db.insert(permissions)
-      .values(PERMISSIONS.map((permission) => ({
-        name: permission.key,
-        groupKey: permission.groupKey,
-        label: permission.label,
-        description: permission.description,
-        resource: permission.resource,
-        action: permission.action,
-        sortOrder: permission.sortOrder,
-        isActive: true,
-        updatedAt: now,
-      })))
-      .onConflictDoUpdate({
-        target: permissions.name,
-        set: {
-          groupKey: sql`excluded.group_key`,
-          label: sql`excluded.label`,
-          description: sql`excluded.description`,
-          resource: sql`excluded.resource`,
-          action: sql`excluded.action`,
-          sortOrder: sql`excluded.sort_order`,
-          isActive: true,
-          updatedAt: now,
-        },
-      })
+    const allPermissionValues = PERMISSIONS.map((permission) => ({
+      name: permission.key,
+      groupKey: permission.groupKey,
+      label: permission.label,
+      description: permission.description,
+      resource: permission.resource,
+      action: permission.action,
+      sortOrder: permission.sortOrder,
+      isActive: true,
+      updatedAt: now,
+    }))
+
+    for (let i = 0; i < allPermissionValues.length; i += CHUNK_SIZE) {
+      const chunk = allPermissionValues.slice(i, i + CHUNK_SIZE)
+      await db.insert(permissions)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: permissions.name,
+          set: {
+            groupKey: sql`excluded.group_key`,
+            label: sql`excluded.label`,
+            description: sql`excluded.description`,
+            resource: sql`excluded.resource`,
+            action: sql`excluded.action`,
+            sortOrder: sql`excluded.sort_order`,
+            isActive: true,
+            updatedAt: now,
+          },
+        })
+    }
   }
 
   const permissionRows = await db.select({ id: permissions.id, name: permissions.name })
@@ -447,11 +468,14 @@ async function syncPermissionRegistry() {
     // admin edits). New template keys are still seeded; existing rows are left as the DB has
     // them. Trade-off: removing a key from a code template no longer un-grants it — the DB is
     // authoritative for role defaults once seeded.
-    await db.insert(rolePermissions)
-      .values(rolePermissionRows)
-      .onConflictDoNothing({
-        target: [rolePermissions.role, rolePermissions.permissionId],
-      })
+    for (let i = 0; i < rolePermissionRows.length; i += CHUNK_SIZE) {
+      const chunk = rolePermissionRows.slice(i, i + CHUNK_SIZE)
+      await db.insert(rolePermissions)
+        .values(chunk)
+        .onConflictDoNothing({
+          target: [rolePermissions.role, rolePermissions.permissionId],
+        })
+    }
   }
 }
 
@@ -827,17 +851,24 @@ export async function updateUserPermissionOverrides(params: {
     }
   }
 
-  await Promise.all([
-    deletePermissionIds.length > 0
-      ? db.delete(userPermissions)
+  const CHUNK_SIZE = 100
+
+  if (deletePermissionIds.length > 0) {
+    for (let i = 0; i < deletePermissionIds.length; i += CHUNK_SIZE) {
+      const chunk = deletePermissionIds.slice(i, i + CHUNK_SIZE)
+      await db.delete(userPermissions)
         .where(and(
           eq(userPermissions.userId, params.targetUserId),
-          inArray(userPermissions.permissionId, deletePermissionIds)
+          inArray(userPermissions.permissionId, chunk)
         ))
-      : Promise.resolve(),
-    upsertRows.length > 0
-      ? db.insert(userPermissions)
-        .values(upsertRows)
+    }
+  }
+
+  if (upsertRows.length > 0) {
+    for (let i = 0; i < upsertRows.length; i += CHUNK_SIZE) {
+      const chunk = upsertRows.slice(i, i + CHUNK_SIZE)
+      await db.insert(userPermissions)
+        .values(chunk)
         .onConflictDoUpdate({
           target: [userPermissions.userId, userPermissions.permissionId],
           set: {
@@ -845,11 +876,15 @@ export async function updateUserPermissionOverrides(params: {
             updatedAt: now,
           },
         })
-      : Promise.resolve(),
-    auditRows.length > 0
-      ? db.insert(permissionAuditLogs).values(auditRows)
-      : Promise.resolve(),
-  ])
+    }
+  }
+
+  if (auditRows.length > 0) {
+    for (let i = 0; i < auditRows.length; i += CHUNK_SIZE) {
+      const chunk = auditRows.slice(i, i + CHUNK_SIZE)
+      await db.insert(permissionAuditLogs).values(chunk)
+    }
+  }
 
   await clearUserPermissionCache(params.targetUserId)
   return buildUserPermissionSnapshot(params.targetUserId)
@@ -883,6 +918,54 @@ export async function getRolePermissionGrants(): Promise<Record<string, Record<s
   return grants
 }
 
+export async function bulkUpdateRolePermissions(params: {
+  role: PermissionRole
+  grants: Record<string, boolean>
+  actorUserId?: string
+}) {
+  const now = new Date()
+  const entries = Object.entries(params.grants)
+  if (entries.length === 0) return getRolePermissionGrants()
+
+  const CHUNK_SIZE = 100
+  const permissionRows = await db.select({ id: permissions.id, name: permissions.name })
+    .from(permissions)
+    .where(inArray(permissions.name, entries.map(([key]) => key)))
+
+  const idByKey = new Map(permissionRows.map((p) => [p.name, p.id]))
+  const upsertRows: { role: PermissionRole; permissionId: string; allowed: boolean; updatedAt: Date }[] = []
+  const removeIds: string[] = []
+  for (const [key, granted] of entries) {
+    const permissionId = idByKey.get(key)
+    if (!permissionId) continue
+    if (granted) upsertRows.push({ role: params.role, permissionId, allowed: true, updatedAt: now })
+    else removeIds.push(permissionId)
+  }
+
+  if (removeIds.length > 0) {
+    for (let i = 0; i < removeIds.length; i += CHUNK_SIZE) {
+      const chunk = removeIds.slice(i, i + CHUNK_SIZE)
+      await db.delete(rolePermissions).where(and(
+        eq(rolePermissions.role, params.role),
+        inArray(rolePermissions.permissionId, chunk),
+      ))
+    }
+  }
+
+  if (upsertRows.length > 0) {
+    for (let i = 0; i < upsertRows.length; i += CHUNK_SIZE) {
+      const chunk = upsertRows.slice(i, i + CHUNK_SIZE)
+      await db.insert(rolePermissions).values(chunk).onConflictDoUpdate({
+        target: [rolePermissions.role, rolePermissions.permissionId],
+        set: { allowed: sql`excluded.allowed`, updatedAt: now },
+      })
+    }
+  }
+
+  await invalidateRolePermissionCaches(params.role)
+  return getRolePermissionGrants()
+}
+
 /**
  * Update a role's default permissions. `changes` maps a permission key to whether the role
  * should grant it by default: true upserts a granted row, false removes the grant. Every
@@ -892,40 +975,9 @@ export async function updateRolePermissions(params: {
   role: PermissionRole
   changes: Record<string, boolean>
 }) {
-  const entries = Object.entries(params.changes)
-  if (entries.length === 0) return getRolePermissionGrants()
-
-  await ensurePermissionRegistrySynced()
-  const permissionRows = await db.select({ id: permissions.id, key: permissions.name })
-    .from(permissions)
-    .where(inArray(permissions.name, entries.map(([key]) => key)))
-  const idByKey = new Map(permissionRows.map((permission) => [permission.key, permission.id]))
-  const now = new Date()
-
-  const upsertRows: Array<typeof rolePermissions.$inferInsert> = []
-  const removeIds: string[] = []
-  for (const [key, granted] of entries) {
-    const permissionId = idByKey.get(key)
-    if (!permissionId) continue
-    if (granted) upsertRows.push({ role: params.role, permissionId, allowed: true, updatedAt: now })
-    else removeIds.push(permissionId)
-  }
-
-  await Promise.all([
-    removeIds.length > 0
-      ? db.delete(rolePermissions).where(and(
-        eq(rolePermissions.role, params.role),
-        inArray(rolePermissions.permissionId, removeIds),
-      ))
-      : Promise.resolve(),
-    upsertRows.length > 0
-      ? db.insert(rolePermissions).values(upsertRows).onConflictDoUpdate({
-        target: [rolePermissions.role, rolePermissions.permissionId],
-        set: { allowed: sql`excluded.allowed`, updatedAt: now },
-      })
-      : Promise.resolve(),
-  ])
-
-  await invalidateRolePermissionCaches(params.role)
-  return getRolePermissionGrants()
+  return bulkUpdateRolePermissions({
+    role: params.role,
+    grants: params.changes,
+  })
 }
+

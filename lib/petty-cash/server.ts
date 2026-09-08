@@ -467,13 +467,35 @@ export async function getPettyCashApprovalQueue(appUser: AppUser, opts?: { searc
 }
 
 /** Lightweight badge count of pending petty-cash approvals for the current user. */
+/**
+ * The badge on the Petty Cash link.
+ *
+ * ⚠️ IT MUST APPLY THE SAME FILTERS AS getPettyCashApprovalQueue, or the badge promises work the
+ * list cannot show. It previously applied only the approver-visibility filter and omitted the
+ * BRANCH scope the queue also applies — measured live, an MD pinned to `honda` saw a badge of 4
+ * over a queue of 0, because the count included other brands' requests and the list correctly did
+ * not.
+ *
+ * This is the same defect as the MD purchase-order queue that rendered six rows under
+ * "Showing 1-12 of 42": a count and a list derived from different predicates always drift, and the
+ * count is the half people trust.
+ */
 export async function getPettyCashApprovalCount(appUser: AppUser) {
   const statuses = pettyCashApprovalStatusesForRole(appUser.role)
   if (statuses.length === 0) return 0
+
+  const filters = [
+    getPettyCashApproverRequestVisibilityFilter(appUser),
+    inArray(pettyCashRequests.status, statuses),
+  ]
+  // Same call, same arguments as the queue's — deliberately, so the two cannot answer differently.
+  const scope = pettyCashRequestedBranchScope(appUser, pettyCashRequests.branchId, null)
+  if (scope) filters.push(scope)
+
   const [{ total }] = await db
     .select({ total: count() })
     .from(pettyCashRequests)
-    .where(and(getPettyCashApproverRequestVisibilityFilter(appUser), inArray(pettyCashRequests.status, statuses)))
+    .where(and(...filters))
   return Number(total) || 0
 }
 

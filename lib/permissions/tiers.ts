@@ -56,6 +56,14 @@ export const ROLE_PROFILE: Record<PermissionRole, RoleProfile> = {
   eba: { tier: TIER.LEADERSHIP, family: 'tracked', track: 'branch' },
   ed: { tier: TIER.LEADERSHIP, family: 'tracked', track: 'branch' },
   vp: { tier: TIER.LEADERSHIP, family: 'tracked', track: 'branch' },
+  /*
+   * ⚠️ 'special', NOT a tracked tier. A tracked role inherits the union of every same-track
+   * template at tier <= its own, so putting the DGM on the branch track at LEADERSHIP would hand
+   * it CEO/EA/ED/VP's entire bundle. assistant_manager was moved down a tier for exactly this
+   * reason. The DGM's authority is one approval stage on Platinum service — it is granted
+   * explicitly by its template and by nothing else.
+   */
+  dgm: { tier: TIER.HEAD, family: 'special' },
   // Head / GM — split by function
   general_manager: { tier: TIER.HEAD, family: 'tracked', track: 'sales' }, // "General Sales Manager"
   sales_head: { tier: TIER.HEAD, family: 'tracked', track: 'sales' },

@@ -57,9 +57,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const passNoForPath = String(form.get('passNo') ?? verified.passId).replace(/[^A-Za-z0-9_-]+/g, '')
 
     const photoPaths: Record<string, string> = {}
+
+    // Check for named photos
+    const namedPhotos: Array<[string, string]> = [
+      ['photoFront', 'front'],
+      ['photoBack', 'back'],
+      ['photoRight', 'right'],
+      ['photoLeft', 'left'],
+      ['photoOdometer', 'odometer'],
+      ['photoOdometerIn', 'odometer_in'],
+    ]
+    for (const [field, kind] of namedPhotos) {
+      const f = form.get(field)
+      if (f instanceof File && f.size > 0) {
+        photoPaths[kind] = await uploadGateEvidence(passNoForPath, kind, f)
+      }
+    }
+
     for (let i = 0; i < files.length; i += 1) {
       const kind = kinds[i] || `photo-${i + 1}`
-      photoPaths[kind] = await uploadGateEvidence(passNoForPath, kind, files[i])
+      if (!photoPaths[kind]) {
+        photoPaths[kind] = await uploadGateEvidence(passNoForPath, kind, files[i])
+      }
     }
 
     const signatureFile = form.get('signature')

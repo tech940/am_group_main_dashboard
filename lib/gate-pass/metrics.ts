@@ -99,19 +99,46 @@ function evidenceFor(input: GatePassMetricInput): GatePassEvidence {
   const out = input.gateOutPhotoPaths ?? {}
   const back = input.gateInPhotoPaths ?? {}
 
+  const hasModernAngles = Boolean(out.front || out.back || out.left || out.right)
+
+  if (hasModernAngles) {
+    const hasOut = Boolean(input.gateOutAt)
+    const hasIn = Boolean(input.gateInAt)
+    const applicable: boolean[] = []
+
+    const outFront = Boolean(out.front || out.vehicle_front)
+    const outBack = Boolean(out.back)
+    const outRight = Boolean(out.right)
+    const outLeft = Boolean(out.left)
+    const outOdo = Boolean(out.odometer)
+    const inOdo = Boolean(back.odometer || back.odometer_in)
+
+    if (hasOut) applicable.push(outFront, outBack, outRight, outLeft, outOdo)
+    if (hasIn) applicable.push(inOdo)
+
+    return {
+      outVehiclePhoto: outFront && outBack && outRight && outLeft,
+      outOdometerPhoto: outOdo,
+      outSignature: true,
+      inVehiclePhoto: true,
+      inOdometerPhoto: inOdo,
+      inSignature: true,
+      captured: applicable.filter(Boolean).length,
+      expected: applicable.length,
+      complete: applicable.length > 0 && applicable.every(Boolean),
+    }
+  }
+
+  // Legacy format support
   const e = {
-    outVehiclePhoto: Boolean(out.vehicle_front),
+    outVehiclePhoto: Boolean(out.vehicle_front || out.front),
     outOdometerPhoto: Boolean(out.odometer),
     outSignature: Boolean(input.gateOutSignaturePath),
-    inVehiclePhoto: Boolean(back.vehicle_front),
-    inOdometerPhoto: Boolean(back.odometer),
+    inVehiclePhoto: Boolean(back.vehicle_front || back.front),
+    inOdometerPhoto: Boolean(back.odometer || back.odometer_in),
     inSignature: Boolean(input.gateInSignaturePath),
   }
 
-  /*
-   * Only count what could have been captured yet. Scoring a pass that has not left as "0 of 6"
-   * would make every live pass look non-compliant and train people to ignore the number.
-   */
   const hasOut = Boolean(input.gateOutAt)
   const hasIn = Boolean(input.gateInAt)
   const applicable: boolean[] = []

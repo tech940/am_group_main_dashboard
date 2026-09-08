@@ -554,6 +554,16 @@ export function AdminConsole() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  /*
+   * The debounced copy is what actually reaches the server. `search` drives the input so typing
+   * stays instant; `searchTerm` changes 300ms after the last keystroke, so a full name costs one
+   * request rather than one per character.
+   */
+  const [searchTerm, setSearchTerm] = useState('')
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchTerm(search.trim()), 300)
+    return () => window.clearTimeout(timer)
+  }, [search])
   const [createOpen, setCreateOpen] = useState(false)
   const [createStep, setCreateStep] = useState(1)
   const [createForm, setCreateForm] = useState({
@@ -582,10 +592,20 @@ export function AdminConsole() {
     setLoading(true)
     setError('')
     try {
+      /*
+       * ⚠️ THE SEARCH GOES TO THE SERVER. It used to fetch a fixed first page and filter it in the
+       * browser, so the box could only ever find someone already on screen — with 112 users and a
+       * 100-row page, the two oldest accounts were unfindable by any search. `accounts@amtata.net`
+       * was row 110: active, not deleted, and invisible, so an admin creating it got "already
+       * exists" while the Users tab showed nothing.
+       *
+       * This is the same defect as the MD purchase-order queue, which rendered six rows under
+       * "Showing 1-12 of 42": never filter a paginated result client-side.
+       */
       const endpoint = activeTab === 'overview'
         ? '/api/admin/overview'
         : activeTab === 'users' || activeTab === 'branch-admins'
-          ? '/api/admin/users?pageSize=100'
+          ? `/api/admin/users?pageSize=100${searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : ''}`
           : activeTab === 'access'
             ? `/api/admin/permissions${selectedUserId ? `?userId=${selectedUserId}` : ''}`
             : activeTab === 'access-map'
@@ -639,7 +659,7 @@ export function AdminConsole() {
     } finally {
       setLoading(false)
     }
-  }, [activeTab, selectedUserId, auditSource])
+  }, [activeTab, selectedUserId, auditSource, searchTerm])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
@@ -647,11 +667,15 @@ export function AdminConsole() {
   }, [load])
 
   const visibleTabs = TAB_DEFINITIONS.filter((tab) => !tab.hidden && (!tab.superOnly || capabilities?.authority === 'developer'))
-  const filteredUsers = (usersData?.users || []).filter((user) => {
-    if (activeTab === 'branch-admins' && user.role !== 'branch_admin') return false
-    const query = search.trim().toLowerCase()
-    return !query || `${user.fullName} ${user.email} ${user.role} ${user.brand}`.toLowerCase().includes(query)
-  })
+  /*
+   * ⚠️ NO TEXT FILTER HERE. The server does the searching now (see `load`), so this must not
+   * re-filter the result — that is what made the search only ever look at the rows already on
+   * screen. The one predicate left is the branch-admins TAB, which narrows by role rather than by
+   * anything the user typed.
+   */
+  const filteredUsers = (usersData?.users || []).filter(
+    (user) => !(activeTab === 'branch-admins' && user.role !== 'branch_admin'),
+  )
 
   async function createUser() {
     setSaving(true)

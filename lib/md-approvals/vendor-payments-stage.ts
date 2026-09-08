@@ -86,7 +86,7 @@ function needsAction(value: string | null | undefined): boolean {
 export function vendorPaymentActiveStage(row: VendorPaymentStageInput): VendorPaymentStageKey {
   const brand = String(row.brand || 'kia').trim().toLowerCase()
   const isKia = brand === 'kia' || brand.startsWith('kia')
-  const hasFirstStage = brandHasFirstStage(row.brand)
+  const hasFirstStage = brandHasFirstStage(row.brand, row.department, row.approvalType)
   const requiresHr = vendorPaymentRequiresHr(row.approvalType, row.brand)
 
   // Stage 1: Department head (GSM for Sales, VP for Service) - Skipped for Platinum

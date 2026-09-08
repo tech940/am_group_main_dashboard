@@ -1,0 +1,18 @@
+-- Rollback notes for 0055_add_dgm_role.sql.
+--
+-- ⚠️ POSTGRES CANNOT REMOVE AN ENUM VALUE, so 'dgm' is permanent once added — exactly as 'dcm' is.
+-- To undo the BEHAVIOUR, revert the code:
+--   1. lib/approvals/first-stage-approver.ts — remove DGM_BRANDS / isDgmBrand and restore
+--      brandHasFirstStage to `if (b.startsWith('platinum')) return false`.
+--   2. lib/permissions/registry.ts — remove the `dgm` template and its label.
+--   3. lib/permissions/tiers.ts — remove the `dgm` ROLE_PROFILE entry.
+--   4. lib/permissions/service.ts — remove 'dgm' from TEMPLATE_ONLY_ROLES and BUMP the cache
+--      version again, or every session keeps the old shape for 75 minutes.
+--   5. lib/kia/approval-scope.ts — remove 'dgm' from BRAND_WIDE_APPROVAL_ROLES.
+--
+-- Move anyone off the role first, so nobody is stranded on a role with no template:
+--     SELECT id, full_name, email FROM users WHERE role::text = 'dgm';
+--     -- UPDATE users SET role = 'manager' WHERE role::text = 'dgm';
+--
+-- Any Platinum SERVICE request sitting at the DGM stage keeps `vp_approval = ''`, which reverts to
+-- meaning "no first stage" — those requests fall back to awaiting EA on their own.

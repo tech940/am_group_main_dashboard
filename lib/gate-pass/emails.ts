@@ -54,6 +54,7 @@ export type GatePassEmailRow = {
   variant: string | null
   color: string | null
   driverName: string
+  driverEmail?: string | null
   purpose: string
   purposeNote: string | null
   expectedReturnAt: Date
@@ -126,7 +127,7 @@ export async function sendGatePassSubmittedEmail(pass: GatePassEmailRow): Promis
 }
 
 /**
- * Approved — the requester gets the QR that lets the guard sign the car out.
+ * Approved — the requester gets the QR and departure link that lets the guard sign the car out.
  *
  * The QR rides as an inline `cid:` attachment rather than a data: URI, because Gmail strips data:
  * image URIs and the pass would arrive with a broken image where its only useful content should be.
@@ -146,25 +147,43 @@ export async function sendGatePassApprovedEmail(pass: GatePassEmailRow, gateUrl:
     heading: 'Your gate pass is approved',
     preheader: `${pass.passNo} · show this QR at the gate`,
     bodyHtml:
-      `<p>Approved by ${escapeHtml(pass.approvedByName || 'your approver')}.`
-      + (pass.approvalRemarks ? ` Remark: ${escapeHtml(pass.approvalRemarks)}` : '')
-      + '</p>'
-      + passDetails(pass)
+      `<div style="margin-bottom:16px;">`
+      + `<p style="margin:0 0 8px;font-size:15px;color:#0f172a;">Hello <strong>${escapeHtml(pass.requestedByName)}</strong>,</p>`
+      + `<p style="margin:0 0 12px;color:#334155;line-height:1.5;">Your gate pass <strong>${escapeHtml(pass.passNo)}</strong> has been approved by <strong>${escapeHtml(pass.approvedByName || 'your approver')}</strong>.`
+      + (pass.approvalRemarks ? `<br/><span style="color:#64748b;font-size:13px;">Remark: <em>${escapeHtml(pass.approvalRemarks)}</em></span>` : '')
+      + `</p>`
+      + `</div>`
       + (qr
-        ? `<p style="margin:24px 0 8px;"><strong>Show this at the gate.</strong> The guard scans it with their own phone camera.</p>`
-          + `<p style="text-align:center;margin:0;"><img src="cid:${cid}" alt="Gate pass QR code" width="220" height="220" style="border:1px solid #e2e8f0;border-radius:8px;" /></p>`
+        ? `<div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin:20px 0;">`
+          + `<p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#0f172a;">Gate Departure QR Code</p>`
+          + `<p style="margin:0 0 16px;font-size:12px;color:#64748b;max-width:360px;margin-left:auto;margin-right:auto;">Show this QR code to the gate guard before departure to log odometer OUT, take 4-angle vehicle photos, and open the gate.</p>`
+          + `<img src="cid:${cid}" alt="Gate pass QR code" width="220" height="220" style="border:1px solid #cbd5e1;border-radius:10px;background:#ffffff;padding:8px;display:inline-block;" />`
+          + `</div>`
         : '')
-      + `<p style="margin-top:24px;">${primaryButton(gateUrl, 'Open gate pass')}</p>`
-      + `<p style="color:#64748b;font-size:13px;">This link signs the vehicle OUT. A separate link is issued when it leaves, for signing it back in.</p>`,
+      + `<div style="margin:24px 0 16px;text-align:center;">`
+      + primaryButton(gateUrl, 'Open gate pass')
+      + `</div>`
+      + `<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin:16px 0;word-break:break-all;">`
+      + `<p style="margin:0 0 4px;font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.05em;">Direct Link for Guard / Departure</p>`
+      + `<a href="${escapeHtml(gateUrl)}" style="color:#2563eb;font-size:13px;text-decoration:underline;">${escapeHtml(gateUrl)}</a>`
+      + `</div>`
+      + `<p style="color:#64748b;font-size:12px;margin:0 0 20px;">This link signs the vehicle OUT. A separate link is issued when it leaves, for signing it back in.</p>`
+      + passDetails(pass),
   })
+
+  const cc: string[] = []
+  if (pass.driverEmail && pass.driverEmail.toLowerCase() !== pass.requestedByEmail.toLowerCase()) {
+    cc.push(pass.driverEmail)
+  }
 
   dispatch(sendTrackedEmail({
     to: pass.requestedByEmail,
+    cc: cc.length > 0 ? cc : undefined,
     subject: `Gate pass ${pass.passNo} approved`,
     html,
     emailType: 'gate_pass_approved',
     attachments: qr
-      ? [{ filename: 'gate-pass-qr.png', content: qr, contentType: 'image/png', cid }]
+      ? [{ filename: `gate-pass-${pass.passNo}-qr.png`, content: qr, contentType: 'image/png', cid }]
       : undefined,
   }))
 }
@@ -190,7 +209,36 @@ export async function sendGatePassRejectedEmail(pass: GatePassEmailRow): Promise
   }))
 }
 
-/** The car has physically left. Both the requester and the approving desk are told, within seconds. */
+export const GATE_PASS_MANAGEMENT_EMAILS: string[] = [
+  'tech@amgroupind.com',
+  'aryan@amgroupind.com',
+  'sanjay@jammuautomart.com',
+  'gmsales@amkia.in',
+  'mohanamkia@gmail.com',
+]
+
+function buildNotificationCcList(
+  primaryEmail: string,
+  dealerRecipients: Array<{ email: string }>,
+  driverEmail?: string | null,
+): string[] {
+  const all = [
+    ...dealerRecipients.map((r) => r.email),
+    ...GATE_PASS_MANAGEMENT_EMAILS,
+    ...(driverEmail ? [driverEmail] : []),
+  ]
+  const lowerPrimary = primaryEmail.trim().toLowerCase()
+  const unique = new Set<string>()
+  for (const email of all) {
+    const trimmed = email.trim()
+    if (trimmed && trimmed.toLowerCase() !== lowerPrimary) {
+      unique.add(trimmed)
+    }
+  }
+  return Array.from(unique)
+}
+
+/** The car has physically left. Requester gets the return QR/link, while management & approvers get an informational alert. */
 export async function sendGatePassGateOutEmail(pass: GatePassEmailRow, returnUrl: string): Promise<void> {
   const { recipients } = await resolveGatePassNotifyList(pass.dealerCode)
 
@@ -202,12 +250,32 @@ export async function sendGatePassGateOutEmail(pass: GatePassEmailRow, returnUrl
   }
 
   const cid = 'gate-pass-return-qr'
-  const html = emailLayout({
+
+  // 1. Email to Requester ONLY — includes Return QR Code & Direct Link to sign vehicle back in
+  const requesterHtml = emailLayout({
     eyebrow: 'Demo Car GatePass',
     heading: 'Vehicle has left the premises',
     preheader: `${pass.passNo} · due back ${formatIndiaDateTime(pass.expectedReturnAt)}`,
     bodyHtml:
-      detailTable([
+      `<div style="margin-bottom:16px;">`
+      + `<p style="margin:0 0 8px;font-size:15px;color:#0f172a;">Hello <strong>${escapeHtml(pass.requestedByName)}</strong>,</p>`
+      + `<p style="margin:0 0 12px;color:#334155;line-height:1.5;">Vehicle <strong>${escapeHtml(pass.registrationNumber || pass.model || 'Demo Car')}</strong> on pass <strong>${escapeHtml(pass.passNo)}</strong> has been checked out at the gate.</p>`
+      + `</div>`
+      + (qr
+        ? `<div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin:20px 0;">`
+          + `<p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#0f172a;">Return Verification QR Code</p>`
+          + `<p style="margin:0 0 16px;font-size:12px;color:#64748b;max-width:360px;margin-left:auto;margin-right:auto;">Show this QR code to the gate guard upon return to log odometer IN, parking location, and key handover.</p>`
+          + `<img src="cid:${cid}" alt="Return QR code" width="220" height="220" style="border:1px solid #cbd5e1;border-radius:10px;background:#ffffff;padding:8px;display:inline-block;" />`
+          + `</div>`
+        : '')
+      + `<div style="margin:24px 0 16px;text-align:center;">`
+      + primaryButton(returnUrl, 'Sign vehicle back in')
+      + `</div>`
+      + `<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin:16px 0;word-break:break-all;">`
+      + `<p style="margin:0 0 4px;font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.05em;">Direct Return Link</p>`
+      + `<a href="${escapeHtml(returnUrl)}" style="color:#2563eb;font-size:13px;text-decoration:underline;">${escapeHtml(returnUrl)}</a>`
+      + `</div>`
+      + detailTable([
         ['Pass number', pass.passNo],
         ['Vehicle', vehicleLine(pass)],
         ['Registration', pass.registrationNumber || 'Not recorded'],
@@ -215,48 +283,90 @@ export async function sendGatePassGateOutEmail(pass: GatePassEmailRow, returnUrl
         ['Left at', pass.gateOutAt ? formatIndiaDateTime(pass.gateOutAt) : '—'],
         ['Odometer out', pass.gateOutOdo ? `${pass.gateOutOdo} km` : 'Not recorded'],
         ['Due back', formatIndiaDateTime(pass.expectedReturnAt)],
-      ])
-      + (qr
-        ? `<p style="margin:24px 0 8px;"><strong>Show this on return.</strong> It signs the vehicle back in.</p>`
-          + `<p style="text-align:center;margin:0;"><img src="cid:${cid}" alt="Return QR code" width="220" height="220" style="border:1px solid #e2e8f0;border-radius:8px;" /></p>`
-        : '')
-      + `<p style="margin-top:24px;">${primaryButton(returnUrl, 'Sign vehicle back in')}</p>`,
+      ]),
   })
 
   dispatch(sendTrackedEmail({
     to: pass.requestedByEmail,
-    cc: recipients.map((r) => r.email),
-    subject: `Gate pass ${pass.passNo}: vehicle out`,
-    html,
+    subject: `Gate pass ${pass.passNo}: vehicle out (Return QR code enclosed)`,
+    html: requesterHtml,
     emailType: 'gate_pass_gate_out',
     attachments: qr
-      ? [{ filename: 'return-qr.png', content: qr, contentType: 'image/png', cid }]
+      ? [{ filename: `gate-pass-${pass.passNo}-return-qr.png`, content: qr, contentType: 'image/png', cid }]
       : undefined,
   }))
+
+  // 2. Alert-Only Email to Management & Approvers — NO QR Code and NO action links
+  const alertRecipients = buildNotificationCcList(pass.requestedByEmail, recipients)
+  if (alertRecipients.length > 0) {
+    const alertHtml = emailLayout({
+      eyebrow: 'Demo Car GatePass Alert',
+      heading: 'Vehicle Has Left Premises',
+      preheader: `${pass.passNo} · ${vehicleLine(pass)} · ${pass.driverName}`,
+      bodyHtml:
+        `<div style="margin-bottom:16px;">`
+        + `<p style="margin:0 0 8px;font-size:15px;color:#0f172a;">Vehicle <strong>${escapeHtml(pass.registrationNumber || pass.model || 'Demo Car')}</strong> has departed.</p>`
+        + `<p style="margin:0 0 12px;color:#334155;line-height:1.5;">Gate pass <strong>${escapeHtml(pass.passNo)}</strong> has been signed out at the gate. Driven by <strong>${escapeHtml(pass.driverName)}</strong>, requested by <strong>${escapeHtml(pass.requestedByName)}</strong>.</p>`
+        + `</div>`
+        + detailTable([
+          ['Pass number', pass.passNo],
+          ['Vehicle', vehicleLine(pass)],
+          ['Registration', pass.registrationNumber || 'Not recorded'],
+          ['Branch', getKiaBranchLabel(pass.dealerCode)],
+          ['Driver', pass.driverName],
+          ['Requested by', pass.requestedByName],
+          ['Left at', pass.gateOutAt ? formatIndiaDateTime(pass.gateOutAt) : '—'],
+          ['Odometer out', pass.gateOutOdo ? `${pass.gateOutOdo} km` : 'Not recorded'],
+          ['Due back', formatIndiaDateTime(pass.expectedReturnAt)],
+          ['Purpose', pass.purposeNote ? `${pass.purpose} — ${pass.purposeNote}` : pass.purpose],
+        ]),
+    })
+
+    dispatch(sendTrackedEmail({
+      to: alertRecipients,
+      subject: `Gate Out Alert: ${pass.passNo} · ${pass.registrationNumber || pass.model || 'Demo Car'} on the road`,
+      html: alertHtml,
+      emailType: 'gate_pass_gate_out_alert',
+    }))
+  }
 }
 
 export async function sendGatePassReturnedEmail(pass: GatePassEmailRow): Promise<void> {
+  const { recipients } = await resolveGatePassNotifyList(pass.dealerCode)
   const distance = pass.gateInOdo && pass.gateOutOdo
     ? Number(pass.gateInOdo) - Number(pass.gateOutOdo)
     : null
 
   const html = emailLayout({
     eyebrow: 'Demo Car GatePass',
-    heading: 'Vehicle returned',
-    preheader: `${pass.passNo} · closed`,
-    bodyHtml: detailTable([
-      ['Pass number', pass.passNo],
-      ['Vehicle', vehicleLine(pass)],
-      ['Driver', pass.driverName],
-      ['Left at', pass.gateOutAt ? formatIndiaDateTime(pass.gateOutAt) : '—'],
-      ['Returned at', pass.gateInAt ? formatIndiaDateTime(pass.gateInAt) : '—'],
-      ['Distance', Number.isFinite(distance as number) && distance !== null ? `${distance} km` : 'Not computed'],
-    ]),
+    heading: 'Vehicle returned & trip closed',
+    preheader: `${pass.passNo} · ${vehicleLine(pass)} · ${distance !== null ? `${distance} km covered` : 'Returned'}`,
+    bodyHtml:
+      `<div style="margin-bottom:16px;">`
+      + `<p style="margin:0 0 8px;font-size:15px;color:#0f172a;">Vehicle <strong>${escapeHtml(pass.registrationNumber || pass.model || 'Demo Car')}</strong> has arrived safely back at <strong>${escapeHtml(getKiaBranchLabel(pass.dealerCode))}</strong>.</p>`
+      + `<p style="margin:0 0 12px;color:#334155;line-height:1.5;">Gate pass <strong>${escapeHtml(pass.passNo)}</strong> has been verified and signed back in by the gate guard.</p>`
+      + `</div>`
+      + detailTable([
+        ['Pass number', pass.passNo],
+        ['Vehicle', vehicleLine(pass)],
+        ['Registration', pass.registrationNumber || 'Not recorded'],
+        ['Branch', getKiaBranchLabel(pass.dealerCode)],
+        ['Driver', pass.driverName],
+        ['Requested by', pass.requestedByName],
+        ['Left at', pass.gateOutAt ? formatIndiaDateTime(pass.gateOutAt) : '—'],
+        ['Returned at', pass.gateInAt ? formatIndiaDateTime(pass.gateInAt) : '—'],
+        ['Odometer out', pass.gateOutOdo ? `${pass.gateOutOdo} km` : '—'],
+        ['Odometer in', pass.gateInOdo ? `${pass.gateInOdo} km` : '—'],
+        ['Total distance', Number.isFinite(distance as number) && distance !== null ? `${distance} km` : 'Not computed'],
+      ]),
   })
+
+  const cc = buildNotificationCcList(pass.requestedByEmail, recipients, pass.driverEmail)
 
   dispatch(sendTrackedEmail({
     to: pass.requestedByEmail,
-    subject: `Gate pass ${pass.passNo}: vehicle returned`,
+    cc: cc.length > 0 ? cc : undefined,
+    subject: `Vehicle Returned: ${pass.passNo} · ${pass.registrationNumber || pass.model || 'Demo Car'} closed`,
     html,
     emailType: 'gate_pass_returned',
   }))
@@ -273,25 +383,33 @@ export async function sendGatePassOverdueEmail(pass: GatePassEmailRow): Promise<
   const { recipients } = await resolveGatePassNotifyList(pass.dealerCode)
 
   const html = emailLayout({
-    eyebrow: 'Demo Car GatePass',
-    heading: 'A demo car is overdue',
-    preheader: `${pass.passNo} · was due ${formatIndiaDateTime(pass.expectedReturnAt)}`,
+    eyebrow: 'Demo Car GatePass Alert',
+    heading: 'Vehicle is overdue for return',
+    preheader: `URGENT: ${pass.passNo} · was due ${formatIndiaDateTime(pass.expectedReturnAt)}`,
     bodyHtml:
-      `<p>This vehicle has not been signed back in.</p>`
+      `<div style="margin-bottom:16px;">`
+      + `<p style="margin:0 0 8px;font-size:15px;color:#991b1b;font-weight:700;">⚠️ Vehicle return schedule has been exceeded.</p>`
+      + `<p style="margin:0 0 12px;color:#334155;line-height:1.5;">Vehicle <strong>${escapeHtml(pass.registrationNumber || pass.model || 'Demo Car')}</strong> on gate pass <strong>${escapeHtml(pass.passNo)}</strong> was expected back by <strong>${escapeHtml(formatIndiaDateTime(pass.expectedReturnAt) || '—')}</strong> but has not yet been checked in at the gate.</p>`
+      + `</div>`
       + detailTable([
         ['Pass number', pass.passNo],
         ['Vehicle', vehicleLine(pass)],
         ['Registration', pass.registrationNumber || 'Not recorded'],
+        ['Branch', getKiaBranchLabel(pass.dealerCode)],
         ['Driver', pass.driverName],
-        ['Left at', pass.gateOutAt ? formatIndiaDateTime(pass.gateOutAt) : '—'],
+        ['Requested by', pass.requestedByName],
+        ['Left premises at', pass.gateOutAt ? formatIndiaDateTime(pass.gateOutAt) : '—'],
         ['Was due back', formatIndiaDateTime(pass.expectedReturnAt)],
+        ['Purpose', pass.purposeNote ? `${pass.purpose} — ${pass.purposeNote}` : pass.purpose],
       ]),
   })
 
+  const cc = buildNotificationCcList(pass.requestedByEmail, recipients, pass.driverEmail)
+
   dispatch(sendTrackedEmail({
     to: pass.requestedByEmail,
-    cc: recipients.map((r) => r.email),
-    subject: `Overdue: gate pass ${pass.passNo}`,
+    cc: cc.length > 0 ? cc : undefined,
+    subject: `OVERDUE ALERT: ${pass.passNo} · ${pass.registrationNumber || pass.model || 'Demo Car'} past due time`,
     html,
     emailType: 'gate_pass_overdue',
   }))

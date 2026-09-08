@@ -3,7 +3,7 @@ import 'server-only'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { demoGatePasses } from '@/lib/db/schema'
+import { demoGatePasses, users } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { getAppBaseUrl } from '@/lib/approvals/decision-emails'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
@@ -63,11 +63,14 @@ export class GatePassError extends Error {
 
 export const createGatePassSchema = z.object({
   vin: z.string().trim().min(1, 'Choose a vehicle.'),
-  driverKind: z.enum(['staff', 'customer']),
+  driverKind: z.enum(['staff', 'customer']).default('staff'),
   driverUserId: z.string().uuid().nullish(),
   driverName: z.string().trim().min(1, 'The driver must be named.').max(120),
   driverPhone: z.string().trim().max(20).nullish(),
-  purpose: z.enum(GATE_PASS_PURPOSES),
+  driverLicenceNo: z.string().trim().max(50).nullish(),
+  driverLicenceExpiry: z.string().trim().nullish(),
+  driverLicenceDocPath: z.string().trim().nullish(),
+  purpose: z.string().trim().min(1, 'Choose a purpose for travel.'),
   purposeNote: z.string().trim().max(500).nullish(),
   expectedReturnAt: z.string().min(1, 'Say when the vehicle is due back.'),
   remarks: z.string().trim().max(1000).nullish(),
@@ -89,7 +92,7 @@ export const listGatePassesSchema = z.object({
 
 type PassRow = typeof demoGatePasses.$inferSelect
 
-function toEmailRow(row: PassRow): GatePassEmailRow {
+function toEmailRow(row: PassRow, driverEmail?: string | null): GatePassEmailRow {
   return {
     id: row.id,
     passNo: row.passNo,
@@ -99,6 +102,7 @@ function toEmailRow(row: PassRow): GatePassEmailRow {
     variant: row.variant,
     color: row.color,
     driverName: row.driverName,
+    driverEmail: driverEmail || null,
     purpose: row.purpose,
     purposeNote: row.purposeNote,
     expectedReturnAt: row.expectedReturnAt,
@@ -111,6 +115,23 @@ function toEmailRow(row: PassRow): GatePassEmailRow {
     gateInAt: row.gateInAt,
     gateInOdo: row.gateInOdo,
   }
+}
+
+async function toEmailRowWithDriver(row: PassRow): Promise<GatePassEmailRow> {
+  let driverEmail: string | null = null
+  if (row.driverUserId) {
+    try {
+      const [u] = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, row.driverUserId))
+        .limit(1)
+      if (u?.email) driverEmail = u.email
+    } catch {
+      // Non-fatal
+    }
+  }
+  return toEmailRow(row, driverEmail)
 }
 
 /**
@@ -188,10 +209,6 @@ export async function listGatePasses(appUser: AppUser, raw: unknown) {
 
   return {
     rows: visible.map(serializeGatePass),
-    // ⚠️ `total` counts the SERVER-side predicate. When awaitingMe re-filters by role above, the
-    // count and the page can disagree — which is precisely the bug that made "Showing 1-12 of 42"
-    // render six rows in the MD PO queue. So it is reported separately and never presented as a
-    // page total for that view.
     total,
     roleFiltered: filters.awaitingMe && visible.length !== rows.length,
     page: filters.page,
@@ -235,17 +252,6 @@ export async function createGatePass(appUser: AppUser, rawInput: unknown) {
     throw new GatePassError('That vehicle belongs to a branch you are not assigned to.', 403)
   }
 
-  /*
-   * ⚠️ ONE CAR, ONE LIVE PASS.
-   *
-   * Without this, two people can raise passes for the same vehicle, both get approved, and both
-   * walk out to a car only one of them will find. The fleet count then reports a vehicle that is
-   * out twice, which is not a state the world can be in.
-   *
-   * 'approved' holds the car as well as 'out': the pass exists and somebody is expecting to collect
-   * it. A pass merely awaiting approval does NOT hold it — it may be rejected, and blocking on
-   * unapproved requests would let anyone reserve the whole fleet just by asking.
-   */
   const holding = await findHoldingPass(vehicle.vin)
   if (holding) {
     throw new GatePassError(
@@ -256,18 +262,59 @@ export async function createGatePass(appUser: AppUser, rawInput: unknown) {
     )
   }
 
-  // A staff driver's licence is pulled from the registry and checked BEFORE the pass exists, so an
-  // expired licence is caught at the desk rather than at the gate with a customer waiting.
+  // A staff driver's licence is pulled from the registry and checked BEFORE the pass exists,
+  // or auto-persisted if provided on creation so the driver never has to upload again.
   let licenceNo: string | null = null
   let licenceExpiry: string | null = null
   if (input.driverKind === 'staff' && input.driverUserId) {
     const profile = await getDriverProfile(input.driverUserId, new Date())
-    if (!profile) throw new GatePassError('That driver has no licence on file. Add it before raising a pass.')
-    if (profile.expired === true) {
-      throw new GatePassError(`${profile.fullName}'s driving licence has expired.`)
+    
+    // Check if new license details were provided or fallback to profile
+    if (input.driverLicenceExpiry) {
+      const expDate = new Date(input.driverLicenceExpiry)
+      if (!Number.isNaN(expDate.getTime()) && expDate.getTime() < Date.now()) {
+        throw new GatePassError(`Cannot submit request: Driving licence has expired (Expired on ${input.driverLicenceExpiry}).`)
+      }
     }
-    licenceNo = profile.licenceNo
-    licenceExpiry = profile.licenceExpiry
+
+    if (profile && !input.driverLicenceNo && !input.driverLicenceExpiry) {
+      if (profile.expired === true) {
+        throw new GatePassError(`Cannot submit request: ${profile.fullName}'s driving licence has expired (Expired on ${profile.licenceExpiry}). Please provide renewed licence details.`)
+      }
+      licenceNo = profile.licenceNo
+      licenceExpiry = profile.licenceExpiry
+      if (input.driverLicenceDocPath && !profile.licenceDocPath) {
+        try {
+          const { upsertDriverProfile } = await import('./drivers')
+          await upsertDriverProfile({
+            userId: input.driverUserId,
+            licenceNo: profile.licenceNo || 'ON_FILE',
+            licenceExpiry: profile.licenceExpiry || null,
+            licenceDocPath: input.driverLicenceDocPath,
+            phone: profile.phone || input.driverPhone || null,
+            updatedBy: appUser.id,
+          })
+        } catch {
+          // Non-fatal
+        }
+      }
+    } else {
+      licenceNo = input.driverLicenceNo || profile?.licenceNo || 'ON_FILE'
+      licenceExpiry = input.driverLicenceExpiry || profile?.licenceExpiry || null
+      try {
+        const { upsertDriverProfile } = await import('./drivers')
+        await upsertDriverProfile({
+          userId: input.driverUserId,
+          licenceNo: licenceNo || 'ON_FILE',
+          licenceExpiry: licenceExpiry,
+          licenceDocPath: input.driverLicenceDocPath || profile?.licenceDocPath || null,
+          phone: input.driverPhone || profile?.phone || null,
+          updatedBy: appUser.id,
+        })
+      } catch {
+        // Non-fatal
+      }
+    }
   }
 
   const created = await db.transaction(async (tx) => {
@@ -383,6 +430,8 @@ export async function decideGatePass(
     return row
   })
 
+  const emailRow = await toEmailRowWithDriver(updated)
+
   if (decision === 'approve') {
     /*
      * The OUT token is minted here and nowhere else. The IN token is minted at gate-out, so a
@@ -395,12 +444,53 @@ export async function decideGatePass(
       expectedReturnAt: updated.expectedReturnAt,
       issuedAt: now,
     })
-    await sendGatePassApprovedEmail(toEmailRow(updated), buildGateUrl(getAppBaseUrl(request), token))
+    await sendGatePassApprovedEmail(emailRow, buildGateUrl(getAppBaseUrl(request), token))
   } else {
-    await sendGatePassRejectedEmail(toEmailRow(updated))
+    await sendGatePassRejectedEmail(emailRow)
   }
 
   return serializeGatePass(updated)
+}
+
+/**
+ * Re-send the gate pass barcode and link to the requester (and CC driver if applicable).
+ */
+export async function resendGatePassEmail(
+  appUser: AppUser,
+  id: string,
+  request?: Request,
+): Promise<{ ok: boolean; recipient: string; purpose: 'out' | 'in' }> {
+  const current = await readPass(id)
+  if (!visibleDealerCodes(appUser).includes(current.dealerCode)) {
+    throw new GatePassError('This gate pass is not at one of your branches.', 403)
+  }
+
+  const purpose = current.status === 'approved' ? 'out' : current.status === 'out' ? 'in' : null
+  if (!purpose) {
+    throw new GatePassError(
+      current.status === 'pending_approval'
+        ? 'This pass has not been approved yet.'
+        : 'This pass is closed, so no gate link is active.',
+      409,
+    )
+  }
+
+  const token = createGateToken({
+    passId: current.id,
+    purpose,
+    expectedReturnAt: current.expectedReturnAt,
+    issuedAt: new Date(),
+  })
+  const url = buildGateUrl(getAppBaseUrl(request), token)
+  const emailRow = await toEmailRowWithDriver(current)
+
+  if (purpose === 'out') {
+    await sendGatePassApprovedEmail(emailRow, url)
+  } else {
+    await sendGatePassGateOutEmail(emailRow, url)
+  }
+
+  return { ok: true, recipient: emailRow.requestedByEmail, purpose }
 }
 
 export async function cancelGatePass(appUser: AppUser, id: string, reason: string | null) {
@@ -520,7 +610,8 @@ export async function recordGateOut(passId: string, input: GateEventInput, reque
     expectedReturnAt: updated.expectedReturnAt,
     issuedAt: now,
   })
-  await sendGatePassGateOutEmail(toEmailRow(updated), buildGateUrl(getAppBaseUrl(request), returnToken))
+  const emailRow = await toEmailRowWithDriver(updated)
+  await sendGatePassGateOutEmail(emailRow, buildGateUrl(getAppBaseUrl(request), returnToken))
 
   return { alreadyDone: false, pass: serializeGatePass(updated) }
 }
@@ -535,11 +626,14 @@ export async function recordGateIn(passId: string, input: GateEventInput) {
   }
   if (!input.guardName.trim()) throw new GatePassError('The guard must record their name.')
 
-  // Advisory only — a lower closing reading is usually a typo, but the vehicle is physically here
-  // and refusing the entry would leave it unlogged, which is worse than a wrong number we can see.
   const outOdo = current.gateOutOdo === null ? null : Number(current.gateOutOdo)
-  const odoWentBackwards =
-    input.odometer !== null && outOdo !== null && Number.isFinite(outOdo) && input.odometer < outOdo
+  if (input.odometer === null || Number.isNaN(input.odometer) || input.odometer < 0) {
+    throw new GatePassError('A valid closing odometer reading is required.')
+  }
+  if (outOdo !== null && Number.isFinite(outOdo) && input.odometer <= outOdo) {
+    throw new GatePassError(`Closing odometer (${input.odometer} km) must be greater than Gate Out reading (${outOdo} km).`)
+  }
+  const odoWentBackwards = false
 
   const now = new Date()
   const updated = await db.transaction(async (tx) => {
@@ -578,7 +672,8 @@ export async function recordGateIn(passId: string, input: GateEventInput) {
     return row
   })
 
-  await sendGatePassReturnedEmail(toEmailRow(updated))
+  const emailRow = await toEmailRowWithDriver(updated)
+  await sendGatePassReturnedEmail(emailRow)
   return { alreadyDone: false, pass: serializeGatePass(updated), odoWentBackwards }
 }
 
@@ -603,7 +698,8 @@ export async function runOverdueSweep(now: Date) {
     .returning()
 
   for (const row of claimed) {
-    await sendGatePassOverdueEmail(toEmailRow(row))
+    const emailRow = await toEmailRowWithDriver(row)
+    await sendGatePassOverdueEmail(emailRow)
   }
 
   /*

@@ -1,13 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, Check, CheckCircle2, Loader2 } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, Loader2, Camera } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { VehicleTrackerCamera } from '@/features/kia/vehicle-tracker-camera'
-import { GateSignaturePad } from './signature-pad'
 
 type GuardView = {
   passNo: string
@@ -33,10 +31,10 @@ type GuardView = {
 }
 
 /**
- * The guard's screen. Reached by scanning a QR with the phone's own camera — no app, no login.
+ * The Gate Out / Gate In mobile clearance screen.
  *
- * Designed for one hand, outdoors, in a hurry: large targets, one column, and nothing optional
- * above anything required.
+ * Designed for one hand, outdoors, in a hurry: large targets, one column,
+ * with mandatory 4-angle vehicle photos + odometer photo.
  */
 export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
   const isOut = pass.purposeOfVisit === 'out'
@@ -44,10 +42,11 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
   const [odometer, setOdometer] = useState('')
   const [parkedLocation, setParkedLocation] = useState('')
   const [keyHandoverTo, setKeyHandoverTo] = useState('')
-  const [notes, setNotes] = useState('')
   const [frontPhoto, setFrontPhoto] = useState<File | null>(null)
+  const [backPhoto, setBackPhoto] = useState<File | null>(null)
+  const [rightPhoto, setRightPhoto] = useState<File | null>(null)
+  const [leftPhoto, setLeftPhoto] = useState<File | null>(null)
   const [odoPhoto, setOdoPhoto] = useState<File | null>(null)
-  const [signature, setSignature] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState<'recorded' | 'already' | null>(null)
@@ -84,27 +83,61 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
 
   const submit = async () => {
     setError('')
-    if (!guardName.trim()) return setError('Please enter your name.')
+    if (!guardName.trim()) {
+      return setError(
+        isOut
+          ? 'Please enter the name of the person responsible for Gate Out.'
+          : 'Please enter the name of the person responsible for Gate In.'
+      )
+    }
+    const odoNum = Number(odometer)
+    if (!odometer.trim() || Number.isNaN(odoNum) || odoNum < 0) {
+      return setError('Please enter a valid manual odometer reading.')
+    }
+    const outOdoNum = pass.gateOutOdo ? Number(pass.gateOutOdo) : null
+    if (!isOut && outOdoNum !== null && Number.isFinite(outOdoNum) && odoNum <= outOdoNum) {
+      return setError(`Odometer IN (${odoNum} km) must be greater than Gate Out reading (${outOdoNum} km).`)
+    }
+    if (!isOut && !odoPhoto) {
+      return setError('Please capture the Odometer IN reading photo.')
+    }
     setSubmitting(true)
     try {
       const body = new FormData()
       body.set('guardName', guardName.trim())
       body.set('odometer', odometer)
       body.set('passNo', pass.passNo)
-      body.set('notes', notes)
+
       if (!isOut) {
         body.set('parkedLocation', parkedLocation)
         body.set('keyHandoverTo', keyHandoverTo)
       }
+
       if (frontPhoto) {
         body.append('photos', frontPhoto)
-        body.append('photoKinds', 'vehicle_front')
+        body.append('photoKinds', 'front')
+        body.set('photoFront', frontPhoto)
+      }
+      if (backPhoto) {
+        body.append('photos', backPhoto)
+        body.append('photoKinds', 'back')
+        body.set('photoBack', backPhoto)
+      }
+      if (rightPhoto) {
+        body.append('photos', rightPhoto)
+        body.append('photoKinds', 'right')
+        body.set('photoRight', rightPhoto)
+      }
+      if (leftPhoto) {
+        body.append('photos', leftPhoto)
+        body.append('photoKinds', 'left')
+        body.set('photoLeft', leftPhoto)
       }
       if (odoPhoto) {
         body.append('photos', odoPhoto)
-        body.append('photoKinds', 'odometer')
+        body.append('photoKinds', isOut ? 'odometer' : 'odometer_in')
+        body.set(isOut ? 'photoOdometer' : 'photoOdometerIn', odoPhoto)
       }
-      if (signature) body.set('signature', signature)
 
       const res = await fetch(`/api/gate/${encodeURIComponent(token)}/submit`, { method: 'POST', body })
       const json = await res.json().catch(() => ({}))
@@ -121,77 +154,123 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
     <Shell pass={pass}>
       <div className="space-y-5">
         <div>
-          <Label htmlFor="guardName">Your name</Label>
+          <Label htmlFor="guardName" className="font-semibold text-slate-800">
+            {isOut ? 'Person responsible for Gate Out *' : 'Person responsible for Gate In *'}
+          </Label>
           <Input
             id="guardName"
             value={guardName}
             onChange={(e) => setGuardName(e.target.value)}
-            placeholder="Security guard on duty"
+            placeholder={
+              isOut
+                ? 'Name of person responsible for Gate Out'
+                : 'Name of person responsible for Gate In'
+            }
             className="mt-1 h-12 text-base"
             autoComplete="name"
           />
         </div>
 
         <div>
-          <Label htmlFor="odometer">Odometer (km)</Label>
+          <Label htmlFor="odometer" className="font-semibold text-slate-800">
+            Odometer (km) *
+          </Label>
           <Input
             id="odometer"
             value={odometer}
             onChange={(e) => setOdometer(e.target.value.replace(/[^0-9]/g, ''))}
             inputMode="numeric"
             placeholder={pass.gateOutOdo ? `Reading when it left: ${pass.gateOutOdo}` : 'Reading on the dashboard'}
-            className="mt-1 h-12 text-base"
+            className="mt-1 h-12 text-base font-mono"
           />
         </div>
 
         {!isOut ? (
           <>
             <div>
-              <Label htmlFor="parked">Where is it parked?</Label>
-              <Input id="parked" value={parkedLocation} onChange={(e) => setParkedLocation(e.target.value)}
-                className="mt-1 h-12 text-base" placeholder="e.g. Front yard, bay 3" />
+              <Label htmlFor="parked" className="font-semibold text-slate-800">Where is it parked?</Label>
+              <Input
+                id="parked"
+                value={parkedLocation}
+                onChange={(e) => setParkedLocation(e.target.value)}
+                className="mt-1 h-12 text-base"
+                placeholder="e.g. Front yard, bay 3"
+              />
             </div>
             <div>
-              <Label htmlFor="keys">Keys handed to</Label>
-              <Input id="keys" value={keyHandoverTo} onChange={(e) => setKeyHandoverTo(e.target.value)}
-                className="mt-1 h-12 text-base" placeholder="Name of whoever took the keys" />
+              <Label htmlFor="keys" className="font-semibold text-slate-800">Keys handed to</Label>
+              <Input
+                id="keys"
+                value={keyHandoverTo}
+                onChange={(e) => setKeyHandoverTo(e.target.value)}
+                className="mt-1 h-12 text-base"
+                placeholder="Name of whoever took the keys"
+              />
             </div>
           </>
         ) : null}
 
-        {/* Reused as-is from the Vehicle Tracker: rear camera, burned-in IST timestamp, retake,
-            and it already handles a blocked permission and the black-screen race.
-            ⚠️ It renders its label only inside a sentence, so two of these stacked look identical.
-            The headings below are what tells a guard which photo is which. */}
-        <div className="space-y-1.5">
-          <Label>Photo of the vehicle {frontPhoto ? <Check className="ml-1 inline h-3.5 w-3.5 text-emerald-600" /> : null}</Label>
-          <VehicleTrackerCamera label="front of the vehicle" onCapture={setFrontPhoto} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Photo of the odometer {odoPhoto ? <Check className="ml-1 inline h-3.5 w-3.5 text-emerald-600" /> : null}</Label>
-          <VehicleTrackerCamera label="odometer reading" onCapture={setOdoPhoto} />
-        </div>
+        {/* Photos section */}
+        <div className="space-y-4 pt-2 border-t border-slate-100">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            {isOut ? 'Vehicle Condition Photos (4 Angles + Odometer)' : 'Odometer Verification Photo'}
+          </p>
 
-        <GateSignaturePad label="Driver's signature" onCapture={setSignature} />
+          {isOut ? (
+            <>
+              <div className="space-y-1.5">
+                <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
+                  <span>1. Front of the vehicle</span>
+                  {frontPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+                </Label>
+                <VehicleTrackerCamera label="front of the vehicle" onCapture={setFrontPhoto} />
+              </div>
 
-        <div>
-          <Label htmlFor="notes">Anything to note?</Label>
-          <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)}
-            className="mt-1" rows={2} placeholder="Damage, missing items, anything unusual" />
+              <div className="space-y-1.5">
+                <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
+                  <span>2. Back of the vehicle</span>
+                  {backPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+                </Label>
+                <VehicleTrackerCamera label="back of the vehicle" onCapture={setBackPhoto} />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
+                  <span>3. Right side of the vehicle</span>
+                  {rightPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+                </Label>
+                <VehicleTrackerCamera label="right side of the vehicle" onCapture={setRightPhoto} />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
+                  <span>4. Left side of the vehicle</span>
+                  {leftPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+                </Label>
+                <VehicleTrackerCamera label="left side of the vehicle" onCapture={setLeftPhoto} />
+              </div>
+            </>
+          ) : null}
+
+          <div className="space-y-1.5">
+            <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
+              <span>{isOut ? '5. Odometer reading display' : 'Odometer reading display *'}</span>
+              {odoPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+            </Label>
+            <VehicleTrackerCamera label="odometer reading" onCapture={setOdoPhoto} />
+          </div>
         </div>
 
         {error ? (
-          <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
+          <p className="rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-sm font-medium text-rose-700">
+            {error}
+          </p>
         ) : null}
 
-        <Button onClick={submit} disabled={submitting} className="h-14 w-full text-base">
+        <Button onClick={submit} disabled={submitting} className="h-13 w-full text-base font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm cursor-pointer">
           {submitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-          {isOut ? 'Sign vehicle OUT' : 'Sign vehicle IN'}
+          {isOut ? 'Confirm Vehicle Gate Out' : 'Confirm Vehicle Gate In'}
         </Button>
-
-        <p className="text-center text-xs text-slate-500">
-          Photos are optional if the camera will not open — the reading and your name are what matter.
-        </p>
       </div>
     </Shell>
   )

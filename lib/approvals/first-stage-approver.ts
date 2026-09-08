@@ -4,8 +4,12 @@
  * ── The rule ──────────────────────────────────────────────────────────────────────────────────
  * - KIA:               submitted → ED / GSM → CEO → HR (if required) → EA → MD → Accounts
  * - Hyundai:           submitted → sales GSM, or the GROUP SERVICE MANAGER on service → EA → MD → Accounts
- * - Platinum:          submitted → EA → MD → Accounts (No first stage GSM/VP; routes directly to EA)
+ * - Platinum SERVICE:  submitted → DGM → EA → MD → Accounts
+ * - Platinum SALES:    submitted → EA → MD → Accounts (no first stage; routes directly to EA)
  * - all others:        submitted → GSM → EA → MD → Accounts (GSM = Sales or Service, per department)
+ *
+ * ⚠️ PLATINUM IS THE ONLY BRAND WHOSE FIRST STAGE DEPENDS ON THE TRACK, which is why
+ * brandHasFirstStage takes the department. Everywhere else the brand alone decides.
  *
  * Client-safe: no server-only imports, so the UI and the API enforce the identical rule.
  */
@@ -16,7 +20,7 @@ export const ED_BRANDS = ['kia'] as const
 /**
  * Brands whose SERVICE approvals belong to the Group Service Manager (VP).
  * Hyundai service approvals route to the VP (Group Service Manager).
- * Platinum routes directly to EA -> MD -> Accounts.
+ * Platinum service routes to the DGM instead — see DGM_BRANDS below.
  */
 export const VP_SERVICE_BRANDS = ['hyundai'] as const
 export const GROUP_SERVICE_BRANDS = VP_SERVICE_BRANDS
@@ -34,17 +38,35 @@ export type FirstStageTrack = 'sales' | 'service' | 'unknown'
 
 const norm = (value: unknown) => String(value ?? '').trim().toLowerCase()
 
+/** The only brand whose first stage belongs to a Deputy General Manager, and only on service. */
+export const DGM_BRANDS = ['platinum'] as const
+
+export function isDgmBrand(brand: unknown): boolean {
+  const b = norm(brand)
+  return (DGM_BRANDS as readonly string[]).some((known) => b === known || b.startsWith(known))
+}
+
 /**
- * Does this brand have a first-stage approval (ED / GSM / VP)?
+ * Does this request have a first-stage approval (ED / GSM / VP / DGM)?
  *
- * ⚠️ PLATINUM HAS NO FIRST STAGE.
- * Platinum vendor payment requests route directly: Submit → EA → MD → Accounts.
- * Other brands (KIA, Hyundai, MG, etc.) retain their respective first-stage review.
+ * ⚠️ PLATINUM IS TRACK-DEPENDENT, and it is the only brand that is.
+ *   Platinum SERVICE → DGM → EA → MD → Accounts
+ *   Platinum SALES   → EA → MD → Accounts (no first stage)
+ * Every other brand answers on the brand alone.
+ *
+ * ⚠️ `department` is OPTIONAL so the existing call sites still compile — but for Platinum, omitting
+ * it answers `false`, i.e. the pre-DGM behaviour. That is a deliberate fail-safe direction: a caller
+ * that does not know the track cannot accidentally park a Platinum SALES request on a desk that has
+ * no business approving it. Every caller that can supply the department MUST, or Platinum service
+ * requests silently skip the DGM.
  */
-export function brandHasFirstStage(brand: unknown): boolean {
+export function brandHasFirstStage(brand: unknown, department?: unknown, approvalType?: unknown): boolean {
   const b = norm(brand)
   if (!b) return true // default fallback is KIA
-  if (b === 'platinum' || b.startsWith('platinum')) return false
+  if (isDgmBrand(b)) {
+    if (department === undefined && approvalType === undefined) return false
+    return isServiceApproval(department, approvalType)
+  }
   return true
 }
 
@@ -99,9 +121,11 @@ export function trackForDepartment(department: unknown): FirstStageTrack {
 /**
  * The roles that may act on the first approval stage for this request.
  */
-export function firstStageApproverRoles(brand: unknown, department: unknown): string[] {
+export function firstStageApproverRoles(brand: unknown, department: unknown, approvalType?: unknown): string[] {
   const b = norm(brand)
-  if (!brandHasFirstStage(b)) return []
+  if (!brandHasFirstStage(b, department, approvalType)) return []
+  // Platinum's first stage exists only on service, and belongs to the DGM alone.
+  if (isDgmBrand(b)) return ['dgm']
   const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (trackForDepartment(department)) {
     case 'sales': return ['general_manager']
@@ -115,6 +139,12 @@ export function firstStageApproverRoles(brand: unknown, department: unknown): st
  */
 export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStageTrack): string[] {
   const b = norm(brand)
+  /*
+   * The track is already resolved here, so Platinum is answered directly rather than through
+   * brandHasFirstStage's department sniffing. Only 'service' has a first stage at Platinum; an
+   * 'unknown' track deliberately does NOT, matching the fail-safe direction documented above.
+   */
+  if (isDgmBrand(b)) return track === 'service' ? ['dgm'] : []
   if (!brandHasFirstStage(b)) return []
   const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (track) {
@@ -125,17 +155,18 @@ export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStag
 }
 
 /** May this role sign off the first stage of this request? */
-export function canApproveFirstStage(role: unknown, brand: unknown, department: unknown): boolean {
-  if (!brandHasFirstStage(brand)) return false
-  return firstStageApproverRoles(brand, department).includes(norm(role))
+export function canApproveFirstStage(role: unknown, brand: unknown, department: unknown, approvalType?: unknown): boolean {
+  if (!brandHasFirstStage(brand, department, approvalType)) return false
+  return firstStageApproverRoles(brand, department, approvalType).includes(norm(role))
 }
 
 /**
  * What to call the stage on screen and in emails.
  */
-export function firstStageLabel(brand: unknown, department: unknown): string {
+export function firstStageLabel(brand: unknown, department: unknown, approvalType?: unknown): string {
   const b = norm(brand)
-  if (!brandHasFirstStage(b)) return 'EA Approval'
+  if (!brandHasFirstStage(b, department, approvalType)) return 'EA Approval'
+  if (isDgmBrand(b)) return 'DGM Approval'
   switch (trackForDepartment(department)) {
     case 'sales': return 'GSM Approval (Sales)'
     case 'service': return (usesVpService(b) || b === 'kia') ? 'VP Approval' : 'GSM Approval (Service)'
@@ -148,7 +179,8 @@ export function firstStageLabel(brand: unknown, department: unknown): string {
  */
 export function firstStageShortLabel(brand: unknown, department: unknown, approvalType?: unknown): string {
   const b = norm(brand)
-  if (!brandHasFirstStage(b)) return 'EA'
+  if (!brandHasFirstStage(b, department, approvalType)) return 'EA'
+  if (isDgmBrand(b)) return 'DGM'
   if ((usesVpService(b) || b === 'kia') && isServiceApproval(department, approvalType)) {
     return 'VP'
   }

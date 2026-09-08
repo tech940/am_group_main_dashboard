@@ -1,0 +1,63 @@
+-- ⚠️ SUPERSEDED BY 0055. This migration shipped the Platinum first stage under the wrong acronym
+-- (DCM, Deputy Chief Manager). The correct title is DGM, Deputy General Manager.
+--
+-- It is kept because it ALREADY RAN: the enum value it created cannot be removed, since Postgres
+-- has no ALTER TYPE ... DROP VALUE. See 0055 for the correct role and the cleanup.
+--
+-- Do NOT run this file.
+--
+-- 0054 — the `dcm` role (Deputy Chief Manager), and Platinum SERVICE gains a first approval stage.
+--
+-- ── The chain change ──────────────────────────────────────────────────────────────────────────
+--     Platinum SERVICE:  submitted → DCM → EA → MD → Accounts
+--     Platinum SALES:    submitted → EA → MD → Accounts        (unchanged, no first stage)
+--
+-- Platinum is now the ONLY brand whose first stage depends on the track, which is why
+-- brandHasFirstStage() takes the department (lib/approvals/first-stage-approver.ts).
+--
+-- ── No new column, deliberately ───────────────────────────────────────────────────────────────
+-- The stage reuses `vp_approval`, which is already the GENERIC first-stage column — it holds an
+-- ED's sign-off at KIA, a GSM's or VP's elsewhere, and its on-screen and on-voucher label is
+-- rendered from firstStageShortLabel(). Adding a `dcm_approval` column would have meant touching
+-- the two action routes, the list projection, both creation routes, the resubmit reset, the MD
+-- stage resolver and the approvals page — and `ceo_approval` is live proof of how that goes wrong:
+-- it exists, is written, and is NOT in the list route's SELECT, so the UI has read it as undefined
+-- ever since.
+--
+-- ⚠️ THIS FILE IS DOCUMENTATION. `ALTER TYPE ... ADD VALUE` cannot run inside a transaction block,
+-- so it cannot be applied by drizzle-kit. Apply it with:
+--
+--     npx tsx scripts/apply-migration-0054.ts
+--
+-- ⚠️ RUN IT BEFORE DEPLOYING THE CODE. syncPermissionRegistry() inserts a role_permissions row per
+-- template key, typed by this enum. With 'dcm' in the code and absent from Postgres every insert
+-- fails with 22P02 — a failure this app previously misread as "the permission tables are missing",
+-- which discarded all 205 Access Map grants and broke access control for EVERY user.
+--
+-- Idempotent. Run against the direct/session port (5432), NOT the pgbouncer pooler (6543).
+
+ALTER TYPE role ADD VALUE IF NOT EXISTS 'dcm';
+
+-- ── The 10 existing Platinum requests ─────────────────────────────────────────────────────────
+-- DELIBERATELY NOT BACK-FILLED, by explicit decision: the new rule applies to every request,
+-- including those already in flight.
+--
+-- Consequence, measured 2026-09-04 — 5 of the 10 are SERVICE and therefore affected:
+--   PLATINUM_0004  Rs2,54,397  past EA AND MD, sitting with Accounts  ← reappears as awaiting DCM
+--   PLATINUM_0007  Rs5,000     awaiting EA                            ← moves to DCM
+--   PLATINUM_0008  Rs250       rejected at EA (terminal)
+--   PLATINUM_0010  Rs3,180     rejected at EA (terminal)
+--   PLATINUM_0012  Rs30        rejected at EA (terminal)
+-- The 5 SALES requests are untouched — Platinum sales has no first stage.
+--
+-- Only PLATINUM_0004 genuinely moves backwards past approvals that really happened. To release it
+-- without a DCM sign-off, stamp the first stage as passed:
+--
+--     UPDATE kia_approval_requests SET vp_approval = 'APPROVED'
+--      WHERE request_no = 'PLATINUM_0004';
+
+-- Verify — expect t.
+-- SELECT EXISTS (
+--   SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+--    WHERE t.typname = 'role' AND e.enumlabel = 'dcm'
+-- ) AS dcm_role_present;

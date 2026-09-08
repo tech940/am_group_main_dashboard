@@ -2152,4 +2152,16 @@
 .dark .approval-status-pill[data-status="approved"] { background-color: #042f2e !important; color: #5eead4 !important; border-color: #0f766e !important; } /* 9.78:1 */
 .dark .approval-status-pill[data-status="sentback"] { background-color: #3b1d06 !important; color: #fdba74 !important; border-color: #9a3412 !important; } /* 9.13:1 */
 .dark .approval-status-pill[data-status="rejected"] { background-color: #3f0d17 !important; color: #fda4af !important; border-color: #9f1239 !important; } /* 8.67:1 */
+
+/* Hide scrollbar for Chrome, Safari, Opera and IE, Edge, Firefox */
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+}
+

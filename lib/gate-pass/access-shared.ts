@@ -22,9 +22,11 @@
  * unrelated array.
  */
 export const GATE_PASS_APPROVER_ROLES = new Set([
+  'ceo',
   'sales_manager',
   'general_manager',
   'md',
+  'admin',
   // Support access. Present so a stuck pass can be unstuck; every action is signed in the audit
   // trail with this role attached, so its use is visible rather than silent.
   'developer',

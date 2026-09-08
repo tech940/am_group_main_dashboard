@@ -191,11 +191,55 @@ async function createUser(input: CreateUserInput, actor: AppUser, request: Reque
   const normalized = normalizeCreateInput(input, actor)
   if ('error' in normalized) return { ok: false, error: normalized.error } as const
 
-  const duplicate = await db.select({ id: users.id })
+  /*
+   * ⚠️ NAME THE HOLDER. "User with this email already exists." is true and useless: the admin list
+   * is paginated 20 at a time and ordered by updated_at DESC, so a long-dormant account sits many
+   * pages deep and looks, to anyone who scrolls page one, like it is not there at all. A real case:
+   * accounts@amtata.net is row 110 of 112 — active, not deleted, and effectively invisible.
+   *
+   * Soft-deleted rows are deliberately excluded from the check (isNull(deletedAt)), so a deleted
+   * account's email IS reusable — eight emails in this table already have a dead row and a live one.
+   */
+  const [duplicate] = await db
+    .select({
+      id: users.id,
+      fullName: users.fullName,
+      role: users.role,
+      brand: users.brand,
+      isActive: users.isActive,
+    })
     .from(users)
     .where(and(eq(users.email, normalized.email), isNull(users.deletedAt)))
     .limit(1)
-  if (duplicate.length > 0) return { ok: false, error: 'User with this email already exists.' } as const
+
+  if (duplicate) {
+    /*
+     * A branch_admin's user list is scoped to their own brand, so describing an account outside it
+     * would tell them about people they cannot otherwise see. They still cannot use the address —
+     * they are just pointed at someone who can help instead of at a name they cannot act on.
+     */
+    const visibleToActor = actor.role === 'branch_admin'
+      ? Boolean(duplicate.brand && actor.brand && duplicate.brand === actor.brand)
+      : true
+
+    if (!visibleToActor) {
+      return {
+        ok: false,
+        error: 'That email is already in use by an account outside your branch. Ask a Developer or MD to check it.',
+        status: 409,
+      } as const
+    }
+
+    const where = duplicate.brand ? ` on ${duplicate.brand}` : ''
+    const state = duplicate.isActive
+      ? 'It is active — search the Users list for that address to edit it.'
+      : 'That account is currently INACTIVE — reactivate it rather than creating a second one.'
+    return {
+      ok: false,
+      error: `That email already belongs to ${duplicate.fullName} (${duplicate.role}${where}). ${state}`,
+      status: 409,
+    } as const
+  }
 
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email: normalized.email,
@@ -270,10 +314,20 @@ export async function GET(request: Request) {
       conditions.push(eq(users.brand, actorCapabilities.branch!))
     }
     if (search) {
+      /*
+       * ⚠️ role and brand are matched here on purpose. The Admin console used to filter the fetched
+       * page in the browser against "fullName email role brand"; moving the search to the server
+       * (so it can reach users beyond the first page) would silently have dropped the last two, and
+       * "show me every accounts user" would have quietly stopped working.
+       *
+       * `role` is a pg enum, so it needs an explicit ::text cast before ILIKE.
+       */
       conditions.push(or(
         ilike(users.fullName, `%${search}%`),
         ilike(users.email, `%${search}%`),
-        ilike(users.department, `%${search}%`)
+        ilike(users.department, `%${search}%`),
+        ilike(users.brand, `%${search}%`),
+        sql`${users.role}::text ILIKE ${`%${search}%`}`
       )!)
     }
     if (role !== 'all' && VALID_ROLES.includes(role as AppUser['role'])) {
@@ -360,7 +414,12 @@ export async function POST(request: Request) {
     const result = await createUser(body, actor, request)
     if (!result.ok) {
       const message = result.error || 'Failed to create user.'
-      return NextResponse.json({ error: message }, { status: message.includes('already exists') ? 409 : 400 })
+      /*
+       * ⚠️ The status comes from the RESULT, never from the wording. This previously read
+       * `message.includes('already exists') ? 409 : 400`, so improving the copy would have quietly
+       * downgraded a genuine conflict to a 400 — status drift caused by an editorial change.
+       */
+      return NextResponse.json({ error: message }, { status: ('status' in result && result.status) || 400 })
     }
     return NextResponse.json({
       ...publicUser(result.user, actor),
@@ -433,10 +492,20 @@ export async function PUT(request: Request) {
       }
       if (typeof body.email === 'string' && body.email.trim()) {
         const email = body.email.trim().toLowerCase()
-        const duplicate = await db.select({ id: users.id }).from(users)
+        const [duplicate] = await db
+          .select({ fullName: users.fullName, role: users.role, brand: users.brand, isActive: users.isActive })
+          .from(users)
           .where(and(eq(users.email, email), ne(users.id, id), isNull(users.deletedAt)))
           .limit(1)
-        if (duplicate.length) return NextResponse.json({ error: 'User with this email already exists.' }, { status: 409 })
+        if (duplicate) {
+          // Same reasoning as the create path: name the holder, or the admin is sent hunting through
+          // a paginated list for an account they have been given no way to identify.
+          const at = duplicate.brand ? ` on ${duplicate.brand}` : ''
+          const live = duplicate.isActive ? '' : ' — and that account is inactive'
+          return NextResponse.json({
+            error: `That email already belongs to ${duplicate.fullName} (${duplicate.role}${at})${live}.`,
+          }, { status: 409 })
+        }
         updates.email = email
       }
       if (typeof body.password === 'string' && body.password) {

@@ -30,6 +30,7 @@ export type GatePassApprover = {
 const NOTIFY_TIERS = [
   ['sales_manager'],
   ['general_manager'],
+  ['ceo'],
   ['md'],
 ] as const
 

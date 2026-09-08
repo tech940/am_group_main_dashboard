@@ -1351,7 +1351,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
   const getPendingStageLabel = (req: ApprovalRequest): string => {
-    const hasFirstStage = brandHasFirstStage(req.brand)
+    const hasFirstStage = brandHasFirstStage(req.brand, req.department, req.approvalType)
     const firstStage = firstStageDisplayLabel(req)
     const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
 
@@ -2323,7 +2323,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const renderWorkflowStepper = (req: ApprovalRequest) => {
     const pendingLabel = getPendingStageLabel(req)
     const requiresHr = isHrApprovalRequired(req.approvalType, req.brand)
-    const hasFirstStage = brandHasFirstStage(req.brand)
+    const hasFirstStage = brandHasFirstStage(req.brand, req.department, req.approvalType)
     
     const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
     const stages = [
@@ -4561,7 +4561,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
               const firstStageLabel = isService ? 'VP Approval' : 'GSM (Sales)'
               const requiresHrStage = isHrApprovalRequired(req.approvalType, req.brand)
-              const hasFirstStage = brandHasFirstStage(req.brand)
+              const hasFirstStage = brandHasFirstStage(req.brand, req.department, req.approvalType)
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
                 ...(hasFirstStage ? [{ key: 'sales_manager', label: firstStageLabel, status: req.vpApproval }] : []),

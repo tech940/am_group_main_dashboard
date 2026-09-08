@@ -81,5 +81,27 @@ assert(`"${OTHER_BRAND_KEY}" explicitly granted is HONOURED, not silently droppe
 const s5c = resolveEffectiveSnapshot(ALL_FALSE, { [OTHER_BRAND_KEY]: false }, ROLE, BRAND)
 assert(`an explicit Deny on another brand’s key still denies`, s5c.effective[OTHER_BRAND_KEY] === false, `effective=${s5c.effective[OTHER_BRAND_KEY]}`)
 
-console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===\n`)
-process.exit(failures === 0 ? 0 : 1)
+async function liveDatabaseCheck() {
+  if (!process.env.DATABASE_URL) {
+    console.log('\n[SKIP] DATABASE_URL not set — live sync test skipped.')
+    return
+  }
+
+  console.log('\nScenario 6 — Live database permission sync:')
+  try {
+    const { ensurePermissionRegistrySynced } = await import('../lib/permissions/service')
+    await ensurePermissionRegistrySynced()
+    assert('ensurePermissionRegistrySynced completes without error', true)
+  } catch (err: any) {
+    assert('ensurePermissionRegistrySynced completes without error', false, err?.message || String(err))
+  }
+}
+
+async function run() {
+  await liveDatabaseCheck()
+  console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===\n`)
+  process.exit(failures === 0 ? 0 : 1)
+}
+
+run()
+

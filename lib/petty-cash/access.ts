@@ -8,7 +8,7 @@ import { pettyCashAllocations, pettyCashExpenses, pettyCashRequests } from '@/li
 import { isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
 import { defaultBranchScopeFor } from '@/lib/auth/default-branch-scope'
 import { getPettyCashUserBrands, isPettyCashAllBranchRole, isPettyCashOwnSubmissionsOnlyRole } from './constants'
-import { pettyCashHasFirstStage } from '@/lib/petty-cash/constants'
+import { canApprovePettyCashStageRule, pettyCashHasFirstStage } from '@/lib/petty-cash/constants'
 
 type PettyCashRole = AppUser['role']
 type PettyCashRequestRecord = typeof pettyCashRequests.$inferSelect
@@ -118,29 +118,22 @@ export function canApprovePettyCashStage(
   stage: string,
   scope?: { branchId?: string | null; department?: string | null },
 ) {
-  if (!role) return false
-  const r = String(role).trim().toLowerCase()
-  if (r === 'developer' || r === 'admin') return true
-
-  const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
-
-  switch (stage) {
-    case 'gsm_approval':
-      return false
-    case 'ceo_approval':
-    case 'ed_approval':
-      if (!scope) return false
-      if (!pettyCashHasFirstStage(scope.branchId)) return false
-      return r === 'ceo' || r === 'ed'
-    case 'ea_approval':
-      return r === 'ea' || r === 'eba'
-    case 'md_approval':
-      return r === 'md'
-    case 'accounts':
-      return isAccounts
-    default:
-      return false
-  }
+  /*
+   * ⚠️ Delegates to the shared rule in lib/petty-cash/constants.ts.
+   *
+   * This switch used to live here AND twice more inside the Petty Cash workspace component, and the
+   * copies drifted the moment the CEO stage was added: the browser's version had no 'ceo_approval'
+   * case, so a CEO looking at a row labelled "WAITING ON CEO" was offered no Approve or Reject
+   * button — on a request this function would have accepted without complaint.
+   *
+   * Omitting `scope` still fails the first stage CLOSED. Without the brand we cannot know whether a
+   * first stage exists for it, and inventing one puts a request on a desk that does not own it.
+   */
+  return canApprovePettyCashStageRule(
+    role,
+    stage,
+    scope ? pettyCashHasFirstStage(scope.branchId) : false,
+  )
 }
 
 export function canManagePettyCashBranch(appUser: AppUser, branchId: string | null | undefined) {

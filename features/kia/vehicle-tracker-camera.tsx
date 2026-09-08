@@ -1,26 +1,29 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Camera, RefreshCw, X, AlertTriangle } from 'lucide-react'
+import { Camera, RefreshCw, X, AlertTriangle, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 type CameraMode = 'idle' | 'live' | 'captured' | 'error'
 
-// Camera-only capture: opens the device camera via getUserMedia (no gallery/file
-// picker is offered), captures a frame, and burns a live IST timestamp into the
+// Camera-first capture: opens the device camera via getUserMedia (with optional file upload
+// fallback), captures a frame, and burns a live IST timestamp into the
 // image so the time is clearly visible on the photo. Emits a File to the parent.
 export function VehicleTrackerCamera({
   label = 'Vehicle photo',
   onCapture,
   className,
+  allowUpload = true,
 }: {
   label?: string
   onCapture: (file: File | null) => void
   className?: string
+  allowUpload?: boolean
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const previewUrlRef = useRef<string | null>(null)
   const [mode, setMode] = useState<CameraMode>('idle')
   const [stream, setStream] = useState<MediaStream | null>(null)
@@ -41,6 +44,18 @@ export function VehicleTrackerCamera({
     }
     setPreviewUrl(null)
   }, [])
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    clearPreview()
+    stopStream()
+    const url = URL.createObjectURL(file)
+    previewUrlRef.current = url
+    setPreviewUrl(url)
+    setMode('captured')
+    onCapture(file)
+  }
 
   const start = useCallback(async () => {
     setError('')
@@ -172,12 +187,21 @@ export function VehicleTrackerCamera({
         )}
       </div>
       <canvas ref={canvasRef} className="hidden" />
+      {allowUpload ? (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileUpload}
+        />
+      ) : null}
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {mode === 'live' && (
           <>
-            <Button type="button" onClick={capture} className="h-12 flex-1 rounded-xl text-base font-bold">
-              <Camera className="mr-2 h-5 w-5" /> Capture
+            <Button type="button" onClick={capture} className="h-12 flex-1 rounded-xl text-base font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">
+              <Camera className="mr-2 h-5 w-5" /> Capture Photo
             </Button>
             <Button
               type="button"
@@ -191,7 +215,19 @@ export function VehicleTrackerCamera({
         )}
         {(mode === 'captured' || mode === 'error') && (
           <Button type="button" variant="outline" onClick={start} className="h-11 flex-1 rounded-xl font-bold">
-            <RefreshCw className="mr-2 h-4 w-4" /> {mode === 'error' ? 'Try again' : 'Retake'}
+            <RefreshCw className="mr-2 h-4 w-4" /> {mode === 'error' ? 'Try camera again' : 'Retake with Camera'}
+          </Button>
+        )}
+        {allowUpload && (mode === 'idle' || mode === 'error' || mode === 'captured') && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            className="text-xs text-slate-500 hover:text-slate-800 font-medium"
+          >
+            <Upload className="mr-1.5 h-3.5 w-3.5" />
+            {mode === 'captured' ? 'Upload different file' : 'Or choose photo from files'}
           </Button>
         )}
       </div>

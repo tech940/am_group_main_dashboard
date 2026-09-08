@@ -169,7 +169,7 @@ export async function POST(
     // Flow: 1: GSM / VP (if brand has first stage) -> 2: CEO (KIA) -> 3: HR (if required) -> 4: EA -> 5: MD -> 6: Accounts
     if (action !== 'SEND_BACK') {
       const isKia = String(requestRow.brand || 'kia').toLowerCase() === 'kia'
-      const hasFirstStage = brandHasFirstStage(requestRow.brand)
+      const hasFirstStage = brandHasFirstStage(requestRow.brand, requestRow.department, requestRow.approvalType)
       const requiresHr = isHrApprovalRequired(requestRow.approvalType, requestRow.brand)
       const firstStageName = firstStageShortLabel(
         requestRow.brand, requestRow.department, requestRow.approvalType,

@@ -2,13 +2,18 @@
  * The first approval stage belongs to a different role depending on the brand:
  *
  *   KIA                  submitted → ED → EA → MD → Accounts
- *   Hyundai / Platinum   submitted → sales GSM, or the GROUP SERVICE MANAGER on service → EA → …
+ *   Hyundai              submitted → sales GSM, or the GROUP SERVICE MANAGER on service → EA → …
+ *   Platinum SERVICE     submitted → DGM → EA → MD → Accounts
+ *   Platinum SALES       submitted → EA → MD → Accounts        (no first stage at all)
  *   every other brand    submitted → GSM → EA → MD → Accounts   (Sales or Service GSM, per department)
  *
- * ⚠️ Hyundai and Platinum service is the exception, and it is deliberate: those two are one service
- * operation under a single `group_service_manager`, so their OWN service GSMs no longer hold that
- * stage. Every other brand is untouched — asserted below, because a rule written for two brands that
+ * ⚠️ Hyundai service is an exception, and it is deliberate: its OWN service GSM no longer holds that
+ * stage. Every other brand is untouched — asserted below, because a rule written for one brand that
  * quietly captures all of them is the easy mistake here.
+ *
+ * ⚠️ Platinum is the only brand whose first stage depends on the TRACK, which is why
+ * brandHasFirstStage() takes a department. Its full chain is asserted exhaustively in
+ * scripts/verify-platinum-approval-flow.ts (`npm run verify:platinum-chain`).
  *
  * Pure — no database, no network. Run it in CI alongside the other verify:* scripts.
  *
@@ -59,8 +64,16 @@ const kiaBoth = firstStageApproverRoles('kia', '')
 check(kiaBoth.length === 2 && kiaBoth.includes('general_manager') && kiaBoth.includes('vp'),
   'kia + blank department -> sales GSM or VP')
 
-console.log('\n4) Hyundai and Platinum: sales to the sales GSM, service to the VICE PRESIDENT')
-for (const brand of ['hyundai', 'platinum']) {
+/*
+ * ⚠️ PLATINUM IS NO LONGER IN THIS LOOP.
+ *
+ * These assertions were already RED before the DGM change: Platinum lost its first stage some time
+ * ago, so firstStageApproverRoles('platinum', …) has returned [] throughout, and every Platinum
+ * line here has been failing against a rule the code stopped following. Platinum now has its own
+ * section below, and an exhaustive one in scripts/verify-platinum-approval-flow.ts.
+ */
+console.log('\n4) Hyundai: sales to the sales GSM, service to the VICE PRESIDENT')
+for (const brand of ['hyundai']) {
   check(usesGroupServiceManager(brand), `${brand} service belongs to the group role`)
   check(JSON.stringify(firstStageApproverRoles(brand, 'Sales')) === JSON.stringify(['general_manager']),
     `${brand} + Sales -> general_manager`)
@@ -71,6 +84,16 @@ for (const brand of ['hyundai', 'platinum']) {
   check(both.length === 2 && both.includes('general_manager') && both.includes('vp'),
     `${brand} + blank department -> sales GSM or VP`)
 }
+
+console.log('\n4a) Platinum: SERVICE belongs to the DGM, SALES has no first stage at all')
+check(JSON.stringify(firstStageApproverRoles('platinum', 'Service')) === JSON.stringify(['dgm']),
+  'platinum + Service -> dgm')
+check(firstStageApproverRoles('platinum', 'Sales').length === 0,
+  'platinum + Sales -> no first stage, so it routes straight to EA')
+check(canApproveFirstStage('dgm', 'platinum', 'Service'), 'a DGM approves platinum service')
+check(!canApproveFirstStage('dgm', 'platinum', 'Sales'), 'a DGM does NOT approve platinum sales')
+check(!canApproveFirstStage('dgm', 'kia', 'Service'), 'a DGM holds no KIA desk')
+check(!canApproveFirstStage('vp', 'platinum', 'Service'), 'the VP no longer holds platinum service')
 
 console.log('\n4b) ...and NO other brand is captured by the group role')
 /*
@@ -129,8 +152,8 @@ check(firstStageLabel('kia', 'Service') === 'VP Approval', 'kia service reads "V
 check(firstStageLabel('hyundai', 'Sales') === 'GSM Approval (Sales)', 'hyundai sales reads "GSM Approval (Sales)"')
 check(firstStageLabel('hyundai', 'Service') === 'VP Approval',
   'hyundai service names the VP Approval')
-check(firstStageLabel('platinum', 'Service') === 'VP Approval',
-  'platinum service names the VP Approval')
+check(firstStageLabel('platinum', 'Service') === 'DGM Approval',
+  'platinum service names the DGM Approval')
 check(firstStageLabel('tata', 'Service') === 'GSM Approval (Service)',
   'a brand outside the group still reads "GSM Approval (Service)"')
 check(!firstStageLabel('platinum', '').includes('CEO'), 'platinum never reads "CEO"')
@@ -151,9 +174,16 @@ for (const brand of ['hyundai', 'platinum']) {
   }
 }
 
-console.log('\n11) A blank or odd department still reaches BOTH sides')
+/*
+ * Retargeted from platinum to hyundai. The "both sides" rule belongs to brands whose first stage is
+ * SPLIT between a sales GSM and a VP. Platinum's is not split — service goes to the DGM and sales
+ * has no first stage — so for Platinum a blank department deliberately yields NO approver and the
+ * request routes to EA, which is where a Platinum request with no department went before this
+ * change too. Asserted directly in section 4a.
+ */
+console.log('\n11) A blank or odd department still reaches BOTH sides (brands with a split first stage)')
 for (const dept of ['', null, 'Marketing', 'Admin']) {
-  const roles = firstStageApproverRoles('platinum', dept)
+  const roles = firstStageApproverRoles('hyundai', dept)
   check(roles.includes('general_manager') && roles.includes('vp'),
     `${JSON.stringify(dept)} -> both sides, so a data-entry gap cannot strand the request`)
 }
@@ -204,12 +234,12 @@ check(firstStageShortLabel('kia', 'SERVICE') === 'VP', 'kia service records VP')
 check(firstStageShortLabel('hyundai', 'SALES') === 'GSM', 'hyundai sales records GSM')
 check(firstStageShortLabel('hyundai', 'SERVICE') === 'VP',
   'hyundai service records VP')
-check(firstStageShortLabel('platinum', 'SERVICE') === 'VP',
-  'platinum service records VP')
+check(firstStageShortLabel('platinum', 'SERVICE') === 'DGM',
+  'platinum service records DGM')
 check(firstStageShortLabel('tata', 'SERVICE') === 'GSM', 'a brand outside the group still records GSM')
 // The approval TYPE alone can make a request service work, so the label must read it too.
-check(firstStageShortLabel('platinum', '', 'Workshop Consumables') === 'VP',
-  'a service approval TYPE is enough to name VP')
+check(firstStageShortLabel('platinum', '', 'Workshop Consumables') === 'DGM',
+  'a service approval TYPE alone is enough to reach the DGM')
 // A caller that supplies no department must degrade to the old wording, never to something wrong.
 check(firstStageShortLabel('hyundai', null) === 'GSM', 'with no department it falls back to GSM')
 

@@ -1049,6 +1049,7 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   developer: 'Developer',
   branch_admin: 'Branch Admin',
   ceo: 'CEO',
+  dgm: 'DGM (Deputy General Manager)',
   md: 'MD',
   ea: 'EA',
   eba: 'EBA',
@@ -1371,6 +1372,20 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create']),
+  ],
+  /*
+   * DGM — Deputy General Manager, AM Platinum.
+   *
+   * Owns the FIRST approval stage on Platinum SERVICE requests (Platinum sales still routes
+   * straight to EA). Deliberately narrow: 'kia.approvals' is the multi-brand Approvals section —
+   * the key keeps its legacy name because renaming it would silently kill every existing grant.
+   *
+   * ⚠️ Without the view key this role would be an INERT approver: it owns a stage it cannot open.
+   * That is exactly how the general sales manager was locked out of Approvals. Row visibility is a
+   * SEPARATE axis (lib/kia/approval-scope.ts) and is granted there, not here.
+   */
+  dgm: [
+    ...keysForGroups(['kia.approvals'], ['view', 'approve']),
   ],
   // KIA Proforma workflow: front-line executive — locked to the Bookings section
   // (Booking CRM + generating proformas). No stock, insurance, approve or audit.

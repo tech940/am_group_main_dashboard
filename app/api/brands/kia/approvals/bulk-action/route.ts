@@ -90,7 +90,7 @@ export async function POST(request: Request) {
       let activeStageKey: 'sales_manager' | 'ceo' | 'hr' | 'ea' | 'accounts' | 'md' | null = null
       
       const isKia = String(row.brand || 'kia').toLowerCase() === 'kia'
-      const hasFirstStage = brandHasFirstStage(row.brand)
+      const hasFirstStage = brandHasFirstStage(row.brand, row.department, row.approvalType)
       const vpApp = row.vpApproval
       const ceoApp = row.ceoApproval
       const hrApp = row.hrApproval

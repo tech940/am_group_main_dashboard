@@ -29,6 +29,23 @@ export const PETTY_CASH_REQUEST_STATUSES = [
   'cancelled',
 ] as const
 
+/**
+ * Every status that means "somebody still owes a decision on this".
+ *
+ * ⚠️ DERIVED, never hand-listed. The Petty Cash workspace carried its own hardcoded copy of this
+ * set, and when the CEO and GSM stages were added it was not updated — so `ceo_pending`,
+ * `ceo_on_hold`, `gsm_pending` and `gsm_on_hold` were missing from it. KIA petty cash OPENS at
+ * `ceo_pending` (see pettyCashInitialStatus below), so every KIA request was filtered out of the
+ * Pending Approval Queue the moment it was submitted — the server returned it, the browser dropped
+ * it, and it looked to an admin like the request had never arrived.
+ *
+ * Deriving it from PETTY_CASH_REQUEST_STATUSES means a stage added to the vocabulary is pending by
+ * construction, and cannot be forgotten in a second place.
+ */
+export const PETTY_CASH_PENDING_STATUSES = PETTY_CASH_REQUEST_STATUSES.filter(
+  (status) => status === 'submitted' || status.endsWith('_pending') || status.endsWith('_on_hold'),
+) as readonly string[]
+
 export const PETTY_CASH_EXPENSE_STATUSES = [
   'pending',
   'gsm_pending',
@@ -347,3 +364,80 @@ export function pettyCashInitialStage(branchId: string | null | undefined): 'ceo
   return pettyCashHasFirstStage(branchId) ? 'ceo_approval' : 'ea_approval'
 }
 
+
+/**
+ * The ONE status → stage map, and the ONE "may this role clear this stage" rule.
+ *
+ * ⚠️ These exist because both facts were written out THREE times — in lib/petty-cash/access.ts for
+ * the server, and twice more inside components/petty-cash/petty-cash-workspace.tsx for the browser —
+ * and the copies drifted the moment the CEO and GSM stages were added:
+ *
+ *   * the client's status→stage map had no `ceo_pending` case, so a KIA request (which OPENS at
+ *     ceo_pending) fell through its final `return 'accounts'` and was reported as an Accounts-stage
+ *     request;
+ *   * the client's role rule had no `ceo_approval` case, so it hit `default: return false`.
+ *
+ * Between them the CEO saw a request marked "WAITING ON CEO" with no Approve or Reject button, while
+ * the server would have accepted the action perfectly well. Both files now call these.
+ *
+ * Client-safe on purpose: no db import, no 'server-only'. access.ts cannot be imported into a
+ * component — it pulls in drizzle and the schema — which is exactly how the duplication started.
+ */
+export type PettyCashApprovalStage =
+  | 'gsm_approval' | 'ceo_approval' | 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'
+
+export function pettyCashStageForStatus(
+  status: string | null | undefined,
+  branchId?: string | null,
+): PettyCashApprovalStage {
+  const s = String(status ?? '').trim()
+  if (s.startsWith('gsm_')) return 'gsm_approval'
+  if (s.startsWith('ceo_')) return 'ceo_approval'
+  if (s.startsWith('ed_') && s !== 'ed_approved') return 'ed_approval'
+  if (s === 'ed_approved' || s === 'ceo_approved' || s === 'gsm_approved') return 'ea_approval'
+  if (s.startsWith('ea_') && s !== 'ea_approved') return 'ea_approval'
+  if (s === 'ea_approved' || s.startsWith('md_')) return 'md_approval'
+  // A freshly submitted request sits at whichever desk its brand opens on.
+  if (s === 'submitted') return pettyCashInitialStage(branchId)
+  return 'accounts'
+}
+
+/**
+ * May this role clear this stage?
+ *
+ * Mirrors lib/petty-cash/access.ts#canApprovePettyCashStage exactly — that function now delegates
+ * here, so the button the browser draws and the action the server accepts cannot disagree.
+ *
+ * `hasFirstStage` is passed rather than derived so the caller states the brand explicitly; a first
+ * stage that does not exist for this brand must not be actionable by anyone.
+ */
+export function canApprovePettyCashStageRule(
+  role: string | null | undefined,
+  stage: string,
+  hasFirstStage: boolean,
+): boolean {
+  const r = String(role ?? '').trim().toLowerCase()
+  if (!r) return false
+  if (r === 'developer' || r === 'admin') return true
+
+  const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team'
+    || r === 'finance_head' || r === 'finance_team'
+
+  switch (stage) {
+    // Reserved: no brand routes its first stage to a GSM today, so nobody may clear it.
+    case 'gsm_approval':
+      return false
+    case 'ceo_approval':
+    case 'ed_approval':
+      if (!hasFirstStage) return false
+      return r === 'ceo' || r === 'ed'
+    case 'ea_approval':
+      return r === 'ea' || r === 'eba'
+    case 'md_approval':
+      return r === 'md'
+    case 'accounts':
+      return isAccounts
+    default:
+      return false
+  }
+}

@@ -163,6 +163,25 @@ function resolveApprovalBranchPins(rowBrand: string, dealers: string | null | un
  * are dead strings. Listed anyway so this set stays correct if they are ever added.)
  */
 const BRAND_WIDE_APPROVAL_ROLES = new Set([
+  /*
+   * Deputy General Manager — owns the FIRST stage on Platinum SERVICE, across every Platinum branch.
+   *
+   * ⚠️ Without membership here, isApprovalVisibleTo falls through to the dealer-pin test and an
+   * unpinned DGM sees ZERO rows — the same fail-closed path that hid 222 requests from four EAs.
+   * holdsBrandStrictly still confines them to Platinum, so this is brand-wide, not group-wide.
+   */
+  /*
+   * The CEO signs a stage of this workflow (vp → CEO → hr → ea → md → accounts), so they must see
+   * every request of the brands they hold — both Sales and Service, and every location.
+   *
+   * ⚠️ Brand-wide, NOT group-wide. holdsBrandStrictly confines this to the brands actually on
+   * users.brand — deliberately, because 'ceo' is one of the nine GLOBAL_ACCESS roles and
+   * canAccessBrand short-circuits true for those. Routing the CEO through the brand-wide rule
+   * instead of a bare `return true` keeps a KIA CEO out of Hyundai and Platinum approvals; widen
+   * that by setting users.brand, which is the normal mechanism, not by editing this file.
+   */
+  'ceo',
+  'dgm',
   'accounts',
   'accounts_head',
   'accounts_team',
@@ -202,8 +221,22 @@ function holdsBrandStrictly(appUser: AppUser, rowBrand: string): boolean {
 export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeRow): boolean {
   if (!appUser) return false
 
-  // CEO / ED of Kia sees all branch orders no matter which branch or department, EXCEPT Kia Jammu Service
-  if (appUser.role === 'ceo' || appUser.role === 'ed') {
+  /*
+   * ED of Kia sees all branch orders whatever the branch or department, EXCEPT Kia Jammu Service.
+   *
+   * ⚠️ THE CEO USED TO BE IN THIS BRANCH AND NO LONGER IS.
+   *
+   * The exclusion arrived in commit 3f3381d, titled "ed issue resolved" — it was written for the ED
+   * and the CEO was carried along with it. The CEO also SIGNS a stage of this workflow (vp →
+   * **ceo** → hr → ea → md → accounts), so hiding a class of request from them stalls the chain
+   * with nobody able to see why: measured on live data, 34 KIA Jammu service rows were invisible to
+   * the CEO and KIA_0199 (Rs22,000) was sitting on the CEO's own desk, unreachable.
+   *
+   * An approver who cannot see the stage they own is the defect class this file exists to prevent.
+   * The CEO is now handled by BRAND_WIDE_APPROVAL_ROLES below, which grants every row of the brands
+   * they hold — both tracks, every location — while holdsBrandStrictly keeps it to those brands.
+   */
+  if (appUser.role === 'ed') {
     return !isKiaJammuServiceApproval(row)
   }
 

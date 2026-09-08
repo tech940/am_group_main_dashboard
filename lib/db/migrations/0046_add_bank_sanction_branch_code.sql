@@ -39,14 +39,17 @@ FROM (VALUES
   ('amgautocraftpvtltd','mg'),      -- jammu.accounts2@mgdealer.co.in
   ('ktm',              'ktm'),      -- kashmirautoaidspvtltd230313@gmail.com
   ('truimph',          'triumph'),  -- same entity inbox as KTM; sheet spells it "TRUIMPH"
-  ('platinumauto',     'platinum')  -- named Platinum; alerts go to Hyundai accounts. Business call
+  ('platinumauto',     'platinum'), -- named Platinum; alerts go to Hyundai accounts. Business call
                                     -- 2026-08-24: scope it to PLATINUM.
+  ('jammuautomart',    'hyundai'),  -- accounts@jammuautomart.com (AM Hyundai)
+  ('amhyundai',        'hyundai'),  -- AM Hyundai
+  ('amhyundaiautosquaregangyal', 'hyundai') -- AM Hyundai Auto Square Gangyal
 ) AS v(loc_key, brand)
 WHERE lower(regexp_replace(btrim(bank_sanction_limits.location), '[^a-zA-Z0-9]', '', 'g')) = v.loc_key
   AND bank_sanction_limits.branch_code IS NULL;
 
 -- Left NULL on purpose (group-level, MD/Developer only), by explicit decision:
---   Jammu Auto Mart · SMAM INDIA RETAIL PVT LTD · SMAM INDIA RETAIL PVT LTD (ANANTNAG)
+--   SMAM INDIA RETAIL PVT LTD · SMAM INDIA RETAIL PVT LTD (ANANTNAG)
 --   AMSM AUTOMART PVT LTD(HYDERPURA) · AMG AUTOMART PVT LTD(BARBARSHAH)
 
 CREATE INDEX IF NOT EXISTS bank_sanction_limits_branch_code_idx

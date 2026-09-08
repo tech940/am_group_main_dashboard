@@ -1,0 +1,54 @@
+-- 0055 — the `dgm` role (Deputy General Manager), replacing 0054's mistaken `dcm`.
+--
+-- ── What this is ──────────────────────────────────────────────────────────────────────────────
+-- 0054 shipped the Platinum first approval stage under the wrong acronym: DCM (Deputy Chief
+-- Manager). The correct title is DGM (Deputy General Manager). The chain itself does not change:
+--
+--     Platinum SERVICE:  submitted → DGM → EA → MD → Accounts
+--     Platinum SALES:    submitted → EA → MD → Accounts        (no first stage)
+--
+-- Platinum remains the only brand whose first stage depends on the track, which is why
+-- brandHasFirstStage() takes the department (lib/approvals/first-stage-approver.ts). The stage
+-- still reuses `vp_approval`, the generic first-stage column — no new column, then or now.
+--
+-- ── ⚠️ `dcm` CANNOT BE REMOVED, and that is not an oversight ──────────────────────────────────
+-- Postgres has no `ALTER TYPE ... DROP VALUE`. Removing an enum label means creating a new type,
+-- rewriting every column that uses it, and swapping them over — on a live database, to delete a
+-- label that nothing references. Not worth it. `dcm` therefore stays on the `role` type forever,
+-- and is inert:
+--   * no user holds it (verified before this migration was written),
+--   * no code mentions it,
+--   * nobody can assign it — the Admin role picker is derived from the same enum the CODE declares,
+--     and the code no longer declares it.
+--
+-- This is the same one-way property that makes the repo prefer `text` + a TS union for anything
+-- likely to churn. A role is not one of those things, but the acronym was.
+--
+-- ⚠️ THIS FILE IS DOCUMENTATION. `ALTER TYPE ... ADD VALUE` cannot run inside a transaction, so
+-- drizzle-kit cannot apply it. Apply with:
+--
+--     npx tsx scripts/apply-migration-0055.ts
+--
+-- That script also refuses to run if any user still holds 'dcm', rather than deleting permissions
+-- out from under a real person, and clears the orphaned role_permissions row 0054's registry sync
+-- created — left behind it would show in the Access Map as a role with rights and no holders.
+--
+-- ⚠️ RUN IT BEFORE DEPLOYING THE CODE. syncPermissionRegistry() inserts a role_permissions row per
+-- template key typed by this enum; with 'dgm' in the code and absent from Postgres every insert
+-- fails with 22P02, which this app previously misread as "the permission tables are missing" and
+-- which discarded all 205 Access Map grants for EVERY user.
+--
+-- Idempotent. Run against the direct/session port (5432), NOT the pgbouncer pooler (6543).
+
+ALTER TYPE role ADD VALUE IF NOT EXISTS 'dgm';
+
+-- The orphan from 0054. Safe only because no user holds 'dcm' — the runner checks that first.
+DELETE FROM role_permissions WHERE role::text = 'dcm';
+
+-- Verify — expect t, t, 0.
+-- SELECT
+--   EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+--            WHERE t.typname = 'role' AND e.enumlabel = 'dgm')  AS dgm_present,
+--   EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+--            WHERE t.typname = 'role' AND e.enumlabel = 'dcm')  AS dcm_still_there_and_inert,
+--   (SELECT COUNT(*) FROM role_permissions WHERE role::text = 'dcm') AS dcm_rows_remaining;

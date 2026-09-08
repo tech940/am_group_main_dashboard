@@ -41,6 +41,10 @@ import {
   getPettyCashLocationOptions,
   getPettyCashUserBrands,
   PETTY_CASH_DEPARTMENT_OPTIONS,
+  PETTY_CASH_PENDING_STATUSES,
+  canApprovePettyCashStageRule,
+  pettyCashHasFirstStage,
+  pettyCashStageForStatus,
   PETTY_CASH_TOP_UP_THRESHOLD,
   getPettyCashTopUpThreshold,
   isPettyCashAllBranchRole,
@@ -143,8 +147,17 @@ const isApproverRole = (role: string) =>
   role === 'developer' ||
   role === 'manager'
 
-const PENDING_STATUSES = ['submitted', 'ed_pending', 'ed_on_hold', 'ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold']
-const OPEN_REQUEST_STATUSES = ['draft', 'submitted', ...PENDING_STATUSES]
+/*
+ * ⚠️ DERIVED FROM THE SHARED VOCABULARY, not hand-listed here.
+ *
+ * This was a hardcoded array that omitted 'ceo_pending', 'ceo_on_hold', 'gsm_pending' and
+ * 'gsm_on_hold'. KIA petty cash OPENS at 'ceo_pending', so every KIA request was filtered out of
+ * the Pending Approval Queue by the BROWSER the moment it was submitted — the server returned it
+ * correctly, this list dropped it, and to an admin it looked as though the request never arrived.
+ * Measured: three Rs10,000 requests invisible to a developer whose server queue returned all three.
+ */
+const PENDING_STATUSES = PETTY_CASH_PENDING_STATUSES
+const OPEN_REQUEST_STATUSES = ['draft', ...PENDING_STATUSES]
 
 /*
  * (Removed: a hardcoded CANONICAL_TOPOLOGY listing all three dealerships' outlets.)
@@ -159,22 +172,24 @@ const OPEN_REQUEST_STATUSES = ['draft', 'submitted', ...PENDING_STATUSES]
  * The replacement, `visibleTopology`, is derived from the one registry AND scoped to the viewer.
  */
 
-function canApproveStageOnClient(role: string, stage: ApprovalStage): boolean {
-  const r = String(role || '').trim().toLowerCase()
-  if (r === 'developer' || r === 'admin') return true
-  const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
-  switch (stage) {
-    case 'ed_approval': return r === 'ceo'
-    case 'ea_approval': return r === 'ea' || r === 'eba'
-    case 'md_approval': return r === 'md'
-    case 'accounts': return isAccounts
-    default: return false
-  }
+/*
+ * ⚠️ This and stageForRequest below both delegate to lib/petty-cash/constants.ts — the SAME rule
+ * the server applies in lib/petty-cash/access.ts.
+ *
+ * They were independent copies, and BOTH were missing the CEO stage: this one had no
+ * 'ceo_approval' case so it fell to `default: return false`, and stageForRequest had no
+ * 'ceo_pending' case so a KIA request fell through its final `return 'accounts'`. Between them a
+ * CEO was shown a row labelled "WAITING ON CEO" with no Approve or Reject button — while the
+ * server would have accepted either action.
+ */
+function canApproveStageOnClient(role: string, stage: ApprovalStage, branchId?: string | null): boolean {
+  return canApprovePettyCashStageRule(role, stage, pettyCashHasFirstStage(branchId))
 }
 
 function canActOnRequest(role: string, request: PettyCashRequest) {
   if (!PENDING_STATUSES.includes(request.status)) return false
-  return canApproveStageOnClient(role, stageForRequest(request))
+  // The brand decides whether a first stage exists at all, so it must reach the rule.
+  return canApproveStageOnClient(role, stageForRequest(request), request.branchId)
 }
 
 function nextOwnerAfterApproval(stage: ApprovalStage): string {
@@ -188,11 +203,7 @@ function nextOwnerAfterApproval(stage: ApprovalStage): string {
 }
 
 function stageForRequest(request: PettyCashRequest): ApprovalStage {
-  const status = request.status
-  if (status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold') return 'ed_approval'
-  if (status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved') return 'ea_approval'
-  if (status === 'md_pending' || status === 'md_on_hold') return 'md_approval'
-  return 'accounts'
+  return pettyCashStageForStatus(request.status, request.branchId) as ApprovalStage
 }
 
 async function fetchJson<T>(url: string, label: string): Promise<T> {
