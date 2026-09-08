@@ -44,6 +44,15 @@ export async function GET(request: NextRequest) {
         typeOfPayment: kiaApprovalRequests.typeOfPayment,
         remarks: kiaApprovalRequests.remarks,
         vpApproval: kiaApprovalRequests.vpApproval,
+        /*
+         * ⚠️ ceoApproval was MISSING from this projection while the approvals page reads it in four
+         * places. This is the ONLY endpoint that page fetches, so `req.ceoApproval` was permanently
+         * undefined — `if (isKia && (!req.ceoApproval || req.ceoApproval === ''))` could never be
+         * false, so every KIA request rendered as "Pending CEO" for ever, including ones the CEO
+         * had already signed. Adding a stage column to the table is not enough; it has to reach the
+         * screen.
+         */
+        ceoApproval: kiaApprovalRequests.ceoApproval,
         accountApproval: kiaApprovalRequests.accountApproval,
         hrApproval: kiaApprovalRequests.hrApproval,
         eaApproval: kiaApprovalRequests.eaApproval,

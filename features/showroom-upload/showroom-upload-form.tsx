@@ -12,7 +12,6 @@ import {
   MapPin,
   User,
   ShieldCheck,
-  Sparkles,
   AlertTriangle,
 } from 'lucide-react'
 import {
@@ -58,6 +57,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
   const [cameraError, setCameraError] = useState<string>('')
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [isSnapping, setIsSnapping] = useState<boolean>(false)
+  const [flashEffect, setFlashEffect] = useState<boolean>(false)
   const [uploading, setUploading] = useState<boolean>(false)
   const [uploadSuccess, setUploadSuccess] = useState<{
     brand: string
@@ -67,6 +67,11 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const photosRef = useRef<SnappedPhoto[]>([])
+
+  // Keep photosRef synced for unmount cleanup
+  photosRef.current = photos
 
   // Update default location when brand changes
   const handleBrandChange = (newBrand: ShowroomBrandKey) => {
@@ -79,10 +84,11 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
   // Camera stream management
   const stopCamera = useCallback(() => {
-    setStream((curr) => {
-      curr?.getTracks().forEach((track) => track.stop())
-      return null
-    })
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+    setStream(null)
     setCameraActive(false)
   }, [])
 
@@ -94,9 +100,8 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     }
 
     try {
-      // Stop any existing stream
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop())
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop())
       }
 
       const media = await navigator.mediaDevices.getUserMedia({
@@ -108,14 +113,20 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
         audio: false,
       })
 
+      streamRef.current = media
       setStream(media)
       setCameraActive(true)
     } catch (err) {
       console.error('Camera access error:', err)
-      setCameraError('Camera permission denied or camera unavailable. Please allow camera access and try again.')
+      setCameraError('Camera permission denied or unavailable. Please allow camera access and try again.')
       setCameraActive(false)
     }
-  }, [stream])
+  }, [])
+
+  // Auto-start camera on mount
+  useEffect(() => {
+    startCamera()
+  }, [startCamera])
 
   // Attach stream to video tag
   useEffect(() => {
@@ -127,26 +138,29 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     else video.onloadedmetadata = play
   }, [stream])
 
-  // Cleanup on unmount
+  // Cleanup on unmount only
   useEffect(() => {
     return () => {
-      stream?.getTracks().forEach((t) => t.stop())
-      photos.forEach((p) => URL.revokeObjectURL(p.previewUrl))
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop())
+      }
+      photosRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl))
     }
-  }, [stream, photos])
+  }, [])
 
-  // Rapid snap photo with IST watermark & compression
+  // Rapid snap photo with IST watermark & WebP compression
   const snapPhoto = () => {
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas) return
 
     setIsSnapping(true)
+    setFlashEffect(true)
+    setTimeout(() => setFlashEffect(false), 120)
 
     const w = video.videoWidth || 1280
     const h = video.videoHeight || 960
 
-    // Set canvas dimensions
     canvas.width = w
     canvas.height = h
     const ctx = canvas.getContext('2d')
@@ -155,10 +169,10 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
       return
     }
 
-    // Draw video frame
+    // Draw frame
     ctx.drawImage(video, 0, 0, w, h)
 
-    // Format IST Date & Time
+    // IST Timestamp
     const stamp = new Date().toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata',
       day: '2-digit',
@@ -175,24 +189,24 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     const watermarkText = `${brandLabel.toUpperCase()} · ${location.toUpperCase()} · ${stamp} IST`
 
     // Watermark bar styling
-    const barHeight = Math.max(34, Math.round(h * 0.06))
-    const fontSize = Math.round(barHeight * 0.48)
+    const barHeight = Math.max(36, Math.round(h * 0.055))
+    const fontSize = Math.round(barHeight * 0.44)
 
-    // Dark gradient bar at bottom
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'
+    // Dark sleek gradient bar at bottom of photo
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
     ctx.fillRect(0, h - barHeight, w, barHeight)
 
-    // Brand accent line
-    ctx.fillStyle = brandCfg?.accentColor || '#e11d48'
-    ctx.fillRect(0, h - barHeight, Math.max(6, Math.round(w * 0.012)), barHeight)
+    // Brand accent color block
+    ctx.fillStyle = brandCfg?.accentColor || '#4f46e5'
+    ctx.fillRect(0, h - barHeight, Math.max(8, Math.round(w * 0.012)), barHeight)
 
     // Text overlay
-    ctx.font = `700 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+    ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
     ctx.textBaseline = 'middle'
     ctx.fillStyle = '#ffffff'
     ctx.fillText(watermarkText, Math.round(barHeight * 0.45), h - Math.round(barHeight / 2))
 
-    // Compress to WebP / JPEG (quality 0.82)
+    // Compress to WebP (quality 0.82)
     canvas.toBlob(
       (blob) => {
         setIsSnapping(false)
@@ -210,11 +224,6 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
             timestamp: stamp,
           },
         ])
-
-        toast({
-          title: `Photo ${photos.length + 1} Captured`,
-          description: 'Added to your upload batch.',
-        })
       },
       'image/webp',
       0.82
@@ -234,7 +243,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
   const handleSubmit = async () => {
     if (photos.length === 0) {
       toast({
-        title: 'No photos to upload',
+        title: 'No photos captured',
         description: 'Please tap the camera shutter button to capture at least one photo.',
         variant: 'error',
       })
@@ -269,7 +278,6 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
       // Cleanup previews
       photos.forEach((p) => URL.revokeObjectURL(p.previewUrl))
-      stopCamera()
 
       setUploadSuccess({
         brand: getShowroomBrandConfig(brand)?.label || brand,
@@ -289,46 +297,54 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     }
   }
 
-  // Success view
+  // Success view (Clean light executive receipt)
   if (uploadSuccess) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-3xl p-6 sm:p-8 text-center space-y-6 shadow-2xl animate-in fade-in zoom-in duration-300">
-          <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border-2 border-emerald-500/30">
-            <CheckCircle2 className="w-10 h-10" />
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-md bg-white rounded-3xl border border-slate-200/80 shadow-xl p-6 sm:p-8 text-center space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-100 shadow-sm">
+            <CheckCircle2 className="w-9 h-9" />
           </div>
 
-          <div className="space-y-2">
-            <h2 className="text-2xl font-bold tracking-tight text-white">
-              Showroom Photos Uploaded!
+          <div className="space-y-1.5">
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+              Photos Uploaded Successfully
             </h2>
-            <p className="text-slate-400 text-sm">
-              <strong className="text-white font-semibold">{uploadSuccess.count} photos</strong> recorded for{' '}
-              <span className="text-indigo-400 font-semibold">{uploadSuccess.brand}</span> ({uploadSuccess.location}).
+            <p className="text-slate-500 text-xs sm:text-sm">
+              <strong className="text-slate-800 font-semibold">{uploadSuccess.count} photos</strong> have been recorded and timestamped in the AM Group dashboard.
             </p>
           </div>
 
-          <div className="bg-slate-900/60 rounded-2xl p-4 border border-slate-700/60 text-left space-y-2 text-xs text-slate-300">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Brand</span>
-              <span className="font-semibold text-white">{uploadSuccess.brand}</span>
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/60 text-left space-y-2.5 text-xs text-slate-600">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500 font-medium">Brand</span>
+              <span className="font-semibold text-slate-900">{uploadSuccess.brand}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Dealership Location</span>
-              <span className="font-semibold text-white">{uploadSuccess.location}</span>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500 font-medium">Dealership Location</span>
+              <span className="font-semibold text-slate-900">{uploadSuccess.location}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Status</span>
-              <span className="font-semibold text-emerald-400">Live in Dashboard</span>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500 font-medium">Photos Recorded</span>
+              <span className="font-semibold text-slate-900">{uploadSuccess.count} Live Images</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+              <span className="text-slate-500 font-medium">Dashboard Feed</span>
+              <span className="inline-flex items-center gap-1 font-semibold text-emerald-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Live & Visible
+              </span>
             </div>
           </div>
 
           <Button
-            onClick={() => setUploadSuccess(null)}
-            className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-base shadow-lg shadow-indigo-600/30"
+            onClick={() => {
+              setUploadSuccess(null)
+              startCamera()
+            }}
+            className="w-full h-12 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm shadow-md transition-all cursor-pointer"
           >
-            <Camera className="w-5 h-5 mr-2" />
-            Capture More Photos
+            <Camera className="w-4 h-4 mr-2" />
+            Capture More Showroom Photos
           </Button>
         </div>
       </div>
@@ -338,46 +354,50 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
   const activeBrandConfig = getShowroomBrandConfig(brand)
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-start pb-12">
-      {/* Top Header */}
-      <header className="w-full bg-slate-900/90 backdrop-blur border-b border-slate-800 px-4 py-3 sticky top-0 z-30 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center justify-start pb-16">
+      {/* Top Clean Header */}
+      <header className="w-full bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 py-3.5 sticky top-0 z-30 flex items-center justify-between shadow-xs">
+        <div className="flex items-center gap-3">
           <div
-            className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-white text-xs shadow"
-            style={{ backgroundColor: activeBrandConfig?.accentColor || '#6366f1' }}
+            className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white text-xs shadow-sm shrink-0"
+            style={{ backgroundColor: activeBrandConfig?.accentColor || '#4f46e5' }}
           >
             <Building2 className="w-4 h-4" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-white leading-tight">Showroom Camera</h1>
-            <p className="text-[10px] text-slate-400 font-medium">AM Group Live Capture</p>
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">
+              Showroom Camera
+            </h1>
+            <p className="text-[11px] text-slate-500 font-medium">
+              AM Group Live Photo Capture
+            </p>
           </div>
         </div>
 
         {photos.length > 0 && (
-          <div className="flex items-center gap-1.5 bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 px-2.5 py-1 rounded-full text-xs font-semibold">
+          <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200/60 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold">
             <ImageIcon className="w-3.5 h-3.5" />
-            <span>{photos.length} snapped</span>
+            <span>{photos.length} Captured</span>
           </div>
         )}
       </header>
 
-      <main className="w-full max-w-lg px-4 pt-4 space-y-4">
-        {/* Brand & Location Selector Card */}
-        <div className="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 space-y-3.5 shadow-lg">
+      <main className="w-full max-w-lg px-4 pt-4 sm:pt-6 space-y-4">
+        {/* Dealership Details Card */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
           <div className="grid grid-cols-2 gap-3">
             {/* Brand Dropdown */}
             <div>
-              <Label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1 mb-1.5">
-                <Building2 className="w-3 h-3 text-indigo-400" /> Brand
+              <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
+                <Building2 className="w-3 h-3 text-indigo-600" /> Brand
               </Label>
               <Select value={brand} onValueChange={(val) => handleBrandChange(val as ShowroomBrandKey)}>
-                <SelectTrigger className="h-11 bg-slate-800 border-slate-700 text-white font-semibold text-xs rounded-xl focus:ring-indigo-500">
+                <SelectTrigger className="h-11 bg-slate-50 border-slate-200 text-slate-900 font-semibold text-xs rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-800 border-slate-700 text-white">
+                <SelectContent className="bg-white border-slate-200 text-slate-900 shadow-lg">
                   {SHOWROOM_BRANDS.map((b) => (
-                    <SelectItem key={b.key} value={b.key} className="focus:bg-slate-700 text-xs font-medium">
+                    <SelectItem key={b.key} value={b.key} className="text-xs font-medium cursor-pointer">
                       {b.label}
                     </SelectItem>
                   ))}
@@ -387,16 +407,16 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
             {/* Location Dropdown */}
             <div>
-              <Label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1 mb-1.5">
-                <MapPin className="w-3 h-3 text-emerald-400" /> Location
+              <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
+                <MapPin className="w-3 h-3 text-emerald-600" /> Location
               </Label>
               <Select value={location} onValueChange={setLocation}>
-                <SelectTrigger className="h-11 bg-slate-800 border-slate-700 text-white font-semibold text-xs rounded-xl focus:ring-emerald-500">
+                <SelectTrigger className="h-11 bg-slate-50 border-slate-200 text-slate-900 font-semibold text-xs rounded-xl focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-800 border-slate-700 text-white">
+                <SelectContent className="bg-white border-slate-200 text-slate-900 shadow-lg">
                   {locations.map((loc) => (
-                    <SelectItem key={loc} value={loc} className="focus:bg-slate-700 text-xs font-medium">
+                    <SelectItem key={loc} value={loc} className="text-xs font-medium cursor-pointer">
                       {loc}
                     </SelectItem>
                   ))}
@@ -407,21 +427,21 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
           {/* Optional Uploader Name */}
           <div>
-            <Label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1 mb-1.5">
+            <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
               <User className="w-3 h-3 text-slate-400" /> Person Uploading (Optional)
             </Label>
             <Input
               value={uploaderName}
               onChange={(e) => setUploaderName(e.target.value)}
-              placeholder="e.g. Security / Showroom Manager"
-              className="h-10 bg-slate-800 border-slate-700 text-white text-xs rounded-xl"
+              placeholder="e.g. Showroom Manager / Security"
+              className="h-10 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 text-xs rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
             />
           </div>
         </div>
 
-        {/* Live Camera Viewfinder */}
-        <div className="relative overflow-hidden rounded-3xl border border-slate-800 bg-black aspect-[4/3] shadow-2xl flex flex-col items-center justify-center">
-          {/* Active Video */}
+        {/* Live Camera Viewfinder Card */}
+        <div className="relative overflow-hidden rounded-3xl border-2 border-slate-200/90 bg-slate-950 aspect-[4/3] shadow-md flex flex-col items-center justify-center">
+          {/* Active Video Stream */}
           <video
             ref={videoRef}
             autoPlay
@@ -432,83 +452,100 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
             }`}
           />
 
-          {/* Idle / Error Overlay */}
+          {/* Camera Disabled / Error State */}
           {!cameraActive && (
-            <div className="p-6 text-center space-y-4 max-w-xs">
+            <div className="p-6 text-center space-y-4 max-w-xs text-white">
               {cameraError ? (
                 <>
-                  <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto border border-amber-500/30">
                     <AlertTriangle className="w-7 h-7" />
                   </div>
-                  <p className="text-xs text-amber-300 font-medium leading-relaxed">{cameraError}</p>
+                  <p className="text-xs text-amber-200 font-medium leading-relaxed">
+                    {cameraError}
+                  </p>
                   <Button
                     type="button"
                     onClick={startCamera}
                     variant="outline"
-                    className="rounded-xl border-slate-700 text-white hover:bg-slate-800 text-xs h-10"
+                    className="rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 text-xs h-10"
                   >
                     <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Try Again
                   </Button>
                 </>
               ) : (
                 <>
-                  <div className="w-16 h-16 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/30">
+                  <div className="w-16 h-16 rounded-2xl bg-white/10 text-white flex items-center justify-center mx-auto border border-white/20 shadow-inner">
                     <Camera className="w-8 h-8" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Ready to Capture</h3>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      Camera-only mode: live shutter automatically stamps location &amp; IST time.
+                    <h3 className="text-sm font-bold text-white">Live Camera</h3>
+                    <p className="text-[11px] text-slate-300 mt-1">
+                      Tap below to open camera and snap live showroom photos.
                     </p>
                   </div>
                   <Button
                     type="button"
                     onClick={startCamera}
-                    className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs h-11 shadow-lg shadow-indigo-600/30"
+                    className="w-full rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs h-11 shadow-lg shadow-indigo-600/30 cursor-pointer"
                   >
-                    <Camera className="w-4 h-4 mr-2" /> Start Live Camera
+                    <Camera className="w-4 h-4 mr-2" /> Start Camera
                   </Button>
                 </>
               )}
             </div>
           )}
 
-          {/* Live Watermark Preview Strip */}
+          {/* Live Watermark Preview Banner (Bottom overlay on camera) */}
           {cameraActive && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/70 backdrop-blur-sm px-3 py-1.5 flex items-center justify-between text-[10px] font-bold text-white border-t border-white/10">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                LIVE · {activeBrandConfig?.label} · {location}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3.5 py-2.5 flex items-center justify-between text-[11px] font-bold text-white">
+              <span className="flex items-center gap-2 drop-shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{activeBrandConfig?.label} · {location}</span>
               </span>
-              <span className="text-slate-400 font-mono text-[9px]">TIME-STAMPED</span>
+              <span className="text-[10px] text-slate-300 font-mono bg-black/40 px-2 py-0.5 rounded-full border border-white/10">
+                IST WATERMARK
+              </span>
             </div>
           )}
 
-          {/* Flash animation on shutter */}
-          {isSnapping && <div className="absolute inset-0 bg-white/70 animate-ping pointer-events-none" />}
+          {/* Quick 120ms Shutter Flash (Micro visual feedback without blocking camera) */}
+          {flashEffect && (
+            <div className="absolute inset-0 bg-white/70 pointer-events-none transition-opacity duration-100" />
+          )}
         </div>
 
-        {/* Hidden Canvas for watermark burning & compression */}
+        {/* Hidden Canvas for Watermark & WebP Compression */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Camera Control Buttons */}
+        {/* Camera Shutter & Actions */}
         {cameraActive && (
-          <div className="flex items-center gap-3">
-            <Button
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-4">
+            <div className="text-left">
+              <p className="text-xs font-bold text-slate-900">
+                {photos.length === 0 ? 'Ready to Shoot' : `${photos.length} Photo${photos.length > 1 ? 's' : ''} Ready`}
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Continuous live shooting
+              </p>
+            </div>
+
+            {/* iOS Style Circular Shutter Button */}
+            <button
               type="button"
               onClick={snapPhoto}
               disabled={isSnapping}
-              className="flex-1 h-14 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-base shadow-lg shadow-rose-600/30 active:scale-95 transition-all"
+              aria-label="Take Photo"
+              className="relative w-16 h-16 rounded-full border-4 border-slate-200 flex items-center justify-center bg-transparent active:scale-90 transition-transform cursor-pointer shadow-sm group hover:border-slate-300"
             >
-              <Camera className="w-5 h-5 mr-2" />
-              {isSnapping ? 'Capturing…' : 'Snap Photo'}
-            </Button>
+              <span className="w-12 h-12 rounded-full bg-rose-600 group-hover:bg-rose-500 transition-colors shadow-inner" />
+            </button>
 
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={stopCamera}
-              className="h-14 px-4 rounded-2xl border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+              className="text-xs h-9 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-100"
             >
               Pause
             </Button>
@@ -517,10 +554,10 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
         {/* Snapped Photos Tray */}
         {photos.length > 0 && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                <ImageIcon className="w-4 h-4 text-indigo-600" />
                 Captured Photos ({photos.length})
               </h3>
               <button
@@ -529,7 +566,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
                   photos.forEach((p) => URL.revokeObjectURL(p.previewUrl))
                   setPhotos([])
                 }}
-                className="text-[11px] text-rose-400 hover:text-rose-300 font-medium"
+                className="text-xs text-rose-600 hover:text-rose-700 font-semibold cursor-pointer"
               >
                 Clear all
               </button>
@@ -540,17 +577,18 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
               {photos.map((photo, index) => (
                 <div
                   key={photo.id}
-                  className="relative group shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-slate-700 bg-slate-800 shadow"
+                  className="relative group shrink-0 w-24 h-24 rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 shadow-xs"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={photo.previewUrl} alt={`Photo ${index + 1}`} className="w-full h-full object-cover" />
-                  <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
+                  <span className="absolute bottom-1 left-1 bg-slate-900/80 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold">
                     #{index + 1}
                   </span>
                   <button
                     type="button"
                     onClick={() => removePhoto(photo.id)}
-                    className="absolute top-1 right-1 bg-rose-600/90 hover:bg-rose-700 text-white p-1 rounded-full shadow"
+                    aria-label={`Delete photo ${index + 1}`}
+                    className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-sm cursor-pointer transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -558,12 +596,12 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
               ))}
             </div>
 
-            {/* Submit All Photos Button */}
+            {/* Upload Button */}
             <Button
               type="button"
               onClick={handleSubmit}
               disabled={uploading}
-              className="w-full h-13 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 cursor-pointer"
+              className="w-full h-13 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md shadow-indigo-600/20 cursor-pointer transition-all"
             >
               {uploading ? (
                 <>

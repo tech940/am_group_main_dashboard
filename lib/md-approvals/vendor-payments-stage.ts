@@ -34,6 +34,31 @@ export type VpStageValue = (typeof VP_STAGE_VALUES)[number]
 
 export type VendorPaymentStageKey = 'sales_manager' | 'ceo' | 'hr' | 'ea' | 'md' | 'accounts' | 'done'
 
+/**
+ * The stages a caller may POST an action against.
+ *
+ * ⚠️ EXPORTED SO THE ACTION ROUTE STOPS KEEPING ITS OWN COPY. It hardcoded
+ * `['sales_manager', 'hr', 'accounts', 'ea', 'md', 'payment_done']` — with 'ceo' MISSING — while
+ * the very same file carried a full authorisation branch, prerequisite check and write branch for
+ * the CEO stage. The client computes 'ceo', posts it, and the whitelist rejected it with
+ * "Invalid stage." before any of that code ran. So the KIA CEO stage could not be actioned at all
+ * from a row button or the detail dialog, on a request the route was otherwise fully equipped to
+ * handle.
+ *
+ * 'done' is terminal and is deliberately absent. 'payment_done' is the Accounts settlement action
+ * and is not a stage the inference ever returns, which is why it is listed separately here rather
+ * than folded into VendorPaymentStageKey.
+ */
+export const VENDOR_PAYMENT_ACTIONABLE_STAGES = [
+  'sales_manager',
+  'ceo',
+  'hr',
+  'ea',
+  'md',
+  'accounts',
+  'payment_done',
+] as const
+
 /** The subset of columns the stage inference needs. Kept minimal so any row shape can satisfy it. */
 export type VendorPaymentStageInput = {
   vpApproval?: string | null

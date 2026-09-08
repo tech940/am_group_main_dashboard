@@ -1,5 +1,6 @@
 import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval, usesVpService } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
+import { VENDOR_PAYMENT_ACTIONABLE_STAGES } from '@/lib/md-approvals/vendor-payments-stage'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
@@ -62,7 +63,16 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid action. Must be APPROVE, REJECT, HOLD, or SEND_BACK.' }, { status: 400 })
     }
 
-    if (!stage || !['sales_manager', 'hr', 'accounts', 'ea', 'md', 'payment_done'].includes(stage)) {
+    /*
+     * ⚠️ Derived from the shared list, never re-typed here.
+     *
+     * This was a hardcoded array with 'ceo' MISSING, while the code below carries a full
+     * authorisation branch, a prerequisite check and a write branch for that very stage. The client
+     * computes 'ceo' (getActiveStageKey) and posts it, so every CEO decision on a KIA request was
+     * rejected here with "Invalid stage." before any of that ran — the stage was unactionable from
+     * both the row buttons and the detail dialog.
+     */
+    if (!stage || !(VENDOR_PAYMENT_ACTIONABLE_STAGES as readonly string[]).includes(stage)) {
       return NextResponse.json({ error: 'Invalid stage.' }, { status: 400 })
     }
 
