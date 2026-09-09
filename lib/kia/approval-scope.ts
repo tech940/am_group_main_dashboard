@@ -278,10 +278,12 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
    * request is not his.
    */
   const isVpOrGsm = role === 'vp' || role === 'vice_president' || role === 'group_service_manager'
-  if (isVpOrGsm
-    && (usesVpService(rowBrand) || rowBrand === 'kia')
-    && isServiceApproval(row.department, row.approvalType)) {
-    return true
+  if (isVpOrGsm) {
+    // For MG: VP handles both Sales and Service requests across all branches
+    if (rowBrand === 'mg') return true
+    if ((usesVpService(rowBrand) || rowBrand === 'kia') && isServiceApproval(row.department, row.approvalType)) {
+      return true
+    }
   }
 
   /*

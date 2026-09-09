@@ -370,7 +370,7 @@ const DEFAULT_LOCATIONS_BY_BRAND: Record<string, Array<{ location: string; deale
   ],
   mg: [
     { location: 'Jammu', dealerCode: 'MG-JM', dealerName: 'AM MG Jammu' },
-    { location: 'Srinagar', dealerCode: 'MG-SR', dealerName: 'AM MG Srinagar' },
+    { location: 'Kathua', dealerCode: 'MG-KT', dealerName: 'AM MG Kathua' },
   ],
   tata: [
     { location: 'Jammu', dealerCode: 'TAT-JM', dealerName: 'AM Tata Jammu' },

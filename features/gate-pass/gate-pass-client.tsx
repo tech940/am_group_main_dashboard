@@ -183,6 +183,9 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
   const [gateOutFor, setGateOutFor] = useState<PassRow | null>(null)
   const [gateInFor, setGateInFor] = useState<PassRow | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [cancelFor, setCancelFor] = useState<PassRow | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelling, setCancelling] = useState(false)
 
   const canApprove = isGatePassApproverRole(currentUser.role)
   const statusFilter = TABS.find((t) => t.key === tab)?.status ?? ''
@@ -350,22 +353,43 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
     }
   }
 
-  const cancel = async (row: PassRow) => {
+  const confirmCancel = async () => {
+    if (!cancelFor) return
+    setCancelling(true)
     try {
-      const res = await fetch(`/api/gate-pass/${row.id}/cancel`, {
+      const res = await fetch(`/api/gate-pass/${cancelFor.id}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'Withdrawn by requester' }),
+        body: JSON.stringify({ reason: cancelReason.trim() || 'Cancelled before gate departure' }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || 'Could not cancel.')
-      toast({ title: 'Cancelled', variant: 'success' })
+      if (!res.ok) throw new Error(json.error || 'Could not cancel gate pass.')
+      toast({
+        title: 'Gate Pass Cancelled',
+        description: `Pass ${cancelFor.passNo} cancelled. Vehicle returned to yard availability.`,
+        variant: 'success',
+      })
+      setCancelFor(null)
+      setCancelReason('')
       await queryClient.invalidateQueries({ queryKey: ['gate-passes'] })
       await queryClient.invalidateQueries({ queryKey: ['gate-pass-summary'] })
+      await queryClient.invalidateQueries({ queryKey: ['gate-pass-fleet'] })
+      await queryClient.invalidateQueries({ queryKey: ['gate-pass-detail'] })
       await refetch()
     } catch (e) {
-      toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Try again.', variant: 'error' })
+      toast({
+        title: 'Cancellation failed',
+        description: e instanceof Error ? e.message : 'Try again.',
+        variant: 'error',
+      })
+    } finally {
+      setCancelling(false)
     }
+  }
+
+  const cancel = async (row: PassRow) => {
+    setCancelFor(row)
+    setCancelReason('')
   }
 
   const showQr = async (row: PassRow) => {
@@ -504,7 +528,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
-                  {rows.filter(r => r.status === 'approved').length}
+                  {summary.readyForGateOut ?? (fleetData ? fleetData.reserved : 0)}
                 </span>
                 <span className="text-xs text-indigo-600 dark:text-indigo-400 font-bold">Approved</span>
               </div>
@@ -597,23 +621,52 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
           {/* Controls Bar */}
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-            {/* Filter Tabs */}
+            {/* Filter Tabs with Stage Count Badges */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
               {TABS.map((t) => {
                 const active = tab === t.key
+                const count =
+                  t.key === 'awaiting'
+                    ? summary?.awaitingApproval ?? 0
+                    : t.key === 'approved'
+                    ? summary?.readyForGateOut ?? 0
+                    : t.key === 'out'
+                    ? summary?.outNow ?? 0
+                    : t.key === 'closed'
+                    ? summary?.closedPasses ?? 0
+                    : summary?.total ?? 0
+
                 return (
                   <button
                     key={t.key}
                     type="button"
                     onClick={() => setTab(t.key)}
                     className={cn(
-                      'px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer',
+                      'inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer',
                       active
                         ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200/80 dark:border-slate-700'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
                     )}
                   >
-                    {t.label}
+                    <span>{t.label}</span>
+                    <span
+                      className={cn(
+                        'inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-bold rounded-full transition-colors tabular-nums',
+                        active
+                          ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300'
+                          : count > 0
+                          ? t.key === 'awaiting'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                            : t.key === 'approved'
+                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                            : t.key === 'out'
+                            ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                            : 'bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                          : 'bg-slate-100 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500'
+                      )}
+                    >
+                      {count}
+                    </span>
                   </button>
                 )
               })}
@@ -741,37 +794,50 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Pending Approval: 1-Click Approve & Reject */}
-                          {canApprove && row.status === 'pending_approval' ? (
+                          {/* Pending Approval: 1-Click Approve, Reject & Cancel */}
+                          {row.status === 'pending_approval' ? (
                             <>
-                              <Button
-                                size="sm"
-                                disabled={approvingId === row.id}
-                                onClick={() => approvePass(row)}
-                                className="h-7 px-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shadow-2xs gap-1"
-                              >
-                                {approvingId === row.id ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Check className="h-3 w-3" />
-                                )}
-                                Approve
-                              </Button>
+                              {canApprove ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    disabled={approvingId === row.id}
+                                    onClick={() => approvePass(row)}
+                                    className="h-7 px-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shadow-2xs gap-1"
+                                  >
+                                    {approvingId === row.id ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Check className="h-3 w-3" />
+                                    )}
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setDecisionFor(row)
+                                      setRemarks('')
+                                    }}
+                                    className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900 rounded-lg cursor-pointer"
+                                  >
+                                    <X className="h-3 w-3 mr-0.5" /> Reject
+                                  </Button>
+                                </>
+                              ) : null}
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => {
-                                  setDecisionFor(row)
-                                  setRemarks('')
-                                }}
-                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900 rounded-lg cursor-pointer"
+                                onClick={() => cancel(row)}
+                                title="Cancel gate pass request"
+                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1"
                               >
-                                <X className="h-3 w-3 mr-0.5" /> Reject
+                                <Ban className="h-3 w-3" /> Cancel
                               </Button>
                             </>
                           ) : null}
 
-                          {/* Approved: Gate Out Button + QR */}
+                          {/* Approved (Vehicle at Gate, Yet to Go Out): Gate Out Button + QR + Cancel Button */}
                           {row.status === 'approved' ? (
                             <>
                               <Button
@@ -789,6 +855,15 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                                 className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer"
                               >
                                 <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => cancel(row)}
+                                title="Cancel gate pass request (vehicle is at gate and yet to go out)"
+                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1"
+                              >
+                                <Ban className="h-3 w-3" /> Cancel
                               </Button>
                             </>
                           ) : null}
@@ -813,20 +888,6 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                                 <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
                               </Button>
                             </>
-                          ) : null}
-
-                          {/* Cancel if requester */}
-                          {row.requestedBy === currentUser.id &&
-                          (row.status === 'pending_approval' || row.status === 'approved') ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => cancel(row)}
-                              title="Cancel request"
-                              className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-rose-600 cursor-pointer"
-                            >
-                              <Ban className="h-3.5 w-3.5" />
-                            </Button>
                           ) : null}
 
                           {/* View Detail */}
@@ -865,6 +926,11 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
         open={Boolean(detailId)}
         onOpenChange={(o) => {
           if (!o) setDetailId(null)
+        }}
+        onCancelPass={(pass) => {
+          setDetailId(null)
+          setCancelFor(pass as PassRow)
+          setCancelReason('')
         }}
       />
 
@@ -947,6 +1013,70 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
             >
               {acting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
               Reject Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Confirmation Dialog */}
+      <Dialog
+        open={Boolean(cancelFor)}
+        onOpenChange={(o) => {
+          if (!o) setCancelFor(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-rose-700 dark:text-rose-400 flex items-center gap-2">
+              <Ban className="h-4 w-4" />
+              Cancel Gate Pass {cancelFor?.passNo}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <div className="rounded-xl border border-rose-100 dark:border-rose-950/60 bg-rose-50/60 dark:bg-rose-950/20 p-3 text-xs space-y-1">
+              <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center justify-between">
+                <span>{cancelFor?.registrationNumber || 'No plate'} · {cancelFor?.model || 'Demo Car'}</span>
+                <span className="font-mono text-[11px] text-rose-600 font-bold uppercase">{cancelFor?.status}</span>
+              </div>
+              <div className="text-slate-600 dark:text-slate-400 text-[11px]">
+                Driver: <span className="font-medium text-slate-800 dark:text-slate-200">{cancelFor?.driverName}</span> · Purpose: <span className="font-medium text-slate-800 dark:text-slate-200">{cancelFor?.purpose}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Are you sure you want to cancel this gate pass request? The vehicle reservation will be cancelled and returned to the available yard fleet immediately.
+            </p>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Cancellation Reason <span className="text-[11px] font-normal text-slate-400">(optional)</span>
+              </label>
+              <Textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={2}
+                placeholder="e.g. Customer cancelled test drive, trip postponed, etc."
+                className="text-xs rounded-xl"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setCancelFor(null)}
+              disabled={cancelling}
+              className="h-9 rounded-xl text-xs font-semibold"
+            >
+              Keep Gate Pass
+            </Button>
+            <Button
+              onClick={confirmCancel}
+              disabled={cancelling}
+              className="h-9 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+            >
+              {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
+              Confirm Cancellation
             </Button>
           </DialogFooter>
         </DialogContent>

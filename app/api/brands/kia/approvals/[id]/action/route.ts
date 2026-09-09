@@ -133,7 +133,11 @@ export async function POST(
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
-      if (isServiceCategory) {
+      const rowBrand = String(requestRow.brand || 'kia').toLowerCase()
+      if (rowBrand === 'mg') {
+        // MG: Both Sales and Service first stage goes to VP
+        isAuthorized = isTester || isVp || isSuperUser
+      } else if (isServiceCategory) {
         // SERVICE ORDER: VP (or SuperUser / Admin/Developer)
         isAuthorized = isTester || isVp || isSuperUser
       } else {

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowRight,
+  Ban,
   Camera,
   Car,
   CheckCircle2,
@@ -29,6 +30,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatIndiaDateTime } from '@/lib/date-time'
 import { formatDuration, type GatePassMetrics } from '@/lib/gate-pass/metrics'
@@ -117,10 +119,20 @@ export function GatePassDetail({
   passId,
   open,
   onOpenChange,
+  onCancelPass,
 }: {
   passId: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCancelPass?: (pass: {
+    id: string
+    passNo: string
+    registrationNumber: string | null
+    model: string | null
+    driverName: string
+    purpose: string
+    status: string
+  }) => void
 }) {
   const [lightboxImage, setLightboxImage] = useState<{ label: string; url: string } | null>(null)
 
@@ -243,6 +255,28 @@ export function GatePassDetail({
                   )}
                 </div>
               </div>
+
+              {onCancelPass && p && (p.status === 'pending_approval' || p.status === 'approved') ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    onCancelPass({
+                      id: p.id as string,
+                      passNo: (p.passNo as string) || 'Gate Pass',
+                      registrationNumber: p.registrationNumber,
+                      model: p.model,
+                      driverName: p.driverName || 'Staff',
+                      purpose: p.purpose || 'Official',
+                      status: p.status as string,
+                    })
+                  }
+                  className="h-8 px-3 rounded-xl text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900 cursor-pointer gap-1.5 shrink-0"
+                >
+                  <Ban className="h-3.5 w-3.5" />
+                  Cancel Pass
+                </Button>
+              ) : null}
             </div>
           </div>
 

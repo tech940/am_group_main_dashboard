@@ -1,7 +1,7 @@
 /**
  * Reverse petty cash expenses and return the money to the holder's float.
  *
- * Written for PCE-20260901-7820 (₹2,260.00) and PCE-20260905-1203 (₹100.00), both on ARIF's
+ * Takes expense numbers on the command line. First used for PCE-20260901-7820 + PCE-20260905-1203 on ARIF's
  * allocation PCA-20260827-9506 (hyundai) — ₹2,360.00 back to his float.
  *
  * ── WHY THIS IS NOT "DELETE FROM petty_cash_expenses" ─────────────────────────────────────────
@@ -60,8 +60,14 @@ import postgres from 'postgres'
 
 const APPLY = process.argv.includes('--apply')
 
-/** The expenses to reverse. Kept explicit — this script must never take a wildcard. */
-const TARGETS = ['PCE-20260901-7820', 'PCE-20260905-1203']
+/**
+ * The expenses to reverse, named on the command line.
+ *
+ * ⚠️ Explicit expense numbers ONLY — never a filter, a date range or a wildcard. Two ₹297.00
+ * expenses were posted to the same float three minutes apart (PCE-20260902-0142 and
+ * PCE-20260902-5647); anything that selects by amount would take the wrong one, or both.
+ */
+const TARGETS = process.argv.slice(2).filter((a) => !a.startsWith('--'))
 
 const sql = postgres(process.env.DATABASE_URL!, { prepare: false, max: 2 })
 const inr = (n: unknown) => '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 })
@@ -81,6 +87,12 @@ type Expense = {
 }
 
 async function main() {
+  if (!TARGETS.length) {
+    console.error('Usage: npx tsx scripts/reverse-petty-cash-expenses.ts <PCE-NUMBER> [more...] [--apply]')
+    await sql.end()
+    process.exit(1)
+  }
+
   const expenses = await sql<Expense[]>`
     SELECT id::text, expense_number, allocation_id::text, branch_id, amount::text, status,
            current_stage, particulars, created_by::text, deleted_at

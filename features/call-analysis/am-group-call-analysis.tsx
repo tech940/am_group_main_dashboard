@@ -161,6 +161,7 @@ function getBranchBadgeStyle(branchName?: string | null) {
   if (norm.includes('special')) return 'bg-violet-50 text-violet-700 border-violet-200'
   if (norm.includes('kia')) return 'bg-indigo-50 text-indigo-700 border-indigo-200'
   if (norm.includes('hyundai') || norm.includes('h promise')) return 'bg-sky-50 text-sky-700 border-sky-200'
+  if (norm.includes('mg')) return 'bg-[#D96868]/15 text-[#8C2C2C] border-[#D96868]/30'
   if (norm.includes('ktm')) return 'bg-orange-50 text-orange-700 border-orange-200'
   if (norm.includes('honda')) return 'bg-rose-50 text-rose-700 border-rose-200'
   if (norm.includes('tata')) return 'bg-blue-50 text-blue-700 border-blue-200'

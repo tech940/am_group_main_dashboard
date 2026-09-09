@@ -190,7 +190,9 @@ export type GatePassSummary = {
   outNow: number
   overdueNow: number
   awaitingApproval: number
+  readyForGateOut: number
   completedTrips: number
+  closedPasses: number
   onTimeReturns: number
   /** Null rather than 0 when nothing has completed — 0% and "no data" are different answers. */
   onTimeRate: number | null
@@ -226,7 +228,9 @@ export function summariseGatePasses(
     outNow: rows.filter((r) => r.status === 'out').length,
     overdueNow: all.filter(({ m }) => m.lateBasis === 'still_out' && (m.lateMinutes ?? 0) > 0).length,
     awaitingApproval: rows.filter((r) => r.status === 'pending_approval').length,
+    readyForGateOut: rows.filter((r) => r.status === 'approved').length,
     completedTrips: completed.length,
+    closedPasses: rows.filter((r) => ['returned', 'rejected', 'cancelled', 'expired'].includes(r.status)).length,
     onTimeReturns: completed.filter(({ m }) => m.onTime === true).length,
     onTimeRate: completed.length === 0
       ? null

@@ -84,14 +84,15 @@ export function canApproveGatePass(appUser: AppUser | null, dealerCode: string |
   return isDealerInScope(appUser, dealerCode)
 }
 
-/** May this user cancel it? The person who raised it, or anyone who could have approved it. */
+/** May this user cancel it? The person who raised it, anyone who could have approved it, or staff managing the gate when vehicle is yet to go out. */
 export function canCancelGatePass(
   appUser: AppUser | null,
   pass: { requestedBy: string | null; dealerCode: string | null },
 ): boolean {
   if (!appUser) return false
   if (pass.requestedBy && pass.requestedBy === appUser.id) return true
-  return canApproveGatePass(appUser, pass.dealerCode)
+  if (canApproveGatePass(appUser, pass.dealerCode)) return true
+  return isDealerInScope(appUser, pass.dealerCode)
 }
 
 export async function canViewGatePass(appUser: AppUser | null): Promise<boolean> {

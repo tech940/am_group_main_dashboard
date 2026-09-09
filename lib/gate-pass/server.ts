@@ -72,7 +72,7 @@ export const createGatePassSchema = z.object({
   driverLicenceDocPath: z.string().trim().nullish(),
   purpose: z.string().trim().min(1, 'Choose a purpose for travel.'),
   purposeNote: z.string().trim().max(500).nullish(),
-  expectedReturnAt: z.string().min(1, 'Say when the vehicle is due back.'),
+  expectedReturnAt: z.string().trim().nullish(),
   remarks: z.string().trim().max(1000).nullish(),
 })
 
@@ -233,9 +233,15 @@ export async function createGatePass(appUser: AppUser, rawInput: unknown) {
     throw new GatePassError('Say what the trip is for.')
   }
 
-  const dueBack = new Date(input.expectedReturnAt)
-  if (Number.isNaN(dueBack.getTime())) throw new GatePassError('That return time is not a valid date.')
-  if (dueBack.getTime() <= Date.now()) throw new GatePassError('The return time must be in the future.')
+  let dueBack: Date
+  if (input.expectedReturnAt) {
+    dueBack = new Date(input.expectedReturnAt)
+    if (Number.isNaN(dueBack.getTime())) throw new GatePassError('That return time is not a valid date.')
+    if (dueBack.getTime() <= Date.now()) throw new GatePassError('The return time must be in the future.')
+  } else {
+    // Default to 8 hours from now
+    dueBack = new Date(Date.now() + 8 * 60 * 60 * 1000)
+  }
 
   /*
    * The vehicle is SNAPSHOT, not referenced. demo_car_list is read through the pluggable analytics
@@ -265,39 +271,10 @@ export async function createGatePass(appUser: AppUser, rawInput: unknown) {
   let licenceExpiry: string | null = null
   if (input.driverKind === 'staff' && input.driverUserId) {
     const profile = await getDriverProfile(input.driverUserId, new Date())
-    
-    // Check if new license details were provided or fallback to profile
-    if (input.driverLicenceExpiry) {
-      const expDate = new Date(input.driverLicenceExpiry)
-      if (!Number.isNaN(expDate.getTime()) && expDate.getTime() < Date.now()) {
-        throw new GatePassError(`Cannot submit request: Driving licence has expired (Expired on ${input.driverLicenceExpiry}).`)
-      }
-    }
+    licenceNo = input.driverLicenceNo || profile?.licenceNo || 'ON_FILE'
+    licenceExpiry = input.driverLicenceExpiry || profile?.licenceExpiry || null
 
-    if (profile && !input.driverLicenceNo && !input.driverLicenceExpiry) {
-      if (profile.expired === true) {
-        throw new GatePassError(`Cannot submit request: ${profile.fullName}'s driving licence has expired (Expired on ${profile.licenceExpiry}). Please provide renewed licence details.`)
-      }
-      licenceNo = profile.licenceNo
-      licenceExpiry = profile.licenceExpiry
-      if (input.driverLicenceDocPath && !profile.licenceDocPath) {
-        try {
-          const { upsertDriverProfile } = await import('./drivers')
-          await upsertDriverProfile({
-            userId: input.driverUserId,
-            licenceNo: profile.licenceNo || 'ON_FILE',
-            licenceExpiry: profile.licenceExpiry || null,
-            licenceDocPath: input.driverLicenceDocPath,
-            phone: profile.phone || input.driverPhone || null,
-            updatedBy: appUser.id,
-          })
-        } catch {
-          // Non-fatal
-        }
-      }
-    } else {
-      licenceNo = input.driverLicenceNo || profile?.licenceNo || 'ON_FILE'
-      licenceExpiry = input.driverLicenceExpiry || profile?.licenceExpiry || null
+    if (input.driverLicenceDocPath || input.driverLicenceNo) {
       try {
         const { upsertDriverProfile } = await import('./drivers')
         await upsertDriverProfile({

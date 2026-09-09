@@ -128,7 +128,7 @@ export function getLocationBadge(location: string): { bg: string; text: string; 
     return { bg: 'bg-indigo-50 dark:bg-indigo-950/60', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800' }
   }
   if (upper.includes('MG')) {
-    return { bg: 'bg-rose-50 dark:bg-rose-950/60', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800' }
+    return { bg: 'bg-[#D96868]/15 dark:bg-[#D96868]/20', text: 'text-[#8C2C2C] dark:text-[#F3B7B7]', border: 'border-[#D96868]/30 dark:border-[#D96868]/40' }
   }
   return { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-700 dark:text-slate-300', border: 'border-slate-200 dark:border-slate-700' }
 }

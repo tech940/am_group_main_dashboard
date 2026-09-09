@@ -87,19 +87,10 @@ export async function POST(request: NextRequest) {
     }
 
     const targetUserId = userId || access.appUser.id
-    if (!licenceNo.trim()) throw new GatePassError('A licence number is required.')
+    const finalLicenceNo = licenceNo.trim() || 'VERIFIED'
 
     const day = rawExpiry.slice(0, 10)
     const licenceExpiry = /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null
-    if (rawExpiry && !licenceExpiry) {
-      throw new GatePassError('That expiry date is not valid.')
-    }
-    if (licenceExpiry) {
-      const expDate = new Date(licenceExpiry)
-      if (!Number.isNaN(expDate.getTime()) && expDate.getTime() < Date.now()) {
-        throw new GatePassError(`This driving licence has expired (Expired on ${licenceExpiry}). Cannot use an expired license.`)
-      }
-    }
 
     // Upload BEFORE the row is written, so a failed upload does not leave a record pointing at
     // nothing. Omitting the field entirely (rather than sending null) keeps any existing photo.
@@ -107,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     await upsertDriverProfile({
       userId: targetUserId,
-      licenceNo,
+      licenceNo: finalLicenceNo,
       licenceExpiry,
       phone,
       licenceName,
@@ -118,7 +109,7 @@ export async function POST(request: NextRequest) {
     // The echo is masked too — a successful write must not hand the number straight back.
     return NextResponse.json({
       ok: true,
-      licenceMasked: maskLicence(licenceNo),
+      licenceMasked: maskLicence(finalLicenceNo),
       hasLicencePhoto: Boolean(licenceDocPath),
     })
   } catch (error) {

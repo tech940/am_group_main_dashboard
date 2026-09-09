@@ -223,7 +223,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
                   <span>1. Front of the vehicle</span>
                   {frontPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
                 </Label>
-                <VehicleTrackerCamera label="front of the vehicle" onCapture={setFrontPhoto} />
+                <VehicleTrackerCamera label="Front View Photo" onCapture={setFrontPhoto} />
               </div>
 
               <div className="space-y-1.5">
@@ -231,7 +231,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
                   <span>2. Back of the vehicle</span>
                   {backPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
                 </Label>
-                <VehicleTrackerCamera label="back of the vehicle" onCapture={setBackPhoto} />
+                <VehicleTrackerCamera label="Back View Photo" onCapture={setBackPhoto} />
               </div>
 
               <div className="space-y-1.5">
@@ -239,7 +239,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
                   <span>3. Right side of the vehicle</span>
                   {rightPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
                 </Label>
-                <VehicleTrackerCamera label="right side of the vehicle" onCapture={setRightPhoto} />
+                <VehicleTrackerCamera label="Right Side Photo" onCapture={setRightPhoto} />
               </div>
 
               <div className="space-y-1.5">
@@ -247,7 +247,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
                   <span>4. Left side of the vehicle</span>
                   {leftPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
                 </Label>
-                <VehicleTrackerCamera label="left side of the vehicle" onCapture={setLeftPhoto} />
+                <VehicleTrackerCamera label="Left Side Photo" onCapture={setLeftPhoto} />
               </div>
             </>
           ) : null}
@@ -257,7 +257,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
               <span>{isOut ? '5. Odometer reading display' : 'Odometer reading display *'}</span>
               {odoPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
             </Label>
-            <VehicleTrackerCamera label="odometer reading" onCapture={setOdoPhoto} />
+            <VehicleTrackerCamera label="Odometer Display Photo" onCapture={setOdoPhoto} />
           </div>
         </div>
 

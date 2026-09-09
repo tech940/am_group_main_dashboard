@@ -56,6 +56,20 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Brand MG Color (#D96868)
+        mg: {
+          DEFAULT: "#D96868",
+          50: "#fdf3f3",
+          100: "#fae4e4",
+          200: "#f5cdcd",
+          300: "#edabab",
+          400: "#e38080",
+          500: "#D96868",
+          600: "#c74d4d",
+          700: "#a63c3c",
+          800: "#8a3434",
+          900: "#733030",
+        },
         // Custom vibrant colors for dashboard - Based on reference image
         // Primary Teal/Cyan (#055B65 - Enamelled Jewel)
         teal: {

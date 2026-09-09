@@ -4,6 +4,7 @@
  * ── The rule ──────────────────────────────────────────────────────────────────────────────────
  * - KIA:               submitted → ED / GSM → CEO → HR (if required) → EA → MD → Accounts
  * - Hyundai:           submitted → sales GSM, or the GROUP SERVICE MANAGER on service → EA → MD → Accounts
+ * - MG:                submitted → VP (both sales & service) → EA → MD → Accounts
  * - Platinum SERVICE:  submitted → DGM → EA → MD → Accounts
  * - Platinum SALES:    submitted → EA → MD → Accounts (no first stage; routes directly to EA)
  * - all others:        submitted → GSM → EA → MD → Accounts (GSM = Sales or Service, per department)
@@ -126,6 +127,8 @@ export function firstStageApproverRoles(brand: unknown, department: unknown, app
   if (!brandHasFirstStage(b, department, approvalType)) return []
   // Platinum's first stage exists only on service, and belongs to the DGM alone.
   if (isDgmBrand(b)) return ['dgm']
+  // MG: VP approves both Sales and Service requests
+  if (b === 'mg') return ['vp']
   const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (trackForDepartment(department)) {
     case 'sales': return ['general_manager']
@@ -146,6 +149,8 @@ export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStag
    */
   if (isDgmBrand(b)) return track === 'service' ? ['dgm'] : []
   if (!brandHasFirstStage(b)) return []
+  // MG: VP approves both Sales and Service requests
+  if (b === 'mg') return ['vp']
   const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (track) {
     case 'sales': return ['general_manager']
@@ -167,6 +172,7 @@ export function firstStageLabel(brand: unknown, department: unknown, approvalTyp
   const b = norm(brand)
   if (!brandHasFirstStage(b, department, approvalType)) return 'EA Approval'
   if (isDgmBrand(b)) return 'DGM Approval'
+  if (b === 'mg') return 'VP Approval'
   switch (trackForDepartment(department)) {
     case 'sales': return 'GSM Approval (Sales)'
     case 'service': return (usesVpService(b) || b === 'kia') ? 'VP Approval' : 'GSM Approval (Service)'
@@ -181,6 +187,7 @@ export function firstStageShortLabel(brand: unknown, department: unknown, approv
   const b = norm(brand)
   if (!brandHasFirstStage(b, department, approvalType)) return 'EA'
   if (isDgmBrand(b)) return 'DGM'
+  if (b === 'mg') return 'VP'
   if ((usesVpService(b) || b === 'kia') && isServiceApproval(department, approvalType)) {
     return 'VP'
   }

@@ -85,7 +85,7 @@ for (const brand of ['hyundai']) {
     `${brand} + blank department -> sales GSM or VP`)
 }
 
-console.log('\n4a) Platinum: SERVICE belongs to the DGM, SALES has no first stage at all')
+console.log('\n4b) Platinum: SERVICE belongs to the DGM, SALES has no first stage at all')
 check(JSON.stringify(firstStageApproverRoles('platinum', 'Service')) === JSON.stringify(['dgm']),
   'platinum + Service -> dgm')
 check(firstStageApproverRoles('platinum', 'Sales').length === 0,
@@ -95,12 +95,20 @@ check(!canApproveFirstStage('dgm', 'platinum', 'Sales'), 'a DGM does NOT approve
 check(!canApproveFirstStage('dgm', 'kia', 'Service'), 'a DGM holds no KIA desk')
 check(!canApproveFirstStage('vp', 'platinum', 'Service'), 'the VP no longer holds platinum service')
 
-console.log('\n4b) ...and NO other brand is captured by the group role')
+console.log('\n4c) MG: VP approves BOTH Sales and Service requests')
+check(JSON.stringify(firstStageApproverRoles('mg', 'Sales')) === JSON.stringify(['vp']),
+  'mg + Sales -> vp')
+check(JSON.stringify(firstStageApproverRoles('mg', 'Service')) === JSON.stringify(['vp']),
+  'mg + Service -> vp')
+check(canApproveFirstStage('vp', 'mg', 'Sales'), 'VP approves MG sales')
+check(canApproveFirstStage('vp', 'mg', 'Service'), 'VP approves MG service')
+
+console.log('\n4d) ...and NO other brand is captured by the group role')
 /*
  * The rule names two brands. A brand added later must keep its own service GSM until somebody
  * decides otherwise — this is the assertion that stops the exception from quietly becoming the rule.
  */
-for (const brand of ['mg', 'tata', 'honda', 'bajaj', 'ktm', 'triumph']) {
+for (const brand of ['tata', 'honda', 'bajaj', 'ktm', 'triumph']) {
   check(!usesGroupServiceManager(brand), `${brand} does NOT use the group service manager`)
   check(JSON.stringify(firstStageApproverRoles(brand, 'Service')) === JSON.stringify(['service_general_manager']),
     `${brand} + Service -> its own service_general_manager`)
@@ -138,7 +146,7 @@ check(canApproveFirstStage('service_general_manager', 'tata', 'Service'),
   'a brand outside the group keeps its own service GSM')
 
 console.log('\n8) The track-aware form agrees with the department-aware one')
-for (const brand of ['kia', 'hyundai', 'platinum']) {
+for (const brand of ['kia', 'hyundai', 'platinum', 'mg']) {
   for (const [dept, track] of [['Sales', 'sales'], ['Service', 'service'], ['', 'unknown']] as const) {
     check(JSON.stringify(firstStageApproverRoles(brand, dept))
       === JSON.stringify(firstStageApproverRolesForTrack(brand, track)),
@@ -152,6 +160,8 @@ check(firstStageLabel('kia', 'Service') === 'VP Approval', 'kia service reads "V
 check(firstStageLabel('hyundai', 'Sales') === 'GSM Approval (Sales)', 'hyundai sales reads "GSM Approval (Sales)"')
 check(firstStageLabel('hyundai', 'Service') === 'VP Approval',
   'hyundai service names the VP Approval')
+check(firstStageLabel('mg', 'Sales') === 'VP Approval', 'mg sales reads "VP Approval"')
+check(firstStageLabel('mg', 'Service') === 'VP Approval', 'mg service reads "VP Approval"')
 check(firstStageLabel('platinum', 'Service') === 'DGM Approval',
   'platinum service names the DGM Approval')
 check(firstStageLabel('tata', 'Service') === 'GSM Approval (Service)',
@@ -159,7 +169,7 @@ check(firstStageLabel('tata', 'Service') === 'GSM Approval (Service)',
 check(!firstStageLabel('platinum', '').includes('CEO'), 'platinum never reads "CEO"')
 
 console.log('\n10) VP is not a first-stage approver for non-VP brands')
-for (const brand of ['mg', 'tata', 'honda', 'bajaj', 'ktm', 'triumph']) {
+for (const brand of ['tata', 'honda', 'bajaj', 'ktm', 'triumph']) {
   for (const role of ['vp', 'vice_president']) {
     for (const dept of ['Sales', 'Service', 'SERVICE', '']) {
       check(!canApproveFirstStage(role, brand, dept),

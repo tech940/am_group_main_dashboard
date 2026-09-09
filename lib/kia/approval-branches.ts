@@ -96,6 +96,10 @@ export const APPROVAL_BRANCH_SYNONYMS: Record<string, readonly (readonly string[
     ['N6828', 'POONCH'],
     ['N6250', 'RAJOURI'],
   ],
+  mg: [
+    ['JAMMU', 'MG-JAMMU', 'MG-JM', 'MG JAMMU'],
+    ['KATHUA', 'MG-KATHUA', 'MG-KT', 'MG KATHUA'],
+  ],
 }
 
 /**

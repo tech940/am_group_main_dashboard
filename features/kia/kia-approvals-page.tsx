@@ -69,7 +69,7 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { brandHasHrStage, isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
-import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, isServiceApproval, usesGroupServiceManager } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, isServiceApproval, usesGroupServiceManager, isDgmBrand, firstStageShortLabel, firstStageLabel } from '@/lib/approvals/first-stage-approver'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
 /*
@@ -374,7 +374,7 @@ const BRAND_CHIP_STYLES: Record<string, string> = {
   kia: 'bg-rose-50 border-rose-300 text-rose-900 font-extrabold',
   hyundai: 'bg-sky-50 border-sky-300 text-sky-900 font-extrabold',
   platinum: 'bg-violet-50 border-violet-300 text-violet-900 font-extrabold',
-  mg: 'bg-teal-50 border-teal-300 text-teal-900 font-extrabold',
+  mg: 'bg-[#D96868]/15 border-[#D96868]/40 text-[#8C2C2C] font-extrabold',
   tata: 'bg-cyan-50 border-cyan-300 text-cyan-900 font-extrabold',
   honda: 'bg-red-50 border-red-300 text-red-900 font-extrabold',
   ktm: 'bg-orange-50 border-orange-300 text-orange-900 font-extrabold',
@@ -388,7 +388,7 @@ const BRAND_BADGE_STYLES: Record<string, string> = {
   kia: 'bg-rose-100 text-rose-800 border-rose-300 font-black',
   hyundai: 'bg-sky-100 text-sky-800 border-sky-300 font-black',
   platinum: 'bg-violet-100 text-violet-800 border-violet-300 font-black',
-  mg: 'bg-teal-100 text-teal-800 border-teal-300 font-black',
+  mg: 'bg-[#D96868]/20 text-[#8C2C2C] border-[#D96868]/40 font-black',
   tata: 'bg-cyan-100 text-cyan-800 border-cyan-300 font-black',
   honda: 'bg-red-100 text-red-800 border-red-300 font-black',
   ktm: 'bg-orange-100 text-orange-800 border-orange-300 font-black',
@@ -1404,7 +1404,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
    * that decides authority cannot drift from the server.
    */
   const firstStageDisplayLabel = (req?: ApprovalRequest | null): string => {
-    const isService = req ? isServiceCategory(req.department, req.approvalType) : false
+    if (!req) return 'GSM (Sales)'
+    const brand = String(req.brand || '').trim().toLowerCase()
+    if (brand === 'mg') return 'VP'
+    if (isDgmBrand(brand)) return 'DGM'
+    const isService = isServiceCategory(req.department, req.approvalType)
     return isService ? 'VP' : 'GSM (Sales)'
   }
 
@@ -4633,8 +4637,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
             const renderNewWorkflowStepper = (req: ApprovalRequest) => {
               const isService = isServiceCategory(req.department, req.approvalType)
-              const isKia = String(req.brand || 'kia').toLowerCase() === 'kia'
-              const firstStageLabel = isService ? 'VP Approval' : 'GSM (Sales)'
+              const brand = String(req.brand || 'kia').toLowerCase()
+              const isKia = brand === 'kia'
+              const firstStageLabel = brand === 'mg' ? 'VP Approval' : (isDgmBrand(brand) ? 'DGM Approval' : (isService ? 'VP Approval' : 'GSM (Sales)'))
               const requiresHrStage = isHrApprovalRequired(req.approvalType, req.brand)
               const hasFirstStage = brandHasFirstStage(req.brand, req.department, req.approvalType)
               const stages = [

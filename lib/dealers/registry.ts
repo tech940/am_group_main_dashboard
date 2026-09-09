@@ -1,6 +1,7 @@
 import { KIA_BRANCH_DEALERS } from '@/lib/kia/dealer-branch'
 import { HYUNDAI_BRANCH_DEALERS } from '@/lib/hyundai/dealer-branch'
 import { PLATINUM_BRANCH_DEALERS } from '@/lib/platinum/dealer-branch'
+import { MG_BRANCH_DEALERS } from '@/lib/mg/dealer-branch'
 
 // A "dealer" here is a physical branch/location within a brand (what the Business Excellence
 // dealer selector switches between). A user can be pinned to one or more of these so they only
@@ -11,6 +12,7 @@ export const BRAND_DEALERS: Record<string, DealerOption[]> = {
   kia: KIA_BRANCH_DEALERS.map((dealer) => ({ code: dealer.dealerCode, label: dealer.label })),
   hyundai: HYUNDAI_BRANCH_DEALERS.map((dealer) => ({ code: dealer.dealerCode, label: dealer.label })),
   platinum: PLATINUM_BRANCH_DEALERS.map((dealer) => ({ code: dealer.dealerCode, label: dealer.label })),
+  mg: MG_BRANCH_DEALERS.map((dealer) => ({ code: dealer.dealerCode, label: dealer.label })),
 }
 
 export function getBrandDealers(brand: string | null | undefined): DealerOption[] {
