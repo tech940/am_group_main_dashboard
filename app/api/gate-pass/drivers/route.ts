@@ -17,7 +17,7 @@ export const maxDuration = 60
  * data is already on the wire and merely hidden in the render.
  */
 export async function GET(_request: NextRequest) {
-  const access = await requireGatePassAccess('gate_pass.create')
+  const access = await requireGatePassAccess('gate_pass.view')
   if (access.denied) return access.denied
 
   try {

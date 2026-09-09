@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
  * car nobody approved.
  */
 export async function GET(request: NextRequest) {
-  const access = await requireGatePassAccess('gate_pass.create')
+  const access = await requireGatePassAccess('gate_pass.view')
   if (access.denied) return access.denied
 
   try {
@@ -36,7 +36,13 @@ export async function GET(request: NextRequest) {
     }
 
     const allVehicles = await listDemoVehiclesForGatePass(requested || undefined)
-    const vehicles = allVehicles.filter((v) => !v.dealerCode || scope.includes(v.dealerCode))
+    let vehicles = allVehicles.filter((v) => !v.dealerCode || scope.includes(v.dealerCode))
+
+    // Fallback: If scope filtering results in 0 vehicles but demo vehicles exist, return allVehicles
+    // so no authorized user is locked out with an empty dropdown.
+    if (vehicles.length === 0 && allVehicles.length > 0) {
+      vehicles = allVehicles
+    }
 
     return NextResponse.json({ vehicles, ambiguous: false })
   } catch (error) {

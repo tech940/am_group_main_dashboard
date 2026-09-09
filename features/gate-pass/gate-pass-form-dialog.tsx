@@ -95,14 +95,21 @@ export function GatePassFormDialog({
     isLoading: loadingVehicles,
     refetch: refetchVehicles,
     isRefetching: refetchingVehicles,
+    isError: isVehicleError,
+    error: vehicleQueryError,
   } = useQuery({
     queryKey: ['gate-pass-vehicles'],
     queryFn: async () => {
       const res = await fetch('/api/gate-pass/vehicles', { cache: 'no-store' })
-      if (!res.ok) throw new Error('Could not load the demo fleet.')
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error || `Failed to fetch fleet (HTTP ${res.status}).`)
+      }
       return res.json() as Promise<{ vehicles: Vehicle[] }>
     },
     enabled: open,
+    staleTime: 60000,
+    retry: 2,
   })
 
   const { data: driverData, refetch: refetchDrivers } = useQuery({
@@ -120,16 +127,23 @@ export function GatePassFormDialog({
 
   const filteredVehicles = useMemo<Vehicle[]>(() => {
     if (!vehicleSearch.trim()) return vehicles
-    const q = vehicleSearch.trim().toLowerCase()
-    return vehicles.filter(
-      (v: Vehicle) =>
-        (v.registrationNumber && v.registrationNumber.toLowerCase().includes(q)) ||
-        (v.model && v.model.toLowerCase().includes(q)) ||
-        (v.variant && v.variant.toLowerCase().includes(q)) ||
-        (v.color && v.color.toLowerCase().includes(q)) ||
-        (v.branchLabel && v.branchLabel.toLowerCase().includes(q)) ||
-        v.vin.toLowerCase().includes(q)
-    )
+    const q = vehicleSearch.trim().toLowerCase().replace(/[\s\-_]/g, '')
+    return vehicles.filter((v: Vehicle) => {
+      const reg = (v.registrationNumber || '').toLowerCase().replace(/[\s\-_]/g, '')
+      const model = (v.model || '').toLowerCase().replace(/[\s\-_]/g, '')
+      const variant = (v.variant || '').toLowerCase().replace(/[\s\-_]/g, '')
+      const color = (v.color || '').toLowerCase().replace(/[\s\-_]/g, '')
+      const branch = (v.branchLabel || '').toLowerCase().replace(/[\s\-_]/g, '')
+      const vinStr = v.vin.toLowerCase().replace(/[\s\-_]/g, '')
+      return (
+        reg.includes(q) ||
+        model.includes(q) ||
+        variant.includes(q) ||
+        color.includes(q) ||
+        branch.includes(q) ||
+        vinStr.includes(q)
+      )
+    })
   }, [vehicles, vehicleSearch])
 
   const chosenVehicle = vehicles.find((v) => v.vin === vin) ?? null
@@ -389,30 +403,80 @@ export function GatePassFormDialog({
               </div>
             </div>
 
+            {isVehicleError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-800 flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+                  <span className="truncate">
+                    {vehicleQueryError instanceof Error ? vehicleQueryError.message : 'Could not load the fleet vehicles.'}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchVehicles()}
+                  disabled={refetchingVehicles}
+                  className="text-xs h-7 ml-2 border-red-300 text-red-800 bg-white hover:bg-red-100 shrink-0"
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+
             <div>
               <div className="flex items-center justify-between mb-1">
                 <Label className="text-xs font-semibold text-slate-700">Select Vehicle Reg No / Model</Label>
               </div>
 
               {/* Search Filter for Quick Mobile / Desktop Selection */}
-              {vehicles.length > 5 && (
-                <div className="relative mb-2">
-                  <Input
-                    type="text"
-                    value={vehicleSearch}
-                    onChange={(e) => setVehicleSearch(e.target.value)}
-                    placeholder="Search by Reg No, Model, Color, or Branch…"
-                    className="h-8 text-xs bg-white pr-7 rounded-lg"
-                  />
-                  {vehicleSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setVehicleSearch('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-                    >
-                      ×
-                    </button>
-                  )}
+              {vehicles.length > 0 && (
+                <div className="space-y-2 mb-2">
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      value={vehicleSearch}
+                      onChange={(e) => setVehicleSearch(e.target.value)}
+                      placeholder="Search by Reg No (e.g. 0880, JK02), Model, Color…"
+                      className="h-8 text-xs bg-white pr-7 rounded-lg"
+                    />
+                    {vehicleSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setVehicleSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Quick Filter Badges */}
+                  <div className="flex flex-wrap gap-1">
+                    {['Jammu', 'Udhampur', 'Carens', 'Syros', 'Seltos', 'Carnival'].map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setVehicleSearch(vehicleSearch === tag ? '' : tag)}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                          vehicleSearch === tag
+                            ? 'bg-indigo-600 text-white border-indigo-600 font-bold'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                    {vehicleSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setVehicleSearch('')}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300"
+                      >
+                        Clear Filter
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -424,7 +488,7 @@ export function GatePassFormDialog({
                       loadingVehicles
                         ? 'Loading fleet vehicles…'
                         : vehicles.length === 0
-                        ? '-- No Vehicles Available --'
+                        ? '-- No Vehicles Available (Retry) --'
                         : '-- Select Demo Vehicle --'
                     }
                   />
@@ -444,7 +508,7 @@ export function GatePassFormDialog({
                           onClick={() => setVehicleSearch('')}
                           className="text-xs text-indigo-600 font-bold hover:underline"
                         >
-                          Clear search filter
+                          Clear search filter ({vehicles.length} total)
                         </button>
                       ) : (
                         <button
