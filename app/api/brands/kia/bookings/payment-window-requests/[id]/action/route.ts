@@ -22,7 +22,7 @@ export const maxDuration = 60
  */
 export async function POST(
   request: Request,
-  context: RouteContext<'/api/brands/kia/bookings/payment-window-requests/[id]/action'>,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const accessResponse = await requireBrandApiAccess('kia')
@@ -34,7 +34,7 @@ export async function POST(
       return NextResponse.json({ error: permission.reason }, { status: 403 })
     }
 
-    const { id } = await context.params
+    const { id } = await params
     const body = await request.json().catch(() => ({}))
     const action = String(body.action || '').toUpperCase()
     if (action !== 'APPROVE' && action !== 'REJECT') {

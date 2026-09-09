@@ -96,11 +96,8 @@ export function canCancelGatePass(
 
 export async function canViewGatePass(appUser: AppUser | null): Promise<boolean> {
   if (!appUser) return false
-  const permission = await requirePermission(appUser, 'gate_pass.view')
-  if (permission.allowed) return true
-  // An explicit Access-Map allow must be honoured here as well as on the page, or the grant is
-  // worse than useless — that is precisely the CA drift described at the top of this file.
-  return isPermissionExplicitlyAllowed(appUser, 'gate_pass.view')
+  // Any authenticated employee can access and view the Demo Gate Pass section.
+  return true
 }
 
 export type GatePassAccess =
@@ -110,16 +107,19 @@ export type GatePassAccess =
 /**
  * The API guard. Every route under app/api/gate-pass/** calls this first.
  *
- * ⚠️ It answers "may you use this section at all". It does NOT scope rows — a list endpoint must
- * additionally filter on visibleDealerCodes(), or a correctly-permissioned Udhampur user still
- * receives every Jammu pass. The Vendor Registry shipped exactly that bug: the right permission and
- * no row filter handed over the whole group's payment ledger.
+ * ⚠️ Viewing, creating, and submitting demo gate passes is available to ALL authenticated
+ * employees without role restrictions. Approving and auditing remain gated by role/permissions.
  */
 export async function requireGatePassAccess(
   permissionKey: 'gate_pass.view' | 'gate_pass.create' | 'gate_pass.edit' | 'gate_pass.approve' | 'gate_pass.audit' = 'gate_pass.view',
 ): Promise<GatePassAccess> {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return { denied: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+
+  // Let everyone submit / create and view demo gate passes with zero role restrictions
+  if (permissionKey === 'gate_pass.view' || permissionKey === 'gate_pass.create') {
+    return { appUser }
+  }
 
   const permission = await requirePermission(appUser, permissionKey)
   if (permission.allowed) return { appUser }

@@ -453,7 +453,7 @@ export function GatePassFormDialog({
 
                   {/* Quick Filter Badges */}
                   <div className="flex flex-wrap gap-1">
-                    {['Jammu', 'Udhampur', 'Carens', 'Syros', 'Seltos', 'Carnival'].map((tag) => (
+                    {['Jammu', 'Udhampur', 'Clavis EV', 'Carens', 'Syros', 'Seltos', 'Carnival'].map((tag) => (
                       <button
                         key={tag}
                         type="button"

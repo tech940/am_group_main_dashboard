@@ -1269,10 +1269,12 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'scrap_erp',
     'kia.booking_payment_history',
     'kia.allocation_history',
-  ], ['view', 'approve']),
+    'gate_pass',
+  ], ['view', 'create', 'approve']),
   purchase_manager: [
     ...keysForGroups(['purchase_orders'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   finance_head: [
     ...keysForGroups(['finance_orders'], ['view', 'create', 'edit']),
@@ -1281,6 +1283,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia', 'kia.bookings'], ['view']),
     ...keysForGroups(['kia.proforma'], ['view', 'approve']),
     ...keysForGroups(['finance'], ['view', 'approve', 'edit']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   accounts: [
     ...keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),
@@ -1292,6 +1295,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['bank_sanctions'], ['view']),
     ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create', 'audit']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit', 'approve']),
@@ -1307,32 +1311,21 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   technician: [
     ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   viewer: [
     ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   service_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   general_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
-    /*
-     * ⚠️ THE FIRST APPROVAL STAGE. firstStageApproverRolesForTrack returns `general_manager` for the
-     * SALES side of every non-KIA brand, and the KIA first stage additionally admits sales_manager /
-     * sales_head (isGeneralSalesManagerRole, applied identically by the screen, the single-row action
-     * route and bulk-action).
-     *
-     * Without this key they cannot OPEN the section they are the approver for — the sidebar link is
-     * hidden and the page refuses them. It stayed invisible only because the page had no guard at
-     * all and they could still reach it by URL; adding the guard turned a hidden misconfiguration
-     * into a lockout.
-     *
-     * `view` only, deliberately. Authority at the stage is a ROLE check in the routes, not this key,
-     * and rows are still scoped by lib/kia/approval-scope.ts — so this opens the door, not the safe.
-     */
     ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.allocation_history'], ['view']),
@@ -1349,21 +1342,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
-  /*
-   * Group Service Manager — owns the SERVICE approval stage for Hyundai and Platinum together.
-   *
-   * The distinction from service_general_manager is SCOPE, not seniority: that role is KIA's, this
-   * one spans the two Hyundai entities. Both sit on TIER.HEAD / track 'service'.
-   *
-   * ⚠️ `kia.approvals` is NOT a mistake and must not be "corrected" to a hyundai/platinum key. That
-   * legacy key gates the ALL-BRAND Approvals section for every brand — renaming it would silently
-   * kill every existing grant. Without it this role cannot open the section it exists to work in.
-   *
-   * approve + audit are granted on hyundai/platinum so the first stage can actually be actioned;
-   * petty_cash is view+create only, because outside KIA petty cash no longer HAS a first stage
-   * (see pettyCashHasFirstStage) — this role raises requests there, it does not approve them.
-   */
   group_service_manager: [
     ...keysForGroups(['hyundai', 'hyundai.service', 'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.repair_orders'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['platinum', 'platinum.service', 'platinum.business_excellence', 'platinum.service_appointment'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1371,6 +1351,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'create']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   sales_head: [
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1381,20 +1362,11 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
-  /*
-   * DGM — Deputy General Manager, AM Platinum.
-   *
-   * Owns the FIRST approval stage on Platinum SERVICE requests (Platinum sales still routes
-   * straight to EA). Deliberately narrow: 'kia.approvals' is the multi-brand Approvals section —
-   * the key keeps its legacy name because renaming it would silently kill every existing grant.
-   *
-   * ⚠️ Without the view key this role would be an INERT approver: it owns a stage it cannot open.
-   * That is exactly how the general sales manager was locked out of Approvals. Row visibility is a
-   * SEPARATE axis (lib/kia/approval-scope.ts) and is granted there, not here.
-   */
   dgm: [
     ...keysForGroups(['kia.approvals'], ['view', 'approve']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // KIA Proforma workflow: front-line executive — locked to the Bookings section
   // (Booking CRM + generating proformas). No stock, insurance, approve or audit.
@@ -1414,31 +1386,10 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
-    // Sales Manager is one of only TWO roles that may RAISE petty cash at all
-    // (canCreatePettyCashRequest, lib/petty-cash/access.ts:41) — yet it held no petty_cash key, in
-    // neither this template nor role_permissions. Verified live: of 4 active KIA sales managers only
-    // 1 could reach the section, via a hand-added user override; the other 3 got a page they were
-    // allowed to open but no link to open it with. No 'audit' — that stays with branch_admin.
     ...keysForGroups(['petty_cash'], ['view', 'create', 'edit']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create']),
-    /*
-     * ⚠️ THE GATE PASS APPROVER. Sales Manager is the single approval desk for a demo car leaving
-     * the premises (GATE_PASS_APPROVER_ROLES, lib/gate-pass/access.ts), with GM and MD as fallback.
-     *
-     * Without this key they cannot OPEN the section they are the approver for — the sidebar link is
-     * hidden and the page refuses them. That is exactly how the general sales manager was locked out
-     * of Approvals: an action-owning role with no view key is an INERT approver.
-     */
     ...keysForGroups(['gate_pass'], ['view', 'create', 'edit', 'approve', 'audit']),
   ],
-  // Assistant Manager: a BRANCH GENERALIST who oversees both Sales and Service for the branches
-  // they are assigned to. Deliberately view/create/edit with NO approve and NO audit — that is the
-  // whole distinction from `manager`, which is otherwise the same shape one tier up.
-  //
-  // Listing every brand is correct, not sloppy: constrainSnapshotToBranch zeroes the brand-prefixed
-  // keys outside the user's own `users.brand`, and `users.dealers` narrows further to named branch
-  // codes via getUserDealerScope. Both axes are applied on top of this template, so one list serves
-  // an assistant manager at any brand.
   assistant_manager: [
     ...keysForGroups([
       'insurance_analysis',
@@ -1449,6 +1400,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   ed: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1458,14 +1410,9 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.approvals'], ['view', 'approve', 'audit']),
     ...keysForGroups(['purchase_orders'], ['view', 'approve', 'audit']),
     ...keysForGroups(['am_finance'], ['view']),
-    // ED owns the FIRST petty-cash approval stage: a submitted request lands on 'ed_pending'
-    // (lib/petty-cash/constants.ts) and 'ed' is in PETTY_CASH_ALL_BRANCH_ROLES, so this desk sees
-    // every brand's requests. It was nonetheless absent from every petty_cash grant — the page
-    // admits it (PETTY_CASH_VIEW_ROLES, lib/permissions/legacy-module-roles.ts:15) but the sidebar
-    // requires role AND permission (lib/navigation/sections.ts:642), so the link was hidden. The one
-    // live ED works only because somebody hand-granted a user-level override; the next ED would not.
     ...keysForGroups(['petty_cash'], ['view', 'approve', 'audit']),
     ...keysForGroups(['fuel_approvals'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // KIA Proforma workflow: final approver alongside the Finance Head — reviews & approves/declines
   // proformas (stage 2), and confirms payment received at the booking finance stage.
@@ -1475,56 +1422,52 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
     ...keysForGroups(['kia.proforma'], ['view', 'approve']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // Call Agent (telecaller): the masked Call Center + the follow-up pipeline they schedule from
   // calls — no numbers, no other modules.
   call_agent: [
     ...keysForGroups(['kia.call_center'], ['view']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // CA (Chartered Accountant): read-only, cross-branch, ONLY the CA section (approved POs + petty cash).
   ca: [
     ...keysForGroups(['ca'], ['view']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // CRM (Customer Relationship Manager): the booking pipeline, so they can mark vehicles Delivered.
-  // NOTE this template only decides what they can SEE. Delivery itself is gated by ROLE in
-  // lib/kia/workflow-access.ts, because a kia.* permission cannot restrict an action — the brand
-  // default (service.ts applyBrandDefault) grants kia.bookings.edit to every KIA user whose role is
-  // not template-only, so a permission check here would exclude nobody.
   crm: [
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // IDT (Internal Development Trainee): the booking pipeline, so they can allot vehicles to bookings.
-  // Allotment is gated by ROLE in lib/kia/workflow-access.ts — same reasoning as CRM above.
   idt: [
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
     // IDT is TEMPLATE_ONLY, so this line is the only route to the trail of their own allotments.
     ...keysForGroups(['kia.allocation_history'], ['view']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
-  // CRE (Customer Relationship Executive): calls customers and owns Booking Follow-ups. Gets the
-  // follow-up pipeline and read-only sight of the bookings behind it — deliberately NOT
-  // kia.call_analytics (the leaderboard ranks CREs; same reason sales_executive doesn't get it).
+  // CRE (Customer Relationship Executive): calls customers and owns Booking Follow-ups.
   cre: [
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.bookings'], ['view']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   edp: [
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // CXM (Customer Experience Management): the booking pipeline, so they can mark vehicles Delivered.
-  // Successor to CRM — same template, for the same reason: this only decides what they can SEE.
-  // Delivery itself is gated by ROLE in lib/kia/workflow-access.ts.
-  //
-  // `edit` is NOT optional here. app/api/brands/kia/bookings/[id]/deliver/route.ts:14 runs
-  // requirePermission(appUser, 'kia.bookings.edit') BEFORE the role gate is ever consulted, so a
-  // view-only template 403s on every delivery no matter how correct canDeliverKiaBooking is.
   cxm: [
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // CCM (Customer Care Manager): manages customer care, delivery backup & lead follow-up pipeline.
   ccm: [
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   vp: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management', 'hyundai.sales.discount_approvals'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1532,6 +1475,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // HR previously read `allPermissionKeys` — literally every permission in the system, the same
   // as `admin` and `developer`, and broader than `md`. That silently defeated deny-by-default:

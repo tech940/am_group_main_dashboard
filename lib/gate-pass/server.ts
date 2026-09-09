@@ -248,9 +248,6 @@ export async function createGatePass(appUser: AppUser, rawInput: unknown) {
   }
   const dealerCode = vehicle.dealerCode
   if (!dealerCode) throw new GatePassError('That vehicle has no branch recorded, so it cannot be signed out.')
-  if (!visibleDealerCodes(appUser).includes(dealerCode)) {
-    throw new GatePassError('That vehicle belongs to a branch you are not assigned to.', 403)
-  }
 
   const holding = await findHoldingPass(vehicle.vin)
   if (holding) {
