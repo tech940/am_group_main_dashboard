@@ -19,6 +19,21 @@ type FleetVehicle = {
   expectedReturnAt: string | null
   overdue: boolean
   sharedPlate: boolean
+  /*
+   * Live tracking. ALWAYS present — `state` says why there is no position, so a car with no device
+   * reads as "No tracker" rather than as an empty cell that looks like "not moving".
+   * Coordinates are null for anyone without gate_pass.approve (redacted in the fleet route).
+   */
+  tracking: {
+    state: 'live' | 'stale' | 'no_fix' | 'untracked' | 'not_configured'
+    latitude: number | null
+    longitude: number | null
+    speedKph: number | null
+    address: string | null
+    positionAt: string | null
+    ageMs: number | null
+    subscriptionExpired: boolean
+  }
 }
 
 type Fleet = {
@@ -43,6 +58,28 @@ const STATE_STYLE = {
   reserved: { bg: '#e0e7ff', fg: '#3730a3', label: 'Booked' },
   out: { bg: '#fef3c7', fg: '#92400e', label: 'Out' },
 } as const
+
+/**
+ * How a fix is described in one short phrase.
+ *
+ * ⚠️ A stale fix is NEVER shown as a location without its age. A parked demo car's unit sleeps, so
+ * a two-hour-old fix is normal — but rendering it as though it were current tells a manager the car
+ * is at a customer's house when it may have left long ago. The age is the honest part.
+ */
+function trackingLabel(t: FleetVehicle['tracking']): { text: string; tone: string } {
+  switch (t.state) {
+    case 'live':
+      return { text: t.speedKph && t.speedKph > 1 ? `Moving · ${Math.round(t.speedKph)} km/h` : 'Live · stopped', tone: 'text-emerald-700' }
+    case 'stale': {
+      const mins = t.ageMs === null ? null : Math.round(t.ageMs / 60000)
+      const age = mins === null ? 'a while' : mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`
+      return { text: `Last seen ${age} ago`, tone: 'text-amber-700' }
+    }
+    case 'no_fix':   return { text: 'No fix yet', tone: 'text-slate-400' }
+    case 'untracked': return { text: 'No tracker', tone: 'text-slate-400' }
+    case 'not_configured': return { text: '', tone: 'text-slate-400' }
+  }
+}
 
 /**
  * Fleet availability.
@@ -144,6 +181,25 @@ export function FleetPanel() {
                           ) : null}
                         </>
                       )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">
+                      {(() => {
+                        const t = trackingLabel(v.tracking)
+                        if (!t.text) return <span className="text-slate-300">&mdash;</span>
+                        return (
+                          <>
+                            <div className={t.tone}>{t.text}</div>
+                            {v.tracking.address ? (
+                              <div className="text-slate-400 truncate max-w-[220px]" title={v.tracking.address}>
+                                {v.tracking.address}
+                              </div>
+                            ) : null}
+                            {v.tracking.subscriptionExpired ? (
+                              <div className="text-rose-600">Tracker subscription lapsed</div>
+                            ) : null}
+                          </>
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"

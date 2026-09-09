@@ -118,7 +118,9 @@
     "verify:gate-pass": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-gate-pass.ts",
     "verify:platinum-chain": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-platinum-approval-flow.ts",
     "verify:showroom-images": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-showroom-images.ts",
-    "verify:approval-history": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approval-history-labels.ts"
+    "verify:approval-history": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approval-history-labels.ts",
+    "verify:loconav": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-loconav.ts",
+    "loconav:sync": "tsx scripts/loconav-sync-scheduler.mjs"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

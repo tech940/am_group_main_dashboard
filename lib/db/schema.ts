@@ -2871,3 +2871,118 @@ export const showroomImages = pgTable('showroom_images', {
   showroomImagesSessionIdx: index('idx_showroom_images_session').on(table.sessionId),
   showroomImagesCapturedAtIdx: index('idx_showroom_images_captured_at').on(table.capturedAt),
 }))
+
+/**
+ * ── LocoNav telematics for the demo fleet (migration 0057) ────────────────────────────────────
+ *
+ * ⚠️ KEYED ON VIN, NEVER ON THE REGISTRATION NUMBER. 29 demo VINs share 25 plates and
+ * `JK02C0059TC` is on FIVE cars — see the header of lib/gate-pass/vehicles.ts. LocoNav identifies a
+ * vehicle by plate / device serial / its own uuid, so the mapping below is built from the
+ * `chassisNumber` its List Vehicles endpoint returns, and `matchedBy` records how each row was
+ * established so a plate-derived guess can never enter unnoticed.
+ */
+export const demoVehicleTrackers = pgTable('demo_vehicle_trackers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  vin: text('vin').notNull(),
+  provider: text('provider').default('loconav').notNull(),
+  providerVehicleUuid: text('provider_vehicle_uuid').notNull(),
+  /** Diagnostics only — stored so a plate mismatch is visible, never so it can be joined on. */
+  providerVehicleNumber: text('provider_vehicle_number'),
+  deviceSerialNumber: text('device_serial_number'),
+  deviceType: text('device_type'),
+  subscriptionExpiresAt: timestamp('subscription_expires_at', { withTimezone: true }),
+  /** 'chassis' = matched on the VIN the provider returned. 'manual' = a human pinned it. */
+  matchedBy: text('matched_by').default('chassis').notNull(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  demoVehicleTrackersVinIdx: uniqueIndex('demo_vehicle_trackers_vin_idx').on(table.vin),
+  // One car per tracker as well as one tracker per car — otherwise two VINs could claim the same
+  // provider vehicle and both would report an identical position.
+  demoVehicleTrackersProviderUuidIdx: uniqueIndex('demo_vehicle_trackers_provider_uuid_idx')
+    .on(table.provider, table.providerVehicleUuid),
+}))
+
+/**
+ * Last known position — ONE ROW PER VEHICLE, upserted. Not a trail: the provider keeps history and
+ * serves it from /timeline on demand, so mirroring it here would be an unbounded table holding data
+ * we can always re-ask for.
+ */
+export const demoVehiclePositions = pgTable('demo_vehicle_positions', {
+  vin: text('vin').primaryKey(),
+  provider: text('provider').default('loconav').notNull(),
+  latitude: decimal('latitude', { precision: 10, scale: 7 }),
+  longitude: decimal('longitude', { precision: 10, scale: 7 }),
+  speedKph: decimal('speed_kph', { precision: 6, scale: 2 }),
+  ignition: text('ignition'),
+  address: text('address'),
+  /**
+   * ⚠️ When the DEVICE recorded it — NOT when we fetched it. A parked car with a sleeping unit
+   * returns a position hours old, and rendering that as "live" is the trap this column exists to
+   * prevent. Always show the age.
+   */
+  positionAt: timestamp('position_at', { withTimezone: true }),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+  raw: jsonb('raw').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  demoVehiclePositionsPositionAtIdx: index('demo_vehicle_positions_position_at_idx').on(table.positionAt),
+}))
+
+/** Singleton (id = 1). Written on FAILURE as well as success, so stale data cannot read as live. */
+export const loconavSyncState = pgTable('loconav_sync_state', {
+  id: integer('id').primaryKey().default(1),
+  lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+  lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+  lastRunStatus: text('last_run_status'),
+  lastRunDetail: text('last_run_detail'),
+  vehiclesMapped: integer('vehicles_mapped').default(0).notNull(),
+  positionsUpdated: integer('positions_updated').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+/**
+ * Trip reconciliation (migration 0058) — the provider's account of a demo drive, set against the
+ * odometer figures a guard typed at the barrier.
+ *
+ * ⚠️ One row per pass, written by a BACKGROUND job, not by the gate flow. The pass row is what a
+ * guard edits at a barrier; this arrives late, can fail and is retried, so it lives apart.
+ *
+ * ⚠️ `status` distinguishes the two terminal non-answers from a retryable one. 'untracked' is
+ * terminal by design: without it, every sweep would re-ask an unanswerable question about every
+ * untracked car, for ever.
+ */
+export const demoGatePassTrips = pgTable('demo_gate_pass_trips', {
+  gatePassId: uuid('gate_pass_id').primaryKey()
+    .references(() => demoGatePasses.id, { onDelete: 'cascade' }),
+  passNo: text('pass_no').notNull(),
+  vin: text('vin').notNull(),
+  provider: text('provider').default('loconav').notNull(),
+  providerVehicleUuid: text('provider_vehicle_uuid'),
+  /** The window actually queried — a distance means nothing without it. */
+  windowStart: timestamp('window_start', { withTimezone: true }),
+  windowEnd: timestamp('window_end', { withTimezone: true }),
+  providerDistanceKm: decimal('provider_distance_km', { precision: 10, scale: 2 }),
+  odometerDistanceKm: decimal('odometer_distance_km', { precision: 10, scale: 2 }),
+  /** provider − odometer. Signed: "GPS says further" and "odometer says further" are different stories. */
+  deltaKm: decimal('delta_km', { precision: 10, scale: 2 }),
+  maxSpeedKph: decimal('max_speed_kph', { precision: 6, scale: 2 }),
+  movingSeconds: integer('moving_seconds'),
+  stoppedSeconds: integer('stopped_seconds'),
+  stopCount: integer('stop_count'),
+  timeline: jsonb('timeline').$type<unknown[]>().default([]).notNull(),
+  alertCount: integer('alert_count').default(0).notNull(),
+  alerts: jsonb('alerts').$type<unknown[]>().default([]).notNull(),
+  status: text('status').default('failed').notNull(),
+  detail: text('detail'),
+  attempts: integer('attempts').default(0).notNull(),
+  reconciledAt: timestamp('reconciled_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  demoGatePassTripsStatusIdx: index('demo_gate_pass_trips_status_idx').on(table.status, table.updatedAt),
+  demoGatePassTripsVinIdx: index('demo_gate_pass_trips_vin_idx').on(table.vin),
+}))

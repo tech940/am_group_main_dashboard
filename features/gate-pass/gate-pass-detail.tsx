@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   User,
   X,
+  Satellite,
 } from 'lucide-react'
 import {
   Dialog,
@@ -44,9 +45,30 @@ const STATUS_TONE_STYLES: Record<string, string> = {
   muted: 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700',
 }
 
+type Trip = {
+  status: 'reconciled' | 'untracked' | 'unavailable' | 'failed'
+  detail: string | null
+  providerDistanceKm: number | null
+  odometerDistanceKm: number | null
+  deltaKm: number | null
+  discrepancy: boolean
+  maxSegmentAverageSpeedKph: number | null
+  movingSeconds: number | null
+  stoppedSeconds: number | null
+  stopCount: number | null
+  alertCount: number
+  alerts: Array<{ label: string | null; eventTimeMs: number | null; address: string | null; value: number | null; unit: string | null }>
+}
+
 type Detail = {
   pass: Record<string, unknown>
   metrics: GatePassMetrics
+  /*
+   * ⚠️ null is NOT "no discrepancy". It means there is no reconciliation row at all — the sweep has
+   * not run, the integration is off, or 0058 is unapplied. Rendering nothing for it would read as
+   * "checked, all fine", which is the opposite of the truth.
+   */
+  trip: Trip | null
   evidence: {
     outPhotos: Record<string, string>
     inPhotos: Record<string, string>
@@ -313,6 +335,24 @@ export function GatePassDetail({
                   border="border-purple-200 dark:border-purple-900/50"
                   textColor="text-purple-950 dark:text-purple-200"
                   alert={m.odometerWentBackwards}
+                />
+                <MetricCard
+                  label="GPS Distance"
+                  value={
+                    !data?.trip ? 'Not checked'
+                    : data.trip.status === 'untracked' ? 'No tracker'
+                    : data.trip.status === 'unavailable' ? 'No GPS data'
+                    : data.trip.status === 'failed' ? 'Check failed'
+                    : data.trip.providerDistanceKm === null ? '—'
+                    : `${data.trip.providerDistanceKm} km`
+                  }
+                  icon={<Satellite className="h-4 w-4 text-teal-600" />}
+                  bg="bg-teal-50/80 dark:bg-teal-950/20"
+                  border="border-teal-200 dark:border-teal-900/50"
+                  textColor="text-teal-950 dark:text-teal-200"
+                  /* Flagged only when BOTH thresholds trip — see isTripDiscrepancy. A prompt to look,
+                     never an accusation: GPS and a typed odometer disagree for honest reasons. */
+                  alert={Boolean(data?.trip?.discrepancy)}
                 />
                 <MetricCard
                   label="Trip Duration"

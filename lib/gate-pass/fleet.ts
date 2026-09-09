@@ -6,6 +6,7 @@ import { demoGatePasses } from '@/lib/db/schema'
 import { getKiaBranchLabel } from '@/lib/kia/dealer-branch'
 import { listDemoVehiclesForGatePass, type GatePassVehicle } from './vehicles'
 import { OPEN_GATE_PASS_STATUSES } from './status'
+import { getPositionsForVins, type VehiclePosition } from '@/lib/loconav/positions'
 
 /**
  * The demo fleet by availability: what is here, what is spoken for, what has gone.
@@ -33,6 +34,17 @@ export type FleetVehicle = GatePassVehicle & {
   expectedReturnAt: Date | null
   /** Out, and past its return time. */
   overdue: boolean
+  /**
+   * Live position, when the car is mapped to a LocoNav vehicle and a fix has been synced.
+   *
+   * ⚠️ ALWAYS non-null — `tracking.state` says why there is no position ('untracked', 'no_fix',
+   * 'not_configured', 'stale'). A caller must never have to tell "absent from the payload" apart
+   * from "not tracked", because that is how a UI ends up rendering a blank space that reads as
+   * "the car is not moving".
+   *
+   * ⚠️ Read from Postgres, never from LocoNav. This function is on a page's render path.
+   */
+  tracking: VehiclePosition
 }
 
 export type FleetBranchCount = {
@@ -93,10 +105,28 @@ export async function getFleetStatus(dealerCodes: string[], now: Date = new Date
     if (!existing || (existing.status !== 'out' && p.status === 'out')) holding.set(key, p)
   }
 
+  /*
+   * Live positions for the whole scoped fleet in ONE query, before the map — not per vehicle.
+   * A lookup inside .map() would be N round trips on a pooler that costs ~2 per statement.
+   *
+   * ⚠️ Postgres only. getPositionsForVins does not call LocoNav — this function is on a page's
+   * render path, and the one mature third-party precedent in this repo (lib/callyzer/client.ts:6-16)
+   * exists because calling a provider live from a render hung the page.
+   */
+  const positions = await getPositionsForVins(scoped.map((v) => v.vin), now)
+
+  /* Every VIN gets an entry from getPositionsForVins, so this fallback is belt-and-braces only. */
+  const track = (vin: string): VehiclePosition =>
+    positions.get(vin) ?? {
+      vin, state: 'untracked', latitude: null, longitude: null, speedKph: null, ignition: null,
+      address: null, positionAt: null, ageMs: null, providerVehicleUuid: null,
+      subscriptionExpiresAt: null, subscriptionExpired: false,
+    }
+
   const enriched: FleetVehicle[] = scoped.map((v) => {
     const held = holding.get(v.vin)
     if (!held) {
-      return { ...v, state: 'available', passId: null, passNo: null, driverName: null, expectedReturnAt: null, overdue: false }
+      return { ...v, state: 'available', passId: null, passNo: null, driverName: null, expectedReturnAt: null, overdue: false, tracking: track(v.vin) }
     }
     const out = held.status === 'out'
     return {
@@ -107,6 +137,7 @@ export async function getFleetStatus(dealerCodes: string[], now: Date = new Date
       driverName: held.driverName,
       expectedReturnAt: held.expectedReturnAt,
       overdue: out && held.expectedReturnAt ? held.expectedReturnAt.getTime() < now.getTime() : false,
+      tracking: track(v.vin),
     }
   })
 
