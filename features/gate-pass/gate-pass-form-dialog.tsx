@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
+  RefreshCw,
   Upload,
   User,
   X,
@@ -87,8 +88,14 @@ export function GatePassFormDialog({
   const [error, setError] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [vehicleSearch, setVehicleSearch] = useState('')
 
-  const { data: vehicleData, isLoading: loadingVehicles } = useQuery({
+  const {
+    data: vehicleData,
+    isLoading: loadingVehicles,
+    refetch: refetchVehicles,
+    isRefetching: refetchingVehicles,
+  } = useQuery({
     queryKey: ['gate-pass-vehicles'],
     queryFn: async () => {
       const res = await fetch('/api/gate-pass/vehicles', { cache: 'no-store' })
@@ -110,6 +117,21 @@ export function GatePassFormDialog({
 
   const vehicles = vehicleData?.vehicles ?? []
   const drivers = driverData?.drivers ?? []
+
+  const filteredVehicles = useMemo<Vehicle[]>(() => {
+    if (!vehicleSearch.trim()) return vehicles
+    const q = vehicleSearch.trim().toLowerCase()
+    return vehicles.filter(
+      (v: Vehicle) =>
+        (v.registrationNumber && v.registrationNumber.toLowerCase().includes(q)) ||
+        (v.model && v.model.toLowerCase().includes(q)) ||
+        (v.variant && v.variant.toLowerCase().includes(q)) ||
+        (v.color && v.color.toLowerCase().includes(q)) ||
+        (v.branchLabel && v.branchLabel.toLowerCase().includes(q)) ||
+        v.vin.toLowerCase().includes(q)
+    )
+  }, [vehicles, vehicleSearch])
+
   const chosenVehicle = vehicles.find((v) => v.vin === vin) ?? null
   const chosenDriver = drivers.find((d) =>
     (driverUserId && d.userId === driverUserId) ||
@@ -346,39 +368,156 @@ export function GatePassFormDialog({
 
           {/* Section 2: Vehicle Details */}
           <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
-            <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600">
-              <Car className="h-4 w-4 text-indigo-600" />
-              Vehicle Details
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600">
+                <Car className="h-4 w-4 text-indigo-600" />
+                Vehicle Details <span className="text-rose-500">*</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {loadingVehicles ? 'Loading…' : `${vehicles.length} demo ${vehicles.length === 1 ? 'car' : 'cars'} available`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => refetchVehicles()}
+                  disabled={loadingVehicles || refetchingVehicles}
+                  className="text-slate-400 hover:text-slate-700 p-0.5 rounded transition-colors"
+                  title="Reload fleet vehicles"
+                >
+                  <RefreshCw className={`h-3 w-3 ${refetchingVehicles ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+
             <div>
-              <Label className="text-xs font-semibold text-slate-700">Vehicle Reg No</Label>
+              <div className="flex items-center justify-between mb-1">
+                <Label className="text-xs font-semibold text-slate-700">Select Vehicle Reg No / Model</Label>
+              </div>
+
+              {/* Search Filter for Quick Mobile / Desktop Selection */}
+              {vehicles.length > 5 && (
+                <div className="relative mb-2">
+                  <Input
+                    type="text"
+                    value={vehicleSearch}
+                    onChange={(e) => setVehicleSearch(e.target.value)}
+                    placeholder="Search by Reg No, Model, Color, or Branch…"
+                    className="h-8 text-xs bg-white pr-7 rounded-lg"
+                  />
+                  {vehicleSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setVehicleSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Main Vehicle Select Dropdown */}
               <Select value={vin} onValueChange={setVin}>
-                <SelectTrigger className="mt-1 bg-white">
-                  <SelectValue placeholder={loadingVehicles ? 'Loading fleet…' : '-- Select Vehicle --'} />
+                <SelectTrigger className="mt-1 bg-white h-11 text-xs font-medium">
+                  <SelectValue
+                    placeholder={
+                      loadingVehicles
+                        ? 'Loading fleet vehicles…'
+                        : vehicles.length === 0
+                        ? '-- No Vehicles Available --'
+                        : '-- Select Demo Vehicle --'
+                    }
+                  />
                 </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {vehicles.map((v) => {
-                    const label = `${(v.model || 'DEMO').toUpperCase()} (${v.registrationNumber || v.vin.slice(-6)})`
-                    return (
-                      <SelectItem key={v.vin} value={v.vin}>
-                        {label} {v.color ? `· ${v.color}` : ''}
-                      </SelectItem>
-                    )
-                  })}
+                <SelectContent className="max-h-72 z-[100]">
+                  {loadingVehicles ? (
+                    <div className="p-4 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                      Loading demo fleet…
+                    </div>
+                  ) : filteredVehicles.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-500 space-y-2">
+                      <p>No matching vehicles found.</p>
+                      {vehicleSearch ? (
+                        <button
+                          type="button"
+                          onClick={() => setVehicleSearch('')}
+                          className="text-xs text-indigo-600 font-bold hover:underline"
+                        >
+                          Clear search filter
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => refetchVehicles()}
+                          className="text-xs text-indigo-600 font-bold hover:underline"
+                        >
+                          Retry loading fleet
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    filteredVehicles.map((v) => {
+                      const regDisplay = v.registrationNumber || v.vin.slice(-6)
+                      const modelDisplay = (v.model || 'DEMO').toUpperCase()
+                      return (
+                        <SelectItem key={v.vin} value={v.vin} className="text-xs py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                              {regDisplay}
+                            </span>
+                            <span className="font-semibold text-slate-800">{modelDisplay}</span>
+                            <span className="text-slate-400 text-[11px]">({v.branchLabel})</span>
+                            {v.color && (
+                              <span className="text-slate-500 text-[11px] truncate max-w-[120px]">
+                                · {v.color}
+                              </span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      )
+                    })
+                  )}
                 </SelectContent>
               </Select>
-              {chosenVehicle?.sharedPlate ? (
-                <p className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  Trade plate shared across vehicles. Check VIN tail: <strong>{chosenVehicle.vin.slice(-6)}</strong>.
+
+              {/* Selected Vehicle Snapshot Card */}
+              {chosenVehicle && (
+                <div className="mt-2.5 rounded-lg border border-indigo-100 bg-indigo-50/50 p-2.5 text-xs text-slate-700 flex items-center justify-between">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <p className="font-bold text-slate-900 flex items-center gap-1.5">
+                      <span className="bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded">
+                        {chosenVehicle.registrationNumber || chosenVehicle.vin.slice(-6)}
+                      </span>
+                      <span>{(chosenVehicle.model || 'DEMO').toUpperCase()}</span>
+                      {chosenVehicle.variant && (
+                        <span className="text-slate-500 font-normal">({chosenVehicle.variant})</span>
+                      )}
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      Branch: <strong>{chosenVehicle.branchLabel}</strong>
+                      {chosenVehicle.color ? ` · Color: ${chosenVehicle.color}` : ''}
+                      {chosenVehicle.lastKnownKms ? ` · Last known: ${chosenVehicle.lastKnownKms} km` : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setVin('')}
+                    className="text-[11px] text-slate-400 hover:text-slate-700 font-medium px-2 py-1"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+
+              {chosenVehicle?.sharedPlate && (
+                <p className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 p-2 rounded-lg">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                  <span>
+                    Trade plate shared across vehicles. Check VIN tail: <strong>{chosenVehicle.vin.slice(-6)}</strong>.
+                  </span>
                 </p>
-              ) : null}
-              {chosenVehicle ? (
-                <p className="mt-1 text-xs text-slate-500">
-                  Branch: {chosenVehicle.branchLabel}
-                  {chosenVehicle.lastKnownKms ? ` · Last known: ${chosenVehicle.lastKnownKms} km` : ''}
-                </p>
-              ) : null}
+              )}
             </div>
           </div>
 

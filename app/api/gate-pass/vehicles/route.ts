@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     if (reg) {
       const matches = (await lookupByRegistration(reg)).filter(
-        (v) => v.dealerCode && scope.includes(v.dealerCode),
+        (v) => !v.dealerCode || scope.includes(v.dealerCode),
       )
       return NextResponse.json({ vehicles: matches, ambiguous: matches.length > 1 })
     }
@@ -35,9 +35,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ vehicles: [], ambiguous: false })
     }
 
-    const vehicles = requested
-      ? await listDemoVehiclesForGatePass(requested)
-      : (await listDemoVehiclesForGatePass()).filter((v) => v.dealerCode && scope.includes(v.dealerCode))
+    const allVehicles = await listDemoVehiclesForGatePass(requested || undefined)
+    const vehicles = allVehicles.filter((v) => !v.dealerCode || scope.includes(v.dealerCode))
 
     return NextResponse.json({ vehicles, ambiguous: false })
   } catch (error) {

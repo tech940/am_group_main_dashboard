@@ -50,14 +50,17 @@ export { GATE_PASS_APPROVER_ROLES, isGatePassApproverRole } from './access-share
  * manager who cannot approve anything and does not know why. Fail open, deliberately.
  */
 export function visibleDealerCodes(appUser: AppUser): string[] {
-  const pinned = parseUserDealers(appUser.brand, appUser.dealers)
+  if (isSuperAdminRole(appUser.role)) {
+    return KIA_BRANCH_DEALERS.map((dealer) => dealer.dealerCode)
+  }
+  const pinned = parseUserDealers('kia', appUser.dealers)
   if (pinned.length > 0) return pinned
   return KIA_BRANCH_DEALERS.map((dealer) => dealer.dealerCode)
 }
 
 export function canSeeAllGatePassDealers(appUser: AppUser): boolean {
   if (isSuperAdminRole(appUser.role)) return true
-  return parseUserDealers(appUser.brand, appUser.dealers).length === 0
+  return parseUserDealers('kia', appUser.dealers).length === 0
 }
 
 /** May this user act on a pass raised at this dealer code? */
