@@ -196,3 +196,56 @@ export async function listCandidateDrivers(dealerCodes: string[]): Promise<GateP
     })
     .sort((a, b) => a.fullName.localeCompare(b.fullName))
 }
+
+/**
+ * Add a new KIA employee driver to the system when not already present in the dropdown.
+ */
+export async function createCandidateDriver(input: {
+  fullName: string
+  phone?: string | null
+  email?: string | null
+  department?: string | null
+  dealers?: string | null
+  actorId: string
+}): Promise<GatePassDriverProfile> {
+  const fullName = input.fullName.trim()
+  if (!fullName) throw new Error('Employee full name is required.')
+
+  const slug = fullName.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000)
+  const email = input.email?.trim().toLowerCase() || `${slug || 'driver'}.${randomSuffix}@amkia.in`
+  const phone = input.phone?.trim() || null
+  const department = input.department?.trim() || 'Driver'
+  const dealers = input.dealers?.trim() || 'JK402,JK501'
+  const supabaseId = crypto.randomUUID()
+
+  const [created] = await db
+    .insert(users)
+    .values({
+      supabaseId,
+      fullName,
+      email,
+      phoneNumber: phone,
+      department,
+      dealers,
+      role: 'viewer',
+      isActive: true,
+      createdBy: input.actorId,
+      updatedBy: input.actorId,
+    })
+    .returning()
+
+  return {
+    userId: created.id,
+    fullName: created.fullName,
+    email: created.email,
+    role: created.role,
+    licenceNo: '',
+    licenceExpiry: null,
+    phone: created.phoneNumber,
+    licenceName: null,
+    licenceDocPath: null,
+    expired: null,
+  }
+}
+

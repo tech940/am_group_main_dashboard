@@ -569,32 +569,26 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
               onClick={() => setTab('all')}
               className={cn(
                 'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
-                summary.overdueNow > 0
-                  ? 'border-rose-300 dark:border-rose-800 bg-rose-50/40 dark:bg-rose-950/30 ring-2 ring-rose-400/20'
-                  : tab === 'all'
+                tab === 'all'
                   ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700'
                   : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
               )}
             >
               <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                <span className="font-semibold">
-                  {summary.overdueNow > 0 ? 'Overdue Return' : 'Total Fleet & Passes'}
-                </span>
-                <AlertTriangle className={cn('h-4 w-4', summary.overdueNow > 0 ? 'text-rose-600' : 'text-emerald-500')} />
+                <span className="font-semibold">Total Fleet &amp; Passes</span>
+                <Check className="h-4 w-4 text-emerald-500" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className={cn('text-2xl font-black tabular-nums', summary.overdueNow > 0 ? 'text-rose-600' : 'text-slate-900 dark:text-slate-100')}>
-                  {summary.overdueNow > 0 ? summary.overdueNow : (fleetData ? fleetData.total : summary.total)}
+                <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                  {fleetData ? fleetData.total : summary.total}
                 </span>
-                <span className={cn('text-xs font-bold', summary.overdueNow > 0 ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400')}>
-                  {summary.overdueNow > 0 ? 'Past schedule' : (fleetData ? `${fleetData.total} demo cars` : `${summary.completedTrips} closed`)}
+                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  {fleetData ? `${fleetData.total} demo cars` : `${summary.completedTrips} closed`}
                 </span>
               </div>
               <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {summary.overdueNow > 0
-                  ? 'Vehicle return past scheduled time'
-                  : fleetData
-                  ? `${fleetData.available} free · ${summary.completedTrips} completed trips`
+                {fleetData
+                  ? `${fleetData.available} free · ${summary.completedTrips} completed passes`
                   : 'All fleet & trip logs'}
               </p>
             </button>
@@ -702,7 +696,6 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Vehicle</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Driver</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Purpose</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Due Return</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Status</th>
                   <th className="px-4 py-3 text-right font-semibold text-[11px] uppercase tracking-wider">Action</th>
                 </tr>
@@ -710,14 +703,14 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-16 text-center text-slate-500">
+                    <td colSpan={6} className="px-4 py-16 text-center text-slate-500">
                       <Loader2 className="mx-auto h-6 w-6 animate-spin text-indigo-600 mb-2" />
                       <p className="text-xs font-medium">Loading gate passes...</p>
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-16 text-center">
+                    <td colSpan={6} className="px-4 py-16 text-center">
                       <div className="max-w-xs mx-auto space-y-2">
                         <div className="h-10 w-10 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
                           <Car className="h-5 w-5" />
@@ -777,13 +770,6 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                             {row.purposeNote}
                           </div>
                         )}
-                      </td>
-
-                      {/* Due Back */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <div className="text-slate-700 dark:text-slate-300 font-medium">
-                          {formatIndiaDateTime(row.expectedReturnAt) ?? '—'}
-                        </div>
                       </td>
 
                       {/* Status */}

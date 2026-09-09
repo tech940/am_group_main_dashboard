@@ -373,23 +373,19 @@ export async function sendGatePassReturnedEmail(pass: GatePassEmailRow): Promise
 }
 
 /**
- * The car is late back.
- *
- * ⚠️ The caller must have already stamped `overdue_notified_at` — otherwise the sweep re-mails the
- * same pass on every run, which is how a reminder becomes noise people filter out, and then a real
- * overdue vehicle goes unnoticed.
+ * Alert email sent ONLY when a vehicle has been out for over 12 hours without gate-in return.
  */
 export async function sendGatePassOverdueEmail(pass: GatePassEmailRow): Promise<void> {
   const { recipients } = await resolveGatePassNotifyList(pass.dealerCode)
 
   const html = emailLayout({
     eyebrow: 'Demo Car GatePass Alert',
-    heading: 'Vehicle is overdue for return',
-    preheader: `URGENT: ${pass.passNo} · was due ${formatIndiaDateTime(pass.expectedReturnAt)}`,
+    heading: 'Vehicle Out For Over 12 Hours',
+    preheader: `URGENT: ${pass.passNo} · vehicle out since ${formatIndiaDateTime(pass.gateOutAt)} (>12 hours)`,
     bodyHtml:
       `<div style="margin-bottom:16px;">`
-      + `<p style="margin:0 0 8px;font-size:15px;color:#991b1b;font-weight:700;">⚠️ Vehicle return schedule has been exceeded.</p>`
-      + `<p style="margin:0 0 12px;color:#334155;line-height:1.5;">Vehicle <strong>${escapeHtml(pass.registrationNumber || pass.model || 'Demo Car')}</strong> on gate pass <strong>${escapeHtml(pass.passNo)}</strong> was expected back by <strong>${escapeHtml(formatIndiaDateTime(pass.expectedReturnAt) || '—')}</strong> but has not yet been checked in at the gate.</p>`
+      + `<p style="margin:0 0 8px;font-size:15px;color:#991b1b;font-weight:700;">⚠️ Vehicle has been out for over 12 hours without gate-in verification.</p>`
+      + `<p style="margin:0 0 12px;color:#334155;line-height:1.5;">Vehicle <strong>${escapeHtml(pass.registrationNumber || pass.model || 'Demo Car')}</strong> on gate pass <strong>${escapeHtml(pass.passNo)}</strong> departed on <strong>${escapeHtml(formatIndiaDateTime(pass.gateOutAt) || '—')}</strong> and has not yet been checked back in at the gate (over 12 hours elapsed).</p>`
       + `</div>`
       + detailTable([
         ['Pass number', pass.passNo],
@@ -399,7 +395,7 @@ export async function sendGatePassOverdueEmail(pass: GatePassEmailRow): Promise<
         ['Driver', pass.driverName],
         ['Requested by', pass.requestedByName],
         ['Left premises at', pass.gateOutAt ? formatIndiaDateTime(pass.gateOutAt) : '—'],
-        ['Was due back', formatIndiaDateTime(pass.expectedReturnAt)],
+        ['Expected return', formatIndiaDateTime(pass.expectedReturnAt)],
         ['Purpose', pass.purposeNote ? `${pass.purpose} — ${pass.purposeNote}` : pass.purpose],
       ]),
   })
@@ -409,7 +405,7 @@ export async function sendGatePassOverdueEmail(pass: GatePassEmailRow): Promise<
   dispatch(sendTrackedEmail({
     to: pass.requestedByEmail,
     cc: cc.length > 0 ? cc : undefined,
-    subject: `OVERDUE ALERT: ${pass.passNo} · ${pass.registrationNumber || pass.model || 'Demo Car'} past due time`,
+    subject: `12-HOUR OVERDUE ALERT: ${pass.passNo} · ${pass.registrationNumber || pass.model || 'Demo Car'} not returned`,
     html,
     emailType: 'gate_pass_overdue',
   }))

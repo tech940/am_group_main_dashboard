@@ -324,40 +324,39 @@ export function GatePassDetail({
                 />
               </div>
 
-              {/* ── 2. Punctuality / Return Status Banner ── */}
-              {m.lateMinutes !== null && (
-                <div
-                  className={`rounded-xl border p-3.5 flex items-center justify-between text-xs transition-all shadow-xs ${
-                    m.lateMinutes > 0
-                      ? 'bg-amber-50 border-amber-200 text-amber-900'
-                      : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                  }`}
-                >
+              {/* ── 2. Trip Status Banner ── */}
+              {p.gateInAt ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 flex items-center justify-between text-xs text-emerald-900 shadow-xs">
                   <div className="flex items-center gap-2.5">
-                    {m.lateMinutes > 0 ? (
-                      <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-                    ) : (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-                    )}
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
                     <div>
-                      <p className="font-bold text-sm">
-                        {m.lateMinutes > 0
-                          ? `Vehicle Overdue by ${formatDuration(m.lateMinutes)}`
-                          : `Returned On Time (${formatDuration(Math.abs(m.lateMinutes))} to spare)`}
-                      </p>
+                      <p className="font-bold text-sm">Trip Completed &amp; Closed</p>
                       <p className="text-[11px] opacity-80 mt-0.5">
-                        Due back by {formatIndiaDateTime(p.expectedReturnAt)}
-                        {p.gateInAt ? ` · Returned on ${formatIndiaDateTime(p.gateInAt)}` : ' · Currently Still Out'}
+                        {p.gateOutAt ? `Departed ${formatIndiaDateTime(p.gateOutAt)} · ` : ''}
+                        Returned on {formatIndiaDateTime(p.gateInAt)}
                       </p>
                     </div>
                   </div>
-                  {p.gateInAt && (
-                    <span className="hidden sm:inline-block px-2.5 py-1 rounded-md font-bold text-[11px] bg-white border border-slate-200">
-                      Closed Trip
-                    </span>
-                  )}
+                  <span className="hidden sm:inline-block px-2.5 py-1 rounded-md font-bold text-[11px] bg-white border border-slate-200 text-emerald-800">
+                    Closed Trip
+                  </span>
                 </div>
-              )}
+              ) : p.gateOutAt ? (
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-3.5 flex items-center justify-between text-xs text-sky-900 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <Clock className="h-5 w-5 text-sky-600 shrink-0" />
+                    <div>
+                      <p className="font-bold text-sm">Vehicle Out on Road</p>
+                      <p className="text-[11px] opacity-80 mt-0.5">
+                        Departed at {formatIndiaDateTime(p.gateOutAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="hidden sm:inline-block px-2.5 py-1 rounded-md font-bold text-[11px] bg-white border border-slate-200 text-sky-800">
+                    Active Trip
+                  </span>
+                </div>
+              ) : null}
 
               {/* ── 3. Row-Wise Horizontal Timeline (Approvals Style) ── */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-3.5">

@@ -8,6 +8,55 @@ import { cn } from '@/lib/utils'
 
 type CameraMode = 'idle' | 'live' | 'captured' | 'error'
 
+async function compressImageFile(file: File, maxDim = 1280, quality = 0.75): Promise<File> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width: w, height: h } = img
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w)
+          w = maxDim
+        } else {
+          w = Math.round((w * maxDim) / h)
+          h = maxDim
+        }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        resolve(file)
+        return
+      }
+      ctx.drawImage(img, 0, 0, w, h)
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(file)
+            return
+          }
+          const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          })
+          resolve(compressedFile)
+        },
+        'image/jpeg',
+        quality
+      )
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(file)
+    }
+    img.src = url
+  })
+}
+
 // Camera-first capture: opens the device camera via getUserMedia in a full-screen viewfinder,
 // captures high-resolution frame, and burns a live IST timestamp into the image so the time is
 // clearly visible on the photo. Emits a File to the parent.
@@ -52,16 +101,17 @@ export function VehicleTrackerCamera({
     setPreviewUrl(null)
   }, [])
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFile = e.target.files?.[0]
+    if (!rawFile) return
     clearPreview()
     stopStream()
-    const url = URL.createObjectURL(file)
+    const compressed = await compressImageFile(rawFile, 1280, 0.75)
+    const url = URL.createObjectURL(compressed)
     previewUrlRef.current = url
     setPreviewUrl(url)
     setMode('captured')
-    onCapture(file)
+    onCapture(compressed)
   }
 
   const start = useCallback(async (facing: 'environment' | 'user' = facingMode) => {
@@ -124,13 +174,23 @@ export function VehicleTrackerCamera({
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas) return
-    const w = video.videoWidth || 1920
-    const h = video.videoHeight || 1080
-    canvas.width = w
-    canvas.height = h
+    let rawW = video.videoWidth || 1280
+    let rawH = video.videoHeight || 720
+    const maxDim = 1280
+    if (rawW > maxDim || rawH > maxDim) {
+      if (rawW > rawH) {
+        rawH = Math.round((rawH * maxDim) / rawW)
+        rawW = maxDim
+      } else {
+        rawW = Math.round((rawW * maxDim) / rawH)
+        rawH = maxDim
+      }
+    }
+    canvas.width = rawW
+    canvas.height = rawH
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    ctx.drawImage(video, 0, 0, w, h)
+    ctx.drawImage(video, 0, 0, rawW, rawH)
 
     // Burn a clearly-visible timestamp into the bottom of the frame
     const stamp = new Date().toLocaleString('en-IN', {
@@ -144,16 +204,16 @@ export function VehicleTrackerCamera({
       hour12: true,
     })
     const text = `AM KIA  ·  ${stamp} IST`
-    const barH = Math.max(36, Math.round(h * 0.055))
+    const barH = Math.max(28, Math.round(rawH * 0.05))
     const fontPx = Math.round(barH * 0.52)
     ctx.fillStyle = 'rgba(0,0,0,0.65)'
-    ctx.fillRect(0, h - barH, w, barH)
+    ctx.fillRect(0, rawH - barH, rawW, barH)
     ctx.fillStyle = '#e11d48'
-    ctx.fillRect(0, h - barH, Math.max(6, Math.round(w * 0.008)), barH)
+    ctx.fillRect(0, rawH - barH, Math.max(5, Math.round(rawW * 0.008)), barH)
     ctx.font = `700 ${fontPx}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif`
     ctx.textBaseline = 'middle'
     ctx.fillStyle = '#ffffff'
-    ctx.fillText(text, Math.round(barH * 0.4), h - Math.round(barH / 2))
+    ctx.fillText(text, Math.round(barH * 0.4), rawH - Math.round(barH / 2))
 
     canvas.toBlob(
       (blob) => {
@@ -167,7 +227,7 @@ export function VehicleTrackerCamera({
         onCapture(file)
       },
       'image/jpeg',
-      0.92,
+      0.75,
     )
   }, [onCapture, stopStream])
 
@@ -197,25 +257,6 @@ export function VehicleTrackerCamera({
         className="absolute inset-0 h-full w-full object-cover pointer-events-none"
       />
 
-      {/* Viewfinder Target Framing Guides */}
-      <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-8 sm:p-12">
-        <div className="relative w-full max-w-lg aspect-[4/3] sm:aspect-[16/10] border-2 border-white/30 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]">
-          {/* Corner highlights */}
-          <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-white rounded-tl-lg" />
-          <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-white rounded-tr-lg" />
-          <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-white rounded-bl-lg" />
-          <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-white rounded-br-lg" />
-
-          {/* Center alignment guide text */}
-          <div className="absolute inset-x-0 bottom-3 text-center">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md text-white/90 text-xs font-medium border border-white/10 shadow">
-              <Sparkles className="h-3 w-3 text-amber-400" />
-              Align {label.toLowerCase()} in frame for high clarity
-            </span>
-          </div>
-        </div>
-      </div>
-
       {/* Top Header Bar */}
       <div className="relative z-50 flex items-center justify-between p-4 sm:p-6 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-auto">
         <div className="flex items-center gap-3">
@@ -226,7 +267,7 @@ export function VehicleTrackerCamera({
             <h3 className="text-sm sm:text-base font-bold text-white drop-shadow-sm">{label}</h3>
             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400">
               <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-              LIVE · Auto Timestamped
+              LIVE · Full Screen Viewfinder
             </div>
           </div>
         </div>

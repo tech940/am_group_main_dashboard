@@ -91,3 +91,28 @@ export const STAGE_STEPS = [
   { key: 'ea', label: 'EA Approval' },
   { key: 'md', label: 'MD Approval' },
 ] as const
+
+/**
+ * Safely parses single URL, comma-separated URLs, or JSON array string of URLs
+ * into a clean array of slip URLs.
+ */
+export function parseFuelSlipUrls(value: string | null | undefined): string[] {
+  if (!value) return []
+  const str = String(value).trim()
+  if (!str) return []
+  if (str.startsWith('[') && str.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(str)
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => (typeof item === 'string' ? item.trim() : typeof item?.url === 'string' ? item.url.trim() : '')).filter(Boolean)
+      }
+    } catch {
+      // fallback
+    }
+  }
+  if (str.includes(',')) {
+    return str.split(',').map((s) => s.trim()).filter(Boolean)
+  }
+  return [str]
+}
+

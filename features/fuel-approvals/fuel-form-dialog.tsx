@@ -20,6 +20,10 @@ import {
   X,
   Paperclip,
   ArrowRight,
+  Plus,
+  Sparkles,
+  ExternalLink,
+  Trash2,
 } from 'lucide-react'
 import {
   FUEL_LOCATIONS,
@@ -27,14 +31,70 @@ import {
   PRECONFIGURED_VEHICLES,
   FUEL_TYPES,
   detectFuelType,
+  parseFuelSlipUrls,
 } from '@/lib/fuel-approvals/constants'
 import type { FuelApprovalRecord, FuelLocation, FuelRequiredFor, FuelType } from '@/lib/fuel-approvals/types'
+
+interface SlipItem {
+  url: string
+  name: string
+}
 
 interface FuelFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess?: () => void
   initialData?: FuelApprovalRecord | null
+}
+
+async function compressImageFile(file: File, maxDim = 1600, quality = 0.8): Promise<File> {
+  if (!file.type.startsWith('image/')) return file
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width, height } = img
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width)
+          width = maxDim
+        } else {
+          width = Math.round((width * maxDim) / height)
+          height = maxDim
+        }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        resolve(file)
+        return
+      }
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(file)
+            return
+          }
+          const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          })
+          resolve(compressedFile)
+        },
+        'image/jpeg',
+        quality
+      )
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(file)
+    }
+    img.src = url
+  })
 }
 
 export function FuelFormDialog({
@@ -57,11 +117,18 @@ export function FuelFormDialog({
     new Date().toISOString().slice(0, 10)
   )
   const [fuelFilledLtrs, setFuelFilledLtrs] = useState<string>('')
-  const [fuelSlipUrl, setFuelSlipUrl] = useState<string>('')
+  const [slips, setSlips] = useState<SlipItem[]>([])
   const [remarks, setRemarks] = useState<string>('')
 
+  // State for auto-detecting last fuel date
+  const [checkingLastFuel, setCheckingLastFuel] = useState(false)
+  const [lastFuelAutoDetected, setLastFuelAutoDetected] = useState<{
+    date: string
+    ltrs?: string | null
+    requestNumber?: string
+  } | null>(null)
+
   const [uploading, setUploading] = useState(false)
-  const [uploadFileName, setUploadFileName] = useState<string>('')
   const [submitting, setSubmitting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -78,10 +145,17 @@ export function FuelFormDialog({
       setCurrentKmReading(initialData.currentKmReading || '')
       setFuelFilledDate(initialData.fuelFilledDate || new Date().toISOString().slice(0, 10))
       setFuelFilledLtrs(String(initialData.fuelFilledLtrs || ''))
-      setFuelSlipUrl(initialData.fuelSlipUrl || '')
       setRemarks(initialData.remarks || '')
-      setUploadFileName(initialData.fuelSlipUrl ? 'Attached Fuel Slip' : '')
-    } else {
+
+      const parsedUrls = parseFuelSlipUrls(initialData.fuelSlipUrl)
+      setSlips(
+        parsedUrls.map((url, i) => ({
+          url,
+          name: parsedUrls.length > 1 ? `Slip ${i + 1}` : 'Attached Fuel Slip',
+        }))
+      )
+      setLastFuelAutoDetected(null)
+    } else if (open) {
       resetForm()
     }
   }, [initialData, open])
@@ -97,10 +171,61 @@ export function FuelFormDialog({
     setCurrentKmReading('')
     setFuelFilledDate(new Date().toISOString().slice(0, 10))
     setFuelFilledLtrs('')
-    setFuelSlipUrl('')
+    setSlips([])
     setRemarks('')
-    setUploadFileName('')
+    setLastFuelAutoDetected(null)
   }
+
+  // Auto-check last fuel date when vehicle / VIN changes
+  useEffect(() => {
+    if (!open || isEditing) return
+    const vehicleQuery = vehRegNo.trim()
+    const vinQuery = vinNo.trim()
+
+    if (!vehicleQuery && !vinQuery) {
+      setLastFuelAutoDetected(null)
+      return
+    }
+
+    let isMounted = true
+    const timer = setTimeout(async () => {
+      try {
+        setCheckingLastFuel(true)
+        const params = new URLSearchParams()
+        if (vehicleQuery) params.set('vehicle', vehicleQuery)
+        if (vinQuery) params.set('vin', vinQuery)
+
+        const res = await fetch(`/api/fuel-approvals/last-fuel?${params.toString()}`)
+        if (!res.ok) return
+        const data = await res.json()
+
+        if (isMounted && data?.lastFuel) {
+          const lf = data.lastFuel
+          if (lf.fuelFilledDate) {
+            setLastFuelFilledDate(lf.fuelFilledDate)
+            setLastFuelAutoDetected({
+              date: lf.fuelFilledDate,
+              ltrs: lf.fuelFilledLtrs,
+              requestNumber: lf.requestNumber,
+            })
+          }
+          // Optionally backfill VIN if user hasn't typed one
+          if (!vinNo && lf.vinNo) {
+            setVinNo(lf.vinNo)
+          }
+        }
+      } catch (err) {
+        console.warn('Could not auto-fetch last fuel info:', err)
+      } finally {
+        if (isMounted) setCheckingLastFuel(false)
+      }
+    }, 400)
+
+    return () => {
+      isMounted = false
+      clearTimeout(timer)
+    }
+  }, [vehRegNo, vinNo, open, isEditing])
 
   const handleVehicleSelect = (value: string) => {
     if (value === '__custom__') {
@@ -118,38 +243,53 @@ export function FuelFormDialog({
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const fileList = e.target.files
+    if (!fileList || fileList.length === 0) return
 
-    if (file.size > 25 * 1024 * 1024) {
-      toast({
-        title: 'File too large',
-        description: 'Fuel slip file must be under 25MB.',
-        variant: 'error',
-      })
-      return
+    const filesToUpload = Array.from(fileList)
+
+    // Validate size
+    for (const f of filesToUpload) {
+      if (f.size > 25 * 1024 * 1024) {
+        toast({
+          title: 'File too large',
+          description: `"${f.name}" is over 25MB. Please choose smaller files.`,
+          variant: 'error',
+        })
+        return
+      }
     }
 
     try {
       setUploading(true)
-      const formData = new FormData()
-      formData.append('file', file)
+      const newSlips: SlipItem[] = []
 
-      const res = await fetch('/api/fuel-approvals/upload', {
-        method: 'POST',
-        body: formData,
-      })
+      for (const rawFile of filesToUpload) {
+        // Compress if image
+        const uploadFile = await compressImageFile(rawFile, 1600, 0.8)
+        const formData = new FormData()
+        formData.append('file', uploadFile)
 
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to upload file')
+        const res = await fetch('/api/fuel-approvals/upload', {
+          method: 'POST',
+          body: formData,
+        })
+
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data.error || `Failed to upload ${rawFile.name}`)
+        }
+
+        newSlips.push({
+          url: data.url,
+          name: rawFile.name,
+        })
       }
 
-      setFuelSlipUrl(data.url)
-      setUploadFileName(file.name)
+      setSlips((prev) => [...prev, ...newSlips])
       toast({
-        title: 'File uploaded',
-        description: `${file.name} attached successfully.`,
+        title: newSlips.length > 1 ? 'Slips uploaded' : 'Slip uploaded',
+        description: `${newSlips.length} receipt${newSlips.length > 1 ? 's' : ''} attached successfully.`,
         variant: 'success',
       })
     } catch (err: any) {
@@ -160,7 +300,12 @@ export function FuelFormDialog({
       })
     } finally {
       setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  const removeSlip = (index: number) => {
+    setSlips((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -195,13 +340,18 @@ export function FuelFormDialog({
       toast({ title: 'Invalid quantity', description: 'Please enter valid liters filled (> 0)', variant: 'error' })
       return
     }
-    if (!fuelSlipUrl) {
-      toast({ title: 'Fuel slip required', description: 'Please upload the fuel slip or pump receipt', variant: 'error' })
+    if (slips.length === 0) {
+      toast({ title: 'Fuel slip required', description: 'Please upload at least one fuel slip or pump receipt', variant: 'error' })
       return
     }
 
     setSubmitting(true)
     try {
+      const fuelSlipUrl =
+        slips.length > 1
+          ? JSON.stringify(slips.map((s) => s.url))
+          : slips[0].url
+
       const payload = {
         location,
         fuelRequiredFor,
@@ -233,7 +383,7 @@ export function FuelFormDialog({
 
       toast({
         title: isEditing ? 'Request re-submitted' : 'Request submitted',
-        description: data.message || 'Fuel approval request submitted to ED for review.',
+        description: data.message || 'Fuel approval request submitted for review.',
         variant: 'success',
       })
 
@@ -253,7 +403,7 @@ export function FuelFormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
-        {/* Clean, Tasteful Header */}
+        {/* Header */}
         <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between">
           <div>
             <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
@@ -261,8 +411,8 @@ export function FuelFormDialog({
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {isEditing
-                ? 'Update fuel dispensing details and re-submit for ED review'
-                : 'Record vehicle, genset or stockyard fuel dispensing for ED → HR → MD approval'}
+                ? 'Update fuel dispensing details and re-submit for review'
+                : 'Record vehicle, genset or stockyard fuel dispensing for approval'}
             </DialogDescription>
           </div>
         </div>
@@ -316,6 +466,7 @@ export function FuelFormDialog({
                 onClick={() => {
                   setIsCustomVehicle(!isCustomVehicle)
                   setVehRegNo('')
+                  setLastFuelAutoDetected(null)
                 }}
                 className="text-[11px] font-semibold text-teal-700 dark:text-teal-400 hover:underline cursor-pointer"
               >
@@ -416,17 +567,35 @@ export function FuelFormDialog({
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Last Fuel Filled Date
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <span>Last Fuel Filled Date</span>
+                  {checkingLastFuel && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-teal-600 font-normal">
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                      checking...
+                    </span>
+                  )}
                 </label>
                 <span className="text-[11px] text-slate-400 font-normal">optional</span>
               </div>
               <Input
                 type="date"
                 value={lastFuelFilledDate}
-                onChange={(e) => setLastFuelFilledDate(e.target.value)}
+                onChange={(e) => {
+                  setLastFuelFilledDate(e.target.value)
+                  setLastFuelAutoDetected(null)
+                }}
                 className="h-10 text-xs rounded-xl"
               />
+              {lastFuelAutoDetected && (
+                <div className="mt-1 flex items-center gap-1 text-[11px] text-teal-700 dark:text-teal-400 font-medium">
+                  <Sparkles className="w-3 h-3 shrink-0" />
+                  <span>
+                    Auto-detected past record: {lastFuelAutoDetected.date}
+                    {lastFuelAutoDetected.ltrs ? ` (${lastFuelAutoDetected.ltrs} Ltrs)` : ''}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -465,66 +634,106 @@ export function FuelFormDialog({
             </div>
           </div>
 
-          {/* Row 6: Fuel Slip / Receipt Upload */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Fuel Slip / Pump Receipt <span className="text-rose-500">*</span>
-            </label>
+          {/* Row 6: Fuel Slips / Receipts (Multi-slip upload) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Fuel Slip(s) / Pump Receipts <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-[11px] text-slate-400 font-normal">
+                {slips.length > 0 ? `${slips.length} slip${slips.length > 1 ? 's' : ''} attached` : 'Multiple slips allowed'}
+              </span>
+            </div>
+
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*,application/pdf"
+              multiple
               className="hidden"
               onChange={handleFileUpload}
             />
 
-            {fuelSlipUrl ? (
-              <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <FileText className="w-4 h-4 text-teal-700 dark:text-teal-400 shrink-0" />
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                    {uploadFileName || 'Fuel Slip Attached'}
-                  </span>
-                  <a
-                    href={fuelSlipUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] font-semibold text-teal-700 dark:text-teal-400 hover:underline shrink-0"
-                  >
-                    View ↗
-                  </a>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFuelSlipUrl('')
-                    setUploadFileName('')
-                  }}
-                  className="text-slate-400 hover:text-rose-600 p-1 rounded-md"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+            {slips.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {slips.map((slip, idx) => {
+                  const isPdf = slip.url.toLowerCase().includes('.pdf')
+                  return (
+                    <div
+                      key={`${slip.url}-${idx}`}
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 gap-2 overflow-hidden"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {isPdf ? (
+                          <div className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <img
+                            src={slip.url}
+                            alt={`Slip ${idx + 1}`}
+                            className="w-8 h-8 object-cover rounded-lg border border-slate-200 dark:border-slate-700 shrink-0 bg-white"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                            {slip.name || `Slip #${idx + 1}`}
+                          </p>
+                          <a
+                            href={slip.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700 dark:text-teal-400 hover:underline"
+                          >
+                            <span>View</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removeSlip(idx)}
+                        className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors"
+                        title="Remove slip"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="w-full flex items-center justify-center gap-2 h-12 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 bg-slate-50/50 dark:bg-slate-800/50 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors"
-              >
-                {uploading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-teal-700" />
-                    <span>Uploading receipt...</span>
-                  </>
-                ) : (
-                  <>
-                    <Paperclip className="w-4 h-4 text-slate-400" />
-                    <span>Attach Fuel Slip (Image or PDF)</span>
-                  </>
-                )}
-              </button>
             )}
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className={`w-full flex items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 bg-slate-50/50 dark:bg-slate-800/50 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors cursor-pointer ${
+                slips.length > 0 ? 'h-10' : 'h-14'
+              }`}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-teal-700" />
+                  <span>Compressing & uploading slip(s)...</span>
+                </>
+              ) : (
+                <>
+                  {slips.length > 0 ? (
+                    <>
+                      <Plus className="w-4 h-4 text-teal-700" />
+                      <span>+ Attach Another Slip (Image or PDF)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Paperclip className="w-4 h-4 text-slate-400" />
+                      <span>Attach Fuel Slip(s) (Images or PDF — select one or more)</span>
+                    </>
+                  )}
+                </>
+              )}
+            </button>
           </div>
 
           {/* Row 7: Remarks */}
@@ -546,7 +755,7 @@ export function FuelFormDialog({
           {/* Footer */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
             <span className="text-[11px] text-slate-400">
-              Approval track: Submit → CEO → EA → MD
+              Approval track: Submit → Review → Approval
             </span>
 
             <div className="flex items-center gap-2">
@@ -554,7 +763,7 @@ export function FuelFormDialog({
                 type="button"
                 variant="outline"
                 onClick={() => onOpenChange(false)}
-                className="rounded-xl text-xs font-semibold h-9 px-4"
+                className="rounded-xl text-xs font-semibold h-9 px-4 cursor-pointer"
               >
                 Cancel
               </Button>

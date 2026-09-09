@@ -15,7 +15,6 @@ import {
   sendGatePassGateOutEmail,
   sendGatePassOverdueEmail,
   sendGatePassRejectedEmail,
-  sendGatePassReturnedEmail,
   sendGatePassSubmittedEmail,
   type GatePassEmailRow,
 } from './emails'
@@ -578,15 +577,6 @@ export async function recordGateOut(passId: string, input: GateEventInput, reque
     return row
   })
 
-  const returnToken = createGateToken({
-    passId: updated.id,
-    purpose: 'in',
-    expectedReturnAt: updated.expectedReturnAt,
-    issuedAt: now,
-  })
-  const emailRow = await toEmailRowWithDriver(updated)
-  await sendGatePassGateOutEmail(emailRow, buildGateUrl(getAppBaseUrl(request), returnToken))
-
   return { alreadyDone: false, pass: serializeGatePass(updated) }
 }
 
@@ -646,27 +636,26 @@ export async function recordGateIn(passId: string, input: GateEventInput) {
     return row
   })
 
-  const emailRow = await toEmailRowWithDriver(updated)
-  await sendGatePassReturnedEmail(emailRow)
   return { alreadyDone: false, pass: serializeGatePass(updated), odoWentBackwards }
 }
 
 // ── Overdue sweep ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Mail once per overdue pass, ever.
+ * Mail once per pass that has been out for >= 12 hours without being returned.
  *
  * ⚠️ `overdue_notified_at` is stamped in the SAME statement that selects the pass, so two sweeps
- * running together cannot both mail it. Without that, a reminder becomes noise people filter out,
- * and then a genuinely missing vehicle goes unnoticed.
+ * running together cannot both mail it.
  */
 export async function runOverdueSweep(now: Date) {
+  const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000)
+
   const claimed = await db
     .update(demoGatePasses)
     .set({ overdueNotifiedAt: now })
     .where(and(
       eq(demoGatePasses.status, 'out'),
-      sql`${demoGatePasses.expectedReturnAt} < ${now}`,
+      sql`${demoGatePasses.gateOutAt} <= ${twelveHoursAgo}`,
       sql`${demoGatePasses.overdueNotifiedAt} IS NULL`,
     ))
     .returning()

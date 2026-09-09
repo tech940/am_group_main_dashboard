@@ -80,6 +80,13 @@ export function GatePassFormDialog({
   const [driverUserId, setDriverUserId] = useState('')
   const [driverName, setDriverName] = useState('')
   const [driverSearch, setDriverSearch] = useState('')
+  const [isAddingNewEmployee, setIsAddingNewEmployee] = useState(false)
+  const [newEmployeeName, setNewEmployeeName] = useState('')
+  const [newEmployeePhone, setNewEmployeePhone] = useState('')
+  const [newEmployeeDept, setNewEmployeeDept] = useState('Driver')
+  const [creatingEmployee, setCreatingEmployee] = useState(false)
+  const [saveManualAsEmployee, setSaveManualAsEmployee] = useState(false)
+
   const [purpose, setPurpose] = useState<string>(GATE_PASS_PURPOSES[0])
   const [remarks, setRemarks] = useState('')
   const [licencePhoto, setLicencePhoto] = useState<File | null>(null)
@@ -165,12 +172,62 @@ export function GatePassFormDialog({
     !isManualDriver && chosenDriver && (chosenDriver.hasLicencePhoto || chosenDriver.hasLicence)
   )
 
+  const handleAddNewEmployee = async (nameToUse?: string) => {
+    const targetName = (nameToUse || newEmployeeName || driverSearch).trim()
+    if (!targetName) {
+      toast({ title: 'Name Required', description: 'Please enter employee name.', variant: 'error' })
+      return
+    }
+    setCreatingEmployee(true)
+    try {
+      const res = await fetch('/api/gate-pass/drivers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_employee',
+          fullName: targetName,
+          phone: newEmployeePhone.trim() || undefined,
+          department: newEmployeeDept.trim() || 'Driver',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to add employee.')
+
+      toast({
+        title: 'Employee Added',
+        description: `${targetName} has been added to KIA Employees.`,
+        variant: 'success',
+      })
+
+      await refetchDrivers()
+      setDriverUserId(data.userId)
+      setDriverName(targetName)
+      setIsManualDriver(false)
+      setIsAddingNewEmployee(false)
+      setNewEmployeeName('')
+      setNewEmployeePhone('')
+      setDriverSearch('')
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to add employee',
+        variant: 'error',
+      })
+    } finally {
+      setCreatingEmployee(false)
+    }
+  }
+
   const reset = () => {
     setVin('')
     setIsManualDriver(false)
     setDriverUserId('')
     setDriverName('')
     setDriverSearch('')
+    setIsAddingNewEmployee(false)
+    setNewEmployeeName('')
+    setNewEmployeePhone('')
+    setSaveManualAsEmployee(false)
     setPurpose(GATE_PASS_PURPOSES[0])
     setRemarks('')
     setLicencePhoto(null)
@@ -188,9 +245,29 @@ export function GatePassFormDialog({
 
     setSaving(true)
     try {
-      if (!isManualDriver && driverUserId && licencePhoto) {
+      let finalDriverUserId = driverUserId
+
+      // If user selected Manual Entry but checked "Save as KIA Employee", create them now
+      if (isManualDriver && saveManualAsEmployee && driverName.trim()) {
+        const empRes = await fetch('/api/gate-pass/drivers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_employee',
+            fullName: driverName.trim(),
+            department: 'Driver',
+          }),
+        })
+        if (empRes.ok) {
+          const empData = await empRes.json()
+          finalDriverUserId = empData.userId
+        }
+      }
+
+      // Save driver license against employee if an employee is linked and a photo was taken
+      if ((!isManualDriver && driverUserId && licencePhoto) || (finalDriverUserId && licencePhoto)) {
         const formData = new FormData()
-        formData.append('userId', driverUserId)
+        formData.append('userId', finalDriverUserId || driverUserId)
         formData.append('licenceNo', 'VERIFIED')
         formData.append('licencePhoto', licencePhoto)
 
@@ -200,7 +277,7 @@ export function GatePassFormDialog({
         })
         if (!uploadRes.ok) {
           const uErr = await uploadRes.json().catch(() => ({}))
-          throw new Error(uErr.error || 'Failed to save driver license against employee.')
+          console.warn('License upload error:', uErr)
         }
         await refetchDrivers()
       }
@@ -211,9 +288,9 @@ export function GatePassFormDialog({
         body: JSON.stringify({
           vin,
           driverKind: 'staff',
-          driverUserId: !isManualDriver && driverUserId ? driverUserId : null,
+          driverUserId: finalDriverUserId || (!isManualDriver && driverUserId ? driverUserId : null),
           driverName: driverName.trim() || chosenDriver?.fullName || 'Staff Driver',
-          driverLicenceNo: !isManualDriver && (chosenDriver?.hasLicence || licencePhoto) ? 'VERIFIED' : null,
+          driverLicenceNo: (finalDriverUserId || !isManualDriver) && (chosenDriver?.hasLicence || licencePhoto) ? 'VERIFIED' : null,
           purpose,
           remarks: remarks.trim() || null,
         }),
@@ -347,41 +424,142 @@ export function GatePassFormDialog({
                       Change Employee
                     </button>
                   </div>
+                ) : isAddingNewEmployee ? (
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 p-3.5 space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                        <UserPlus className="h-4 w-4 text-indigo-600" /> Add New KIA Employee / Driver
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingNewEmployee(false)}
+                        className="text-xs text-slate-400 hover:text-slate-700 font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-bold text-slate-700">Full Name *</Label>
+                      <Input
+                        value={newEmployeeName}
+                        onChange={(e) => setNewEmployeeName(e.target.value)}
+                        placeholder="e.g. Ramesh Sharma"
+                        className="h-8 text-xs bg-white"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-semibold text-slate-700">Phone (Optional)</Label>
+                        <Input
+                          value={newEmployeePhone}
+                          onChange={(e) => setNewEmployeePhone(e.target.value)}
+                          placeholder="9876543210"
+                          className="h-8 text-xs bg-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-semibold text-slate-700">Department / Role</Label>
+                        <Input
+                          value={newEmployeeDept}
+                          onChange={(e) => setNewEmployeeDept(e.target.value)}
+                          placeholder="Driver / Sales / Staff"
+                          className="h-8 text-xs bg-white"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsAddingNewEmployee(false)}
+                        className="h-7 text-xs"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleAddNewEmployee()}
+                        disabled={creatingEmployee || !newEmployeeName.trim()}
+                        className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                      >
+                        {creatingEmployee ? (
+                          <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="mr-1.5 h-3 w-3" />
+                        )}
+                        Save &amp; Select Employee
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-2 border border-slate-200 rounded-lg p-3 bg-white">
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-                      <Input
-                        type="text"
-                        value={driverSearch}
-                        onChange={(e) => setDriverSearch(e.target.value)}
-                        placeholder="Search KIA employee by name or role…"
-                        className="h-8 pl-8 text-xs bg-slate-50 border-slate-200 rounded-lg"
-                      />
-                      {driverSearch && (
-                        <button
-                          type="button"
-                          onClick={() => setDriverSearch('')}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-                        >
-                          ×
-                        </button>
-                      )}
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                        <Input
+                          type="text"
+                          value={driverSearch}
+                          onChange={(e) => setDriverSearch(e.target.value)}
+                          placeholder="Search KIA employee by name or role…"
+                          className="h-8 pl-8 text-xs bg-slate-50 border-slate-200 rounded-lg"
+                        />
+                        {driverSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setDriverSearch('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setNewEmployeeName(driverSearch.trim())
+                          setIsAddingNewEmployee(true)
+                        }}
+                        className="h-8 px-2.5 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-bold shrink-0"
+                      >
+                        <UserPlus className="mr-1 h-3.5 w-3.5" /> + Add New
+                      </Button>
                     </div>
 
                     <div className="max-h-48 overflow-y-auto space-y-1 divide-y divide-slate-100">
                       {loadingDrivers ? (
                         <p className="p-3 text-center text-xs text-slate-400">Loading KIA employees…</p>
                       ) : filteredDrivers.length === 0 ? (
-                        <div className="p-3 text-center text-xs text-slate-500">
+                        <div className="p-3 text-center text-xs text-slate-500 space-y-2">
                           <p>No matching employees found.</p>
-                          <button
-                            type="button"
-                            onClick={() => setIsManualDriver(true)}
-                            className="mt-1 text-indigo-600 font-bold hover:underline"
-                          >
-                            Or enter driver name manually
-                          </button>
+                          <div className="flex flex-wrap items-center justify-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => {
+                                setNewEmployeeName(driverSearch.trim())
+                                setIsAddingNewEmployee(true)
+                              }}
+                              className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                            >
+                              <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                              Add &quot;{driverSearch.trim() || 'New Employee'}&quot; to KIA
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDriverName(driverSearch.trim())
+                                setIsManualDriver(true)
+                              }}
+                              className="text-xs text-slate-600 font-medium hover:underline"
+                            >
+                              Or enter manually
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         filteredDrivers.map((emp) => {
@@ -433,10 +611,21 @@ export function GatePassFormDialog({
                 )}
               </div>
             ) : (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">
-                  Person Taking Car (Name) <span className="text-rose-500">*</span>
-                </Label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-slate-700">
+                    Person Taking Car (Name) <span className="text-rose-500">*</span>
+                  </Label>
+                  <label className="flex items-center gap-1.5 text-xs text-indigo-700 cursor-pointer select-none font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={saveManualAsEmployee}
+                      onChange={(e) => setSaveManualAsEmployee(e.target.checked)}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                    />
+                    Save as KIA Employee
+                  </label>
+                </div>
                 <div className="relative">
                   <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                   <Input
@@ -451,7 +640,9 @@ export function GatePassFormDialog({
                   />
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Manual entry: this driver's license will not be saved into the employee database profile.
+                  {saveManualAsEmployee
+                    ? 'This driver will be saved into KIA Employees database, and any license photo captured below will be stored permanently on their profile.'
+                    : "Manual entry: this driver's license will not be saved into the employee database profile."}
                 </p>
               </div>
             )}
@@ -466,7 +657,7 @@ export function GatePassFormDialog({
                   <span className="text-[10px] font-bold uppercase text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
                     Verified On File
                   </span>
-                ) : !isManualDriver && driverUserId ? (
+                ) : (!isManualDriver && driverUserId) || (isManualDriver && saveManualAsEmployee) ? (
                   <span className="text-[10px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
                     Saves to employee profile
                   </span>

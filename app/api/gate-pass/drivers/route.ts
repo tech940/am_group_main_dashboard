@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireGatePassAccess, visibleDealerCodes } from '@/lib/gate-pass/access'
 import { gatePassErrorResponse } from '@/lib/gate-pass/api'
 import { GatePassError } from '@/lib/gate-pass/server'
-import { listCandidateDrivers, maskLicence, upsertDriverProfile } from '@/lib/gate-pass/drivers'
+import { listCandidateDrivers, maskLicence, upsertDriverProfile, createCandidateDriver } from '@/lib/gate-pass/drivers'
 import { GatePassUploadError, uploadDriverLicence } from '@/lib/gate-pass/storage'
 
 export const dynamic = 'force-dynamic'
@@ -44,14 +44,9 @@ export async function GET(_request: NextRequest) {
 }
 
 /**
- * Record or update a licence.
+ * Record or update a licence, or create a new employee driver.
  *
- * Accepts multipart/form-data (with an optional photo) or JSON. Both, because the request form
- * sends a photo and other callers should not have to build a FormData to set an expiry date.
- *
- * A person may always record their OWN licence. Recording somebody else's needs `gate_pass.edit` —
- * it is a government ID being entered on another person's behalf, so it should leave a trail of who
- * did it rather than being an ambient capability everyone holds.
+ * Accepts multipart/form-data (with an optional photo) or JSON.
  */
 export async function POST(request: NextRequest) {
   const access = await requireGatePassAccess('gate_pass.create')
@@ -61,7 +56,9 @@ export async function POST(request: NextRequest) {
     const contentType = request.headers.get('content-type') ?? ''
     const isMultipart = contentType.includes('multipart/form-data')
 
+    let action = ''
     let userId = ''
+    let fullName = ''
     let licenceNo = ''
     let rawExpiry = ''
     let phone: string | null = null
@@ -70,7 +67,9 @@ export async function POST(request: NextRequest) {
 
     if (isMultipart) {
       const form = await request.formData()
+      action = String(form.get('action') ?? '')
       userId = String(form.get('userId') ?? '')
+      fullName = String(form.get('fullName') ?? '')
       licenceNo = String(form.get('licenceNo') ?? '')
       rawExpiry = String(form.get('licenceExpiry') ?? '')
       phone = String(form.get('phone') ?? '') || null
@@ -79,11 +78,24 @@ export async function POST(request: NextRequest) {
       photo = candidate instanceof File && candidate.size > 0 ? candidate : null
     } else {
       const body = await request.json().catch(() => ({})) as Record<string, unknown>
+      action = typeof body.action === 'string' ? body.action : ''
       userId = typeof body.userId === 'string' ? body.userId : ''
+      fullName = typeof body.fullName === 'string' ? body.fullName : ''
       licenceNo = typeof body.licenceNo === 'string' ? body.licenceNo : ''
       rawExpiry = typeof body.licenceExpiry === 'string' ? body.licenceExpiry : ''
       phone = typeof body.phone === 'string' ? body.phone : null
       licenceName = typeof body.licenceName === 'string' ? body.licenceName : null
+    }
+
+    // Handle creating a new KIA employee driver
+    if (action === 'create_employee' || (!userId && fullName.trim())) {
+      const newDriver = await createCandidateDriver({
+        fullName: fullName.trim(),
+        phone: phone || undefined,
+        dealers: access.appUser.dealers || 'JK402,JK501',
+        actorId: access.appUser.id,
+      })
+      userId = newDriver.userId
     }
 
     const targetUserId = userId || access.appUser.id
@@ -96,19 +108,22 @@ export async function POST(request: NextRequest) {
     // nothing. Omitting the field entirely (rather than sending null) keeps any existing photo.
     const licenceDocPath = photo ? await uploadDriverLicence(targetUserId, photo) : undefined
 
-    await upsertDriverProfile({
-      userId: targetUserId,
-      licenceNo: finalLicenceNo,
-      licenceExpiry,
-      phone,
-      licenceName,
-      licenceDocPath,
-      updatedBy: access.appUser.id,
-    })
+    if (licenceNo || licenceExpiry || phone || licenceName || photo) {
+      await upsertDriverProfile({
+        userId: targetUserId,
+        licenceNo: finalLicenceNo,
+        licenceExpiry,
+        phone,
+        licenceName,
+        licenceDocPath,
+        updatedBy: access.appUser.id,
+      })
+    }
 
     // The echo is masked too — a successful write must not hand the number straight back.
     return NextResponse.json({
       ok: true,
+      userId: targetUserId,
       licenceMasked: maskLicence(finalLicenceNo),
       hasLicencePhoto: Boolean(licenceDocPath),
     })
@@ -119,3 +134,4 @@ export async function POST(request: NextRequest) {
     return gatePassErrorResponse(error)
   }
 }
+
