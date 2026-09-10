@@ -24,7 +24,10 @@ function primaryRecipient(to: string | string[]): string {
  * interrupted by an email failure. Failures are logged (row + console).
  */
 export async function sendTrackedEmail(input: TrackedEmailInput): Promise<TrackedEmailResult> {
-  const recipient = primaryRecipient(input.to)
+  const recipient = primaryRecipient(input.to).trim()
+  if (!recipient) {
+    return { ok: false, error: 'Recipient email is missing' }
+  }
 
   let logId: string | null = null
   try {

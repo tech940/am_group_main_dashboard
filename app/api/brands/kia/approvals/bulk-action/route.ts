@@ -259,13 +259,13 @@ export async function POST(request: Request) {
         updates.sendBackReason = remarks || ''
         updates.emailSendStatus = 'SentBack'
 
-        sendApprovalDecisionEmail('SEND_BACK', row, {
+        const emailRes = await sendApprovalDecisionEmail('SEND_BACK', row, {
           stage: activeStageKey,
           senderName: appUser.fullName || 'An approver',
           remarks: remarks || '',
           request,
         })
-        emailedCount++
+        if (emailRes.ok) emailedCount++
 
         recordHistory()
         const [sentBackRow] = await db
@@ -297,7 +297,7 @@ export async function POST(request: Request) {
           updates.emailSendStatus = 'MDApproved'
 
           // Trigger email notification to requester that MD approved the payment order
-          void sendMdApprovalNotificationEmail({
+          await sendMdApprovalNotificationEmail({
             toEmail: row.email,
             requesterName: row.name,
             vendorName: row.vendorName || 'Vendor',
@@ -340,13 +340,13 @@ export async function POST(request: Request) {
        * without notification again.
        */
       if (action === 'REJECT' || action === 'HOLD') {
-        sendApprovalDecisionEmail(action, row, {
+        const emailRes = await sendApprovalDecisionEmail(action, row, {
           stage: activeStageKey,
           senderName: appUser.fullName || 'An approver',
           remarks: remarks || '',
           request,
         })
-        emailedCount++
+        if (emailRes.ok) emailedCount++
       }
 
       recordHistory()

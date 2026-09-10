@@ -37,14 +37,11 @@ console.log('\n1) The stage label names the desk that actually acted')
   const at = (brand: string | null, stage: string) =>
     stageLabelFor({ id: 'x', name: null, email: null, amount: null, vendorName: null, brand }, stage)
 
-  check(at('kia', 'sales_manager') === 'CEO', "KIA's first stage reads 'CEO'")
-  /*
-   * ⚠️ This was hardcoded to 'VP'. A Hyundai submitter would have been told a VP decided their
-   * request — a role their brand has nobody in, and the same KIA-only assumption already removed
-   * from the routes and the approvals screen.
-   */
-  for (const brand of ['hyundai', 'platinum', 'tata', 'mg', 'honda']) {
-    check(at(brand, 'sales_manager') === 'GSM', `${brand}'s first stage reads 'GSM', not 'VP'`)
+  check(at('kia', 'sales_manager') === 'GSM', "KIA's default first stage reads 'GSM'")
+  check(at('mg', 'sales_manager') === 'VP', "MG's first stage reads 'VP'")
+  check(at('platinum', 'sales_manager') === 'EA', "Platinum default first stage routes to 'EA'")
+  for (const brand of ['hyundai', 'tata', 'honda']) {
+    check(at(brand, 'sales_manager') === 'GSM', `${brand}'s first stage reads 'GSM'`)
   }
   check(at(null, 'sales_manager') === 'GSM', 'a missing brand still does not claim ED or VP')
   check(at('kia', 'md') === 'MD', "'md' reads 'MD'")

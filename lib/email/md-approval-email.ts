@@ -1,4 +1,4 @@
-import { sendEmail } from '@/lib/email/email-service'
+import { sendTrackedEmail, type TrackedEmailResult } from '@/lib/email/email-log'
 import { emailLayout } from '@/lib/email/templates/layout'
 
 /** Emails are HTML: vendor names, purposes and MD remarks are free text and must not be raw. */
@@ -119,9 +119,10 @@ export async function sendMdApprovalNotificationEmail(params: MdApprovalEmailPar
   `
 
   try {
-    await sendEmail({
-      to: toEmail,
+    const result = await sendTrackedEmail({
+      to: toEmail.trim(),
       subject,
+      emailType: 'approval_md_approved',
       html: emailLayout({
         heading: 'Payment Order Approved by MD',
         eyebrow: 'AM Group · Vendor Payments',
@@ -129,8 +130,15 @@ export async function sendMdApprovalNotificationEmail(params: MdApprovalEmailPar
         bodyHtml,
       }),
     })
-    console.log(`[md-approval-email] Successfully sent MD approval notification to ${toEmail} for vendor ${escapeHtml(vendorName)}`)
+    if (result.ok) {
+      console.log(`[md-approval-email] Successfully sent MD approval notification to ${toEmail} for vendor ${escapeHtml(vendorName)}`)
+    } else {
+      console.error(`[md-approval-email] Failed to send MD approval email to ${toEmail}:`, result.error)
+    }
+    return result
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err)
     console.error(`[md-approval-email] Failed to send MD approval email to ${toEmail}:`, err)
+    return { ok: false, error: errorMsg }
   }
 }

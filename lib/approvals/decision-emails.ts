@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { sendEmail } from '@/lib/email/email-service'
+import { sendTrackedEmail, type TrackedEmailResult } from '@/lib/email/email-log'
 import { emailLayout } from '@/lib/email/templates/layout'
 import { createResubmitToken } from '@/lib/kia/approval-resubmit'
 import { firstStageShortLabel } from '@/lib/approvals/first-stage-approver'
@@ -177,8 +177,9 @@ function requestLabel(row: DecisionRecipient): string {
  * request with their answers prefilled. That is the whole reason this email matters more than the
  * others: without it a sent-back request is a dead end.
  */
-export function sendApprovalSentBackEmail(row: DecisionRecipient, ctx: DecisionContext): void {
-  if (!row.email) return
+export async function sendApprovalSentBackEmail(row: DecisionRecipient, ctx: DecisionContext): Promise<TrackedEmailResult> {
+  const email = (row.email || '').trim()
+  if (!email) return { ok: false, error: 'Recipient email is missing' }
   try {
     const stageLabel = stageLabelFor(row, ctx.stage)
     const baseUrl = getAppBaseUrl(ctx.request, ctx.baseUrl)
@@ -216,18 +217,21 @@ export function sendApprovalSentBackEmail(row: DecisionRecipient, ctx: DecisionC
         This link is unique to your request and expires in 30 days. No sign-in is needed.
       </p>
     `
-    void sendEmail({
-      to: row.email,
+    return await sendTrackedEmail({
+      to: email,
       subject: `Clarification Needed: Payment Request${row.requestNo ? ` ${row.requestNo}` : ''}`,
+      emailType: 'approval_sent_back',
       html: emailLayout({
         heading: 'Payment Request Sent Back',
         eyebrow: 'AM Group · Approvals',
         preheader: 'Clarification Needed',
         bodyHtml,
       }),
-    }).catch((err) => console.error('[approvals] send-back email failed for %s:', row.email, err))
+    })
   } catch (err) {
-    console.error('[approvals] could not build the send-back email for %s:', row.email, err)
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('[approvals] send-back email failed for %s:', email, err)
+    return { ok: false, error }
   }
 }
 
@@ -238,8 +242,9 @@ export function sendApprovalSentBackEmail(row: DecisionRecipient, ctx: DecisionC
  * decision, not a request for changes, and offering the same button as a send-back would blur two
  * different outcomes. The remarks carry the reason.
  */
-export function sendApprovalRejectedEmail(row: DecisionRecipient, ctx: DecisionContext): void {
-  if (!row.email) return
+export async function sendApprovalRejectedEmail(row: DecisionRecipient, ctx: DecisionContext): Promise<TrackedEmailResult> {
+  const email = (row.email || '').trim()
+  if (!email) return { ok: false, error: 'Recipient email is missing' }
   try {
     const stageLabel = stageLabelFor(row, ctx.stage)
     const bodyHtml = `
@@ -259,18 +264,21 @@ export function sendApprovalRejectedEmail(row: DecisionRecipient, ctx: DecisionC
         with the additional detail.
       </p>
     `
-    void sendEmail({
-      to: row.email,
+    return await sendTrackedEmail({
+      to: email,
       subject: `Not Approved: Payment Request${row.requestNo ? ` ${row.requestNo}` : ''}`,
+      emailType: 'approval_rejected',
       html: emailLayout({
         heading: 'Payment Request Not Approved',
         eyebrow: 'AM Group · Approvals',
         preheader: 'Your request was not approved',
         bodyHtml,
       }),
-    }).catch((err) => console.error('[approvals] rejection email failed for %s:', row.email, err))
+    })
   } catch (err) {
-    console.error('[approvals] could not build the rejection email for %s:', row.email, err)
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('[approvals] rejection email failed for %s:', email, err)
+    return { ok: false, error }
   }
 }
 
@@ -280,8 +288,9 @@ export function sendApprovalRejectedEmail(row: DecisionRecipient, ctx: DecisionC
  * Also new. A hold is reversible and often short, so this is the quietest of the three — no link, no
  * call to action, just so the submitter is not left refreshing a page that never moves.
  */
-export function sendApprovalHeldEmail(row: DecisionRecipient, ctx: DecisionContext): void {
-  if (!row.email) return
+export async function sendApprovalHeldEmail(row: DecisionRecipient, ctx: DecisionContext): Promise<TrackedEmailResult> {
+  const email = (row.email || '').trim()
+  if (!email) return { ok: false, error: 'Recipient email is missing' }
   try {
     const stageLabel = stageLabelFor(row, ctx.stage)
     const bodyHtml = `
@@ -300,18 +309,21 @@ export function sendApprovalHeldEmail(row: DecisionRecipient, ctx: DecisionConte
         No action is needed from you. You will be notified when it moves again.
       </p>
     `
-    void sendEmail({
-      to: row.email,
+    return await sendTrackedEmail({
+      to: email,
       subject: `On Hold: Payment Request${row.requestNo ? ` ${row.requestNo}` : ''}`,
+      emailType: 'approval_held',
       html: emailLayout({
         heading: 'Payment Request On Hold',
         eyebrow: 'AM Group · Approvals',
         preheader: 'Your request is on hold',
         bodyHtml,
       }),
-    }).catch((err) => console.error('[approvals] hold email failed for %s:', row.email, err))
+    })
   } catch (err) {
-    console.error('[approvals] could not build the hold email for %s:', row.email, err)
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('[approvals] hold email failed for %s:', email, err)
+    return { ok: false, error }
   }
 }
 
@@ -327,8 +339,9 @@ export function sendApprovalHeldEmail(row: DecisionRecipient, ctx: DecisionConte
  * cannot be reused, so the second caller either forks it or sends nothing. It also interpolated the
  * submitter's name and the remark RAW into HTML; both are escaped here.
  */
-export function sendMdRemarkEmail(row: DecisionRecipient, ctx: Pick<DecisionContext, 'senderName' | 'remarks'>): void {
-  if (!row.email) return
+export function sendMdRemarkEmail(row: DecisionRecipient, ctx: Pick<DecisionContext, 'senderName' | 'remarks'>): Promise<TrackedEmailResult> {
+  const email = (row.email || '').trim()
+  if (!email) return Promise.resolve({ ok: false, error: 'Recipient email is missing' })
   try {
     const vendorLabel = String(row.vendorName || '').trim()
     const bodyHtml = `
@@ -346,30 +359,33 @@ export function sendMdRemarkEmail(row: DecisionRecipient, ctx: Pick<DecisionCont
         Your request has not been rejected — it is still in the approval flow.
       </p>
     `
-    void sendEmail({
-      to: row.email,
+    return sendTrackedEmail({
+      to: email,
       subject: `MD Remark on your Payment Request${row.requestNo ? ` ${row.requestNo}` : (vendorLabel ? ` for ${vendorLabel}` : '')}`,
+      emailType: 'approval_remark',
       html: emailLayout({
         heading: 'MD Remark Added',
         eyebrow: 'AM Group · Approvals',
         preheader: 'MD remark on your payment request',
         bodyHtml,
       }),
-    }).catch((err) => console.error('[approvals] MD remark email failed for %s:', row.email, err))
+    })
   } catch (err) {
-    console.error('[approvals] could not build the MD remark email for %s:', row.email, err)
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('[approvals] could not build the MD remark email for %s:', email, err)
+    return Promise.resolve({ ok: false, error })
   }
 }
 
-/** Dispatch by action. Returns whether an email was attempted, for the bulk route's summary. */
-export function sendApprovalDecisionEmail(
+/** Dispatch by action. Returns whether an email was sent, for the bulk route's summary. */
+export async function sendApprovalDecisionEmail(
   action: 'SEND_BACK' | 'REJECT' | 'HOLD',
   row: DecisionRecipient,
   ctx: DecisionContext,
-): boolean {
-  if (!row.email) return false
-  if (action === 'SEND_BACK') sendApprovalSentBackEmail(row, ctx)
-  else if (action === 'REJECT') sendApprovalRejectedEmail(row, ctx)
-  else sendApprovalHeldEmail(row, ctx)
-  return true
+): Promise<TrackedEmailResult> {
+  const email = (row.email || '').trim()
+  if (!email) return { ok: false, error: 'Recipient email is missing' }
+  if (action === 'SEND_BACK') return await sendApprovalSentBackEmail(row, ctx)
+  if (action === 'REJECT') return await sendApprovalRejectedEmail(row, ctx)
+  return await sendApprovalHeldEmail(row, ctx)
 }

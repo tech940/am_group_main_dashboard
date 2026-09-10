@@ -6,7 +6,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { glAccounts, kiaApprovalRequests } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { sendEmail } from '@/lib/email/email-service'
+import { sendTrackedEmail } from '@/lib/email/email-log'
 import { emailLayout } from '@/lib/email/templates/layout'
 import { sendMdApprovalNotificationEmail } from '@/lib/email/md-approval-email'
 import { sendApprovalDecisionEmail, getAppBaseUrl } from '@/lib/approvals/decision-emails'
@@ -318,17 +318,16 @@ export async function POST(
             This link is unique to your request and expires in 30 days. No sign-in is needed.
           </p>
         `
-        void sendEmail({
+        await sendTrackedEmail({
           to: requestRow.email,
           subject: `Clarification Needed: Payment Request${vendorLabel ? ` for ${vendorLabel}` : ''}`,
+          emailType: 'approval_sent_back',
           html: emailLayout({
             heading: 'Payment Request Sent Back',
             eyebrow: 'AM Group · Approvals',
             preheader: 'Clarification Needed',
             bodyHtml
           })
-        }).catch((err) => {
-          console.error('[approvals-action] Failed to send send-back email:', err)
         })
       } catch (err) {
         console.error('[approvals-action] Failed to dispatch send-back email:', err)
@@ -350,7 +349,7 @@ export async function POST(
           updates.emailSendStatus = 'MDApproved'
 
           // Trigger email notification to requester that MD approved the payment order
-          void sendMdApprovalNotificationEmail({
+          await sendMdApprovalNotificationEmail({
             toEmail: requestRow.email,
             requesterName: requestRow.name,
             vendorName: requestRow.vendorName || 'Vendor',
@@ -466,7 +465,7 @@ export async function POST(
      */
     if (action === 'REJECT' || action === 'HOLD') {
       try {
-        sendApprovalDecisionEmail(action, {
+        await sendApprovalDecisionEmail(action, {
           id: requestRow.id,
           name: requestRow.name,
           email: requestRow.email,

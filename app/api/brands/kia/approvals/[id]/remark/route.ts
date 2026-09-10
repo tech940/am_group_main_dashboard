@@ -80,7 +80,7 @@ export async function POST(
     // The template now lives in lib/approvals/decision-emails.ts alongside the send-back / reject /
     // hold messages, so the one-off resend and this route cannot say different things.
     if (['md', 'ceo'].includes(appUser.role)) {
-      sendMdRemarkEmail({
+      await sendMdRemarkEmail({
         id: requestRow.id,
         name: requestRow.name,
         email: requestRow.email,
