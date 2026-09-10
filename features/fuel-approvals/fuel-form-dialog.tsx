@@ -97,6 +97,14 @@ async function compressImageFile(file: File, maxDim = 1600, quality = 0.8): Prom
   })
 }
 
+function formatDateForInput(val?: string | null): string {
+  if (!val) return ''
+  const str = String(val).trim()
+  if (str.includes('T')) return str.split('T')[0]
+  if (str.length >= 10) return str.slice(0, 10)
+  return str
+}
+
 export function FuelFormDialog({
   open,
   onOpenChange,
@@ -127,6 +135,12 @@ export function FuelFormDialog({
     ltrs?: string | null
     requestNumber?: string
   } | null>(null)
+  const [userManuallyEditedLastFuel, setUserManuallyEditedLastFuel] = useState(false)
+  const userManuallyEditedRef = useRef(false)
+  const [userManuallyEditedVin, setUserManuallyEditedVin] = useState(false)
+  const userManuallyEditedVinRef = useRef(false)
+  const [autoDetectedVin, setAutoDetectedVin] = useState<string | null>(null)
+  const lastFetchedQueryRef = useRef<string>('')
 
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -140,10 +154,15 @@ export function FuelFormDialog({
       setVehRegNo(initialData.vehRegNo || '')
       setIsCustomVehicle(!PRECONFIGURED_VEHICLES.includes(initialData.vehRegNo as any))
       setVinNo(initialData.vinNo || '')
-      setLastFuelFilledDate(initialData.lastFuelFilledDate || '')
+      setUserManuallyEditedVin(Boolean(initialData.vinNo))
+      userManuallyEditedVinRef.current = Boolean(initialData.vinNo)
+      setAutoDetectedVin(null)
+      setLastFuelFilledDate(formatDateForInput(initialData.lastFuelFilledDate))
+      setUserManuallyEditedLastFuel(Boolean(initialData.lastFuelFilledDate))
+      userManuallyEditedRef.current = Boolean(initialData.lastFuelFilledDate)
       setFuelType((initialData.fuelType as FuelType) || 'PETROL')
       setCurrentKmReading(initialData.currentKmReading || '')
-      setFuelFilledDate(initialData.fuelFilledDate || new Date().toISOString().slice(0, 10))
+      setFuelFilledDate(formatDateForInput(initialData.fuelFilledDate) || new Date().toISOString().slice(0, 10))
       setFuelFilledLtrs(String(initialData.fuelFilledLtrs || ''))
       setRemarks(initialData.remarks || '')
 
@@ -155,6 +174,7 @@ export function FuelFormDialog({
         }))
       )
       setLastFuelAutoDetected(null)
+      lastFetchedQueryRef.current = ''
     } else if (open) {
       resetForm()
     }
@@ -166,7 +186,12 @@ export function FuelFormDialog({
     setVehRegNo('')
     setIsCustomVehicle(false)
     setVinNo('')
+    setUserManuallyEditedVin(false)
+    userManuallyEditedVinRef.current = false
+    setAutoDetectedVin(null)
     setLastFuelFilledDate('')
+    setUserManuallyEditedLastFuel(false)
+    userManuallyEditedRef.current = false
     setFuelType('PETROL')
     setCurrentKmReading('')
     setFuelFilledDate(new Date().toISOString().slice(0, 10))
@@ -174,9 +199,10 @@ export function FuelFormDialog({
     setSlips([])
     setRemarks('')
     setLastFuelAutoDetected(null)
+    lastFetchedQueryRef.current = ''
   }
 
-  // Auto-check last fuel date when vehicle / VIN changes
+  // Auto-check last fuel date and VIN when vehicle changes (or VIN changes when no vehicle set)
   useEffect(() => {
     if (!open || isEditing) return
     const vehicleQuery = vehRegNo.trim()
@@ -184,6 +210,17 @@ export function FuelFormDialog({
 
     if (!vehicleQuery && !vinQuery) {
       setLastFuelAutoDetected(null)
+      setAutoDetectedVin(null)
+      lastFetchedQueryRef.current = ''
+      return
+    }
+
+    // Lookup is keyed primarily on vehicleQuery if available, else vinQuery
+    const queryKey = vehicleQuery
+      ? `veh:${vehicleQuery.toLowerCase()}`
+      : `vin:${vinQuery.toLowerCase()}`
+
+    if (queryKey === lastFetchedQueryRef.current) {
       return
     }
 
@@ -192,26 +229,40 @@ export function FuelFormDialog({
       try {
         setCheckingLastFuel(true)
         const params = new URLSearchParams()
-        if (vehicleQuery) params.set('vehicle', vehicleQuery)
-        if (vinQuery) params.set('vin', vinQuery)
+        if (vehicleQuery) {
+          params.set('vehicle', vehicleQuery)
+        } else if (vinQuery) {
+          params.set('vin', vinQuery)
+        }
 
         const res = await fetch(`/api/fuel-approvals/last-fuel?${params.toString()}`)
         if (!res.ok) return
         const data = await res.json()
 
-        if (isMounted && data?.lastFuel) {
-          const lf = data.lastFuel
-          if (lf.fuelFilledDate) {
-            setLastFuelFilledDate(lf.fuelFilledDate)
-            setLastFuelAutoDetected({
-              date: lf.fuelFilledDate,
-              ltrs: lf.fuelFilledLtrs,
-              requestNumber: lf.requestNumber,
-            })
-          }
-          // Optionally backfill VIN if user hasn't typed one
-          if (!vinNo && lf.vinNo) {
-            setVinNo(lf.vinNo)
+        if (isMounted) {
+          lastFetchedQueryRef.current = queryKey
+          if (data?.lastFuel) {
+            const lf = data.lastFuel
+            const detectedDate = formatDateForInput(lf.fuelFilledDate)
+            if (detectedDate) {
+              setLastFuelAutoDetected({
+                date: detectedDate,
+                ltrs: lf.fuelFilledLtrs,
+                requestNumber: lf.requestNumber,
+              })
+              // Only auto-populate date if user has not manually edited/customized it
+              if (!userManuallyEditedRef.current) {
+                setLastFuelFilledDate(detectedDate)
+              }
+            }
+            // If VIN is detected from historical record
+            if (lf.vinNo) {
+              setAutoDetectedVin(lf.vinNo)
+              // Only auto-populate VIN if user has NOT manually edited it
+              if (!userManuallyEditedVinRef.current) {
+                setVinNo(lf.vinNo)
+              }
+            }
           }
         }
       } catch (err) {
@@ -225,16 +276,30 @@ export function FuelFormDialog({
       isMounted = false
       clearTimeout(timer)
     }
-  }, [vehRegNo, vinNo, open, isEditing])
+  }, [vehRegNo, !vehRegNo ? vinNo : '', open, isEditing])
 
   const handleVehicleSelect = (value: string) => {
     if (value === '__custom__') {
       setIsCustomVehicle(true)
       setVehRegNo('')
+      userManuallyEditedRef.current = false
+      setUserManuallyEditedLastFuel(false)
+      userManuallyEditedVinRef.current = false
+      setUserManuallyEditedVin(false)
+      setAutoDetectedVin(null)
+      setLastFuelAutoDetected(null)
+      lastFetchedQueryRef.current = ''
       return
     }
     setIsCustomVehicle(false)
     setVehRegNo(value)
+    userManuallyEditedRef.current = false
+    setUserManuallyEditedLastFuel(false)
+    userManuallyEditedVinRef.current = false
+    setUserManuallyEditedVin(false)
+    setAutoDetectedVin(null)
+    setLastFuelAutoDetected(null)
+    lastFetchedQueryRef.current = ''
 
     const detected = detectFuelType(value)
     if (detected) {
@@ -357,10 +422,10 @@ export function FuelFormDialog({
         fuelRequiredFor,
         vehRegNo: vehRegNo.trim(),
         vinNo: vinNo.trim(),
-        lastFuelFilledDate: lastFuelFilledDate || null,
+        lastFuelFilledDate: lastFuelFilledDate ? formatDateForInput(lastFuelFilledDate) : null,
         fuelType,
         currentKmReading: currentKmReading.trim() || null,
-        fuelFilledDate,
+        fuelFilledDate: formatDateForInput(fuelFilledDate),
         fuelFilledLtrs: ltrsNum,
         fuelSlipUrl,
         remarks: remarks.trim() || null,
@@ -508,17 +573,60 @@ export function FuelFormDialog({
           {/* Row 3: VIN & Fuel Type */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                VIN / Serial No. <span className="text-rose-500">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  VIN / Serial No. <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  {vinNo && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        userManuallyEditedVinRef.current = true
+                        setUserManuallyEditedVin(true)
+                        setVinNo('')
+                      }}
+                      className="text-[11px] text-slate-400 hover:text-rose-600 font-medium cursor-pointer"
+                      title="Clear VIN"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <span className="text-[11px] text-slate-400 font-normal">chassis / serial</span>
+                </div>
+              </div>
               <Input
                 type="text"
                 placeholder="e.g. 672868"
                 value={vinNo}
-                onChange={(e) => setVinNo(e.target.value)}
-                className="h-10 text-xs font-mono rounded-xl"
+                onChange={(e) => {
+                  userManuallyEditedVinRef.current = true
+                  setUserManuallyEditedVin(true)
+                  setVinNo(e.target.value)
+                }}
+                className="h-10 text-xs font-mono rounded-xl uppercase"
                 required
               />
+              {autoDetectedVin && (
+                <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-teal-700 dark:text-teal-400 font-medium">
+                  <span className="truncate">
+                    Auto-detected VIN: <span className="font-mono">{autoDetectedVin}</span>
+                  </span>
+                  {vinNo !== autoDetectedVin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        userManuallyEditedVinRef.current = false
+                        setUserManuallyEditedVin(false)
+                        setVinNo(autoDetectedVin)
+                      }}
+                      className="text-[11px] text-teal-700 dark:text-teal-400 hover:underline font-semibold shrink-0 cursor-pointer"
+                    >
+                      Reset to detected
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -576,24 +684,56 @@ export function FuelFormDialog({
                     </span>
                   )}
                 </label>
-                <span className="text-[11px] text-slate-400 font-normal">optional</span>
+                <div className="flex items-center gap-2">
+                  {lastFuelFilledDate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        userManuallyEditedRef.current = true
+                        setUserManuallyEditedLastFuel(true)
+                        setLastFuelFilledDate('')
+                      }}
+                      className="text-[11px] text-slate-400 hover:text-rose-600 font-medium cursor-pointer"
+                      title="Clear last fuel filled date"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <span className="text-[11px] text-slate-400 font-normal">optional</span>
+                </div>
               </div>
               <Input
                 type="date"
-                value={lastFuelFilledDate}
+                value={formatDateForInput(lastFuelFilledDate)}
                 onChange={(e) => {
+                  userManuallyEditedRef.current = true
+                  setUserManuallyEditedLastFuel(true)
                   setLastFuelFilledDate(e.target.value)
-                  setLastFuelAutoDetected(null)
                 }}
                 className="h-10 text-xs rounded-xl"
               />
               {lastFuelAutoDetected && (
-                <div className="mt-1 flex items-center gap-1 text-[11px] text-teal-700 dark:text-teal-400 font-medium">
-                  <Sparkles className="w-3 h-3 shrink-0" />
-                  <span>
-                    Auto-detected past record: {lastFuelAutoDetected.date}
-                    {lastFuelAutoDetected.ltrs ? ` (${lastFuelAutoDetected.ltrs} Ltrs)` : ''}
-                  </span>
+                <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-teal-700 dark:text-teal-400 font-medium">
+                  <div className="flex items-center gap-1 min-w-0 truncate">
+                    <Sparkles className="w-3 h-3 shrink-0" />
+                    <span className="truncate">
+                      Auto-detected: {lastFuelAutoDetected.date}
+                      {lastFuelAutoDetected.ltrs ? ` (${lastFuelAutoDetected.ltrs} Ltrs)` : ''}
+                    </span>
+                  </div>
+                  {lastFuelFilledDate !== lastFuelAutoDetected.date && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        userManuallyEditedRef.current = false
+                        setUserManuallyEditedLastFuel(false)
+                        setLastFuelFilledDate(lastFuelAutoDetected.date)
+                      }}
+                      className="text-[11px] text-teal-700 dark:text-teal-400 hover:underline font-semibold shrink-0 cursor-pointer"
+                    >
+                      Reset to detected
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -602,12 +742,23 @@ export function FuelFormDialog({
           {/* Row 5: Fuel Filled Date & Liters Filled */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Fuel Filled Date <span className="text-rose-500">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Fuel Filled Date <span className="text-rose-500">*</span>
+                </label>
+                {fuelFilledDate !== new Date().toISOString().slice(0, 10) && (
+                  <button
+                    type="button"
+                    onClick={() => setFuelFilledDate(new Date().toISOString().slice(0, 10))}
+                    className="text-[11px] text-teal-700 dark:text-teal-400 hover:underline font-medium cursor-pointer"
+                  >
+                    Today
+                  </button>
+                )}
+              </div>
               <Input
                 type="date"
-                value={fuelFilledDate}
+                value={formatDateForInput(fuelFilledDate)}
                 onChange={(e) => setFuelFilledDate(e.target.value)}
                 className="h-10 text-xs rounded-xl"
                 required

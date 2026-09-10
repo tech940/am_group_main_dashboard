@@ -1477,7 +1477,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                     <p className="text-amber-700 mt-0.5">
                       Reason: {selectedRecord.sendBackReason || 'Please review and update the details.'}
                     </p>
-                    {selectedRecord.submittedById === currentUser.id && (
+                    {(selectedRecord.submittedById === currentUser.id || isDeveloper) && (
                       <Button
                         size="sm"
                         onClick={() => {

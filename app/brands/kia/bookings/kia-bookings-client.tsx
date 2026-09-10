@@ -130,6 +130,8 @@ import { getIndiaYmd } from '@/lib/date-time'
 // One list for the form and the API — see lib/kia/discount-chain.ts.
 import { DISCOUNT_TYPES } from '@/lib/kia/discount-chain'
 import { canRequestDiscount } from '@/lib/kia/discount-chain'
+// What counts as an MD remark — shared with the server count and the KPI SQL.
+import { isKiaRemarkActivityType } from '@/lib/kia/md-remarks'
 
 /*
  * The default range is the current INDIAN month.
@@ -6418,6 +6420,16 @@ function BookingDrawer({
 
           // 3. From activity logs
           for (const act of ((activities || []) as any[])) {
+            /*
+             * ⚠️ A system event is never a remark, whoever triggered it. This loop decided by the
+             * actor's ROLE, so the audit event "Proforma updated and reset to PENDING by … (MD)"
+             * appeared on a customer's booking as an MD remark the first time an MD used the new
+             * post-approval edit, and had to be deleted from the database by hand. The same rule
+             * lives in lib/kia/md-remarks.ts and is used by the server count and the KPI, so the
+             * panel and the "MD Remarks" filter cannot disagree. `act.type` is the activity type
+             * (see activityPayload in app/api/brands/kia/bookings/[id]/route.ts).
+             */
+            if (!isKiaRemarkActivityType(act.type)) continue
             const text = String(act.description || act.message || act.title || '').trim()
             if (!text || text.length < 3) continue
             if (isMdRole(act.actorRole, act.actorName) || /\[MD/i.test(text) || /MD remark/i.test(text) || /MD:/i.test(text)) {

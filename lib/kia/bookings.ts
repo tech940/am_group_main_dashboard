@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm'
+import { isKiaRemarkActivityType, KIA_REMARK_ACTIVITY_TYPES_SQL } from '@/lib/kia/md-remarks'
 import { KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE } from '@/lib/kia/stock-local-status'
 import type { SQL } from 'drizzle-orm'
 import { db } from '@/lib/db'
@@ -1174,9 +1175,13 @@ export async function getKiaBookingsList(input: BookingListInput) {
                 SELECT 1 FROM kia_booking_activity act
                 WHERE act.booking_id = kb.id
                 AND (
-                  act.description ILIKE '%[MD%' OR act.description ILIKE '%MD remark%' OR act.description ILIKE '%MD:%' OR act.title ILIKE '%[MD%' OR act.title ILIKE '%MD remark%'
+                  -- ⚠️ Remark-type rows only, in BOTH branches — see lib/kia/md-remarks.ts.
+                  (act.activity_type IN (${sql.raw(KIA_REMARK_ACTIVITY_TYPES_SQL)}) AND (
+                    act.description ILIKE '%[MD%' OR act.description ILIKE '%MD remark%' OR act.description ILIKE '%MD:%' OR act.title ILIKE '%[MD%' OR act.title ILIKE '%MD remark%'
+                  ))
                   OR (
                     (act.actor_role ILIKE '%md%' OR act.actor_role ILIKE '%management%' OR act.actor_role ILIKE '%developer%' OR act.actor_role ILIKE '%ceo%')
+                    AND act.activity_type IN (${sql.raw(KIA_REMARK_ACTIVITY_TYPES_SQL)})
                     AND act.title NOT ILIKE 'follow-up%'
                     AND act.title NOT ILIKE 'booking%'
                     AND act.title NOT ILIKE 'status%'
@@ -1291,6 +1296,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
       const actRows = await db
         .select({
           bookingId: kiaBookingActivity.bookingId,
+          activityType: kiaBookingActivity.activityType,
           description: kiaBookingActivity.description,
           title: kiaBookingActivity.title,
           actorRole: kiaBookingActivity.actorRole,
@@ -1332,6 +1338,9 @@ export async function getKiaBookingsList(input: BookingListInput) {
 
         // 3. Check activity logs
         for (const act of bActs) {
+          // ⚠️ A system event is never a remark, whoever triggered it. See lib/kia/md-remarks.ts —
+          // role-sniffing here filed "Proforma Edited by MD" and PII-access audits as MD remarks.
+          if (!isKiaRemarkActivityType(act.activityType)) continue
           const textStr = (act.description || act.title || '').trim()
           if (textStr && textStr.length > 3) {
             const roleLower = (act.actorRole || '').toLowerCase()
