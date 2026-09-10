@@ -148,8 +148,8 @@ export const SHOWROOM_CATEGORIES: readonly ShowroomCategoryConfig[] = [
   },
   {
     key: 'bathroom',
-    label: 'Bathroom',
-    shortLabel: 'Bathroom',
+    label: 'Washroom',
+    shortLabel: 'Washroom',
     description: 'Customer & staff washroom cleanliness',
     slotCount: 2,
     badgeClass: 'bg-teal-50 text-teal-700 border-teal-200',

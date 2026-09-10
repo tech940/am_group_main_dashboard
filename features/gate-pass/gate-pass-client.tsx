@@ -23,11 +23,25 @@ import {
   User,
   ShieldCheck,
   Mail,
+  Filter,
+  Calendar,
+  MapPin,
+  RotateCcw,
+  Compass,
+  UserCheck,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -39,6 +53,7 @@ import { toast } from '@/hooks/use-toast'
 import { formatIndiaDateTime } from '@/lib/date-time'
 import { getGatePassStatusInfo } from '@/lib/gate-pass/status'
 import { isGatePassApproverRole } from '@/lib/gate-pass/access-shared'
+import { KIA_BRANCH_DEALERS } from '@/lib/kia/dealer-branch'
 import { GatePassFormDialog } from './gate-pass-form-dialog'
 import { GatePassDetail } from './gate-pass-detail'
 import { GateOutDialog } from './gate-out-dialog'
@@ -46,6 +61,107 @@ import { GateInDialog } from './gate-in-dialog'
 import { FleetPanel } from './fleet-panel'
 import { type GatePassSummary } from '@/lib/gate-pass/metrics'
 import { cn } from '@/lib/utils'
+
+const FILTER_PURPOSES = [
+  'Customer test drive',
+  'Customer home demo',
+  'Showroom visit',
+  'Stockyard visit',
+  'Workshop visit',
+  'Sales event or rally',
+  'Inter-branch movement',
+  'Service/Maintenance',
+  'Internal Use',
+  'Other',
+] as const
+
+function formatISTDate(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
+}
+
+function getCarColorDot(colorStr?: string | null): string {
+  if (!colorStr) return '#94a3b8'
+  const c = colorStr.toLowerCase()
+  if (c.includes('red')) return '#ef4444'
+  if (c.includes('blue')) return '#2563eb'
+  if (c.includes('white') || c.includes('pearl')) return '#f8fafc'
+  if (c.includes('black')) return '#0f172a'
+  if (c.includes('grey') || c.includes('gray')) return '#64748b'
+  if (c.includes('silver')) return '#cbd5e1'
+  if (c.includes('green')) return '#10b981'
+  if (c.includes('yellow') || c.includes('gold')) return '#eab308'
+  if (c.includes('orange')) return '#f97316'
+  if (c.includes('brown')) return '#92400e'
+  return '#94a3b8'
+}
+
+function getPurposeBadgeStyle(purpose?: string | null): { bg: string; text: string; border: string; dot: string } {
+  const p = (purpose || '').toLowerCase()
+  if (p.includes('test drive') || p.includes('home demo') || p.includes('customer')) {
+    return {
+      bg: 'bg-emerald-50 dark:bg-emerald-950/40',
+      text: 'text-emerald-700 dark:text-emerald-300',
+      border: 'border-emerald-200 dark:border-emerald-800',
+      dot: 'bg-emerald-500',
+    }
+  }
+  if (p.includes('workshop') || p.includes('service') || p.includes('maintenance')) {
+    return {
+      bg: 'bg-sky-50 dark:bg-sky-950/40',
+      text: 'text-sky-700 dark:text-sky-300',
+      border: 'border-sky-200 dark:border-sky-800',
+      dot: 'bg-sky-500',
+    }
+  }
+  if (p.includes('event') || p.includes('display') || p.includes('showroom')) {
+    return {
+      bg: 'bg-amber-50 dark:bg-amber-950/40',
+      text: 'text-amber-700 dark:text-amber-300',
+      border: 'border-amber-200 dark:border-amber-800',
+      dot: 'bg-amber-500',
+    }
+  }
+  if (p.includes('inter-branch') || p.includes('stockyard') || p.includes('transfer')) {
+    return {
+      bg: 'bg-indigo-50 dark:bg-indigo-950/40',
+      text: 'text-indigo-700 dark:text-indigo-300',
+      border: 'border-indigo-200 dark:border-indigo-800',
+      dot: 'bg-indigo-500',
+    }
+  }
+  if (p.includes('sir') || p.includes('vip') || p.includes('payment') || p.includes('bank')) {
+    return {
+      bg: 'bg-purple-50 dark:bg-purple-950/40',
+      text: 'text-purple-700 dark:text-purple-300',
+      border: 'border-purple-200 dark:border-purple-800',
+      dot: 'bg-purple-500',
+    }
+  }
+  return {
+    bg: 'bg-slate-100 dark:bg-slate-800',
+    text: 'text-slate-700 dark:text-slate-300',
+    border: 'border-slate-200 dark:border-slate-700',
+    dot: 'bg-slate-400',
+  }
+}
+
+function getDriverInitials(name?: string | null): string {
+  if (!name) return 'DR'
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+  return name.slice(0, 2).toUpperCase()
+}
+
+function isTripOverdue(dateStr?: string | null): boolean {
+  if (!dateStr) return false
+  const d = new Date(dateStr)
+  return !Number.isNaN(d.getTime()) && d.getTime() < Date.now()
+}
 
 export type GatePassCurrentUser = {
   id: string
@@ -163,7 +279,14 @@ function StatusPill({ status }: { status: string }) {
 
 export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUser }) {
   const queryClient = useQueryClient()
-  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('awaiting')
+  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('all')
+  const [selectedDealer, setSelectedDealer] = useState<string>('all')
+  const [selectedPurpose, setSelectedPurpose] = useState<string>('all')
+  const [dateFilter, setDateFilter] = useState<string>('all')
+  const [customStartDate, setCustomStartDate] = useState<string>('')
+  const [customEndDate, setCustomEndDate] = useState<string>('')
+  const [mineOnly, setMineOnly] = useState<boolean>(false)
+  const [awaitingMeOnly, setAwaitingMeOnly] = useState<boolean>(false)
   const [search, setSearch] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [decisionFor, setDecisionFor] = useState<PassRow | null>(null)
@@ -190,17 +313,90 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
   const canApprove = isGatePassApproverRole(currentUser.role)
   const statusFilter = TABS.find((t) => t.key === tab)?.status ?? ''
 
+  // Calculate IST Date bounds
+  const { startDate, endDate } = useMemo(() => {
+    const now = new Date()
+    if (dateFilter === 'today') {
+      const todayStr = formatISTDate(now)
+      return { startDate: todayStr, endDate: todayStr }
+    }
+    if (dateFilter === 'yesterday') {
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+      return { startDate: formatISTDate(yesterday), endDate: formatISTDate(yesterday) }
+    }
+    if (dateFilter === 'last7days') {
+      const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return { startDate: formatISTDate(start), endDate: formatISTDate(now) }
+    }
+    if (dateFilter === 'last30days') {
+      const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+      return { startDate: formatISTDate(start), endDate: formatISTDate(now) }
+    }
+    if (dateFilter === 'custom') {
+      return { startDate: customStartDate || undefined, endDate: customEndDate || undefined }
+    }
+    return { startDate: undefined, endDate: undefined }
+  }, [dateFilter, customStartDate, customEndDate])
+
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['gate-passes', tab, search],
+    queryKey: [
+      'gate-passes',
+      tab,
+      search,
+      selectedDealer,
+      selectedPurpose,
+      startDate,
+      endDate,
+      mineOnly,
+      awaitingMeOnly,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (statusFilter) params.set('status', statusFilter)
       if (search.trim()) params.set('search', search.trim())
+      if (selectedDealer && selectedDealer !== 'all') params.set('dealerCode', selectedDealer)
+      if (selectedPurpose && selectedPurpose !== 'all') params.set('purpose', selectedPurpose)
+      if (startDate) params.set('startDate', startDate)
+      if (endDate) params.set('endDate', endDate)
+      if (mineOnly) params.set('mine', 'true')
+      if (awaitingMeOnly) params.set('awaitingMe', 'true')
       const res = await fetch(`/api/gate-pass?${params.toString()}`, { cache: 'no-store' })
       if (!res.ok) throw new Error('Failed to load gate passes.')
       return res.json() as Promise<{ rows?: PassRow[]; passes?: PassRow[]; total: number }>
     },
   })
+
+  const hasActiveFilters =
+    selectedDealer !== 'all' ||
+    selectedPurpose !== 'all' ||
+    dateFilter !== 'all' ||
+    mineOnly ||
+    awaitingMeOnly ||
+    Boolean(search.trim())
+
+  const resetFilters = () => {
+    setSelectedDealer('all')
+    setSelectedPurpose('all')
+    setDateFilter('all')
+    setCustomStartDate('')
+    setCustomEndDate('')
+    setMineOnly(false)
+    setAwaitingMeOnly(false)
+    setSearch('')
+  }
+
+  const exportUrl = useMemo(() => {
+    const params = new URLSearchParams()
+    if (statusFilter) params.set('status', statusFilter)
+    if (selectedDealer && selectedDealer !== 'all') params.set('dealerCode', selectedDealer)
+    if (selectedPurpose && selectedPurpose !== 'all') params.set('purpose', selectedPurpose)
+    if (startDate) params.set('startDate', startDate)
+    if (endDate) params.set('endDate', endDate)
+    if (mineOnly) params.set('mine', 'true')
+    if (awaitingMeOnly) params.set('awaitingMe', 'true')
+    if (search.trim()) params.set('search', search.trim())
+    return `/api/gate-pass/export?${params.toString()}`
+  }, [statusFilter, selectedDealer, selectedPurpose, startDate, endDate, mineOnly, awaitingMeOnly, search])
 
   const rawPasses = data?.rows ?? data?.passes ?? []
 
@@ -468,7 +664,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
               asChild
               className="h-9 px-3 rounded-xl text-xs font-semibold border-slate-200 dark:border-slate-800"
             >
-              <a href={`/api/gate-pass/export?status=${encodeURIComponent(statusFilter)}`}>
+              <a href={exportUrl}>
                 <Download className="mr-1.5 h-3.5 w-3.5" /> Export
               </a>
             </Button>
@@ -687,6 +883,140 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
             </div>
           </div>
 
+          {/* Secondary Filter Controls Strip */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Branch / Dealership Filter */}
+              <div className="flex items-center gap-1.5">
+                <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400" /> Branch:
+                </Label>
+                <Select value={selectedDealer} onValueChange={setSelectedDealer}>
+                  <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
+                    <SelectValue placeholder="All Branches" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">All Branches</SelectItem>
+                    {KIA_BRANCH_DEALERS.map((b) => (
+                      <SelectItem key={b.dealerCode} value={b.dealerCode} className="text-xs">
+                        {b.label} ({b.dealerCode})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Purpose Filter */}
+              <div className="flex items-center gap-1.5">
+                <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                  <Compass className="w-3.5 h-3.5 text-slate-400" /> Purpose:
+                </Label>
+                <Select value={selectedPurpose} onValueChange={setSelectedPurpose}>
+                  <SelectTrigger className="h-8.5 w-44 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
+                    <SelectValue placeholder="All Purposes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">All Purposes</SelectItem>
+                    {FILTER_PURPOSES.map((p) => (
+                      <SelectItem key={p} value={p} className="text-xs">
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Date Filter */}
+              <div className="flex items-center gap-1.5">
+                <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" /> Date:
+                </Label>
+                <Select value={dateFilter} onValueChange={setDateFilter}>
+                  <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
+                    <SelectValue placeholder="All Time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">All Time</SelectItem>
+                    <SelectItem value="today" className="text-xs">Today</SelectItem>
+                    <SelectItem value="yesterday" className="text-xs">Yesterday</SelectItem>
+                    <SelectItem value="last7days" className="text-xs">Last 7 Days</SelectItem>
+                    <SelectItem value="last30days" className="text-xs">Last 30 Days</SelectItem>
+                    <SelectItem value="custom" className="text-xs">Custom Range</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Custom Date Pickers */}
+              {dateFilter === 'custom' && (
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
+                  />
+                  <span className="text-xs text-slate-400">to</span>
+                  <Input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
+                  />
+                </div>
+              )}
+
+              {/* Quick Filter: My Passes */}
+              <button
+                type="button"
+                onClick={() => setMineOnly((v) => !v)}
+                className={cn(
+                  'h-8.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
+                  mineOnly
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                )}
+              >
+                <User className="w-3 h-3" />
+                My Passes
+              </button>
+
+              {/* Quick Filter: Awaiting Me (if approver) */}
+              {canApprove && (
+                <button
+                  type="button"
+                  onClick={() => setAwaitingMeOnly((v) => !v)}
+                  className={cn(
+                    'h-8.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
+                    awaitingMeOnly
+                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                      : 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-100/80'
+                  )}
+                >
+                  <UserCheck className="w-3 h-3" />
+                  Needs My Approval
+                </button>
+              )}
+
+              {/* Clear / Reset Filters button */}
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="h-8.5 px-2.5 rounded-lg text-xs font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                  title="Reset all filters"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reset
+                </button>
+              )}
+            </div>
+
+            {/* Active results count indicator */}
+            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              Showing <strong>{rows.length}</strong> {rows.length === 1 ? 'pass' : 'passes'}
+            </div>
+          </div>
+
           {/* Clean Modern Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -723,59 +1053,98 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => setDetailId(row.id)}
-                      onMouseEnter={() => prefetchPassDetail(row.id)}
-                      onTouchStart={() => prefetchPassDetail(row.id)}
-                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
-                    >
-                      {/* Pass No & Requester */}
-                      <td className="px-4 py-3.5">
-                        <div className="font-bold text-slate-900 dark:text-slate-100 font-mono tracking-tight">
-                          {row.passNo}
-                        </div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                          <span>by</span>
-                          <span className="font-medium text-slate-600 dark:text-slate-300">{row.requestedByName}</span>
-                        </div>
-                      </td>
+                  rows.map((row) => {
+                    const purposeStyle = getPurposeBadgeStyle(row.purpose)
+                    const isOverdueNow = row.status === 'out' && isTripOverdue(row.expectedReturnAt)
 
-                      {/* Vehicle Details */}
-                      <td className="px-4 py-3.5">
-                        <div className="font-semibold text-slate-900 dark:text-slate-100 font-mono text-[13px]">
-                          {row.registrationNumber || 'No Plate'}
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          {[row.model, row.color].filter(Boolean).join(' · ') || '—'}
-                        </div>
-                      </td>
-
-                      {/* Driver */}
-                      <td className="px-4 py-3.5">
-                        <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                          <User className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span>{row.driverName}</span>
-                        </div>
-                      </td>
-
-                      {/* Purpose */}
-                      <td className="px-4 py-3.5 max-w-[200px]">
-                        <div className="font-medium text-slate-700 dark:text-slate-300 truncate" title={row.purpose}>
-                          {row.purpose}
-                        </div>
-                        {row.purposeNote && (
-                          <div className="text-[11px] text-slate-400 truncate mt-0.5" title={row.purposeNote}>
-                            {row.purposeNote}
+                    return (
+                      <tr
+                        key={row.id}
+                        onClick={() => setDetailId(row.id)}
+                        onMouseEnter={() => prefetchPassDetail(row.id)}
+                        onTouchStart={() => prefetchPassDetail(row.id)}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
+                      >
+                        {/* Pass No & Requester */}
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800 px-2 py-0.5 rounded-md font-mono text-xs tracking-tight shadow-2xs">
+                              {row.passNo}
+                            </span>
+                            <span
+                              className={cn(
+                                'text-[10px] font-bold px-1.5 py-0.2 rounded border uppercase tracking-wider',
+                                row.dealerCode === 'JK402'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+                                  : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+                              )}
+                            >
+                              {row.dealerCode === 'JK402' ? 'Jammu' : row.dealerCode === 'JK501' ? 'Udhampur' : row.dealerCode}
+                            </span>
                           </div>
-                        )}
-                      </td>
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-1">
+                            <span>by</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">{row.requestedByName}</span>
+                          </div>
+                        </td>
 
-                      {/* Status */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <StatusPill status={row.status} />
-                      </td>
+                        {/* Vehicle Details */}
+                        <td className="px-4 py-3.5">
+                          <div className="inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 px-2 py-0.5 rounded-md font-mono font-bold text-xs tracking-wider shadow-2xs">
+                            <Car className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span>{row.registrationNumber || 'No Plate'}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-1.5">
+                            <span
+                              className="w-2 h-2 rounded-full border border-slate-300 shrink-0 shadow-2xs"
+                              style={{ backgroundColor: getCarColorDot(row.color) }}
+                              title={`Color: ${row.color || 'Standard'}`}
+                            />
+                            <span className="font-medium">{[row.model, row.color].filter(Boolean).join(' · ') || '—'}</span>
+                          </div>
+                        </td>
+
+                        {/* Driver */}
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <div className="h-6 w-6 rounded-full bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 font-bold text-[10px] flex items-center justify-center shrink-0 border border-teal-200 dark:border-teal-800 shadow-2xs">
+                              {getDriverInitials(row.driverName)}
+                            </div>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">{row.driverName}</span>
+                          </div>
+                        </td>
+
+                        {/* Purpose */}
+                        <td className="px-4 py-3.5 max-w-[210px]">
+                          <div className="space-y-1">
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border shadow-2xs',
+                                purposeStyle.bg,
+                                purposeStyle.text,
+                                purposeStyle.border
+                              )}
+                            >
+                              <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', purposeStyle.dot)} />
+                              {row.purpose}
+                            </span>
+                            {row.purposeNote && (
+                              <div className="text-[11px] text-slate-400 dark:text-slate-500 truncate max-w-[190px]" title={row.purposeNote}>
+                                {row.purposeNote}
+                              </div>
+                            )}
+                            {isOverdueNow && (
+                              <div className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 px-1.5 py-0.2 rounded">
+                                <Clock className="w-2.5 h-2.5" /> Overdue Return
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <StatusPill status={row.status} />
+                        </td>
 
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -889,9 +1258,10 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
+                  )
+                })
+              )}
+            </tbody>
             </table>
           </div>
 

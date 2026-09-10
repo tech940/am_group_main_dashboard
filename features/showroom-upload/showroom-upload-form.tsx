@@ -15,7 +15,7 @@ import {
   AlertTriangle,
   Tv,
   Car,
-  Sparkles,
+  Droplets,
   Check,
   Briefcase,
   Wrench,
@@ -92,20 +92,20 @@ const SLOT_DEFINITIONS = [
   {
     key: 'bathroom_1',
     category: 'bathroom' as ShowroomCategoryKey,
-    categoryLabel: 'Bathroom',
+    categoryLabel: 'Washroom',
     slotNumber: 1,
-    title: 'Bathroom #1',
+    title: 'Washroom #1',
     subtitle: 'Customer washroom cleanliness',
-    icon: Sparkles,
+    icon: Droplets,
   },
   {
     key: 'bathroom_2',
     category: 'bathroom' as ShowroomCategoryKey,
-    categoryLabel: 'Bathroom',
+    categoryLabel: 'Washroom',
     slotNumber: 2,
-    title: 'Bathroom #2',
+    title: 'Washroom #2',
     subtitle: 'Staff / secondary washroom cleanliness',
-    icon: Sparkles,
+    icon: Droplets,
   },
 ] as const
 
@@ -237,7 +237,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     }
   }, [])
 
-  // Burn IST Watermark & Save Snapped Photo (Used for both WebRTC stream & native file capture)
+  // Burn IST Watermark & Save Snapped Photo (Universal JPEG compression: ~180KB/photo)
   const saveProcessedPhoto = useCallback(
     (canvas: HTMLCanvasElement, targetSlot: typeof SLOT_DEFINITIONS[number]) => {
       canvas.toBlob(
@@ -290,8 +290,8 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
             setActiveSlotKey(nextSequential.key)
           }
         },
-        'image/webp',
-        0.82
+        'image/jpeg',
+        0.80
       )
     },
     [slotPhotos]
@@ -389,8 +389,8 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
         return
       }
 
-      // Max 1920px width/height to keep optimal performance & quality
-      const maxDim = 1920
+      // Max 1600px width/height for optimal mobile memory & fast network transfer
+      const maxDim = 1600
       let w = img.naturalWidth || img.width
       let h = img.naturalHeight || img.height
 
@@ -468,7 +468,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     })
   }
 
-  // Submit all captured photos
+  // Submit all captured photos with auto-retry on temporary mobile connection drops
   const handleSubmit = async () => {
     const photosToUpload = Object.values(slotPhotos)
     if (photosToUpload.length === 0) {
@@ -493,8 +493,8 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
       const manifest: Array<{ category: string; slot: number }> = []
 
       photosToUpload.forEach((p, idx) => {
-        const file = new File([p.blob], `showroom_${p.category}_${p.slot}_${Date.now()}_${idx + 1}.webp`, {
-          type: 'image/webp',
+        const file = new File([p.blob], `showroom_${p.category}_${p.slot}_${Date.now()}_${idx + 1}.jpg`, {
+          type: 'image/jpeg',
         })
         formData.append('photos', file)
         manifest.push({ category: p.category, slot: p.slot })
@@ -502,10 +502,39 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
       formData.append('manifest', JSON.stringify(manifest))
 
-      const res = await fetch('/api/showroom-upload', {
-        method: 'POST',
-        body: formData,
-      })
+      // Upload with retry logic (up to 2 attempts) to guarantee resilience on mobile networks
+      let res: Response | null = null
+      let lastErr: unknown = null
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 45000)
+
+          res = await fetch('/api/showroom-upload', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+          })
+
+          clearTimeout(timeoutId)
+          if (res.ok) break
+        } catch (fetchErr) {
+          lastErr = fetchErr
+          if (attempt < 2) {
+            // Wait 1.2s before retry
+            await new Promise((resolve) => setTimeout(resolve, 1200))
+          }
+        }
+      }
+
+      if (!res) {
+        throw new Error(
+          lastErr instanceof Error
+            ? lastErr.message
+            : 'Network connection was interrupted. Please check your signal and tap Upload again.'
+        )
+      }
 
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -526,7 +555,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     } catch (err) {
       toast({
         title: 'Upload Failed',
-        description: err instanceof Error ? err.message : 'Could not upload photos.',
+        description: err instanceof Error ? err.message : 'Could not upload photos. Please try again.',
         variant: 'error',
       })
     } finally {
@@ -737,7 +766,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
               Required Photos (6 Total)
             </span>
             <span className="text-[11px] text-slate-500 font-semibold">
-              2 Vehicles · 2 TV · 2 Bathroom
+              2 Vehicles · 2 TV · 2 Washrooms
             </span>
           </div>
 

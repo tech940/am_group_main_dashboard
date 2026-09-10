@@ -149,3 +149,52 @@ export function canViewAllKiaBookings(role?: string | null) {
  * number from there would drag the database client into the browser bundle.
  */
 export const KIA_PAYMENT_SECURED_THRESHOLD = 700000
+
+/**
+ * ── Who may EDIT a proforma in place ─────────────────────────────────────────────────────────
+ *
+ * Two questions, deliberately separate, because the answers differ:
+ *
+ *   canEditKiaProforma          — may this role edit at all?
+ *   canEditApprovedKiaProforma  — may this role edit one Finance has already APPROVED?
+ *
+ * ⚠️ ONE DEFINITION, IMPORTED BY BOTH SIDES. Before this, the rule was a bare string compare
+ * written out twice — `appUser.role !== 'general_manager'` on the route and
+ * `options.currentUser.role === 'general_manager'` in the page — and neither normalised the value.
+ * That pairing is this repo's most repeated defect: a client that hides (or offers) a button the
+ * server disagrees about. A previous separation-of-duties fix here found 4 guard sites where there
+ * were 9, because the button was gated by a helper that never consulted the authorisation function.
+ *
+ * ⚠️ NOT a `kia.*` permission, per the note at the top of this file: applyBrandDefault grants every
+ * non-restricted kia.* key to every KIA user, so a permission key here would exclude nobody.
+ */
+const PROFORMA_EDIT_ROLES = ['general_manager', 'md']
+
+/**
+ * Edit an unapproved proforma. GM as before, plus the MD.
+ *
+ * ⚠️ NO admin/developer bypass — the ONE predicate in this file that does not grant one, and it is
+ * deliberate. The rule this replaces said so in as many words: "ONLY the General Manager can edit a
+ * proforma in-place — no other role, not even admins." Widening that was not asked for, and an edit
+ * rewrites a priced customer-facing document, so the exception stands.
+ */
+export function canEditKiaProforma(role?: string | null) {
+  return PROFORMA_EDIT_ROLES.includes(norm(role))
+}
+
+/**
+ * Edit a proforma Finance has ALREADY APPROVED.
+ *
+ * ⚠️ MD ONLY — owner decision, 2026-09-10. The GM keeps the pre-approval edit and is still locked
+ * out afterwards; that rule was not changed. An approved proforma is a document the customer has
+ * been sent, so re-opening it is deliberately the narrowest possible carve-out.
+ *
+ * ⚠️ Editing an approved proforma RESETS the whole chain — approvalStatus back to 'PENDING',
+ * approvedBy and linkPreview cleared — so the document must be re-approved before the customer copy
+ * is reissued. That is existing behaviour, not something this predicate chooses; it is called out
+ * here because it is the thing an MD pressing Edit will not expect.
+ */
+export function canEditApprovedKiaProforma(role?: string | null) {
+  // ⚠️ No admin/developer bypass here either — see canEditKiaProforma above. The MD alone.
+  return norm(role) === 'md'
+}

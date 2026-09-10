@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql, gte, lte } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { demoGatePasses, users } from '@/lib/db/schema'
@@ -80,6 +80,9 @@ export type CreateGatePassInput = z.infer<typeof createGatePassSchema>
 export const listGatePassesSchema = z.object({
   status: z.string().trim().optional(),
   dealerCode: z.string().trim().optional(),
+  purpose: z.string().trim().optional(),
+  startDate: z.string().trim().optional(),
+  endDate: z.string().trim().optional(),
   search: z.string().trim().max(120).optional(),
   mine: z.coerce.boolean().optional(),
   awaitingMe: z.coerce.boolean().optional(),
@@ -167,9 +170,30 @@ export async function listGatePasses(appUser: AppUser, raw: unknown) {
     const wanted = filters.status.split(',').map((s) => s.trim()).filter(Boolean)
     if (wanted.length > 0) where.push(inArray(demoGatePasses.status, wanted))
   }
-  if (filters.dealerCode) {
+  if (filters.dealerCode && filters.dealerCode !== 'all') {
     const code = normalizeKiaDealerCode(filters.dealerCode)
     if (code) where.push(eq(demoGatePasses.dealerCode, code))
+  }
+  if (filters.purpose && filters.purpose !== 'all') {
+    where.push(eq(demoGatePasses.purpose, filters.purpose))
+  }
+  if (filters.startDate) {
+    const isIsoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate.trim())
+    const start = isIsoDateOnly
+      ? new Date(`${filters.startDate.trim()}T00:00:00.000+05:30`)
+      : new Date(filters.startDate)
+    if (!Number.isNaN(start.getTime())) {
+      where.push(gte(demoGatePasses.createdAt, start))
+    }
+  }
+  if (filters.endDate) {
+    const isIsoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate.trim())
+    const end = isIsoDateOnly
+      ? new Date(`${filters.endDate.trim()}T23:59:59.999+05:30`)
+      : new Date(filters.endDate)
+    if (!Number.isNaN(end.getTime())) {
+      where.push(lte(demoGatePasses.createdAt, end))
+    }
   }
   if (filters.mine) where.push(eq(demoGatePasses.requestedBy, appUser.id))
   // "Waiting on me" is a status filter plus the role test, not a stored assignment — an approver

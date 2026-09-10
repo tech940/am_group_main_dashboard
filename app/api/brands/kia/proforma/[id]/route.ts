@@ -5,6 +5,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { kiaProformas, kiaBookings, kiaBookingActivity } from '@/lib/db/schema'
 import { canApproveKiaProformaForUser } from '@/lib/kia-proforma/access'
+import { canEditApprovedKiaProforma, canEditKiaProforma } from '@/lib/kia/workflow-access'
 import {
   kiaApprovalStage,
   kiaStageActorLabel,
@@ -47,6 +48,11 @@ const VERIFY_FIELDS = [
 
 function serialize(row: Record<string, unknown>) {
   return serializeUtcTimestampFields(row, ['entryTime', 'proformaDate', 'financeUpdatedTime', 'createdAt', 'updatedAt', 'deletedAt'])
+}
+
+/** Same normalisation lib/kia/workflow-access.ts uses — a role literal is never compared raw. */
+function norm(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
 }
 
 function text(value: unknown) {
@@ -183,17 +189,34 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       approvalStageActed = stage
       approvalDeclined = declined
     } else if (action === 'edit') {
-      // If the proforma has already been approved by Finance (final stage APPROVED), it is permanently locked against edits.
-      if (String(row.approvalStatus || '').trim().toUpperCase() === 'APPROVED') {
+      /*
+       * ⚠️ ROLE FIRST, THEN STATE — the order matters for the message the caller sees. Asking the
+       * state question first would tell a Sales Executive that the proforma is "approved and cannot
+       * be edited", when the real answer is that they may not edit any proforma at all.
+       */
+      if (!canEditKiaProforma(appUser.role)) {
         return NextResponse.json(
-          { error: 'This proforma has already been approved by Finance and cannot be edited.' },
-          { status: 400 }
+          { error: 'Only the General Manager or the MD can edit a proforma.' },
+          { status: 403 },
         )
       }
 
-      // ONLY the General Manager can edit a proforma in-place — no other role, not even admins.
-      if (appUser.role !== 'general_manager') {
-        return NextResponse.json({ error: 'Only the General Manager can edit a proforma.' }, { status: 403 })
+      /*
+       * Approved by Finance: the MD may still edit, nobody else may.
+       *
+       * ⚠️ Owner decision, 2026-09-10, and it REVERSES the previous absolute lock. The GM's rule is
+       * unchanged — still locked out once Finance has signed. Both predicates live in
+       * lib/kia/workflow-access.ts and the client imports the SAME ones, so the Edit button and this
+       * gate cannot drift apart.
+       */
+      if (
+        String(row.approvalStatus || '').trim().toUpperCase() === 'APPROVED' &&
+        !canEditApprovedKiaProforma(appUser.role)
+      ) {
+        return NextResponse.json(
+          { error: 'This proforma has already been approved by Finance. Only the MD can edit it now.' },
+          { status: 400 },
+        )
       }
       // Apply all editable fields and reset approval chain back to PENDING.
       const proformaDate = readDate(body.proformaDate)
@@ -317,18 +340,25 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         }
 
         const actor = profile.consultantName || appUser.fullName || appUser.email
+        /*
+         * ⚠️ The editor's REAL role. This said 'General Manager' unconditionally, so once the MD
+         * was allowed to edit, an MD overriding a Finance approval would have been filed on the
+         * booking timeline as a GM action — the one record of who reopened an approved document,
+         * naming the wrong person's job.
+         */
+        const editorLabel = norm(appUser.role) === 'md' ? 'MD' : 'General Manager'
         const actedBy = approvalStageActed === 'edit'
-          ? 'General Manager'
+          ? editorLabel
           : kiaStageActorLabel(approvalStageActed as ReturnType<typeof pendingStageOf>) || appUser.role
         const title = approvalStageActed === 'edit'
-          ? 'Proforma Edited by GM'
+          ? `Proforma Edited by ${editorLabel}`
           : approvalDeclined
             ? 'Proforma Declined'
             : isApproved
               ? 'Proforma Approved'
               : `Proforma ${actedBy} Approved`
         const description = approvalStageActed === 'edit'
-          ? `Proforma updated and reset to PENDING by ${actor} (General Manager)`
+          ? `Proforma updated and reset to PENDING by ${actor} (${editorLabel})`
           : approvalDeclined
             ? `Declined by ${actor} (${actedBy})`
             : isApproved

@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import { toast } from '@/hooks/use-toast'
+import { canEditApprovedKiaProforma, canEditKiaProforma } from '@/lib/kia/workflow-access'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams, useRouter } from 'next/navigation'
@@ -1746,7 +1747,8 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const [editingRow, setEditingRow] = useState<KiaProformaRow | null>(null)
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   // Only the General Manager may edit an approved proforma in-place (server enforces the same).
-  const isGmRole = options.currentUser.role === 'general_manager'
+  const canEditProforma = canEditKiaProforma(options.currentUser.role)
+  const canEditAfterApproval = canEditApprovedKiaProforma(options.currentUser.role)
   const canViewPii = canViewKiaCustomerPii(options.currentUser.role)
   const verifyStage = verifying ? pendingStageOf(verifying.approvalStatus) : 'approval'
   // Stage 1 (Sales Manager / GM): the Sales Manager sees the discount-verification checklist and
@@ -1945,17 +1947,21 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
                   Open ↗
                 </Button>
               )}
-              {isGmRole && (
+              {canEditProforma && (
                 <Button
                   variant="outline"
-                  disabled={row.approvalStatus?.toUpperCase() === 'APPROVED'}
-                  title={row.approvalStatus?.toUpperCase() === 'APPROVED' ? 'This proforma has already been approved by Finance and cannot be edited.' : 'Edit Proforma'}
+                  disabled={row.approvalStatus?.toUpperCase() === 'APPROVED' && !canEditAfterApproval}
+                  title={row.approvalStatus?.toUpperCase() === 'APPROVED'
+                    ? (canEditAfterApproval
+                        ? 'Approved by Finance. Editing reopens the approval chain — it returns to PENDING and must be approved again.'
+                        : 'This proforma has already been approved by Finance and cannot be edited.')
+                    : 'Edit Proforma'}
                   className={cn(
                     "h-8 rounded-xl border-slate-300 px-3 text-xs font-bold text-slate-600 hover:border-indigo-400 hover:text-indigo-600",
-                    row.approvalStatus?.toUpperCase() === 'APPROVED' && "opacity-40 cursor-not-allowed hover:border-slate-300 hover:text-slate-600"
+                    row.approvalStatus?.toUpperCase() === 'APPROVED' && !canEditAfterApproval && "opacity-40 cursor-not-allowed hover:border-slate-300 hover:text-slate-600"
                   )}
                   onClick={() => {
-                    if (row.approvalStatus?.toUpperCase() === 'APPROVED') {
+                    if (row.approvalStatus?.toUpperCase() === 'APPROVED' && !canEditAfterApproval) {
                       toast({
                         title: 'Editing Locked',
                         description: 'This proforma has already been approved by Finance and cannot be edited.',
@@ -2104,6 +2110,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
           {editingRow && (
             <GMEditForm
               row={editingRow}
+              canEditAfterApproval={canEditAfterApproval}
               models={options.models}
               trims={options.trims}
               banks={options.banks}
@@ -2166,6 +2173,7 @@ function ProformaDocUpload({ label, uploading, fileName, onSelect }: { label: st
 
 function GMEditForm({
   row,
+  canEditAfterApproval,
   models,
   trims,
   banks,
@@ -2175,6 +2183,12 @@ function GMEditForm({
   setIsSaving,
 }: {
   row: KiaProformaRow
+  /**
+   * ⚠️ PASSED IN, never re-derived from the role inside this component. Deriving it twice is how the
+   * button and the form end up disagreeing — the form would keep saying "permanently locked" over a
+   * Save button the parent had already enabled.
+   */
+  canEditAfterApproval: boolean
   models: string[]
   trims: { model: string; trim_description: string }[]
   banks: { bank_name: string; bank_branch: string | null }[]
@@ -2391,11 +2405,23 @@ function GMEditForm({
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--kia-text-faint)]">General Manager Edit</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--kia-text-faint)]">Edit Proforma</p>
           <DialogTitle className="mt-0.5 text-xl font-extrabold tracking-tight text-[var(--kia-text)]">Edit Proforma #{row.id.slice(0, 8).toUpperCase()}</DialogTitle>
-          {row.approvalStatus?.toUpperCase() === 'APPROVED' ? (
+          {row.approvalStatus?.toUpperCase() === 'APPROVED' && !canEditAfterApproval ? (
             <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-rose-700">
               <Lock className="h-3 w-3" /> Approved by Finance — Editing is permanently locked
+            </div>
+          ) : row.approvalStatus?.toUpperCase() === 'APPROVED' ? (
+            /*
+             * ⚠️ The MD editing an ALREADY-APPROVED proforma. The generic amber note below
+             * ("resets to PENDING") is true but badly understates this case: the customer has
+             * already been sent this document, and saving revokes the in-app link they were given
+             * (the server clears linkPreview) and re-stamps the preview as DRAFT until the whole
+             * chain signs again. Someone reopening a signed document should be told that before
+             * they type, not after they save.
+             */
+            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-rose-700">
+              <AlertTriangle className="h-3 w-3" /> Already approved — saving revokes the customer&apos;s copy and restarts the full approval chain
             </div>
           ) : (
             <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
@@ -2549,7 +2575,7 @@ function GMEditForm({
       <div className="flex justify-end gap-2">
         <Button variant="outline" className="rounded-xl" onClick={onClose}>Cancel</Button>
         <Button
-          disabled={isSaving || row.approvalStatus?.toUpperCase() === 'APPROVED'}
+          disabled={isSaving || (row.approvalStatus?.toUpperCase() === 'APPROVED' && !canEditAfterApproval)}
           className="rounded-xl bg-indigo-600 px-6 text-white hover:bg-indigo-700 disabled:opacity-50"
           onClick={() => void saveEdit()}
         >

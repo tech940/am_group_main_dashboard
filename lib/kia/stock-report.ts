@@ -78,6 +78,30 @@ const STOCK_SOURCE_NOT_LOCAL_RETAIL = sql`NOT (
   )
   AND COALESCE(kb.status, '') <> 'ready_delivery'
 )`
+
+/**
+ * A car marked BBND (Build But Not Delivered) is not sellable stock.
+ *
+ * ⚠️ A SEPARATE PREDICATE, and it has to be. The exclusion above is written as an EQUALITY on
+ * 'retail' inside a NOT EXISTS, not as a NOT IN list — so adding 'bbnd_marked' to
+ * KIA_NON_ALLOTTABLE_LOCAL_STATUSES does NOT reach this file, and this report would have gone on
+ * counting BBND cars in Available Stock, Free Stock, Stock Value and ageing while the stock board
+ * no longer did. This file asserts three times over that it "mirrors app/api/brands/kia/proforma/
+ * stock exactly"; that claim is what this keeps true.
+ *
+ * ⚠️ It also reaches further than this page: lib/brands/sales-stock.ts reads this report's
+ * 'Available Stock' and 'Stock Value' KPIs, and that is the Group Cockpit's ONLY path to KIA stock.
+ * Leaving it stale would have put the divergence in the executive rollup — the same 109-vs-131 split
+ * between these two exact surfaces that the comment above celebrates having ended.
+ *
+ * ⚠️ No ready_delivery carve-out here, unlike retail: a car being handed over today is still stock,
+ * but a BBND car by definition is NOT being handed over.
+ */
+const STOCK_SOURCE_NOT_BBND = sql`NOT EXISTS (
+  SELECT 1 FROM kia_stock_local_statuses ls_bbnd
+  WHERE UPPER(TRIM(ls_bbnd.vin_number)) = UPPER(TRIM(sm.vin_number))
+    AND ls_bbnd.local_status = 'bbnd_marked'
+)`
 /**
  * The report shows SELLABLE stock only: 'Free Stock' and 'From Other Dealer'.
  *
@@ -90,6 +114,28 @@ const STOCK_SOURCE_NOT_LOCAL_RETAIL = sql`NOT (
  */
 const STOCK_SOURCE_SELLABLE_STATUS = sql`UPPER(TRIM(COALESCE(sm.stock_status, ''))) IN ('FREE STOCK', 'FROM OTHER DEALER')`
 
+/**
+ * ⚠️⚠️ THIS PARSER RETURNS NULL FOR EVERY ROW. KNOWN BROKEN, LEFT AS-IS PENDING A DECISION.
+ *
+ * Measured 2026-09-10 on the live database, through this exact Drizzle path: the `\d` spelling below
+ * parses **0 of 88** stock rows, while `[0-9]` parses **all 88** — on clean ASCII values like
+ * "01/09/2026" (verified: length 10, hex 30312f30392f32303236). The backslash does not reach the
+ * regex engine when the pattern is embedded in the query TEXT, which is what a Drizzle `sql` template
+ * produces. Sent as a bound PARAMETER the same `\d` works, which is why this reads as correct.
+ *
+ * The failure is silent: every consumer wraps this in a COALESCE, so a NULL invoice date falls
+ * through to grn_date / departure_date / order_date / created_at and the report still produces
+ * plausible-looking ages and month options — just never based on the invoice date.
+ *
+ * ⚠️ NOT FIXED HERE ON PURPOSE. Correcting it moves a published number: measured, **400 of 477 rows
+ * change and average stock age goes 25.6d → 31.1d (+21%)**, and that figure reaches the Group Cockpit
+ * through lib/brands/sales-stock.ts. That is an owner's call, not a drive-by. When it is made, swap
+ * both patterns to `[0-9]{...}`, put TRIM inside `to_date` as well, and bump the two cache keys in
+ * this file or the change stays invisible.
+ *
+ * The working spelling is already in use where it was needed: `invoiceYearFrom` in
+ * app/api/brands/kia/proforma/stock/route.ts, which is deliberately independent of this function.
+ */
 function parsedInvoiceDateSql(alias = 'sm.') {
   const col = `${alias}kin_invoice_date`
   return sql`CASE
@@ -343,6 +389,7 @@ async function readInTransitCount(dealerCode: string | null) {
       AND ${STOCK_SOURCE_NOT_RETAILED}
       AND ${STOCK_SOURCE_NOT_INVOICED}
       AND ${STOCK_SOURCE_NOT_LOCAL_RETAIL}
+      AND ${STOCK_SOURCE_NOT_BBND}
       AND UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'IN TRANSIT'
       ${dealerClause(dealerCode)}
   `))
@@ -391,6 +438,8 @@ async function readCurrentRows(dealerCode: string | null) {
         AND ${STOCK_SOURCE_NOT_RETAILED}
         AND ${STOCK_SOURCE_NOT_INVOICED}
         AND ${STOCK_SOURCE_NOT_LOCAL_RETAIL}
+        AND ${STOCK_SOURCE_NOT_BBND}
+      AND ${STOCK_SOURCE_NOT_BBND}
         AND ${STOCK_SOURCE_SELLABLE_STATUS}
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
@@ -465,7 +514,7 @@ export async function getKiaStockReportSummary(input: {
   dateMode?: string | null
 }): Promise<KiaStockSummaryPayload> {
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
-  const cacheKey = `kia:stock-report:summary:v16:${dealerCode || 'all'}`
+  const cacheKey = `kia:stock-report:summary:v17:${dealerCode || 'all'}`
   return getCachedData(cacheKey, async () => {
     // latestMonthFallback() is a non-index-usable MAX scan of kia_stock_management. It was previously
     // awaited OUTSIDE this factory, so it ran on every request even on a warm cache hit. It (and the
@@ -854,6 +903,8 @@ async function readReportRows(input: {
         AND ${STOCK_SOURCE_NOT_RETAILED}
         AND ${STOCK_SOURCE_NOT_INVOICED}
         AND ${STOCK_SOURCE_NOT_LOCAL_RETAIL}
+        AND ${STOCK_SOURCE_NOT_BBND}
+      AND ${STOCK_SOURCE_NOT_BBND}
         AND ${STOCK_SOURCE_SELLABLE_STATUS}
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
@@ -883,7 +934,7 @@ export async function getKiaStockReportTable(input: {
 }): Promise<KiaStockReportPayload> {
   const page = normalizePage(input.page, 1)
   const pageSize = Math.min(99999, normalizePage(input.pageSize, 10))
-  const cacheKey = `kia:stock-report:table:v10:${JSON.stringify({ ...input, page, pageSize })}`
+  const cacheKey = `kia:stock-report:table:v11:${JSON.stringify({ ...input, page, pageSize })}`
   return getCachedData(cacheKey, async () => {
     const { filters: _filters, ...readInput } = input
     const { columns, rows: fetchedRows } = await readReportRows(readInput)

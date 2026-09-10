@@ -3035,7 +3035,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 <table className="w-full text-left border-collapse min-w-[1000px]">
                   <thead>
                     <tr className="bg-[#004e5a] text-white border-b border-[#003c46] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
-                      <th scope="col" className="py-3 px-3.5 w-10 text-center">#</th>
                       <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Request No.</th>
                       <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Requester</th>
                       <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Department</th>
@@ -3050,9 +3049,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
-                    {paginatedCompletedRows.map((row, idx) => {
-                      const displaySeqNo = (completedPage - 1) * completedRowsPerPage + idx + 1
-                      const numberBadge = getNumberBadgeClass(displaySeqNo)
+                    {paginatedCompletedRows.map((row) => {
                       const paymentDate = row.paymentCompletedAt || row.updatedAt || row.createdAt
 
                       return (
@@ -3070,11 +3067,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           }}
                           className="odd:bg-white even:bg-slate-50/80 hover:bg-teal-50/80 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-teal-600 transition-colors cursor-pointer"
                         >
-                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                            <span className={`inline-flex items-center justify-center h-6 w-6 rounded-full border text-[10px] font-black tabular-nums ${numberBadge}`}>
-                              {displaySeqNo}
-                            </span>
-                          </td>
                           <td className="py-3 px-3.5 whitespace-nowrap">
                             {row.requestNo ? (
                               <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 font-sans text-xs font-bold tracking-wide shadow-2xs ${getBranchChipClass(row)}`}>
@@ -3182,7 +3174,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     })}
                     {completedPaymentsList.length === 0 && (
                       <tr>
-                        <td colSpan={12} className="px-4 py-12 text-center text-slate-400 font-semibold space-y-2">
+                        <td colSpan={11} className="px-4 py-12 text-center text-slate-400 font-semibold space-y-2">
                           <FileSpreadsheet className="w-8 h-8 mx-auto text-slate-300" />
                           <p className="text-sm font-bold text-slate-700">No completed payments found</p>
                           <p className="text-xs text-slate-400">There are no completed &amp; paid vendor payments matching the selected filters.</p>

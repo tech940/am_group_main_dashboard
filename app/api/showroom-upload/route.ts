@@ -3,6 +3,7 @@ import { uploadShowroomImages } from '@/lib/showroom-images/server'
 import { type ShowroomBrandKey, isValidShowroomBrand } from '@/lib/showroom-images/constants'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   try {
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
         buffer,
         category: meta.category || (file.name.includes('tv') ? 'tv' : file.name.includes('bathroom') ? 'bathroom' : 'vehicles'),
         categorySlot: meta.slot || ((i % 2) + 1),
-        mimeType: file.type || 'image/webp',
+        mimeType: file.type || 'image/jpeg',
         size: file.size,
       })
     }

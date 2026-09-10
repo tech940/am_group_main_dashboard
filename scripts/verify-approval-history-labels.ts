@@ -252,15 +252,33 @@ async function live() {
      * not erase the evidence that it happened — but their column is back to '' and they sit in the
      * MD's queue. A history entry is a record; the column is the state.
      */
+    /*
+     * ⚠️ THE **LATEST** md-stage approval, not any of them.
+     *
+     * My first version matched ANY md entry whose actor is a CEO — and history is APPEND-ONLY, so a
+     * request the CEO signed, that was then reverted and properly re-approved by a real MD, still
+     * carried the old entry and failed this check for ever. It fired on KIA_0201 and KIA_0203 after
+     * MD Sanjay Mahajan approved both legitimately and Accounts paid them: the app was right and the
+     * assertion was wrong. Same first-vs-last trap as findStageEntry.
+     *
+     * What matters is whose signature the CURRENT approval rests on — the most recent one.
+     */
     const standing = await sql<any[]>`
-      SELECT DISTINCT r.request_no, h->>'user' AS actor
-      FROM kia_approval_requests r, jsonb_array_elements(r.history) AS h
-      JOIN users u ON lower(btrim(u.full_name)) = lower(btrim(h->>'user'))
-      WHERE jsonb_typeof(r.history) = 'array'
-        AND r.management_approval = 'APPROVED'
-        AND h->>'roleKey' = 'md' AND h->>'action' IN ('APPROVED','APPROVE')
-        AND u.role::text = 'ceo'
-      ORDER BY r.request_no DESC`
+      WITH latest_md AS (
+        SELECT r.request_no,
+               (SELECT h->>'user'
+                  FROM jsonb_array_elements(r.history) h
+                 WHERE h->>'roleKey' = 'md' AND h->>'action' IN ('APPROVED','APPROVE')
+                 ORDER BY h->>'timestamp' DESC
+                 LIMIT 1) AS actor
+        FROM kia_approval_requests r
+        WHERE jsonb_typeof(r.history) = 'array' AND r.management_approval = 'APPROVED'
+      )
+      SELECT l.request_no, l.actor
+      FROM latest_md l
+      JOIN users u ON lower(btrim(u.full_name)) = lower(btrim(l.actor))
+      WHERE u.role::text = 'ceo'
+      ORDER BY l.request_no DESC`
     ok('no request STANDS as MD-approved on a CEO signature', standing.length === 0,
       standing.length
         ? `${standing.length}: ${standing.map((s) => `${s.request_no} (${s.actor})`).join(', ')} — run scripts/revert-ceo-md-approvals.ts`

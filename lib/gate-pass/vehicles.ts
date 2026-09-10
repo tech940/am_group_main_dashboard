@@ -170,17 +170,170 @@ export async function lookupByVin(vin: string): Promise<GatePassVehicle | null> 
   return all.find((v) => v.vin === key) ?? null
 }
 
-/**
- * Vehicles wearing a registration number.
- *
- * ⚠️ Returns a LIST, always — even when it finds exactly one. A caller must present the matches and
- * make a human choose on model, colour and VIN. Auto-selecting on a single match is safe today and
- * wrong tomorrow: the moment a second car is issued the same TC plate, an auto-select silently puts
- * the wrong vehicle on the pass. `JK02C0059TC` already has five.
- */
-export async function lookupByRegistration(registration: string): Promise<GatePassVehicle[]> {
-  const needle = String(registration ?? '').trim().toUpperCase()
-  if (!needle) return []
+/** Search or lookup vehicles by registration number */
+export async function lookupByRegistration(registrationNumber: string): Promise<GatePassVehicle[]> {
+  const q = registrationNumber.trim().toLowerCase().replace(/[\s\-_]/g, '')
+  if (!q) return []
   const all = await listDemoVehiclesForGatePass()
-  return all.filter((v) => (v.registrationNumber ?? '').trim().toUpperCase() === needle)
+  return all.filter((v) => (v.registrationNumber || '').toLowerCase().replace(/[\s\-_]/g, '').includes(q))
 }
+
+export type RegisterManualVehicleInput = {
+  registrationNumber: string
+  model: string
+  variant?: string | null
+  vin?: string | null
+  color?: string | null
+  dealerCode?: string | null
+  currentKms?: number | null
+  createdByUserId?: string | null
+  createdByName?: string | null
+}
+
+/**
+ * Register a demo vehicle directly/manually.
+ * Upserts into kia_demo_car_list and demo_vehicle_details so it immediately becomes selectable for Gate Passes.
+ */
+export async function registerManualDemoVehicle(input: RegisterManualVehicleInput): Promise<GatePassVehicle> {
+  const regNo = input.registrationNumber.trim().toUpperCase()
+  if (!regNo) throw new Error('Registration number is required.')
+
+  const rawVin = input.vin?.trim().toUpperCase()
+  const cleanReg = regNo.replace(/[^A-Z0-9]/g, '')
+  const finalVin = rawVin || `DEMO-${cleanReg}-${Date.now().toString().slice(-4)}`
+
+  const model = input.model.trim().toUpperCase()
+  const variant = (input.variant?.trim() || model).toUpperCase()
+  const color = input.color?.trim() || 'CLEAR WHITE'
+  const dealerCode = normalizeKiaDealerCode(input.dealerCode) || 'JK402'
+  const kms = input.currentKms ?? 0
+
+  const crypto = await import('node:crypto')
+  const rowHash = crypto.createHash('sha256').update(`manual-demo-car-${finalVin}-${Date.now()}`).digest('hex')
+
+  // 1. Check/Upsert kia_demo_car_list
+  const existingInFeed = await analyticsExecute<Record<string, unknown>>(sql`
+    SELECT id FROM kia_demo_car_list WHERE UPPER(TRIM(vin_no::text)) = ${finalVin}
+  `)
+
+  if (existingInFeed.length > 0) {
+    await analyticsExecute(sql`
+      UPDATE kia_demo_car_list
+      SET
+        model = ${model},
+        variant = ${variant},
+        color = ${color},
+        exterior_color_name = ${color},
+        test_drive_vin = 'YES',
+        billing_dealer_code = ${dealerCode},
+        main_dealer = ${dealerCode},
+        dealer = ${dealerCode},
+        order_dealer = ${dealerCode},
+        stock_status = 'Test Drive',
+        uploaded_at = NOW()
+      WHERE UPPER(TRIM(vin_no::text)) = ${finalVin}
+    `)
+  } else {
+    await analyticsExecute(sql`
+      INSERT INTO kia_demo_car_list (
+        row_hash,
+        vin_no,
+        model,
+        variant,
+        color,
+        exterior_color_name,
+        test_drive_vin,
+        billing_dealer_code,
+        main_dealer,
+        dealer,
+        order_dealer,
+        stock_status,
+        uploaded_at
+      ) VALUES (
+        ${rowHash},
+        ${finalVin},
+        ${model},
+        ${variant},
+        ${color},
+        ${color},
+        'YES',
+        ${dealerCode},
+        ${dealerCode},
+        ${dealerCode},
+        ${dealerCode},
+        'Test Drive',
+        NOW()
+      )
+    `)
+  }
+
+  // 2. Check/Upsert demo_vehicle_details
+  const existingDetails = await analyticsExecute<Record<string, unknown>>(sql`
+    SELECT id FROM demo_vehicle_details WHERE UPPER(TRIM(vehicle_key::text)) = ${finalVin}
+  `)
+
+  if (existingDetails.length > 0) {
+    await analyticsExecute(sql`
+      UPDATE demo_vehicle_details
+      SET
+        registration_number = ${regNo},
+        vehicle_status = 'active',
+        current_reading_kms = ${String(kms)},
+        updated_by = ${input.createdByUserId || null},
+        updated_by_name = ${input.createdByName || null},
+        updated_at = NOW()
+      WHERE UPPER(TRIM(vehicle_key::text)) = ${finalVin}
+    `)
+  } else {
+    await analyticsExecute(sql`
+      INSERT INTO demo_vehicle_details (
+        vehicle_key,
+        vin,
+        registration_number,
+        vehicle_status,
+        tracker_status,
+        current_reading_kms,
+        updated_by,
+        updated_by_name,
+        created_at,
+        updated_at
+      ) VALUES (
+        ${finalVin},
+        ${finalVin},
+        ${regNo},
+        'active',
+        'not_installed',
+        ${String(kms)},
+        ${input.createdByUserId || null},
+        ${input.createdByName || null},
+        NOW(),
+        NOW()
+      )
+    `)
+  }
+
+  // Invalidate cache if possible
+  try {
+    const { invalidateCachePattern } = await import('@/lib/redis/cache-utils')
+    await invalidateCachePattern('kia:demo-cars*')
+  } catch {
+    // Non-fatal
+  }
+
+  const resolved = await lookupByVin(finalVin)
+  if (resolved) return resolved
+
+  return {
+    vin: finalVin,
+    registrationNumber: regNo,
+    model,
+    variant,
+    color,
+    keyNumber: null,
+    dealerCode,
+    branchLabel: getKiaBranchLabel(dealerCode),
+    lastKnownKms: kms,
+    sharedPlate: false,
+  }
+}
+

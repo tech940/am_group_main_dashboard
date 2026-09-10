@@ -112,7 +112,7 @@ const PETTY_CASH_BRANCH_LOCATIONS: Record<string, PettyCashBranchConfig> = {
   hyundai: {
     dealers: () => HYUNDAI_BRANCH_DEALERS.map((branch) => branch.label),
     stripPrefix: 'Hyundai',
-    extraLocations: ['Supwal', 'R S Pura'],
+    extraLocations: ['Supwal'],
   },
   platinum: {
     dealers: () => PLATINUM_BRANCH_DEALERS.map((branch) => branch.label),
@@ -185,10 +185,10 @@ export function getPettyCashBrandStatus(
 export function getPettyCashLocationOptions(branchId: string | null | undefined) {
   const config = PETTY_CASH_BRANCH_LOCATIONS[normalizeBranch(branchId)]
   if (!config) return []
-  return [
+  return Array.from(new Set([
     ...config.dealers().map((label) => stripBrandPrefix(label, config.stripPrefix)),
     ...(config.extraLocations ?? []),
-  ]
+  ]))
 }
 
 export function getAllPettyCashLocationOptions() {

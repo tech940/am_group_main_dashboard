@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Search,
   Share2,
-  Sparkles,
+  Droplets,
   User,
   X,
   ZoomIn,
@@ -64,16 +64,32 @@ import {
 import { toast } from '@/hooks/use-toast'
 import QRCode from 'qrcode'
 
+function formatISTDate(d: Date): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  return formatter.format(d)
+}
+
 export function ShowroomGalleryClient({
   initialUserBrand,
 }: {
   initialUserBrand?: string | null
 }) {
-  const [selectedBrand, setSelectedBrand] = useState<string>('all')
+  const [selectedBrand, setSelectedBrand] = useState<string>(() => {
+    return initialUserBrand && initialUserBrand !== 'all' ? initialUserBrand.toLowerCase() : 'all'
+  })
   const [selectedLocation, setSelectedLocation] = useState<string>('all')
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [dateFilter, setDateFilter] = useState<string>('all')
+
+  // Requirement: All Brands defaults to 'today' (current date), specific brand defaults to 'last10days'
+  const [dateFilter, setDateFilter] = useState<string>(() => {
+    return initialUserBrand && initialUserBrand !== 'all' ? 'last10days' : 'today'
+  })
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
 
@@ -95,29 +111,40 @@ export function ShowroomGalleryClient({
     return getLocationsForBrand(selectedBrand as ShowroomBrandKey)
   }, [selectedBrand])
 
-  // Reset location filter if brand changes
+  // Reset location & apply appropriate date default on brand switch
   const handleBrandChange = (brandKey: string) => {
     setSelectedBrand(brandKey)
     setSelectedLocation('all')
+    if (brandKey === 'all') {
+      setDateFilter('today')
+    } else {
+      setDateFilter('last10days')
+    }
   }
 
-  // Calculate Date bounds
+  // Calculate IST Date bounds
   const { startDate, endDate } = useMemo(() => {
     const now = new Date()
     if (dateFilter === 'today') {
-      const todayStr = now.toISOString().split('T')[0]
+      const todayStr = formatISTDate(now)
       return { startDate: todayStr, endDate: todayStr }
     }
     if (dateFilter === 'yesterday') {
-      const y = new Date(now)
-      y.setDate(y.getDate() - 1)
-      const yStr = y.toISOString().split('T')[0]
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+      const yStr = formatISTDate(yesterday)
       return { startDate: yStr, endDate: yStr }
     }
     if (dateFilter === 'last7days') {
-      const last7 = new Date(now)
-      last7.setDate(last7.getDate() - 7)
-      return { startDate: last7.toISOString().split('T')[0], endDate: now.toISOString().split('T')[0] }
+      const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return { startDate: formatISTDate(start), endDate: formatISTDate(now) }
+    }
+    if (dateFilter === 'last10days') {
+      const start = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000)
+      return { startDate: formatISTDate(start), endDate: formatISTDate(now) }
+    }
+    if (dateFilter === 'last30days') {
+      const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+      return { startDate: formatISTDate(start), endDate: formatISTDate(now) }
     }
     if (dateFilter === 'custom') {
       return { startDate: customStartDate || undefined, endDate: customEndDate || undefined }
@@ -345,14 +372,14 @@ export function ShowroomGalleryClient({
               <Filter className="w-3.5 h-3.5 text-slate-400" /> Category:
             </Label>
             <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="h-9 w-36 text-xs font-semibold bg-slate-50 border-slate-200 rounded-lg">
+              <SelectTrigger className="h-9 w-40 text-xs font-semibold bg-slate-50 border-slate-200 rounded-lg">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all" className="text-xs font-medium">All Categories</SelectItem>
-                <SelectItem value="vehicles" className="text-xs font-medium">🚗 Vehicles (2)</SelectItem>
-                <SelectItem value="tv" className="text-xs font-medium">📺 TV Display (2)</SelectItem>
-                <SelectItem value="bathroom" className="text-xs font-medium">🚻 Bathroom (2)</SelectItem>
+                <SelectItem value="vehicles" className="text-xs font-medium">Vehicles (Floor Display)</SelectItem>
+                <SelectItem value="tv" className="text-xs font-medium">TV Display (Lounge)</SelectItem>
+                <SelectItem value="bathroom" className="text-xs font-medium">Washrooms</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -387,15 +414,17 @@ export function ShowroomGalleryClient({
               <Calendar className="w-3.5 h-3.5 text-slate-400" /> Date:
             </Label>
             <Select value={dateFilter} onValueChange={setDateFilter}>
-              <SelectTrigger className="h-9 w-32 text-xs font-semibold bg-slate-50 border-slate-200 rounded-lg">
+              <SelectTrigger className="h-9 w-40 text-xs font-semibold bg-slate-50 border-slate-200 rounded-lg">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-xs font-medium">All Time</SelectItem>
-                <SelectItem value="today" className="text-xs font-medium">Today</SelectItem>
-                <SelectItem value="yesterday" className="text-xs font-medium">Yesterday</SelectItem>
+                <SelectItem value="today" className="text-xs font-medium">Today (Current Date)</SelectItem>
+                <SelectItem value="last10days" className="text-xs font-medium">Last 10 Days</SelectItem>
                 <SelectItem value="last7days" className="text-xs font-medium">Last 7 Days</SelectItem>
-                <SelectItem value="custom" className="text-xs font-medium">Custom Date</SelectItem>
+                <SelectItem value="yesterday" className="text-xs font-medium">Yesterday</SelectItem>
+                <SelectItem value="last30days" className="text-xs font-medium">Last 30 Days</SelectItem>
+                <SelectItem value="all" className="text-xs font-medium">All Time</SelectItem>
+                <SelectItem value="custom" className="text-xs font-medium">Custom Date Range</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -443,7 +472,7 @@ export function ShowroomGalleryClient({
           <div className="max-w-md mx-auto space-y-1">
             <h3 className="text-base font-bold text-slate-900">No Showroom Photos Found</h3>
             <p className="text-xs text-slate-500">
-              No photos recorded matching this filter. Staff can open the camera form to upload showroom condition photos.
+              No photos recorded matching the selected filter. Switch date or brand to view past sessions.
             </p>
           </div>
           <Button
@@ -540,14 +569,15 @@ export function ShowroomGalleryClient({
                               const globalIdx = session.images.findIndex((i) => i.id === img.id)
                               openLightbox(session.images, globalIdx >= 0 ? globalIdx : 0)
                             }}
-                            className="group relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-slate-200 bg-slate-900 cursor-pointer shadow-xs hover:border-slate-400 hover:scale-[1.02] transition-all"
+                            className="group relative aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 bg-slate-900 cursor-pointer shadow-xs hover:border-slate-400 hover:scale-[1.02] transition-all"
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={img.url} alt={`Vehicle photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
                             
-                            {/* Prominent High-Contrast Label Badge */}
-                            <div className="absolute top-1.5 left-1.5 z-10 bg-slate-950/90 text-white font-bold text-[10px] px-2 py-0.5 rounded-md shadow-md flex items-center gap-1 border border-white/20">
-                              <span>🚗 Vehicle #{img.categorySlot || idx + 1}</span>
+                            {/* Clean Minimal Badge */}
+                            <div className="absolute top-1.5 left-1.5 z-10 bg-slate-950/90 text-white font-semibold text-[10px] px-2 py-0.5 rounded shadow-sm flex items-center gap-1 border border-white/20">
+                              <Car className="w-3 h-3 text-slate-300" />
+                              <span>Vehicle #{img.categorySlot || idx + 1}</span>
                             </div>
 
                             <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -583,14 +613,15 @@ export function ShowroomGalleryClient({
                               const globalIdx = session.images.findIndex((i) => i.id === img.id)
                               openLightbox(session.images, globalIdx >= 0 ? globalIdx : 0)
                             }}
-                            className="group relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-slate-200 bg-slate-900 cursor-pointer shadow-xs hover:border-slate-400 hover:scale-[1.02] transition-all"
+                            className="group relative aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 bg-slate-900 cursor-pointer shadow-xs hover:border-slate-400 hover:scale-[1.02] transition-all"
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={img.url} alt={`TV photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
                             
-                            {/* Prominent High-Contrast Label Badge */}
-                            <div className="absolute top-1.5 left-1.5 z-10 bg-slate-950/90 text-white font-bold text-[10px] px-2 py-0.5 rounded-md shadow-md flex items-center gap-1 border border-white/20">
-                              <span>📺 TV Screen #{img.categorySlot || idx + 1}</span>
+                            {/* Clean Minimal Badge */}
+                            <div className="absolute top-1.5 left-1.5 z-10 bg-slate-950/90 text-white font-semibold text-[10px] px-2 py-0.5 rounded shadow-sm flex items-center gap-1 border border-white/20">
+                              <Tv className="w-3 h-3 text-slate-300" />
+                              <span>TV Screen #{img.categorySlot || idx + 1}</span>
                             </div>
 
                             <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -611,8 +642,8 @@ export function ShowroomGalleryClient({
                   <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
                     <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
                       <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4 text-slate-800" />
-                        Bathroom ({session.byCategory?.bathroom?.length || 0}/2)
+                        <Droplets className="w-4 h-4 text-slate-800" />
+                        Washroom ({session.byCategory?.bathroom?.length || 0}/2)
                       </h4>
                       <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Cleanliness</span>
                     </div>
@@ -626,14 +657,15 @@ export function ShowroomGalleryClient({
                               const globalIdx = session.images.findIndex((i) => i.id === img.id)
                               openLightbox(session.images, globalIdx >= 0 ? globalIdx : 0)
                             }}
-                            className="group relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-slate-200 bg-slate-900 cursor-pointer shadow-xs hover:border-slate-400 hover:scale-[1.02] transition-all"
+                            className="group relative aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 bg-slate-900 cursor-pointer shadow-xs hover:border-slate-400 hover:scale-[1.02] transition-all"
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={img.url} alt={`Bathroom photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                            <img src={img.url} alt={`Washroom photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
                             
-                            {/* Prominent High-Contrast Label Badge */}
-                            <div className="absolute top-1.5 left-1.5 z-10 bg-slate-950/90 text-white font-bold text-[10px] px-2 py-0.5 rounded-md shadow-md flex items-center gap-1 border border-white/20">
-                              <span>🚻 Bathroom #{img.categorySlot || idx + 1}</span>
+                            {/* Clean Minimal Badge */}
+                            <div className="absolute top-1.5 left-1.5 z-10 bg-slate-950/90 text-white font-semibold text-[10px] px-2 py-0.5 rounded shadow-sm flex items-center gap-1 border border-white/20">
+                              <Droplets className="w-3 h-3 text-slate-300" />
+                              <span>Washroom #{img.categorySlot || idx + 1}</span>
                             </div>
 
                             <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -643,8 +675,8 @@ export function ShowroomGalleryClient({
                         ))
                       ) : (
                         <div className="col-span-2 h-20 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-[11px] text-slate-400 bg-white">
-                          <Sparkles className="w-4 h-4 mb-1 text-slate-300" />
-                          No bathroom photos
+                          <Droplets className="w-4 h-4 mb-1 text-slate-300" />
+                          No washroom photos
                         </div>
                       )}
                     </div>

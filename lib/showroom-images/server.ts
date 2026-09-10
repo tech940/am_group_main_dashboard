@@ -96,72 +96,84 @@ export async function uploadShowroomImages({
   const now = new Date()
   const sanitizedLocation = location.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase()
 
-  const insertedRows: ShowroomImageRecord[] = []
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i]
+  // Prepare metadata and storage paths for all files
+  const preparedUploads = files.map((file, i) => {
     const cat = file.category || 'vehicles'
     const slot = file.categorySlot || (i % 2) + 1
     const ext = file.mimeType?.includes('jpeg') || file.mimeType?.includes('jpg') ? 'jpg' : 'webp'
-    const fileName = `${Date.now()}_${cat}_${slot}_${i + 1}.${ext}`
+    const fileName = `${Date.now()}_${cat}_${slot}_${i + 1}_${crypto.randomUUID().slice(0, 8)}.${ext}`
     const storagePath = `${sanitizedLocation}/${validDept}/${sessionId}/${fileName}`
 
-    // Upload to brand bucket
-    const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/${bucketId}/${storagePath}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey,
-        'Content-Type': file.mimeType || 'image/webp',
-        'x-upsert': 'true',
-      },
-      body: new Uint8Array(file.buffer),
-    })
-
-    if (!uploadRes.ok) {
-      const errText = await uploadRes.text().catch(() => '')
-      throw new Error(`Storage upload failed for image ${i + 1}: ${uploadRes.status} ${errText}`)
+    return {
+      file,
+      cat,
+      slot,
+      mimeType: file.mimeType || (ext === 'jpg' ? 'image/jpeg' : 'image/webp'),
+      storagePath,
     }
+  })
 
-    // Insert database record
-    const [inserted] = await db
-      .insert(showroomImages)
-      .values({
-        sessionId,
-        brand,
-        location,
-        department: validDept,
-        category: cat,
-        categorySlot: slot,
-        bucketId,
-        storagePath,
-        fileSize: file.size || file.buffer.length,
-        mimeType: file.mimeType || 'image/webp',
-        uploaderName: uploaderName?.trim() || null,
-        capturedAt: now,
+  // Concurrently upload all photos to Supabase Storage
+  await Promise.all(
+    preparedUploads.map(async (item, i) => {
+      const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/${bucketId}/${item.storagePath}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${serviceKey}`,
+          apikey: serviceKey,
+          'Content-Type': item.mimeType,
+          'x-upsert': 'true',
+        },
+        body: new Uint8Array(item.file.buffer),
       })
-      .returning()
 
-    insertedRows.push({
-      id: inserted.id,
-      sessionId: inserted.sessionId,
-      brand: inserted.brand,
-      location: inserted.location,
-      department: inserted.department,
-      category: inserted.category,
-      categorySlot: inserted.categorySlot,
-      bucketId: inserted.bucketId,
-      storagePath: inserted.storagePath,
-      fileSize: inserted.fileSize,
-      width: inserted.width,
-      height: inserted.height,
-      mimeType: inserted.mimeType,
-      uploaderName: inserted.uploaderName,
-      capturedAt: inserted.capturedAt.toISOString(),
-      createdAt: inserted.createdAt.toISOString(),
-      url: getStorageUrl(inserted.bucketId, inserted.storagePath),
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text().catch(() => '')
+        throw new Error(`Storage upload failed for image ${i + 1}: ${uploadRes.status} ${errText}`)
+      }
     })
-  }
+  )
+
+  // Single batch insert into database
+  const insertValues = preparedUploads.map((item) => ({
+    sessionId,
+    brand,
+    location,
+    department: validDept,
+    category: item.cat,
+    categorySlot: item.slot,
+    bucketId,
+    storagePath: item.storagePath,
+    fileSize: item.file.size || item.file.buffer.length,
+    mimeType: item.mimeType,
+    uploaderName: uploaderName?.trim() || null,
+    capturedAt: now,
+  }))
+
+  const insertedRecords = await db
+    .insert(showroomImages)
+    .values(insertValues)
+    .returning()
+
+  const insertedRows: ShowroomImageRecord[] = insertedRecords.map((inserted) => ({
+    id: inserted.id,
+    sessionId: inserted.sessionId,
+    brand: inserted.brand,
+    location: inserted.location,
+    department: inserted.department,
+    category: inserted.category,
+    categorySlot: inserted.categorySlot,
+    bucketId: inserted.bucketId,
+    storagePath: inserted.storagePath,
+    fileSize: inserted.fileSize,
+    width: inserted.width,
+    height: inserted.height,
+    mimeType: inserted.mimeType,
+    uploaderName: inserted.uploaderName,
+    capturedAt: inserted.capturedAt.toISOString(),
+    createdAt: inserted.createdAt.toISOString(),
+    url: getStorageUrl(inserted.bucketId, inserted.storagePath),
+  }))
 
   const byCat = {
     vehicles: insertedRows.filter((r) => r.category === 'vehicles'),
@@ -217,16 +229,21 @@ export async function getShowroomGallerySessions({
   }
 
   if (startDate) {
-    const start = new Date(startDate)
+    const isIsoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(startDate.trim())
+    const start = isIsoDateOnly
+      ? new Date(`${startDate.trim()}T00:00:00.000+05:30`)
+      : new Date(startDate)
     if (!Number.isNaN(start.getTime())) {
       conditions.push(gte(showroomImages.capturedAt, start))
     }
   }
 
   if (endDate) {
-    const end = new Date(endDate)
+    const isIsoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(endDate.trim())
+    const end = isIsoDateOnly
+      ? new Date(`${endDate.trim()}T23:59:59.999+05:30`)
+      : new Date(endDate)
     if (!Number.isNaN(end.getTime())) {
-      end.setHours(23, 59, 59, 999)
       conditions.push(lte(showroomImages.capturedAt, end))
     }
   }

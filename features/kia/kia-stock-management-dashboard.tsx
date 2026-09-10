@@ -14,7 +14,7 @@ import {
   Car, Plus, Search, RefreshCw, Loader2, ShieldCheck, FileText, 
   CheckCircle2, XCircle, Truck, WalletCards, BadgeIndianRupee, 
   Calendar, ChevronRight, AlertTriangle, AlertCircle, Share2, ClipboardList,
-  ChevronDown, X, Users, Clock, Lock, PauseCircle
+  ChevronDown, X, Users, Clock, Lock, PauseCircle, PackageX
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -68,8 +68,12 @@ type StockRow = {
   amount_received?: number | null
   /** Non-null means the reservation clock is suspended and the sweep will not release this car. */
   payment_secured_at?: string | null
-  /** #12 'hold_customer' | 'hold_dealer' | 'retail' | null — the app-owned status, not the DMS one. */
+  /** 'hold_customer' | 'hold_dealer' | 'retail' | 'bbnd_marked' | 'bbnd' | null — ours, not the DMS's. */
   local_status?: string | null
+  /** Year from kin_invoice_date; null when the feed has no parseable date. */
+  invoice_year?: number | null
+  /** Computed server-side in Asia/Kolkata — never re-derive this from the browser clock. */
+  invoice_year_is_current?: boolean | null
   /** Why the vehicle is held - the dealer it is for. Required by the hold dialog. */
   hold_notes?: string | null
   hold_marked_at?: string | null
@@ -171,6 +175,8 @@ type StockPayload = {
     held?: number
     /** #12 Held vehicles, counted with the SAME predicate the ON_HOLD tab filters on. */
     on_hold?: number
+    /** Build But Not Delivered. Optional like on_hold — read as `|| 0`, never bare. */
+    bbnd?: number
   }
   rows: StockRow[]
   soldMissing?: SoldMissingRow[]
@@ -594,18 +600,34 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   })
 
   const bbndMarkMutation = useMutation({
-    mutationFn: async (payload: { vinNumber: string; notes: string }) => {
+    /*
+     * ⚠️ The `clear` arm existed on the server (clearKiaStockBbnd, route action:'clear') and NOTHING
+     * called it — grep across every client found one caller of this endpoint and it never sent an
+     * action. Now that a BBND car leaves free stock, unmark is the only way back, so it is not
+     * optional.
+     */
+    mutationFn: async (payload: { vinNumber: string; notes: string } | { vin: string; action: 'clear' }) => {
+      const body = 'action' in payload
+        ? { action: 'clear', vinNumber: payload.vin }
+        : { vinNumber: payload.vinNumber, notes: payload.notes }
       const res = await fetch('/api/brands/kia/stock/bbnd-mark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       })
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Failed to mark BBND')
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Failed to update BBND status')
       return res.json()
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      if (variables && 'action' in variables) {
+        toast({ title: 'BBND cleared', description: 'The vehicle is back in free stock and can be allotted again.', variant: 'success' })
+        setBbndMarkDialogOpen(false)
+        queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+        return
+      }
+      // Leaves free stock by design
       // Stays in free stock by design — say so, or the user assumes it vanished like a Hold.
-      toast({ title: 'Marked BBND', description: 'Build But Not Delivered. The vehicle remains in free stock and can still be allotted.', variant: 'success' })
+      toast({ title: 'Marked BBND', description: 'Build But Not Delivered. The vehicle has left free stock and cannot be allotted until it is unmarked. Find it on the BBND card.', variant: 'success' })
       setBbndMarkDialogOpen(false)
       setBbndMarkNotes('')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
@@ -1079,6 +1101,16 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
         </div>
       )
     }
+    /*
+     * ⚠️ BEFORE the DMS-Allocated and Available arms, deliberately. OUR status beats the feed's
+     * label — the same precedence the hold branch above already uses. Without this a BBND row falls
+     * through to the green Available chip while the server no longer counts it available, which is
+     * the exact disagreement recorded twice in this file: "the table claimed 7 cars were available
+     * while the card counted 0 of them".
+     */
+    if (String(row.local_status || '') === 'bbnd_marked') {
+      return <Chip tone="rose">BBND</Chip>
+    }
     if (String(row.stock_status || '').trim().toUpperCase() === 'ALLOCATED') {
       return <Chip tone="neutral">DMS Allocated</Chip>
     }
@@ -1114,7 +1146,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
      */
     // ON_HOLD joins it: a hold is a CURRENT state with no date on the row the server filtered by,
     // so re-filtering here could only drop rows the ON_HOLD card still counts.
-    if (status === 'DELIVERED' || status === 'ON_HOLD') return rows
+    // BBND joins them for the identical reason as ON_HOLD: it is a CURRENT state with no date on the
+    // row the server filtered by, so re-filtering here could only drop rows the BBND card still counts.
+    if (status === 'DELIVERED' || status === 'ON_HOLD' || status === 'BBND') return rows
 
     const start = startDate ? new Date(`${startDate}T00:00:00`).getTime() : 0
     const end = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : Infinity
@@ -1268,6 +1302,13 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
              */
             { key: 'TRANSFERRED', label: 'Transfers', value: data.metrics.transfers || 0, icon: RefreshCw, tone: 'sky' as Tone, hint: 'Inter-outlet' },
             { key: 'ON_HOLD', label: 'On Hold', value: data.metrics.on_hold || 0, icon: PauseCircle, tone: 'amber' as Tone, hint: 'Reserved for a dealer or customer' },
+            /*
+             * ⚠️ Without this card a BBND car belongs to NO bucket. It leaves Available by owner
+             * decision and matches no other filter, so it would be reachable only by clicking Total
+             * VINs — verbatim the defect the On Hold card above was added to fix. The `|| 0` is not
+             * decoration: the metrics fallback object omitted on_hold for exactly this reason.
+             */
+            { key: 'BBND', label: 'BBND', value: data.metrics.bbnd || 0, icon: PackageX, tone: 'rose' as Tone, hint: 'Built but not delivered' },
           ] as (KpiDatum & { active?: boolean })[]).map((item) => ({ ...item, active: status === item.key }))}
           onSelect={selectStatusImmediately}
         />
@@ -1361,6 +1402,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                 <SelectItem value="ALLOCATED_DMS" className="text-xs font-bold cursor-pointer">Allocated (DMS)</SelectItem>
                 <SelectItem value="PAID_TO_DELIVER" className="text-xs font-bold cursor-pointer">Paid - To Deliver</SelectItem>
                 <SelectItem value="ON_HOLD" className="text-xs font-bold cursor-pointer">On Hold</SelectItem>
+                <SelectItem value="BBND" className="text-xs font-bold cursor-pointer">BBND</SelectItem>
                 <SelectItem value="DELIVERED" className="text-xs font-bold cursor-pointer">Delivered</SelectItem>
                 <SelectItem value="TRANSFERRED" className="text-xs font-bold cursor-pointer">Transferred</SelectItem>
               </SelectContent>
@@ -1520,7 +1562,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
               <Table className="kia-table w-full min-w-[950px]">
                 <TableHeader>
                    <TableRow>
-                     {['STATUS', 'DMS STATUS', 'CAR', 'VIN / CHASSIS', 'COLOUR', 'AGE', 'DEALER', 'CUSTOMER', 'TEAM', 'FINANCIER', 'CLOCK', 'ACTIONS'].map((h) => (
+                     {['STATUS', 'INVOICED', 'CAR', 'VIN / CHASSIS', 'COLOUR', 'AGE', 'DEALER', 'CUSTOMER', 'TEAM', 'FINANCIER', 'CLOCK', 'ACTIONS'].map((h) => (
                        <TableHead key={h} className="h-9 whitespace-nowrap px-2 py-2">{h}</TableHead>
                      ))}
                    </TableRow>
@@ -1538,16 +1580,32 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                       {/* STATUS */}
                       <TableCell className="px-2 py-2 align-middle whitespace-nowrap">{renderStatus(row)}</TableCell>
 
-                      {/* DMS STATUS */}
+                      {/* INVOICED — the year the DMS invoiced this car. */}
                       <TableCell className="px-2 py-2 align-middle whitespace-nowrap">
                         {(() => {
-                          const s = (row.stock_status || '').toUpperCase()
-                          if (s === 'FREE STOCK') return <Chip tone="emerald">Free Stock</Chip>
-                          if (s.includes('TRANSIT') || s.includes('IN TRANSIT')) return <Chip tone="sky">In Transit</Chip>
-                          if (s === 'RETAIL') return <Chip tone="amber">Retail</Chip>
-                          if (s === 'BLOCKED') return <Chip tone="rose">Blocked</Chip>
-                          if (s === 'DEMO') return <Chip tone="violet">Demo</Chip>
-                          return row.stock_status ? <Chip tone="neutral">{row.stock_status}</Chip> : <span className="text-slate-400 text-[10px] font-semibold">-</span>
+                          /*
+                           * ⚠️ `invoice_year_is_current` is computed SERVER-SIDE in Asia/Kolkata and
+                           * must not be re-derived here. `new Date().getFullYear()` reads the
+                           * BROWSER's clock and timezone, so a laptop set to another zone — or any
+                           * viewer between 00:00 and 05:30 IST on 1 January — would colour a whole
+                           * column wrongly. The server already knows the answer; just render it.
+                           */
+                          if (row.invoice_year == null) {
+                            return (
+                              <span
+                                className="text-[10px] font-semibold text-slate-400"
+                                title="No invoice date in the DMS feed for this vehicle"
+                              >
+                                Not invoiced
+                              </span>
+                            )
+                          }
+                          const current = row.invoice_year_is_current === true
+                          return (
+                            <Chip tone={current ? 'emerald' : 'rose'}>
+                              {row.invoice_year}
+                            </Chip>
+                          )
                         })()}
                       </TableCell>
 
@@ -1650,6 +1708,31 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                                 {releaseTransferMutation.isPending ? 'Releasing...' : 'Release'}
                               </Button>
                             </>
+                          ) : String(row.local_status || '') === 'bbnd_marked' && !row.allocation_id ? (
+                            /*
+                             * ⚠️ BBND NEEDS ITS OWN BRANCH FOR THE SAME REASON THE HOLD BRANCH BELOW
+                             * DOES. A BBND car has no allocation, so it fell into the generic
+                             * free-stock branch and was offered Allot / Transfer / Hold / BBND —
+                             * every one of them now wrong: Allot fails server-side
+                             * (readMatchingVehicle excludes bbnd_marked), Transfer resolves through
+                             * the same reader and throws, Hold is refused by holdKiaStockVehicle, and
+                             * BBND re-marks a car that is already marked.
+                             *
+                             * Unmark is the only action that applies — and until now NOTHING in any
+                             * client called it. `clearKiaStockBbnd` existed server-side and was
+                             * unreachable, so marking a car was a trapdoor with no way back short of
+                             * a hand-crafted API call. That is the whole reason this branch exists.
+                             */
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 rounded-lg border-rose-200 px-2.5 text-[10px] font-black text-rose-700 hover:bg-rose-50"
+                              disabled={bbndMarkMutation.isPending}
+                              title="Clear the BBND marker and return this vehicle to free stock"
+                              onClick={() => bbndMarkMutation.mutate({ vin: row.vin_number, action: 'clear' })}
+                            >
+                              {bbndMarkMutation.isPending ? 'Unmarking…' : 'Unmark BBND'}
+                            </Button>
                           ) : (String(row.local_status || '') === 'hold_dealer' || String(row.local_status || '') === 'hold_customer') && !row.allocation_id ? (
                             /*
                              * A held vehicle offered Allot / Transfer / Hold / BBND, because a hold
@@ -3197,7 +3280,15 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             {[
               { label: 'Total Inventory', val: data.metrics.total_vins, accent: '#0f172a' },
               { label: 'Available VINs', val: data.metrics.available, accent: '#059669' },
-              { label: 'Allotted / Pending', val: data.metrics.total_vins - data.metrics.available, accent: '#4f46e5' },
+              /*
+               * ⚠️ DERIVED BY SUBTRACTION, so every bucket that leaves `available` silently lands
+               * here. The moment BBND stopped being available, every BBND car was relabelled
+               * "Allotted / Pending" on this printed sheet — a car that is neither allotted nor
+               * pending. Subtracting it is the minimum fix; the honest one is to stop deriving this
+               * tile by subtraction at all.
+               */
+              { label: 'Allotted / Pending', val: data.metrics.total_vins - data.metrics.available - (data.metrics.bbnd || 0), accent: '#4f46e5' },
+              { label: 'BBND', val: data.metrics.bbnd || 0, accent: '#e11d48' },
               { label: 'Transfers', val: data.metrics.transfers, accent: '#0891b2' },
             ].map((s) => (
               <div key={s.label} className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">

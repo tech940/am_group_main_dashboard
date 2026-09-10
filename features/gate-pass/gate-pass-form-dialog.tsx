@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
+  Plus,
   RefreshCw,
   Search,
   User,
@@ -38,6 +39,13 @@ import { toast } from '@/hooks/use-toast'
 import { GATE_PASS_PURPOSES } from '@/lib/gate-pass/status'
 import { VehicleTrackerCamera } from '@/features/kia/vehicle-tracker-camera'
 import type { GatePassCurrentUser } from './gate-pass-client'
+
+const KIA_QUICK_MODELS = ['SONET', 'SELTOS', 'CARENS', 'CARNIVAL', 'SYROS', 'EV6', 'EV9']
+const KIA_BRANCH_OPTIONS = [
+  { code: 'JK402', label: 'Jammu (JK402)' },
+  { code: 'PB402', label: 'Pathankot (PB402)' },
+  { code: 'JK403', label: 'Udhampur (JK403)' },
+]
 
 type Vehicle = {
   vin: string
@@ -76,6 +84,16 @@ export function GatePassFormDialog({
   onCreated: () => void
 }) {
   const [vin, setVin] = useState('')
+  const [isAddingNewVehicle, setIsAddingNewVehicle] = useState(false)
+  const [manualRegNo, setManualRegNo] = useState('')
+  const [manualModel, setManualModel] = useState('')
+  const [manualVariant, setManualVariant] = useState('')
+  const [manualVin, setManualVin] = useState('')
+  const [manualColor, setManualColor] = useState('')
+  const [manualDealerCode, setManualDealerCode] = useState('JK402')
+  const [manualKms, setManualKms] = useState('')
+  const [creatingVehicle, setCreatingVehicle] = useState(false)
+
   const [isManualDriver, setIsManualDriver] = useState(false)
   const [driverUserId, setDriverUserId] = useState('')
   const [driverName, setDriverName] = useState('')
@@ -218,8 +236,72 @@ export function GatePassFormDialog({
     }
   }
 
+  const handleAddNewVehicle = async (regToUse?: string) => {
+    const reg = (regToUse || manualRegNo || vehicleSearch).trim().toUpperCase()
+    if (!reg) {
+      toast({ title: 'Registration Required', description: 'Please enter vehicle registration number.', variant: 'error' })
+      return null
+    }
+    const model = (manualModel || 'SONET').trim().toUpperCase()
+    setCreatingVehicle(true)
+    try {
+      const res = await fetch('/api/gate-pass/vehicles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          registrationNumber: reg,
+          model,
+          variant: manualVariant.trim().toUpperCase() || undefined,
+          vin: manualVin.trim().toUpperCase() || undefined,
+          color: manualColor.trim().toUpperCase() || undefined,
+          dealerCode: manualDealerCode || 'JK402',
+          currentKms: manualKms ? Number(manualKms) : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to add vehicle.')
+
+      toast({
+        title: 'Vehicle Added to Fleet',
+        description: `${reg} (${model}) has been saved permanently to the fleet.`,
+        variant: 'success',
+      })
+
+      await refetchVehicles()
+      setVin(data.vehicle.vin)
+      setIsAddingNewVehicle(false)
+      setManualRegNo('')
+      setManualModel('')
+      setManualVariant('')
+      setManualVin('')
+      setManualColor('')
+      setManualKms('')
+      setVehicleSearch('')
+      return data.vehicle.vin as string
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to add vehicle',
+        variant: 'error',
+      })
+      return null
+    } finally {
+      setCreatingVehicle(false)
+    }
+  }
+
   const reset = () => {
     setVin('')
+    setIsAddingNewVehicle(false)
+    setManualRegNo('')
+    setManualModel('')
+    setManualVariant('')
+    setManualVin('')
+    setManualColor('')
+    setManualDealerCode('JK402')
+    setManualKms('')
+    setVehicleSearch('')
+
     setIsManualDriver(false)
     setDriverUserId('')
     setDriverName('')
@@ -240,12 +322,30 @@ export function GatePassFormDialog({
     if (!driverName.trim()) {
       return setError('Please select an employee or enter the driver name.')
     }
-    if (!vin) return setError('Please select a vehicle.')
+    if (!vin && !manualRegNo.trim()) {
+      return setError('Please select or add a vehicle.')
+    }
     if (!purpose) return setError('Please select a purpose for travel.')
 
     setSaving(true)
     try {
       let finalDriverUserId = driverUserId
+      let finalVin = vin
+
+      // If user is adding a new vehicle inline and hasn't saved yet, save permanently now
+      if (isAddingNewVehicle && manualRegNo.trim()) {
+        const addedVin = await handleAddNewVehicle()
+        if (!addedVin) {
+          setSaving(false)
+          return
+        }
+        finalVin = addedVin
+      }
+
+      if (!finalVin) {
+        setSaving(false)
+        return setError('Please select a vehicle.')
+      }
 
       // If user selected Manual Entry but checked "Save as KIA Employee", create them now
       if (isManualDriver && saveManualAsEmployee && driverName.trim()) {
@@ -286,7 +386,7 @@ export function GatePassFormDialog({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          vin,
+          vin: finalVin,
           driverKind: 'staff',
           driverUserId: finalDriverUserId || (!isManualDriver && driverUserId ? driverUserId : null),
           driverName: driverName.trim() || chosenDriver?.fullName || 'Staff Driver',
@@ -719,7 +819,8 @@ export function GatePassFormDialog({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+          {/* Section 2: Vehicle Details */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600">
                 <Car className="h-4 w-4 text-indigo-600" />
@@ -733,56 +834,275 @@ export function GatePassFormDialog({
                   type="button"
                   onClick={() => refetchVehicles()}
                   disabled={loadingVehicles || refetchingVehicles}
-                  className="text-slate-400 hover:text-slate-700 p-0.5 rounded transition-colors"
+                  title="Refresh vehicle list"
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded transition-colors"
                 >
                   <RefreshCw className={`h-3 w-3 ${refetchingVehicles ? 'animate-spin' : ''}`} />
                 </button>
               </div>
             </div>
 
-            <div className="space-y-2 mb-2">
-              <div className="relative">
-                <Input
-                  type="text"
-                  value={vehicleSearch}
-                  onChange={(e) => setVehicleSearch(e.target.value)}
-                  placeholder="Search by Reg No, Model, or Color…"
-                  className="h-8 text-xs bg-white pr-7 rounded-lg"
-                />
-                {vehicleSearch && (
+            <div className="space-y-3">
+              {vin && chosenVehicle && !isAddingNewVehicle ? (
+                <div className="flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 shadow-sm">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white font-bold text-xs uppercase shadow-sm">
+                      <Car className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-slate-900 truncate">
+                          {chosenVehicle.registrationNumber || 'No Reg Number'}
+                        </p>
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800">
+                          {chosenVehicle.model || 'Demo Car'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 truncate">
+                        {[chosenVehicle.variant, chosenVehicle.color, chosenVehicle.branchLabel].filter(Boolean).join(' · ')}
+                        {chosenVehicle.sharedPlate ? ` · VIN ${chosenVehicle.vin.slice(-6)}` : ''}
+                      </p>
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setVehicleSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1"
+                    onClick={() => setVin('')}
+                    className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 bg-white border border-indigo-200 hover:bg-indigo-50 px-2.5 py-1 rounded-md transition-colors shrink-0"
                   >
-                    ×
+                    Change Vehicle
                   </button>
-                )}
-              </div>
-            </div>
+                </div>
+              ) : isAddingNewVehicle ? (
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 p-3.5 space-y-3 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                      <Plus className="h-4 w-4 text-indigo-600" /> Add Demo Vehicle to Fleet
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingNewVehicle(false)}
+                      className="text-xs text-slate-400 hover:text-slate-700 font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </div>
 
-            <Select value={vin} onValueChange={setVin}>
-              <SelectTrigger className="bg-white">
-                <SelectValue placeholder="-- Select Vehicle from Demo Fleet --" />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                {loadingVehicles ? (
-                  <div className="p-4 text-center text-xs text-slate-500">
-                    Loading demo fleet…
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-bold text-slate-700">Reg No / Plate *</Label>
+                      <Input
+                        value={manualRegNo}
+                        onChange={(e) => setManualRegNo(e.target.value.toUpperCase())}
+                        placeholder="e.g. JK02CR-0880"
+                        className="h-8 text-xs bg-white font-mono uppercase font-semibold"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-bold text-slate-700">Model *</Label>
+                      <Input
+                        value={manualModel}
+                        onChange={(e) => setManualModel(e.target.value.toUpperCase())}
+                        placeholder="e.g. SONET, SELTOS"
+                        className="h-8 text-xs bg-white uppercase font-semibold"
+                      />
+                    </div>
                   </div>
-                ) : filteredVehicles.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-slate-500 space-y-2">
-                    <p>No matching vehicles found.</p>
+
+                  <div className="flex flex-wrap gap-1 items-center">
+                    <span className="text-[10px] text-slate-400 font-medium mr-1">Quick Select:</span>
+                    {KIA_QUICK_MODELS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setManualModel(m)}
+                        className={`px-2 py-0.5 text-[10px] rounded font-semibold border transition-all ${
+                          manualModel === m
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
                   </div>
-                ) : (
-                  filteredVehicles.map((v) => (
-                    <SelectItem key={v.vin} value={v.vin} className="text-xs">
-                      {v.registrationNumber || v.vin.slice(-6)} - {v.model} ({v.branchLabel})
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-slate-700">Variant / Trim</Label>
+                      <Input
+                        value={manualVariant}
+                        onChange={(e) => setManualVariant(e.target.value.toUpperCase())}
+                        placeholder="e.g. HTX D1.5 6AT / GRAVITY"
+                        className="h-8 text-xs bg-white uppercase"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-slate-700">Color</Label>
+                      <Input
+                        value={manualColor}
+                        onChange={(e) => setManualColor(e.target.value.toUpperCase())}
+                        placeholder="e.g. CLEAR WHITE"
+                        className="h-8 text-xs bg-white uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-slate-700">Chassis / VIN (Optional)</Label>
+                      <Input
+                        value={manualVin}
+                        onChange={(e) => setManualVin(e.target.value.toUpperCase())}
+                        placeholder="e.g. MZBFB813..."
+                        className="h-8 text-xs bg-white font-mono uppercase"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-slate-700">Branch / Dealer</Label>
+                      <Select value={manualDealerCode} onValueChange={setManualDealerCode}>
+                        <SelectTrigger className="h-8 text-xs bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {KIA_BRANCH_OPTIONS.map((b) => (
+                            <SelectItem key={b.code} value={b.code} className="text-xs">
+                              {b.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-slate-700">Current Kms</Label>
+                      <Input
+                        type="number"
+                        value={manualKms}
+                        onChange={(e) => setManualKms(e.target.value)}
+                        placeholder="e.g. 1500"
+                        className="h-8 text-xs bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setIsAddingNewVehicle(false)}
+                      className="h-7 text-xs"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleAddNewVehicle()}
+                      disabled={creatingVehicle || !manualRegNo.trim()}
+                      className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                    >
+                      {creatingVehicle ? (
+                        <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="mr-1.5 h-3 w-3" />
+                      )}
+                      Save &amp; Select Vehicle
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2 border border-slate-200 rounded-lg p-3 bg-white">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                      <Input
+                        type="text"
+                        value={vehicleSearch}
+                        onChange={(e) => setVehicleSearch(e.target.value)}
+                        placeholder="Search demo cars by Reg No, Model, Color, or Branch…"
+                        className="h-8 pl-8 text-xs bg-slate-50 border-slate-200 rounded-lg"
+                      />
+                      {vehicleSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setVehicleSearch('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setManualRegNo(vehicleSearch.trim().toUpperCase())
+                        setIsAddingNewVehicle(true)
+                      }}
+                      className="h-8 px-2.5 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-bold shrink-0"
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" /> + Add Vehicle
+                    </Button>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto space-y-1 divide-y divide-slate-100">
+                    {loadingVehicles ? (
+                      <p className="p-3 text-center text-xs text-slate-400">Loading demo fleet…</p>
+                    ) : filteredVehicles.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-slate-500 space-y-2">
+                        <p>No matching vehicles found.</p>
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              setManualRegNo(vehicleSearch.trim().toUpperCase())
+                              setIsAddingNewVehicle(true)
+                            }}
+                            className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                          >
+                            <Plus className="mr-1.5 h-3.5 w-3.5" />
+                            Add &quot;{vehicleSearch.trim() || 'New Vehicle'}&quot; to Fleet
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      filteredVehicles.map((v) => (
+                        <button
+                          key={v.vin}
+                          type="button"
+                          onClick={() => {
+                            setVin(v.vin)
+                            setVehicleSearch('')
+                          }}
+                          className="w-full flex items-center justify-between p-2 text-left hover:bg-indigo-50/70 rounded-md transition-colors group"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-slate-900 group-hover:text-indigo-700 font-mono">
+                                {v.registrationNumber || v.vin.slice(-6)}
+                              </span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 group-hover:bg-indigo-100 group-hover:text-indigo-800">
+                                {v.model || 'Demo'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {[v.variant, v.color, v.branchLabel].filter(Boolean).join(' · ')}
+                              {v.sharedPlate ? ` · VIN ${v.vin.slice(-6)}` : ''}
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded shrink-0">
+                            {v.branchLabel}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">

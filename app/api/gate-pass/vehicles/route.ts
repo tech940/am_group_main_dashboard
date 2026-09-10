@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGatePassAccess, visibleDealerCodes } from '@/lib/gate-pass/access'
 import { gatePassErrorResponse } from '@/lib/gate-pass/api'
-import { listDemoVehiclesForGatePass, lookupByRegistration } from '@/lib/gate-pass/vehicles'
+import { listDemoVehiclesForGatePass, lookupByRegistration, registerManualDemoVehicle } from '@/lib/gate-pass/vehicles'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,3 +49,37 @@ export async function GET(request: NextRequest) {
     return gatePassErrorResponse(error)
   }
 }
+
+export async function POST(request: NextRequest) {
+  const access = await requireGatePassAccess('gate_pass.create')
+  if (access.denied) return access.denied
+
+  try {
+    const body = await request.json()
+    const { registrationNumber, model, variant, vin, color, dealerCode, currentKms } = body || {}
+
+    if (!registrationNumber || typeof registrationNumber !== 'string' || !registrationNumber.trim()) {
+      return NextResponse.json({ error: 'Registration number is required' }, { status: 400 })
+    }
+    if (!model || typeof model !== 'string' || !model.trim()) {
+      return NextResponse.json({ error: 'Vehicle model is required' }, { status: 400 })
+    }
+
+    const vehicle = await registerManualDemoVehicle({
+      registrationNumber: registrationNumber.trim(),
+      model: model.trim(),
+      variant: typeof variant === 'string' ? variant.trim() : undefined,
+      vin: typeof vin === 'string' ? vin.trim() : undefined,
+      color: typeof color === 'string' ? color.trim() : undefined,
+      dealerCode: typeof dealerCode === 'string' ? dealerCode.trim() : undefined,
+      currentKms: typeof currentKms === 'number' ? currentKms : Number(currentKms) || undefined,
+      createdByUserId: access.appUser.id,
+      createdByName: access.appUser.fullName || access.appUser.email,
+    })
+
+    return NextResponse.json({ ok: true, vehicle }, { status: 201 })
+  } catch (error) {
+    return gatePassErrorResponse(error)
+  }
+}
+

@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm'
+import { KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE } from '@/lib/kia/stock-local-status'
 import type { SQL } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { analyticsDb, analyticsExecute } from '@/lib/analytics/db'
@@ -290,7 +291,7 @@ const kiaMatchingStockFromWhere = (model: SQL, variant: SQL, color: SQL) => sql`
     LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
     WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ${sql`(${sql.join(
       KIA_ALLOTTABLE_STOCK_STATUSES.map((v) => sql`${v}`), sql`, `)})`}
-      AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+      AND ${sql.raw(KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE)}
       AND (sm.model ILIKE '%' || ${model} || '%' OR ${model} ILIKE '%' || sm.model || '%')
       AND coalesce(sm.variant, '') <> ''
       AND coalesce(${variant}, '') <> ''
@@ -2070,7 +2071,7 @@ async function readMatchingVehicle(vinNumber: string) {
     WHERE upper(sm.vin_number) = ${vin}
       AND va.id IS NULL
       -- Not matchable if retailed or on hold (#12).
-      AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+      AND ${sql.raw(KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE)}
       -- ...nor if WE already delivered it. The two tests above both miss that case: the allocation
       -- is released at handover and local_status is only written on one of several delivery paths.
       AND NOT ${sql.raw(kiaDeliveredByUsSql('sm'))}
@@ -2144,7 +2145,7 @@ export async function getKiaBookingMatchingVehicles(id: string) {
       -- two in step is the whole point: a car the badge calls available must be offerable here.
       WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ${sql`(${sql.join(
         KIA_ALLOTTABLE_STOCK_STATUSES.map((v) => sql`${v}`), sql`, `)})`}
-        AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+        AND ${sql.raw(KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE)}
         AND NOT EXISTS (SELECT 1 FROM active_allocations aa WHERE aa.vin_number = sm.vin_number)
         -- ...and not a car we have already handed over. active_allocations cannot see those (the
         -- allocation is released at handover) and local_status is only written on one delivery path,
@@ -2539,6 +2540,15 @@ export async function holdKiaStockVehicle(
   const [existing] = await db.select({ localStatus: kiaStockLocalStatuses.localStatus }).from(kiaStockLocalStatuses)
     .where(eq(kiaStockLocalStatuses.vinNumber, vin)).limit(1)
   if (existing?.localStatus === 'retail') throw new Error('This vehicle is already retailed and cannot be held.')
+  /*
+   * ⚠️ SYMMETRIC TO markKiaStockBbnd, WHICH ALREADY REFUSES A HELD CAR. Without this the asymmetry
+   * destroys data: kia_stock_local_statuses is ONE ROW PER VIN and the upsert below replaces the row
+   * wholesale, so pressing Hold on a BBND car silently overwrote the marker, the MANDATORY BBND
+   * remarks and the marked_by/marked_at audit — no error, and no way to recover what the remarks said.
+   */
+  if (existing?.localStatus === 'bbnd_marked') {
+    throw new Error('This vehicle is marked BBND. Unmark it before placing a hold.')
+  }
 
   const vehicle = await readStockVehicleRow(vin)
   const base = {
@@ -2573,11 +2583,17 @@ export async function holdKiaStockVehicle(
  * catches up (see allotKiaBbndVehicle and the `bbnd` arms of the matching-vehicle queries). Reusing
  * that literal would make hand-entered VINs and BBND-marked stock indistinguishable.
  *
- * The vehicle DELIBERATELY STAYS IN FREE STOCK (owner decision). That falls out of the free-stock
- * filter in app/api/brands/kia/proforma/stock/route.ts, which excludes only
- * ('hold_customer', 'hold_dealer', 'retail') — `bbnd_marked` is absent from that list, so the row
- * keeps showing and stays allottable. Consequently BBND needs NO expiry or release clock: it is a
- * label, not a reservation.
+ * ⚠️ THE VEHICLE LEAVES FREE STOCK. Owner decision, 2026-09-10 — this REVERSES the original rule.
+ *
+ * It previously stayed in free stock and remained sellable, on the reasoning that BBND is "a label,
+ * not a reservation". That reasoning still holds for the CLOCK — nothing expires a BBND marker, and
+ * expireKiaStockHolds still filters hold_* only — but the car is now excluded from every allotment
+ * surface through KIA_NON_ALLOTTABLE_LOCAL_STATUSES (lib/kia/stock-local-status.ts) and has its own
+ * BBND bucket on the stock board.
+ *
+ * The consequence is deliberate and one-way: a BBND car CANNOT be allotted until somebody unmarks
+ * it. That is why the Unmark action had to ship in the same change — before it, marking a car was a
+ * trapdoor with no way back short of a hand-crafted API call.
  *
  * ⚠️ kia_stock_local_statuses is ONE ROW PER VIN, so writing here would clobber a hold. The guard
  * below refuses on any hold/retail state rather than silently releasing it.
@@ -2710,6 +2726,24 @@ export async function allotKiaBbndVehicle(
     dealer_code: nullableText(details.dealerCode),
     source: 'bbnd',
   }
+  /*
+   * ⚠️ THE LAUNDERING HOLE. The upsert below rewrites local_status wholesale on a one-row-per-VIN
+   * table, so POSTing an already-marked VIN here turned 'bbnd_marked' into 'bbnd' — and 'bbnd' is
+   * deliberately allottable, being the Booked-But-Not-in-DMS feature. That bypassed every exclusion
+   * the six filter sites enforce, and was reachable by anyone who can press the BBND button, since
+   * both paths are gated on the same permission. It laundered 'retail' and the holds the same way.
+   */
+  const [priorStatus] = await db.select({ localStatus: kiaStockLocalStatuses.localStatus })
+    .from(kiaStockLocalStatuses).where(eq(kiaStockLocalStatuses.vinNumber, vin)).limit(1)
+  const prior = text(priorStatus?.localStatus ?? '')
+  if (prior === 'bbnd_marked') {
+    throw new Error('This VIN is marked BBND (Build But Not Delivered). Unmark it before allotting.')
+  }
+  if (prior === 'retail') throw new Error('This VIN is already retailed and cannot be allotted.')
+  if (prior === 'hold_dealer' || prior === 'hold_customer') {
+    throw new Error('This VIN is on hold. Release the hold before allotting.')
+  }
+
   const base = {
     localStatus: 'bbnd' as const,
     dealerCode: nullableText(details.dealerCode),

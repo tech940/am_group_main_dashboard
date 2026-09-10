@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE, KIA_BBND_PREDICATE, kiaAllottableLocalStatusPredicate } from '@/lib/kia/stock-local-status'
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
@@ -9,6 +10,38 @@ import { requirePermission } from '@/lib/permissions/service'
 import { KIA_HOLD_WINDOW_HOURS } from '@/lib/kia/bookings'
 
 export const dynamic = 'force-dynamic'
+
+/**
+ * The YEAR the DMS invoiced this vehicle, from `kin_invoice_date`.
+ *
+ * ⚠️ `[0-9]`, NOT `\d`. Measured on this database through the real query path: the `\d` shorthand
+ * matched 0 of 88 rows while `[0-9]` matched all 88, on identical clean ASCII values like
+ * "01/09/2026". The backslash does not survive to the regex engine when the pattern is embedded in
+ * the query TEXT (as every one of these is) rather than sent as a bound parameter — as a parameter
+ * `\d` works, inline it does not, which is why this reads as though it should be fine.
+ *
+ * The same shorthand is used by `parsedInvoiceDateSql` in lib/kia/stock-report.ts, which is why that
+ * report's invoice-derived dates have silently been NULL for every row and quietly falling through
+ * to their COALESCE fallbacks.
+ *
+ * ⚠️ kin_invoice_date is TEXT in the feed, in two shapes, so it is parsed rather than cast.
+ */
+const invoiceYearFrom = (expr: string) => `EXTRACT(YEAR FROM CASE
+      WHEN NULLIF(TRIM(${expr}), '') ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' THEN to_date(TRIM(${expr}), 'DD/MM/YYYY')
+      WHEN NULLIF(TRIM(${expr}), '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN to_date(TRIM(${expr}), 'YYYY-MM-DD')
+      ELSE NULL
+    END)::int`
+
+/**
+ * Is that year the current one?
+ *
+ * ⚠️ ANSWERED SERVER-SIDE, IN ASIA/KOLKATA — deliberately not left to the browser. The server runs
+ * UTC in production, so between 00:00 and 05:30 IST on 1 January the UTC year is still the old one
+ * and every car invoiced that day would render red. This module has already shipped that class of
+ * bug twice (the IST month boundary here, and `'en-IN'` being mistaken for a timezone in follow-ups).
+ */
+const invoiceYearIsCurrent = (expr: string) =>
+  `(${invoiceYearFrom(expr)} = EXTRACT(YEAR FROM now() AT TIME ZONE 'Asia/Kolkata')::int)`
 
 async function authorize() {
   const accessResponse = await requireBrandApiAccess('kia')
@@ -213,7 +246,7 @@ export async function GET(request: Request) {
 
     if (status !== 'All') {
       if (status === 'AVAILABLE') {
-        filters.push(`va.id IS NULL AND vt.id IS NULL AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail') AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED') AND NOT ${dmsSoldExpr} AND NOT ${deliveredByUsExpr}`)
+        filters.push(`va.id IS NULL AND vt.id IS NULL AND ${KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE} AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED') AND NOT ${dmsSoldExpr} AND NOT ${deliveredByUsExpr}`)
       } else if (status === 'ALLOTTED' || status === 'PAYMENT_PENDING') {
         // Payment Pending means OUR allocation is waiting on the customer's money — so it requires an
         // app allocation row, full stop.
@@ -245,7 +278,14 @@ export async function GET(request: Request) {
         // `va.id IS NULL AND vt.id IS NULL` keeps this bucket DISJOINT from Payment Pending and
         // Transfers. Without it, a car we allotted that the DMS feed later also reports as
         // 'Allocated' would be counted twice and the cards would stop summing to Total VINs.
-        filters.push("UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'ALLOCATED' AND va.id IS NULL AND vt.id IS NULL")
+        /*
+         * ⚠️ `AND NOT <BBND>` keeps this disjoint from the new BBND bucket as well. A BBND-marked
+         * car whose DMS status happens to read 'ALLOCATED' would otherwise land in both, and the
+         * cards would stop summing to Total VINs — the same double-count the va/vt clause exists to
+         * prevent. OUR status wins over the feed's label, matching how the client already orders the
+         * hold branch above the DMS-Allocated branch.
+         */
+        filters.push(`UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'ALLOCATED' AND va.id IS NULL AND vt.id IS NULL AND NOT (${KIA_BBND_PREDICATE})`)
       } else if (status === 'ON_HOLD') {
         /*
          * #12 Vehicles held for a dealer or a customer, reserved outside the allocation workflow.
@@ -264,6 +304,21 @@ export async function GET(request: Request) {
          * the card can never disagree with the tab it opens.
          */
         filters.push("COALESCE(ls.local_status, '') IN ('hold_customer', 'hold_dealer')")
+      } else if (status === 'BBND') {
+        /*
+         * Build But Not Delivered — built and invoiced, not yet handed to the customer.
+         *
+         * ⚠️ THIS BRANCH IS NOT OPTIONAL, and the reason is written four lines above for holds. By
+         * owner decision (2026-09-10) a BBND car leaves free stock, so it drops out of AVAILABLE —
+         * and without a bucket of its own it matches NOTHING: no allocation (markKiaStockBbnd
+         * refuses a VIN that has one), no transfer, DMS status still 'Free Stock', not a hold. It
+         * would be reachable only by clicking Total VINs. That is verbatim the #12 defect above —
+         * "a held car had nowhere to BE ... from the user's seat holding a vehicle made it vanish
+         * rather than marking it held." Removing BBND from free stock without this reproduces it.
+         *
+         * Shares KIA_BBND_PREDICATE with the KPI count below, so card and tab cannot drift.
+         */
+        filters.push(KIA_BBND_PREDICATE)
       } else if (status === 'PAID_TO_DELIVER') {
         filters.push("va.id IS NOT NULL AND kb.status = 'ready_delivery'")
       } else if (status === 'DELIVERED') {
@@ -391,7 +446,7 @@ export async function GET(request: Request) {
         COUNT(
           CASE WHEN va.id IS NULL
                 AND vt.id IS NULL
-                AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail')
+                AND ${KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE}
                 AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED')
                 AND NOT ${dmsSoldExpr}
                 -- A car WE handed over is not available, whatever the DMS feed still says. Without
@@ -401,6 +456,9 @@ export async function GET(request: Request) {
         )::int AS available,
         -- #12 Holds. The SAME predicate the ON_HOLD filter uses, so card and tab cannot drift.
         COUNT(CASE WHEN COALESCE(ls.local_status, '') IN ('hold_customer', 'hold_dealer') THEN 1 END)::int AS on_hold,
+        -- Build But Not Delivered. Same rule as the holds above: the SAME predicate string the BBND
+        -- filter uses, so the card can never disagree with the tab it opens.
+        COUNT(CASE WHEN ${KIA_BBND_PREDICATE} THEN 1 END)::int AS bbnd,
         -- Waiting on a customer's money against an allocation WE made. Requires va.id — see the
         -- PAYMENT_PENDING filter above for why the DMS-'ALLOCATED' disjunct was removed (it inflated
         -- this from a true 1 to 8).
@@ -469,6 +527,14 @@ export async function GET(request: Request) {
       paid_to_deliver: 0,
       delivered: 0,
       transfers: 0,
+      /*
+       * ⚠️ `on_hold` was missing from this fallback and survived only because the client reads
+       * `data.metrics.on_hold || 0`. A new card written without that guard renders blank or NaN
+       * whenever the metrics query returns no row. Both are listed now so neither depends on the
+       * caller remembering.
+       */
+      on_hold: 0,
+      bbnd: 0,
     }
 
     /*
@@ -667,6 +733,8 @@ export async function GET(request: Request) {
         COALESCE(sm.exterior_color_name, va.vehicle_snapshot->>'exterior_color_name', kb.color) AS color,
         COALESCE(sm.stock_age, va.vehicle_snapshot->>'stock_age') AS stock_age,
         'Delivered' AS stock_status,
+        ${invoiceYearFrom("COALESCE(sm.kin_invoice_date, va.vehicle_snapshot->>'kin_invoice_date')")} AS invoice_year,
+        ${invoiceYearIsCurrent("COALESCE(sm.kin_invoice_date, va.vehicle_snapshot->>'kin_invoice_date')")} AS invoice_year_is_current,
         -- Shape parity with the main projection; a delivered car is not on hold.
         NULL AS local_status, NULL AS hold_notes, NULL AS hold_marked_at, NULL AS hold_by,
         NULL AS hold_expires_at, FALSE AS hold_paid,
@@ -715,6 +783,8 @@ export async function GET(request: Request) {
         COALESCE(sm.stock_age, vt.vehicle_snapshot->>'stock_age') AS stock_age,
         -- The row's own status IS the transfer state; the DMS status is meaningless once it's gone.
         COALESCE(vt.transfer_status, 'Transferred') AS stock_status,
+        ${invoiceYearFrom("COALESCE(sm.kin_invoice_date, vt.vehicle_snapshot->>'kin_invoice_date')")} AS invoice_year,
+        ${invoiceYearIsCurrent("COALESCE(sm.kin_invoice_date, vt.vehicle_snapshot->>'kin_invoice_date')")} AS invoice_year_is_current,
         -- Shape parity with the main projection; a transferred car is not on hold.
         NULL AS local_status, NULL AS hold_notes, NULL AS hold_marked_at, NULL AS hold_by,
         NULL AS hold_expires_at, FALSE AS hold_paid,
@@ -763,6 +833,8 @@ export async function GET(request: Request) {
         sm.exterior_color_name as color,
         sm.stock_age,
         sm.stock_status,
+        ${invoiceYearFrom('sm.kin_invoice_date')} AS invoice_year,
+        ${invoiceYearIsCurrent('sm.kin_invoice_date')} AS invoice_year_is_current,
         /*
          * #12 The hold, carried onto the ROW.
          *
@@ -776,7 +848,16 @@ export async function GET(request: Request) {
         ls.notes AS hold_notes,
         ls.marked_at AS hold_marked_at,
         ls.marked_by_name AS hold_by,
-        (ls.marked_at + interval '${KIA_HOLD_WINDOW_HOURS} hours') AS hold_expires_at,
+        /*
+         * ⚠️ HOLDS ONLY. This was computed from ANY kia_stock_local_statuses row, so a BBND marker —
+         * which markKiaStockBbnd stamps with marked_at = now() — already carried a phantom release
+         * countdown for a label that has NO clock and that nothing will ever release
+         * (expireKiaStockHolds filters hold_* only). Inert while the client gated the clock on
+         * hold_*, but the BBND view renders these same rows, so it stops being inert now.
+         */
+        CASE WHEN COALESCE(ls.local_status, '') IN ('hold_customer', 'hold_dealer')
+             THEN (ls.marked_at + interval '${KIA_HOLD_WINDOW_HOURS} hours')
+        END AS hold_expires_at,
         (COALESCE(ls.stock_status_at_mark, '') = 'PAID') AS hold_paid,
         sm.order_dealer as dealer_code,
         sm.engine_no,
@@ -870,7 +951,7 @@ export async function GET(request: Request) {
           AND ${ageInt('alt')} > ${ageInt('sm')}
           AND alt_va.id IS NULL
           AND alt_vt.id IS NULL
-          AND COALESCE(alt_ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail')
+          AND ${kiaAllottableLocalStatusPredicate('alt_ls')}
           AND UPPER(COALESCE(alt.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED')
           -- A car still on a truck is not a usable alternative to suggest.
           AND UPPER(TRIM(COALESCE(alt.stock_status, ''))) <> 'IN TRANSIT'
@@ -987,7 +1068,16 @@ export async function GET(request: Request) {
       heldVehicles = await db.execute(sql.raw(`
         SELECT ls.vin_number, ls.local_status, ls.dealer_code, ls.model, ls.variant, ls.color,
                ls.customer_name, ls.booking_no, ls.notes, ls.marked_by_name, ls.marked_at,
-               (ls.marked_at + interval '${KIA_HOLD_WINDOW_HOURS} hours') AS hold_expires_at,
+               /*
+         * ⚠️ HOLDS ONLY. This was computed from ANY kia_stock_local_statuses row, so a BBND marker —
+         * which markKiaStockBbnd stamps with marked_at = now() — already carried a phantom release
+         * countdown for a label that has NO clock and that nothing will ever release
+         * (expireKiaStockHolds filters hold_* only). Inert while the client gated the clock on
+         * hold_*, but the BBND view renders these same rows, so it stops being inert now.
+         */
+        CASE WHEN COALESCE(ls.local_status, '') IN ('hold_customer', 'hold_dealer')
+             THEN (ls.marked_at + interval '${KIA_HOLD_WINDOW_HOURS} hours')
+        END AS hold_expires_at,
                (coalesce(ls.stock_status_at_mark, '') = 'PAID') AS paid,
                ls.vehicle_snapshot
         FROM kia_stock_local_statuses ls

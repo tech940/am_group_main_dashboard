@@ -589,15 +589,18 @@ export function PettyCashWorkspace() {
     for (const group of visibleTopology) {
       for (const loc of group.locations) {
         for (const dept of group.departments) {
-          // Find matching live DB record
+          // Find matching live DB record (must not have been claimed by another outlet slot)
           const liveMatch = activeDbRows.find((dbRow) => {
+            if (matchedDbIds.has(dbRow.id)) return false
             const b = normalizeBranchId(dbRow) || ''
-            const dbLoc = (dbRow.location || '').toLowerCase()
-            const dbDept = (dbRow.department || '').toLowerCase()
+            const dbLoc = (dbRow.location || '').trim().toLowerCase()
+            const dbDept = (dbRow.department || '').trim().toLowerCase()
+            const targetLoc = loc.trim().toLowerCase()
+            const targetDept = dept.trim().toLowerCase()
             return (
               (b === group.brand || b.includes(group.brand)) &&
-              (dbLoc === loc.toLowerCase() || dbLoc.includes(loc.toLowerCase())) &&
-              (dbDept === dept.toLowerCase() || dbDept.includes(dept.toLowerCase()))
+              (dbLoc === targetLoc || dbLoc.includes(targetLoc) || targetLoc.includes(dbLoc)) &&
+              (dbDept === targetDept || dbDept.includes(targetDept) || targetDept.includes(dbDept))
             )
           })
 
@@ -627,6 +630,7 @@ export function PettyCashWorkspace() {
     // Include any additional DB allocations not covered by the canonical template
     for (const extraRow of activeDbRows) {
       if (!matchedDbIds.has(extraRow.id)) {
+        matchedDbIds.add(extraRow.id)
         allTopologyRows.push(extraRow)
       }
     }
@@ -1594,7 +1598,7 @@ export function PettyCashWorkspace() {
 
                           return (
                             <tr
-                              key={allocation.id}
+                              key={allocation.isPlaceholder ? allocation.id : `${allocation.id}-${allocation.location || ''}-${allocation.department || ''}`}
                               // Read-only, like the Actions cell: clicking a FUNDED row opens its spends.
                               // An unfunded row used to open the new-request dialog — the same create
                               // action as the removed button, just hidden — so it is now inert.
@@ -1739,7 +1743,7 @@ export function PettyCashWorkspace() {
 
                         return (
                           <div
-                            key={allocation.id}
+                            key={allocation.isPlaceholder ? allocation.id : `${allocation.id}-${allocation.location || ''}-${allocation.department || ''}`}
                             // Same rule as the matrix row: funded opens spends, unfunded is inert.
                             onClick={() => { if (isActive) setSpendAllocationId(allocation.id) }}
                             className={cn(

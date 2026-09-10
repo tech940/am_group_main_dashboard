@@ -18,6 +18,7 @@
  * Read-only. Run: npm run verify:kia-bookings
  */
 import 'dotenv/config'
+import { KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE, KIA_NON_ALLOTTABLE_LOCAL_STATUSES } from '../lib/kia/stock-local-status'
 import { getKiaBookingsList, getKiaBookingMatchingVehicles } from '../lib/kia/bookings'
 import { getAllocationHistorySummary, getAllocationHistory } from '../lib/kia/allocation-history'
 import { analyticsExecute } from '../lib/analytics/db'
@@ -274,8 +275,34 @@ async function stockBoardBuckets() {
   const [overlap] = await analyticsExecute<{ n: number }>(sql.raw(`
     SELECT COUNT(*)::int AS n ${FROM}
     WHERE ${HOLD} AND va.id IS NULL AND vt.id IS NULL
-      AND COALESCE(ls.local_status,'') NOT IN ('hold_customer','hold_dealer','retail')`))
+      AND ${KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE}`))
   check(Number(overlap.n) === 0, 'no held vehicle is simultaneously offered as Available')
+
+  /*
+   * ── BBND (Build But Not Delivered) ──────────────────────────────────────────────────────────
+   * By owner decision (2026-09-10) a BBND car LEAVES free stock. Three things must hold together,
+   * and this module's history is that they drift apart: the card must equal the tab it opens, the
+   * car must not still be offered as Available, and it must belong to SOME bucket rather than
+   * vanishing — which is exactly what happened to holds before the ON_HOLD card was added.
+   */
+  const BBND = "COALESCE(ls.local_status,'') = 'bbnd_marked'"
+  const [bbndCard] = await analyticsExecute<{ n: number }>(sql.raw(`SELECT COUNT(*)::int AS n ${FROM} WHERE ${BBND}`))
+  const [bbndOverlap] = await analyticsExecute<{ n: number }>(sql.raw(`
+    SELECT COUNT(*)::int AS n ${FROM}
+    WHERE ${BBND} AND ${KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE}`))
+  console.log(`   BBND: ${bbndCard.n} marked`)
+  check(Number(bbndOverlap.n) === 0, 'no BBND vehicle is simultaneously offered as Available')
+
+  // And the vocabulary itself: 'bbnd' (Booked-But-Not-in-DMS) must NEVER join the exclusion list —
+  // it exists precisely to be allotted, and folding it in silently kills that feature.
+  check(
+    !(KIA_NON_ALLOTTABLE_LOCAL_STATUSES as readonly string[]).includes('bbnd'),
+    "'bbnd' (Booked-But-Not-in-DMS) is NOT excluded — it is a different feature and must stay allottable",
+  )
+  check(
+    (KIA_NON_ALLOTTABLE_LOCAL_STATUSES as readonly string[]).includes('bbnd_marked'),
+    "'bbnd_marked' IS excluded from free stock",
+  )
 
   /*
    * transfer_missing counts the SAME table with the SAME statuses plus `stock_missing_at IS NOT
