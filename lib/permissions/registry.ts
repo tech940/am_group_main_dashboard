@@ -802,8 +802,16 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     key: 'fuel_approvals',
     name: 'Fuel Approvals',
     parentKey: null,
-    description: 'Vehicle, genset and yard fuel requisition orders, slip verification, and multi-stage workflow (ED → HR → MD).',
+    description: 'Vehicle, genset and yard fuel requisition orders, slip verification, and CEO approval workflow.',
     sortOrder: 59,
+    actions: ['view', 'create', 'edit', 'approve', 'audit'],
+  },
+  {
+    key: 'fuel_management',
+    name: 'Fuel Management',
+    parentKey: null,
+    description: 'Fleet fuel telemetry, demo gate pass trip mileage correlation, and fuel requisition management.',
+    sortOrder: 58,
     actions: ['view', 'create', 'edit', 'approve', 'audit'],
   },
   {
@@ -923,6 +931,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   ca: { href: '/ca' },
   finance: { href: '/finance' },
   bank_sanctions: { href: '/bank-sanctions' },
+  fuel_management: { href: '/fuel-management' },
   fuel_approvals: { href: '/fuel-approvals', aliases: ['/brands/kia/fuel-approvals'] },
   // The guard-facing /gate/<token> page is deliberately NOT registered here. It is unauthenticated
   // by design (guards have no accounts) and is protected by an HMAC token, not by this section.
@@ -1001,7 +1010,7 @@ export const DEFAULT_VISIBLE_SECTIONS = new Set<string>([
   // Broadly visible on purpose: every user gets a personal task inbox. Who may DELEGATE is role-gated
   // (lib/delegation/access.ts), and the list only shows tasks a user created or was assigned.
   'delegation_tasks',
-  'purchase_orders', 'finance_orders', 'petty_cash', 'fuel_approvals', 'am_finance', 'user_management', 'scrap_erp', 'showroom_images',
+  'purchase_orders', 'finance_orders', 'petty_cash', 'fuel_management', 'fuel_approvals', 'am_finance', 'user_management', 'scrap_erp', 'showroom_images',
   'kia.business_excellence', 'kia.service_appointment', 'kia.demo_job_cards', 'kia.demo_cars_list',
   'kia.sales_report', 'kia.stock_report', 'kia.bookings', 'kia.proforma',
   'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.demo_job_cards',

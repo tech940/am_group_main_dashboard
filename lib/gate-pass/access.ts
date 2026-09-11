@@ -6,7 +6,7 @@ import { isSuperAdminRole } from '@/lib/auth/roles'
 import { parseUserDealers } from '@/lib/dealers/registry'
 import { KIA_BRANCH_DEALERS } from '@/lib/kia/dealer-branch'
 import { isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
-import { requirePermission } from '@/lib/permissions/service'
+import { requirePermission, type PermissionCheckResult } from '@/lib/permissions/service'
 
 /**
  * The ONE statement of who may do what in Demo Car GatePass.
@@ -105,6 +105,40 @@ export type GatePassAccess =
   | { denied: NextResponse; appUser?: undefined }
   | { denied?: undefined; appUser: AppUser }
 
+export type GatePassPermissionKey =
+  | 'gate_pass.view'
+  | 'gate_pass.create'
+  | 'gate_pass.edit'
+  | 'gate_pass.approve'
+  | 'gate_pass.audit'
+
+/**
+ * Does this user hold a gate pass permission? The ONE resolution: requireGatePassAccess answers every
+ * route with it, and a page deciding whether to render a tool one of those routes feeds must ask it
+ * too rather than re-derive it.
+ *
+ * ⚠️ NOT isGatePassApproverRole. That is a role list and it disagrees with 'gate_pass.approve': `ceo`
+ * is on the list and is refused the permission (global-access roles lose restricted sections), while
+ * a user granted it in the Access Map is off the list and admitted. Rendering by one and guarding by
+ * the other is the button that appears and then 403s.
+ */
+export async function checkGatePassPermission(
+  appUser: AppUser,
+  permissionKey: GatePassPermissionKey,
+): Promise<PermissionCheckResult> {
+  // Let everyone submit / create and view demo gate passes with zero role restrictions
+  if (permissionKey === 'gate_pass.view' || permissionKey === 'gate_pass.create') {
+    return { allowed: true }
+  }
+
+  const permission = await requirePermission(appUser, permissionKey)
+  if (permission.allowed) return permission
+
+  if (await isPermissionExplicitlyAllowed(appUser, permissionKey)) return { allowed: true }
+
+  return permission
+}
+
 /**
  * The API guard. Every route under app/api/gate-pass/** calls this first.
  *
@@ -112,20 +146,13 @@ export type GatePassAccess =
  * employees without role restrictions. Approving and auditing remain gated by role/permissions.
  */
 export async function requireGatePassAccess(
-  permissionKey: 'gate_pass.view' | 'gate_pass.create' | 'gate_pass.edit' | 'gate_pass.approve' | 'gate_pass.audit' = 'gate_pass.view',
+  permissionKey: GatePassPermissionKey = 'gate_pass.view',
 ): Promise<GatePassAccess> {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return { denied: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
 
-  // Let everyone submit / create and view demo gate passes with zero role restrictions
-  if (permissionKey === 'gate_pass.view' || permissionKey === 'gate_pass.create') {
-    return { appUser }
-  }
-
-  const permission = await requirePermission(appUser, permissionKey)
+  const permission = await checkGatePassPermission(appUser, permissionKey)
   if (permission.allowed) return { appUser }
-
-  if (await isPermissionExplicitlyAllowed(appUser, permissionKey)) return { appUser }
 
   return { denied: NextResponse.json({ error: permission.reason }, { status: 403 }) }
 }

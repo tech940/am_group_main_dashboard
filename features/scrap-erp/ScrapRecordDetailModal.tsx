@@ -1,6 +1,7 @@
 'use client'
 
-import { ScrapTransaction } from '@/lib/scrap-erp/types'
+import { useState, useEffect } from 'react'
+import { ScrapTransaction, ScrapAttachment } from '@/lib/scrap-erp/types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,7 +44,31 @@ export function ScrapRecordDetailModal({
   onOpenGallery?: (txn: ScrapTransaction) => void
   onEditRecord?: (txn: ScrapTransaction) => void
 }) {
+  const [localAttachments, setLocalAttachments] = useState<ScrapAttachment[] | null>(null)
+
+  useEffect(() => {
+    if (!transaction || !isOpen) {
+      setLocalAttachments(null)
+      return
+    }
+    const hasMissingUrls = (transaction.attachments || []).some((a) => !a.url)
+    if (hasMissingUrls && transaction.id) {
+      fetch(`/api/scrap-erp?id=${encodeURIComponent(transaction.id)}&includeAttachments=true`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.transaction?.attachments) {
+            setLocalAttachments(data.transaction.attachments)
+          }
+        })
+        .catch((err) => console.error('Failed to load detail attachments:', err))
+    } else {
+      setLocalAttachments(transaction.attachments || [])
+    }
+  }, [transaction?.id, isOpen])
+
   if (!transaction) return null
+
+  const attachments = localAttachments !== null ? localAttachments : (transaction.attachments || [])
 
   const isDue = Math.round(Number(transaction.outstandingAmount || 0)) >= 1
   const handleBack = onBack || onClose
@@ -271,12 +296,18 @@ export function ScrapRecordDetailModal({
                 )}
               </div>
 
-              {transaction.attachments && transaction.attachments.length > 0 ? (
+              {attachments && attachments.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {transaction.attachments.map((att) => (
+                  {attachments.map((att) => (
                     <a
                       key={att.id}
-                      href={att.url}
+                      href={att.url || '#'}
+                      onClick={(e) => {
+                        if (!att.url && onOpenGallery) {
+                          e.preventDefault()
+                          onOpenGallery(transaction)
+                        }
+                      }}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-2.5 flex items-center justify-between text-xs hover:border-emerald-500 transition-all"

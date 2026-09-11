@@ -1592,6 +1592,8 @@ export function KiaBookingsClient({
   const [debouncedSearch, setDebouncedSearch] = useState(() => firstParam(initialSearchParams, 'search', ''))
   const [dealer, setDealer] = useState(() => firstParam(initialSearchParams, 'dealer_code', ALL_VALUE))
   const [model, setModel] = useState(() => firstParam(initialSearchParams, 'model', ALL_VALUE))
+  const [variant, setVariant] = useState(() => firstParam(initialSearchParams, 'variant', ''))
+  const [color, setColor] = useState(() => firstParam(initialSearchParams, 'color', ''))
   const [status, setStatus] = useState(() => firstParam(initialSearchParams, 'status', ALL_VALUE))
   const [consultant, setConsultant] = useState(() => firstParam(initialSearchParams, 'consultant', ALL_VALUE))
   const [startDate, setStartDate] = useState(defaultStartDate)
@@ -1601,6 +1603,8 @@ export function KiaBookingsClient({
   const [pendingSearch, setPendingSearch] = useState(() => firstParam(initialSearchParams, 'search', ''))
   const [pendingDealer, setPendingDealer] = useState(() => firstParam(initialSearchParams, 'dealer_code', ALL_VALUE))
   const [pendingModel, setPendingModel] = useState(() => firstParam(initialSearchParams, 'model', ALL_VALUE))
+  const [pendingVariant, setPendingVariant] = useState(() => firstParam(initialSearchParams, 'variant', ''))
+  const [pendingColor, setPendingColor] = useState(() => firstParam(initialSearchParams, 'color', ''))
   const [pendingStatus, setPendingStatus] = useState(() => firstParam(initialSearchParams, 'status', ALL_VALUE))
   const [pendingConsultant, setPendingConsultant] = useState(() => firstParam(initialSearchParams, 'consultant', ALL_VALUE))
   const [pendingStartDate, setPendingStartDate] = useState(defaultStartDate)
@@ -1610,6 +1614,8 @@ export function KiaBookingsClient({
     search: string
     dealer: string
     model: string
+    variant: string
+    color: string
     status: string
     consultant: string
     startDate: string
@@ -1618,6 +1624,8 @@ export function KiaBookingsClient({
     const s = overrides?.search !== undefined ? overrides.search : pendingSearch
     const d = overrides?.dealer !== undefined ? overrides.dealer : pendingDealer
     const m = overrides?.model !== undefined ? overrides.model : pendingModel
+    const v = overrides?.variant !== undefined ? overrides.variant : pendingVariant
+    const col = overrides?.color !== undefined ? overrides.color : pendingColor
     const st = overrides?.status !== undefined ? overrides.status : pendingStatus
     const c = overrides?.consultant !== undefined ? overrides.consultant : pendingConsultant
     const sd = overrides?.startDate !== undefined ? overrides.startDate : pendingStartDate
@@ -1627,12 +1635,14 @@ export function KiaBookingsClient({
     setDebouncedSearch(s)
     setDealer(d)
     setModel(m)
+    setVariant(v)
+    setColor(col)
     setStatus(st)
     setConsultant(c)
     setStartDate(sd)
     setEndDate(ed)
     setPage(1)
-  }, [pendingSearch, pendingDealer, pendingModel, pendingStatus, pendingConsultant, pendingStartDate, pendingEndDate])
+  }, [pendingSearch, pendingDealer, pendingModel, pendingVariant, pendingColor, pendingStatus, pendingConsultant, pendingStartDate, pendingEndDate])
 
   const handleResetFilters = useCallback(() => {
     const sd = getCurrentMonthStartDate()
@@ -1640,6 +1650,8 @@ export function KiaBookingsClient({
     setPendingSearch('')
     setPendingDealer(ALL_VALUE)
     setPendingModel(ALL_VALUE)
+    setPendingVariant('')
+    setPendingColor('')
     setPendingStatus(ALL_VALUE)
     setPendingConsultant(ALL_VALUE)
     setPendingStartDate(sd)
@@ -1648,6 +1660,8 @@ export function KiaBookingsClient({
     setDebouncedSearch('')
     setDealer(ALL_VALUE)
     setModel(ALL_VALUE)
+    setVariant('')
+    setColor('')
     setStatus(ALL_VALUE)
     setConsultant(ALL_VALUE)
     setStartDate(sd)
@@ -2092,19 +2106,33 @@ export function KiaBookingsClient({
     // render count of the single most-loaded route in the module. Omitting page 1 (the conventional
     // default) makes nextSearch === currentSearch on a clean load, so no replace fires. The list query
     // still sends `page` via its own buildQueryString call below, so pagination is unaffected.
-    const query = buildQueryString({ search: debouncedSearch, dealer_code: dealer, model, status, consultant, startDate: startDate || undefined, endDate: endDate || undefined, page: page > 1 ? page : undefined, sort: sortOrder === 'asc' ? 'asc' : undefined })
+    const query = buildQueryString({
+      search: debouncedSearch,
+      dealer_code: dealer,
+      model,
+      variant: variant || undefined,
+      color: color || undefined,
+      status,
+      consultant,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      page: page > 1 ? page : undefined,
+      sort: sortOrder === 'asc' ? 'asc' : undefined,
+    })
     const next = new URLSearchParams(query)
     const nextSearch = next.toString() ? `?${next.toString()}` : ''
     const currentSearch = typeof window !== 'undefined' ? window.location.search : ''
     if (nextSearch !== currentSearch) {
       router.replace(`${pathname}${nextSearch}`, { scroll: false })
     }
-  }, [pathname, consultant, dealer, model, page, router, debouncedSearch, status, embedMode, sortOrder, startDate, endDate])
+  }, [pathname, consultant, dealer, model, variant, color, page, router, debouncedSearch, status, embedMode, sortOrder, startDate, endDate])
 
   const listQueryString = useMemo(() => buildQueryString({
     search: debouncedSearch,
     dealer_code: dealer,
     model,
+    variant: variant || undefined,
+    color: color || undefined,
     status,
     consultant,
     startDate: startDate || undefined,
@@ -2112,7 +2140,7 @@ export function KiaBookingsClient({
     page,
     pageSize: DEFAULT_PAGE_SIZE,
     sort: sortOrder,
-  }), [consultant, dealer, debouncedSearch, model, page, status, sortOrder, startDate, endDate])
+  }), [consultant, dealer, debouncedSearch, model, variant, color, page, status, sortOrder, startDate, endDate])
 
   const listQuery = useQuery({
     queryKey: ['kia-bookings', listQueryString],
@@ -3307,11 +3335,45 @@ export function KiaBookingsClient({
                 All Time
               </button>
             </div>
-            {(startDate || endDate || search || dealer !== ALL_VALUE || model !== ALL_VALUE || status !== ALL_VALUE || consultant !== ALL_VALUE) && (
-              <span className="text-[11px] font-medium text-slate-500">
-                Active Filter Applied
-              </span>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {(startDate || endDate || search || dealer !== ALL_VALUE || model !== ALL_VALUE || variant || color || status !== ALL_VALUE || consultant !== ALL_VALUE) && (
+                <span className="text-[11px] font-medium text-slate-500">
+                  Active Filter Applied
+                </span>
+              )}
+              {variant && (
+                <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
+                  Variant: {variant}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVariant('')
+                      setPendingVariant('')
+                    }}
+                    className="hover:text-indigo-900 ml-0.5 p-0.5"
+                    title="Remove variant filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {color && (
+                <span className="inline-flex items-center gap-1 rounded-lg bg-pink-50 border border-pink-200/80 px-2 py-0.5 text-[11px] font-bold text-pink-700">
+                  Colour: {color}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setColor('')
+                      setPendingColor('')
+                    }}
+                    className="hover:text-pink-900 ml-0.5 p-0.5"
+                    title="Remove colour filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+            </div>
           </div>
         </section>
 
@@ -3853,12 +3915,22 @@ export function KiaBookingsClient({
       <Dialog open={notInStockModalOpen} onOpenChange={setNotInStockModalOpen}>
         <DialogContent className="kia-premium flex max-h-[90dvh] w-[calc(100vw-0.75rem)] max-w-4xl flex-col overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
           <DialogHeader className="shrink-0 border-b border-slate-100 bg-[radial-gradient(circle_at_top_right,#fee2e2,transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-6">
-            <Badge variant="outline" className="mb-3 w-fit rounded-full border-red-100 bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-red-700">
-              No Stock Available
-            </Badge>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <Badge variant="outline" className="w-fit rounded-full border-red-100 bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-red-700">
+                No Stock Available
+              </Badge>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                  {startDate && endDate ? `${startDate} to ${endDate}` : 'All Time'}
+                </span>
+                <span className="text-xs font-black text-red-700 bg-red-100 px-2.5 py-0.5 rounded-full">
+                  {(data?.summary?.notInStockBreakdown || []).reduce((acc, r) => acc + (r.count || 0), 0)} Bookings
+                </span>
+              </div>
+            </div>
             <DialogTitle className="text-2xl font-black tracking-tight text-slate-950">Demand vs. Stock Gap</DialogTitle>
             <DialogDescription className="mt-2 text-xs font-semibold leading-5 text-slate-500 sm:text-sm">
-              Bookings with no matching free stock — grouped by model and variant. Use this to prioritise procurement or transfers.
+              Bookings with no matching free stock in selected date range — grouped by model and variant. Use this to prioritise procurement or transfers.
             </DialogDescription>
           </DialogHeader>
 
@@ -3892,7 +3964,13 @@ export function KiaBookingsClient({
                         className="cursor-pointer hover:bg-slate-50"
                         onClick={() => {
                           setModel(row.model)
+                          setVariant(row.variant || '')
+                          setColor(row.color && row.color !== '—' ? row.color : '')
+                          setPendingModel(row.model)
+                          setPendingVariant(row.variant || '')
+                          setPendingColor(row.color && row.color !== '—' ? row.color : '')
                           setStatus('not_in_stock')
+                          setPendingStatus('not_in_stock')
                           setPage(1)
                           setNotInStockModalOpen(false)
                         }}

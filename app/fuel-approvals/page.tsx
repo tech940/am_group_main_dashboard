@@ -1,14 +1,14 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { isPermissionDenied, isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
-import { getUserPermissionSnapshot } from '@/lib/permissions/service'
+import { isPermissionDenied } from '@/lib/permissions/deny'
+import { canViewFuelApprovals } from '@/lib/fuel-approvals/view-access'
 import { FuelApprovalsClient } from '@/features/fuel-approvals/fuel-approvals-client'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata = {
   title: 'Fuel Approvals | AM Group Dashboard',
-  description: 'Manage vehicle and yard fuel requisition orders with ED -> HR -> MD approval workflow',
+  description: 'Manage vehicle and yard fuel requisition orders with CEO -> Accounts approval workflow',
 }
 
 export default async function FuelApprovalsPage() {
@@ -18,19 +18,19 @@ export default async function FuelApprovalsPage() {
     redirect('/auth/login')
   }
 
-  // Admin Access Map override: explicit Deny in Access Map revokes access immediately
+  /*
+   * The rule lives in lib/fuel-approvals/view-access.ts and is shared with the routes that serve this
+   * section's data, so the page and its API cannot drift apart again.
+   *
+   * The explicit-deny check below is repeated only so the literal 'fuel_approvals.view' stays in page
+   * source — scripts/verify-guard-parity.ts greps for it after stripping comments (the same reason
+   * app/gate-pass/page.tsx keeps its literal). canViewFuelApprovals applies the identical deny itself.
+   */
   if (await isPermissionDenied(appUser, 'fuel_approvals.view')) {
     forbidden()
   }
 
-  // Check if allowed via role permissions snapshot, explicit allow override, or leadership role
-  const snapshot = await getUserPermissionSnapshot(appUser.id)
-  const isAllowed =
-    snapshot.effective['fuel_approvals.view'] === true ||
-    (await isPermissionExplicitlyAllowed(appUser, 'fuel_approvals.view')) ||
-    ['developer', 'admin', 'md', 'ceo', 'ed', 'hr'].includes(appUser.role.trim().toLowerCase())
-
-  if (!isAllowed) {
+  if (!(await canViewFuelApprovals(appUser))) {
     forbidden()
   }
 

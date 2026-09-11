@@ -131,6 +131,8 @@ export type BookingListInput = {
   search?: string | null
   dealerCode?: string | null
   model?: string | null
+  variant?: string | null
+  color?: string | null
   status?: string | null
   consultant?: string | null
   startDate?: string | null
@@ -428,12 +430,10 @@ async function nextBookingNumber(tx: DbTx, dealerCode: string) {
 export function kiaDeliveredByUsSql(alias = 'sm') {
   return `EXISTS (
     SELECT 1
-    FROM kia_vehicle_allocations dlv_va
-    JOIN kia_bookings dlv_kb
-      ON dlv_kb.id = dlv_va.booking_id
-     AND dlv_kb.deleted_at IS NULL
-     AND dlv_kb.status = 'delivered'
-    WHERE UPPER(TRIM(dlv_va.vin_number)) = UPPER(TRIM(${alias}.vin_number))
+    FROM kia_bookings dlv_kb
+    WHERE dlv_kb.deleted_at IS NULL
+      AND dlv_kb.status = 'delivered'
+      AND UPPER(TRIM(COALESCE(dlv_kb.allocated_vin, ''))) = UPPER(TRIM(${alias}.vin_number))
   )`
 }
 
@@ -838,6 +838,22 @@ function listFilters(input: BookingListInput) {
   // Branch boundary: a dealer-scoped user can never see another branch's bookings.
   if (input.allowedDealers && input.allowedDealers.length) filters.push(inArray(kiaBookings.dealerCode, input.allowedDealers))
   if (text(input.model) && text(input.model).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.model, text(input.model)))
+  if (text(input.variant) && text(input.variant).toLowerCase() !== 'all') {
+    const v = text(input.variant)
+    if (v === '—') {
+      filters.push(sql`(kia_bookings.variant IS NULL OR trim(kia_bookings.variant) = '' OR kia_bookings.variant = '—')`)
+    } else {
+      filters.push(sql`lower(trim(kia_bookings.variant)) = lower(trim(${v}))`)
+    }
+  }
+  if (text(input.color) && text(input.color).toLowerCase() !== 'all') {
+    const c = text(input.color)
+    if (c === '—') {
+      filters.push(sql`((kia_bookings.color IS NULL OR trim(kia_bookings.color) = '' OR kia_bookings.color = '—') AND (kia_bookings.metadata->>'color' IS NULL OR trim(kia_bookings.metadata->>'color') = ''))`)
+    } else {
+      filters.push(sql`(lower(trim(coalesce(kia_bookings.color, ''))) = lower(trim(${c})) OR lower(trim(coalesce(kia_bookings.metadata->>'color', ''))) = lower(trim(${c})))`)
+    }
+  }
   
   if (input.unallocated === true || String(input.unallocated).toLowerCase() === 'true') {
     filters.push(sql`
@@ -1243,6 +1259,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
               )
             )
             ${dealerScope}
+            ${dateScope}
           GROUP BY model, variant, color
         ) ns), '[]'::jsonb) AS not_in_stock_breakdown
     `),

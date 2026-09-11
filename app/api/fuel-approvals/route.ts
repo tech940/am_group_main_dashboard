@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
 
     const role = user.role.trim().toLowerCase()
     const isDeveloper = role === 'developer' || role === 'admin'
-    const isCeo = role === 'ceo'
+    const isCeo = role === 'ceo' || role === 'ed'
+    const isAccounts = role === 'accounts' || role === 'finance_head' || role === 'finance_team'
     const isEa = role === 'ea' || role === 'eba'
     const isMd = role === 'md'
 
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
 
     // Compute counts
     let ceoPendingCount = 0
+    let accountsPendingCount = 0
     let eaPendingCount = 0
     let mdPendingCount = 0
     let approvedCount = 0
@@ -52,6 +54,7 @@ export async function GET(request: NextRequest) {
 
     for (const row of records) {
       if (row.status === 'ceo_pending' || row.status === 'ed_pending') ceoPendingCount++
+      if (row.status === 'accounts_pending') accountsPendingCount++
       if (row.status === 'ea_pending' || row.status === 'hr_pending') eaPendingCount++
       if (row.status === 'md_pending') mdPendingCount++
 
@@ -70,13 +73,11 @@ export async function GET(request: NextRequest) {
     // Role-specific pending count for current user
     let userPendingCount = 0
     if (isDeveloper) {
-      userPendingCount = ceoPendingCount + eaPendingCount + mdPendingCount
+      userPendingCount = ceoPendingCount + accountsPendingCount + eaPendingCount + mdPendingCount
     } else if (isCeo) {
       userPendingCount = ceoPendingCount
-    } else if (isEa) {
-      userPendingCount = eaPendingCount
-    } else if (isMd) {
-      userPendingCount = mdPendingCount
+    } else if (isAccounts) {
+      userPendingCount = accountsPendingCount + eaPendingCount + mdPendingCount
     } else {
       userPendingCount = 0
     }
@@ -91,13 +92,11 @@ export async function GET(request: NextRequest) {
       // Tab filter
       if (tab === 'pending') {
         if (isDeveloper) {
-          if (!['ceo_pending', 'ea_pending', 'md_pending', 'ed_pending', 'hr_pending'].includes(row.status)) return false
+          if (!['ceo_pending', 'accounts_pending', 'ea_pending', 'md_pending', 'ed_pending', 'hr_pending'].includes(row.status)) return false
         } else if (isCeo) {
           if (row.status !== 'ceo_pending' && row.status !== 'ed_pending') return false
-        } else if (isEa) {
-          if (row.status !== 'ea_pending' && row.status !== 'hr_pending') return false
-        } else if (isMd) {
-          if (row.status !== 'md_pending') return false
+        } else if (isAccounts) {
+          if (row.status !== 'accounts_pending' && row.status !== 'ea_pending' && row.status !== 'md_pending' && row.status !== 'hr_pending') return false
         } else {
           // Non-approvers have no pending approvals in their inbox
           return false
@@ -138,6 +137,7 @@ export async function GET(request: NextRequest) {
       counts: {
         pending: userPendingCount,
         ceoPending: ceoPendingCount,
+        accountsPending: accountsPendingCount,
         eaPending: eaPendingCount,
         mdPending: mdPendingCount,
         edPending: ceoPendingCount,
@@ -156,6 +156,7 @@ export async function GET(request: NextRequest) {
         email: user.email,
         isDeveloper,
         canApproveCeo: isCeo || isDeveloper,
+        canApproveAccounts: isAccounts || isDeveloper,
         canApproveEa: isEa || isDeveloper,
         canApproveMd: isMd || isDeveloper,
         canApproveEd: isCeo || isDeveloper,

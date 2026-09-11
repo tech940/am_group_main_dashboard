@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireGatePassAccess, visibleDealerCodes } from '@/lib/gate-pass/access'
+import {
+  requireGatePassAccess,
+  visibleDealerCodes,
+  isDealerInScope,
+  canSeeAllGatePassDealers,
+  checkGatePassPermission,
+} from '@/lib/gate-pass/access'
 import { gatePassErrorResponse } from '@/lib/gate-pass/api'
 import { listDemoVehiclesForGatePass, lookupByRegistration, registerManualDemoVehicle } from '@/lib/gate-pass/vehicles'
 
@@ -65,6 +71,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Vehicle model is required' }, { status: 400 })
     }
 
+    const user = access.appUser
     const vehicle = await registerManualDemoVehicle({
       registrationNumber: registrationNumber.trim(),
       model: model.trim(),
@@ -73,8 +80,17 @@ export async function POST(request: NextRequest) {
       color: typeof color === 'string' ? color.trim() : undefined,
       dealerCode: typeof dealerCode === 'string' ? dealerCode.trim() : undefined,
       currentKms: typeof currentKms === 'number' ? currentKms : Number(currentKms) || undefined,
-      createdByUserId: access.appUser.id,
-      createdByName: access.appUser.fullName || access.appUser.email,
+      createdByUserId: user.id,
+      createdByName: user.fullName || user.email,
+      scope: {
+        inScope: (code: string) => isDealerInScope(user, code),
+        seesEveryBranch: canSeeAllGatePassDealers(user),
+        visibleDealerCodes: visibleDealerCodes(user),
+        canOverwritePlate: async () => {
+          const check = await checkGatePassPermission(user, 'gate_pass.approve')
+          return check.allowed
+        },
+      },
     })
 
     return NextResponse.json({ ok: true, vehicle }, { status: 201 })

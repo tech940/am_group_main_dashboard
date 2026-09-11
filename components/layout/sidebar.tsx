@@ -568,6 +568,16 @@ export function Sidebar() {
         active: pathname.startsWith('/brands/kia/vendors'),
       })
     }
+    if (hasPermission('fuel_management.view') || hasPermission('fuel_approvals.view')) {
+      commonNodes.push({
+        key: '/fuel-management',
+        label: 'Fuel Management',
+        href: '/fuel-management',
+        icon: Fuel,
+        external: true,
+        active: pathname.startsWith('/fuel-management'),
+      })
+    }
     if (hasPermission('fuel_approvals.view')) {
       commonNodes.push({
         key: '/fuel-approvals',

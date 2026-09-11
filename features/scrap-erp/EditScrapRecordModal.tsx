@@ -123,7 +123,20 @@ export function EditScrapRecordModal({
       }
 
       setRemarks(transaction.remarks || '')
-      setAttachmentsList(transaction.attachments || [])
+      if (transaction.attachments && transaction.attachments.some((a) => !a.url) && transaction.id) {
+        fetch(`/api/scrap-erp?id=${encodeURIComponent(transaction.id)}&includeAttachments=true`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success && data.transaction?.attachments) {
+              setAttachmentsList(data.transaction.attachments)
+            } else {
+              setAttachmentsList(transaction.attachments || [])
+            }
+          })
+          .catch(() => setAttachmentsList(transaction.attachments || []))
+      } else {
+        setAttachmentsList(transaction.attachments || [])
+      }
     }
   }, [transaction, isOpen, groups, locations, departments, scrapTypes, paymentModes, handoverUsers])
 

@@ -24,7 +24,6 @@ import {
   DEFAULT_SCRAP_EMPLOYEES,
   DEFAULT_SCRAP_PAYMENT_MODES,
   DEFAULT_SCRAP_HANDOVER_USERS,
-  INITIAL_SCRAP_TRANSACTIONS,
   DEFAULT_AI_INSIGHTS,
 } from '@/lib/scrap-erp/mock-data'
 import {
@@ -50,11 +49,6 @@ export function ScrapErpShell() {
   const { userRole } = useUserRole()
   const roleLower = String(userRole || '').trim().toLowerCase()
 
-  // The standalone Distribution tab was REMOVED (owner decision, 2026-07-31): the shareholder split
-  // is now captured at source in the Scrap Entry form, which shows the live per-shareholder
-  // breakdown as the total is typed and records who took the cash in "Payment Handover To".
-  // A second, after-the-fact place to mark rows distributed was duplicate bookkeeping — and it was
-  // the control that used to wipe stated totals (see the calculation audit).
   const [activeModule, setActiveModule] = useState<
     'dashboard' | 'entry' | 'grid' | 'masters' | 'reports'
   >('dashboard')
@@ -69,12 +63,9 @@ export function ScrapErpShell() {
   const [paymentModes, setPaymentModes] = useState<ScrapPaymentMode[]>(DEFAULT_SCRAP_PAYMENT_MODES)
   const [handoverUsers, setHandoverUsers] = useState<ScrapHandoverUser[]>(DEFAULT_SCRAP_HANDOVER_USERS)
 
-  // Seed state only — the /api/scrap-erp fetch below replaces this on mount. (It used to strip stale
-  // isDistributed flags off pre-July mock rows to keep the old Distribution tab honest; with that tab
-  // gone the normalisation had no consumer.)
-  const [transactions, setTransactions] = useState<ScrapTransaction[]>(() =>
-    INITIAL_SCRAP_TRANSACTIONS.map((t) => ({ ...t }))
-  )
+  // Live database transactions
+  const [transactions, setTransactions] = useState<ScrapTransaction[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [insights] = useState<ScrapAiInsight[]>(DEFAULT_AI_INSIGHTS)
 
   // Global Filter State
@@ -90,32 +81,32 @@ export function ScrapErpShell() {
     searchQuery: '',
   })
 
-  // Fetch live database transactions on mount & module switches
+  // Fetch live database transactions on mount
   useEffect(() => {
     let isMounted = true
     async function loadScrapTransactions() {
-      console.log('loadScrapTransactions: fetching from /api/scrap-erp...')
       try {
+        setIsLoading(true)
         const res = await fetch('/api/scrap-erp', { cache: 'no-store' })
-        console.log('loadScrapTransactions: API response status:', res.status, 'ok:', res.ok)
         if (!res.ok) {
           console.error('loadScrapTransactions: HTTP error response:', res.statusText)
           return
         }
         const data = await res.json()
-        console.log('loadScrapTransactions: API returned success:', data.success, 'count:', data.transactions?.length)
         if (data.success && Array.isArray(data.transactions) && isMounted) {
           setTransactions(data.transactions)
         }
       } catch (err) {
         console.error('Failed to load live scrap transactions:', err)
+      } finally {
+        if (isMounted) setIsLoading(false)
       }
     }
     loadScrapTransactions()
     return () => {
       isMounted = false
     }
-  }, [activeModule])
+  }, [])
 
   // Modal Gallery & Details State
   const [selectedGalleryTxn, setSelectedGalleryTxn] = useState<ScrapTransaction | null>(null)
@@ -361,6 +352,12 @@ export function ScrapErpShell() {
             setSelectedGalleryTxn(null)
           }}
           transaction={selectedGalleryTxn}
+          onAttachmentsUpdated={(updatedTxn) => {
+            setTransactions((prev) =>
+              prev.map((t) => (t.id === updatedTxn.id ? { ...t, attachments: updatedTxn.attachments } : t))
+            )
+            setSelectedGalleryTxn(updatedTxn)
+          }}
         />
       )}
 

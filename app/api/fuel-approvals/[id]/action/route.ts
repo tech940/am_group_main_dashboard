@@ -68,11 +68,10 @@ export async function POST(
     }
 
     if (action === 'HOLD') {
-      if (currentStage === 'ceo') newStatus = 'ceo_on_hold'
-      else if (currentStage === 'ea') newStatus = 'ea_on_hold'
-      else if (currentStage === 'md') newStatus = 'md_on_hold'
-      else if (currentStage === 'ed') newStatus = 'ceo_on_hold'
-      else if (currentStage === 'hr') newStatus = 'ea_on_hold'
+      if (currentStage === 'ceo' || currentStage === 'ed') newStatus = 'ceo_on_hold'
+      else if (currentStage === 'accounts') newStatus = 'accounts_on_hold'
+      else if (currentStage === 'ea' || currentStage === 'hr') newStatus = 'accounts_on_hold'
+      else if (currentStage === 'md') newStatus = 'accounts_on_hold'
     } else if (action === 'SEND_BACK') {
       newStatus = 'sent_back'
       updatePayload.sendBackReason = remarks || 'Sent back for correction'
@@ -85,27 +84,18 @@ export async function POST(
       updatePayload.rejectStage = currentStage
       updatePayload.rejectRemarks = remarks || 'Rejected'
     } else if (action === 'APPROVE') {
+      newStatus = 'approved'
+      newStage = 'completed'
       if (currentStage === 'ceo' || currentStage === 'ed') {
-        newStatus = 'ea_pending'
-        newStage = 'ea'
         updatePayload.ceoApprovedBy = user.id
         updatePayload.ceoApprovedByName = user.fullName
         updatePayload.ceoApprovedAt = nowTimestamp
         updatePayload.ceoRemarks = remarks || 'Approved by CEO'
-      } else if (currentStage === 'ea' || currentStage === 'hr') {
-        newStatus = 'md_pending'
-        newStage = 'md'
-        updatePayload.eaApprovedBy = user.id
-        updatePayload.eaApprovedByName = user.fullName
-        updatePayload.eaApprovedAt = nowTimestamp
-        updatePayload.eaRemarks = remarks || 'Approved by EA'
-      } else if (currentStage === 'md') {
-        newStatus = 'approved'
-        newStage = 'completed'
-        updatePayload.mdApprovedBy = user.id
-        updatePayload.mdApprovedByName = user.fullName
-        updatePayload.mdApprovedAt = nowTimestamp
-        updatePayload.mdRemarks = remarks || 'Approved by MD'
+      } else if (currentStage === 'accounts') {
+        updatePayload.accountsApprovedBy = user.id
+        updatePayload.accountsApprovedByName = user.fullName
+        updatePayload.accountsApprovedAt = nowTimestamp
+        updatePayload.accountsRemarks = remarks || 'Approved'
       }
     } else if (action === 'RESET' && (user.role === 'developer' || user.role === 'admin')) {
       newStatus = 'ceo_pending'
@@ -114,6 +104,10 @@ export async function POST(
       updatePayload.ceoApprovedByName = null
       updatePayload.ceoApprovedAt = null
       updatePayload.ceoRemarks = null
+      updatePayload.accountsApprovedBy = null
+      updatePayload.accountsApprovedByName = null
+      updatePayload.accountsApprovedAt = null
+      updatePayload.accountsRemarks = null
       updatePayload.eaApprovedBy = null
       updatePayload.eaApprovedByName = null
       updatePayload.eaApprovedAt = null

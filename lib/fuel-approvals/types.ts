@@ -16,6 +16,12 @@ export type FuelType = 'PETROL' | 'DIESEL'
 export type FuelApprovalStatus =
   | 'ceo_pending'
   | 'ceo_on_hold'
+  | 'accounts_pending'
+  | 'accounts_on_hold'
+  | 'approved'
+  | 'rejected'
+  | 'sent_back'
+  // Legacy status support for historical records
   | 'ea_pending'
   | 'ea_on_hold'
   | 'md_pending'
@@ -24,16 +30,13 @@ export type FuelApprovalStatus =
   | 'ed_on_hold'
   | 'hr_pending'
   | 'hr_on_hold'
-  | 'approved'
-  | 'rejected'
-  | 'sent_back'
 
-export type FuelApprovalStage = 'ceo' | 'ea' | 'md' | 'completed' | 'rejected' | 'ed' | 'hr'
+export type FuelApprovalStage = 'ceo' | 'accounts' | 'completed' | 'rejected' | 'submitter' | 'ea' | 'md' | 'ed' | 'hr'
 
 export interface FuelApprovalHistoryItem {
   id: string
   action: 'SUBMIT' | 'APPROVE' | 'HOLD' | 'SEND_BACK' | 'REJECT' | 'RESUBMIT'
-  stage: 'ceo' | 'ea' | 'md' | 'submitter' | 'ed' | 'hr'
+  stage: 'ceo' | 'accounts' | 'submitter' | 'ea' | 'md' | 'ed' | 'hr'
   userId: string
   userName: string
   userEmail: string
@@ -64,6 +67,11 @@ export interface FuelApprovalRecord {
   ceoApprovedByName?: string | null
   ceoApprovedAt?: string | null
   ceoRemarks?: string | null
+
+  accountsApprovedBy?: string | null
+  accountsApprovedByName?: string | null
+  accountsApprovedAt?: string | null
+  accountsRemarks?: string | null
 
   eaApprovedBy?: string | null
   eaApprovedByName?: string | null

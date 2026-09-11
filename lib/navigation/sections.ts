@@ -167,6 +167,31 @@ export const ALL_SECTIONS: SearchSection[] = [
     initials: 'GP',
     category: 'general_modules',
   },
+  // Both fuel sections are 'common' for the same reason as the gate pass above: the sidebar lists them
+  // under its common nodes with no brand test, and neither page checks brand. A 'kia' tag here would
+  // hide them from search for anyone whose users.brand does not literally contain 'kia'.
+  {
+    id: 'fuel_approvals',
+    name: 'Fuel Approvals',
+    description: 'Raise fuel requests for demo, stock, display and yard vehicles with the fuel slip attached, and approve them.',
+    href: '/fuel-approvals',
+    department: 'finance',
+    brand: 'common',
+    iconName: 'Fuel',
+    initials: 'FA',
+    category: 'general_modules',
+  },
+  {
+    id: 'fuel_management',
+    name: 'Fuel Management',
+    description: 'Fuel approved by purpose and branch, demo car fuel set against gate pass and GPS distance, and fuel records that need a look.',
+    href: '/fuel-management',
+    department: 'finance',
+    brand: 'common',
+    iconName: 'Fuel',
+    initials: 'FM',
+    category: 'general_modules',
+  },
   {
     id: 'finance',
     name: 'Customer Vehicle Financing',
@@ -575,12 +600,14 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/scrap-erp',
   // ⚠️ Adding an href here is NOT optional for a new section. canUserAccessSection() hard-returns
   // false for anything absent from this set, so a section registered everywhere else is still
-  // invisible to global search — which is exactly what happened to Fuel Approvals, and why it
-  // cannot be found by searching for it today.
+  // invisible to global search — which is exactly what happened to Fuel Approvals from its first
+  // release until 2026-09-11, when it and Fuel Management were added below.
   //
   // The guard-facing /gate/<token> page is deliberately NOT listed: it is unauthenticated by
   // design and must never appear in a staff member's search results.
   '/gate-pass',
+  '/fuel-approvals',
+  '/fuel-management',
 
   // Kia
   '/brands/kia/activity',
@@ -622,6 +649,18 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/brands/platinum/demo-job-cards',
   '/brands/platinum/demo-cars-list',
 ])
+
+/**
+ * The view keys that open /fuel-management — the same three app/fuel-management/page.tsx and
+ * GET /api/fuel-management accept through lib/fuel-management/access.ts#canViewFuelManagement.
+ * That predicate is server-only and cannot be imported here, so the keys are listed once for this
+ * file and scripts/verify-fuel-management.ts fails if the two lists ever disagree.
+ */
+export const FUEL_MANAGEMENT_VIEW_KEYS = [
+  'fuel_management.view',
+  'fuel_approvals.view',
+  'gate_pass.view',
+] as const
 
 /**
  * Evaluates whether a user is authorized to search/navigate to a section.
@@ -731,6 +770,22 @@ export function canUserAccessSection(
     // Must match app/admin/page.tsx, which gates on isSuperAdminRole (developer || md). Listing
   // 'admin' here let that role find /admin in search and then be forbidden by the page.
   return isSuperAdminRole(userRole)
+  }
+
+  // Fuel Management — its page and API admit a user through ANY of three view keys, not only the
+  // section's own. The generated fallback below would test 'fuel_management.view' alone and hide the
+  // section from, say, a Sales Manager who holds only fuel_approvals.view and opens the page without
+  // trouble. Same keys as the page; fail-closed while the map loads. /fuel-approvals needs no branch:
+  // the fallback already tests 'fuel_approvals.view', which is exactly the key its page uses.
+  //
+  // ⚠️ Known edge this map cannot close: an explicit Access-Map Deny on fuel_management.view alone
+  // blocks the page, but an effective map cannot tell a deny from a key never granted. A user denied
+  // that one key who still holds fuel_approvals.view or gate_pass.view sees this entry and is turned
+  // away on click. The page and the API remain the authority.
+  if (href === '/fuel-management') {
+    const map = permissionMap
+    if (!map) return false
+    return FUEL_MANAGEMENT_VIEW_KEYS.some((key) => map[key] === true)
   }
 
   // 4. Standard Permission Keys

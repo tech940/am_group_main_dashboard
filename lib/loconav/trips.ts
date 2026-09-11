@@ -7,10 +7,14 @@ import {
   fetchAlerts,
   fetchDistanceTravelled,
   fetchTimeline,
+  getLoconavRateLimitHint,
   isLoconavConfigured,
+  isLoconavRateLimited,
+  LoconavHttpError,
   type LoconavAlert,
   type LoconavTimelineSegment,
 } from './client'
+import { dedupeAlertsById, sliceCount, sliceWindow, summariseSegments } from './timeline'
 
 /**
  * Reconcile a finished demo drive against the provider's own record of it.
@@ -72,6 +76,32 @@ export const TRIP_BATCH_SIZE = 5
 export const TRIP_MAX_ATTEMPTS = 3
 
 /**
+ * The longest drive whose route is fetched, counted in one-day slices (sliceWindow in ./timeline).
+ *
+ * ⚠️ `/timeline` and `/alerts` refuse any window over 86,400 s, so a route costs TWO calls per day on
+ * top of the distance. Three days is already 7 calls — a third of the account's 20-request window
+ * spent on ONE pass. A longer drive is summarised by its distance alone, which is one call for a week.
+ */
+export const TRIP_MAX_SLICES = 3
+
+/**
+ * Provider calls one sweep may issue: 1 + 2 × slices per pass, or 1 when the route is not fetched.
+ *
+ * ⚠️ The account allows 20 requests per window (measured 2026-09-11), and the position poll in the
+ * same request has already spent two of them (one vehicle page, one last_known). A sweep that still
+ * overruns the window gets a 429, which DEFERS the pass rather than failing it. An untracked pass
+ * makes no call, so it never counts against this and is never held back by it.
+ */
+export const TRIP_CALL_BUDGET = 12
+/**
+ * The client's `x-rate-limit-remaining` count is believed for this long. Older than that it may
+ * describe a window that has already reset, and a stale "0 left" must not stall the sweep.
+ */
+export const TRIP_RATE_HINT_MAX_AGE_MS = 60_000
+/** Requests left in reserve beyond a pass's own calls — the count is per instance, never exact. */
+export const TRIP_RATE_HINT_HEADROOM = 2
+
+/**
  * ⚠️ A TIGHTER REQUEST POLICY THAN THE POSITION POLL, AND THE WHOLE SWEEP DEPENDS ON IT.
  *
  * The client's default is 4 attempts x 20s plus backoff = ~89s for ONE call. Five passes at that
@@ -80,10 +110,16 @@ export const TRIP_MAX_ATTEMPTS = 3
  * while newer ones are never reached. This is backfill of a drive that already finished — there is
  * nothing time-critical to protect with four attempts.
  *
- * 2 x 8s + 1.5s backoff = ~17.5s worst case per pass (the three calls run in parallel).
+ * 2 x 8s + 1.5s backoff = ~17.5s worst case for any one call.
  */
 export const TRIP_REQUEST_POLICY = { attempts: 2, timeoutMs: 8_000 } as const
-/** Worst case for one pass: the parallel provider calls, plus room for the DB writes. */
+/**
+ * Worst case for one pass: its slowest provider call, plus room for the DB writes.
+ *
+ * ⚠️ True ONLY because every call of a pass starts at once — up to 1 + 2 × TRIP_MAX_SLICES = 7 — so
+ * the pass lasts as long as its slowest call, not the sum of them. Fetching the slices one after
+ * another would make a three-day pass 7 × 17.5s and walk straight through the request deadline.
+ */
 export const WORST_CASE_PASS_MS = 17_500 + 4_000
 
 /**
@@ -118,8 +154,18 @@ export type TripReconcileResult = {
   untracked: number
   unavailable: number
   failed: number
-  /** Candidates left for the next run because the request deadline was near. */
+  /**
+   * Candidates left for the next run with no row written and no attempt spent: the request deadline
+   * was near, the call budget was spent, or LocoNav's rate limit was reached.
+   */
   deferred: number
+  /** Provider calls issued — one per call, however many attempts TRIP_REQUEST_POLICY made of it. */
+  callsUsed: number
+  /**
+   * True when provider calls stopped for LocoNav's OWN limit: a 429, or its remaining-requests count
+   * said the next pass would not fit. TRIP_CALL_BUDGET running out is not this — that cap is ours.
+   */
+  rateLimited: boolean
   /** Pass numbers only — never provider text. See classifyProviderFailure. */
   failedPassNos: string[]
   errors: string[]
@@ -132,41 +178,23 @@ const num = (v: unknown): number | null => {
 }
 const money2 = (n: number | null): string | null => (n === null ? null : n.toFixed(2))
 
-/** Moving/stopped seconds, stop count and top speed, from the segment list. */
-function summariseTimeline(segments: LoconavTimelineSegment[]) {
-  let movingSeconds = 0
-  let stoppedSeconds = 0
-  let stopCount = 0
-  let maxSpeed: number | null = null
-
-  for (const s of segments) {
-    const from = s.startTsMs
-    const to = s.endTsMs
-    const seconds = from !== null && to !== null && to > from ? Math.round((to - from) / 1000) : 0
-    const moving = String(s.movementStatus || '').toLowerCase() === 'moving'
-    if (moving) {
-      movingSeconds += seconds
-      /*
-       * ⚠️ averageSpeed, not a top speed — the timeline does not report one. Recorded as the highest
-       * SEGMENT AVERAGE, which is a floor on the real maximum, never the maximum itself. A genuine
-       * top speed has to come from the overspeed alerts, which is why those are fetched too.
-       */
-      if (s.averageSpeedKph !== null) maxSpeed = maxSpeed === null ? s.averageSpeedKph : Math.max(maxSpeed, s.averageSpeedKph)
-    } else {
-      stoppedSeconds += seconds
-      stopCount += 1
-    }
+/**
+ * A provider call's rejection, held as a value.
+ *
+ * ⚠️ So a pass sees EVERY outcome before it decides anything. Under a plain Promise.all the first
+ * rejection wins a race: a 5xx on the distance landing a few ms before a 429 on a timeline slice
+ * would spend an attempt on what was really the rate limit — and which one landed first is timing,
+ * not logic.
+ */
+class FailedCall {
+  readonly error: unknown
+  constructor(error: unknown) {
+    this.error = error
   }
-  /*
-   * ⚠️ null, not 0, for an EMPTY timeline. Zero means "measured, and the car never moved"; null means
-   * "the provider told us nothing". Writing 0/0/0 for a drive the provider had no segments for makes
-   * a hole in the data look like a finding.
-   */
-  if (!segments.length) {
-    return { movingSeconds: null, stoppedSeconds: null, stopCount: null, maxSpeed: null }
-  }
-  return { movingSeconds, stoppedSeconds, stopCount, maxSpeed }
 }
+const failedCall = (error: unknown) => new FailedCall(error)
+
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /**
  * The minimal failure row.
@@ -190,13 +218,16 @@ async function writeTripFailure(row: {
       (gate_pass_id, pass_no, vin, provider, provider_vehicle_uuid, window_start, window_end,
        timeline, alert_count, alerts, status, detail, attempts, updated_at)
     VALUES (${row.gatePassId}::uuid, ${row.passNo}, ${row.vin}, 'loconav', ${row.providerVehicleUuid},
-            ${row.windowStart}, ${row.windowEnd}, '[]'::jsonb, 0, '[]'::jsonb,
+            ${row.windowStart ? row.windowStart.toISOString() : null}::timestamptz, ${row.windowEnd ? row.windowEnd.toISOString() : null}::timestamptz, '[]'::jsonb, 0, '[]'::jsonb,
             'failed', ${row.detail.slice(0, 500)}, 1, now())
     ON CONFLICT (gate_pass_id) DO UPDATE SET
       status     = 'failed',
       detail     = EXCLUDED.detail,
       attempts   = demo_gate_pass_trips.attempts + 1,
-      updated_at = now()`)
+      updated_at = now()
+    -- ⚠️ Only over a row that can still be retried. Two overlapping runs can both pick a pass that has no row yet,
+    -- and a late failure from one must not overwrite the 'reconciled' or 'unavailable' answer the other just wrote.
+    WHERE demo_gate_pass_trips.status IN ('failed', 'untracked')`)
 }
 
 type Candidate = {
@@ -219,7 +250,8 @@ async function writeTrip(row: {
   windowEnd: Date | null
   providerKm: number | null
   odometerKm: number | null
-  maxSpeed: number | null
+  /** Stored in max_speed_kph — see the averageSpeed note where the summary is written. */
+  maxSegmentAverageSpeedKph: number | null
   movingSeconds: number | null
   stoppedSeconds: number | null
   stopCount: number | null
@@ -238,9 +270,9 @@ async function writeTrip(row: {
        moving_seconds, stopped_seconds, stop_count, timeline, alert_count, alerts,
        status, detail, attempts, reconciled_at, updated_at)
     VALUES (${row.gatePassId}::uuid, ${row.passNo}, ${row.vin}, 'loconav', ${row.providerVehicleUuid},
-            ${row.windowStart}, ${row.windowEnd},
+            ${row.windowStart ? row.windowStart.toISOString() : null}::timestamptz, ${row.windowEnd ? row.windowEnd.toISOString() : null}::timestamptz,
             ${money2(row.providerKm)}::numeric, ${money2(row.odometerKm)}::numeric,
-            ${money2(delta)}::numeric, ${money2(row.maxSpeed)}::numeric,
+            ${money2(delta)}::numeric, ${money2(row.maxSegmentAverageSpeedKph)}::numeric,
             ${row.movingSeconds}, ${row.stoppedSeconds}, ${row.stopCount},
             ${JSON.stringify(row.timeline)}::jsonb, ${row.alerts.length},
             ${JSON.stringify(row.alerts)}::jsonb,
@@ -281,6 +313,8 @@ export async function runTripReconciliation(
     unavailable: 0,
     failed: 0,
     deferred: 0,
+    callsUsed: 0,
+    rateLimited: false,
     failedPassNos: [],
     errors: [],
   }
@@ -314,16 +348,27 @@ export async function runTripReconciliation(
         eq(demoGatePasses.status, 'returned'),
         sql`${demoGatePasses.gateOutAt} IS NOT NULL`,
         sql`${demoGatePasses.gateInAt} IS NOT NULL`,
-        sql`${demoGatePasses.gateInAt} >= ${since}`,
+        /*
+         * ⚠️ ISO STRING, NEVER A Date, in a raw sql`` template — here and in both writers above. The
+         * drizzle postgres-js driver installs pass-through serializers for timestamp types, so a Date
+         * reaches the wire untouched and postgres throws ERR_INVALID_ARG_TYPE ("Received an instance of
+         * Date"). A column-bound helper like gte(col, date) maps it; a bare ${date} does not. This sweep
+         * never ran until LOCO_AUTH_TOKEN was set on 2026-09-11, and the first live run died right here —
+         * in production the route's catch would have hidden it behind "positions were still updated".
+         */
+        sql`${demoGatePasses.gateInAt} >= ${since.toISOString()}::timestamptz`,
         or(
           isNull(demoGatePassTrips.gatePassId),
           and(
             eq(demoGatePassTrips.status, 'failed'),
             sql`${demoGatePassTrips.attempts} < ${TRIP_MAX_ATTEMPTS}`,
             /*
-             * ⚠️ Backoff, and the only concurrency guard this sweep needs. writeTrip stamps
-             * updated_at on every attempt, so an overlapping run — an operator pressing "Sync now"
-             * while the cron is mid-batch — cannot re-charge a pass the first run just charged.
+             * ⚠️ Backoff. writeTrip stamps updated_at on every attempt, so an overlapping run cannot
+             * re-charge a pass that ALREADY HAS the row the first run just wrote. It does not guard a
+             * pass with no row yet: two runs that overlap — two presses at once, a Sync now just before
+             * a cron tick (the cron is never refused), or the Vercel cron plus
+             * scripts/loconav-sync-scheduler.mjs — can both pick that pass and both call the provider;
+             * writeTripFailure then refuses to overwrite a row the other run finished.
              * Without it a two-minute provider blip could burn all three attempts in one minute and
              * mark five passes terminally failed. It also makes the 3-attempt budget span >= 45
              * minutes of real downtime, which is what it was obviously meant to buy.
@@ -358,7 +403,17 @@ export async function runTripReconciliation(
     .from(demoVehicleTrackers)
   const uuidByVin = new Map(trackers.map((t) => [t.vin, t.uuid]))
 
-  for (const c of candidates as Candidate[]) {
+  /*
+   * Set once provider calls must stop for this run: the call budget is spent, or the rate limit is
+   * reached.
+   *
+   * ⚠️ It stops the CALLS, not the loop. A pass with no tracker costs nothing to record, so it is
+   * still written — otherwise a batch whose oldest passes keep deferring would hold back the ones
+   * that never needed the provider at all.
+   */
+  let providerStopped = false
+
+  for (const [index, c] of (candidates as Candidate[]).entries()) {
     /*
      * ⚠️ Stop BEFORE starting a pass we cannot finish, not after overrunning. The deadline comes from
      * the request, not from this function's own start, because runLoconavSync has already spent an
@@ -366,7 +421,8 @@ export async function runTripReconciliation(
      * so the next tick simply selects it again.
      */
     if (opts.deadlineMs !== undefined && Date.now() + WORST_CASE_PASS_MS > opts.deadlineMs) {
-      result.deferred = candidates.length - (result.reconciled + result.untracked + result.unavailable + result.failed)
+      // This pass and every one after it. Passes deferred earlier in the loop were counted as they went.
+      result.deferred += candidates.length - index
       break
     }
 
@@ -391,7 +447,7 @@ export async function runTripReconciliation(
       await writeTrip({
         gatePassId: c.id, passNo: c.passNo, vin, providerVehicleUuid: null,
         windowStart: c.gateOutAt, windowEnd: c.gateInAt,
-        providerKm: null, odometerKm, maxSpeed: null,
+        providerKm: null, odometerKm, maxSegmentAverageSpeedKph: null,
         movingSeconds: null, stoppedSeconds: null, stopCount: null,
         timeline: [], alerts: [],
         status: 'untracked',
@@ -401,33 +457,165 @@ export async function runTripReconciliation(
       continue
     }
 
-    try {
-      const start = c.gateOutAt!
-      const end = c.gateInAt!
+    const start = c.gateOutAt!
+    const end = c.gateInAt!
+    const slices = sliceCount(start, end)
+    /*
+     * A window that does not move forward has nothing to ask about, and no slice to ask with — its
+     * route would come back [] and read as a drive with no stops. Terminal and free: no call can
+     * answer it, however often it is retried.
+     */
+    if (slices === 0) {
+      await writeTrip({
+        gatePassId: c.id, passNo: c.passNo, vin, providerVehicleUuid: uuid,
+        windowStart: start, windowEnd: end,
+        providerKm: null, odometerKm, maxSegmentAverageSpeedKph: null,
+        movingSeconds: null, stoppedSeconds: null, stopCount: null,
+        timeline: [], alerts: [],
+        status: 'unavailable',
+        detail: 'The gate-in time is not after the gate-out time, so there is no drive window to check.',
+      })
+      result.unavailable += 1
+      continue
+    }
 
+    const routeSkipped = slices > TRIP_MAX_SLICES
+    const routeSlices = routeSkipped ? [] : sliceWindow(start, end)
+    // Counted from the slices actually issued below, so the budget cannot drift from the calls made.
+    const calls = 1 + 2 * routeSlices.length
+
+    /*
+     * ⚠️ Decided BEFORE any call of the pass goes out, so a pass is asked in full or not at all. Half
+     * a pass spends the window and still leaves nothing that can be written.
+     */
+    if (!providerStopped) {
+      const hint = getLoconavRateLimitHint()
+      const hintIsFresh = hint.atMs !== null && Date.now() - hint.atMs < TRIP_RATE_HINT_MAX_AGE_MS
+      if (hintIsFresh && hint.remaining !== null && hint.remaining < calls + TRIP_RATE_HINT_HEADROOM) {
+        providerStopped = true
+        result.rateLimited = true
+      } else if (result.callsUsed + calls > TRIP_CALL_BUDGET) {
+        providerStopped = true
+      }
+    }
+    if (providerStopped) {
+      // No row and no attempt spent: the next tick selects it again, ahead of anything newer.
+      result.deferred += 1
+      continue
+    }
+
+    try {
+      result.callsUsed += calls
       /*
-       * Three calls per pass, in parallel — they are independent reads against one vehicle, and the
-       * batch is capped at TRIP_BATCH_SIZE so this cannot fan out unboundedly. Alerts are allowed to
-       * fail on their own: a missing harsh-braking list must not throw away a distance that arrived.
+       * Every call of the pass at once — see WORST_CASE_PASS_MS. The distance stays ONE call over the
+       * whole window: it is the figure set beside the odometer, and `/distance_travelled` takes a
+       * week. The timeline and alerts go one day-slice per call, and come back in slice order.
+       *
+       * ⚠️ Nothing here may reject. Each call settles to its value or a FailedCall, and the pass
+       * decides only once it can see all of them.
        */
-      const [distance, timeline, alerts] = await Promise.all([
-        fetchDistanceTravelled(uuid, start, end, TRIP_REQUEST_POLICY),
-        /*
-         * ⚠️ The timeline is allowed to fail on its own, like the alerts. Without this catch a
-         * timeline error threw away a DISTANCE that had already arrived — the single most valuable
-         * number here — and recorded the pass as a plain failure.
-         */
-        fetchTimeline(uuid, start, end, TRIP_REQUEST_POLICY).catch(() => [] as LoconavTimelineSegment[]),
-        fetchAlerts(uuid, start, end, TRIP_REQUEST_POLICY).catch(() => [] as LoconavAlert[]),
+      const [distance, timelineParts, alertParts] = await Promise.all([
+        fetchDistanceTravelled(uuid, start, end, TRIP_REQUEST_POLICY).catch(failedCall),
+        Promise.all(routeSlices.map((s) => fetchTimeline(uuid, s.start, s.end, TRIP_REQUEST_POLICY).catch(failedCall))),
+        Promise.all(routeSlices.map((s) => fetchAlerts(uuid, s.start, s.end, TRIP_REQUEST_POLICY).catch(failedCall))),
       ])
 
-      const summary = summariseTimeline(timeline)
+      /*
+       * ⚠️ A 429 on ANY call defers the whole pass: no row, no attempt, and no more calls this run.
+       * Writing what did arrive is worse than writing nothing — 'reconciled' is terminal, so a route
+       * lost to the rate limit would stay lost — and a failure row would spend one of the pass's
+       * attempts on our own pace rather than on anything wrong with the drive.
+       */
+      if ([distance, ...timelineParts, ...alertParts].some((r) => r instanceof FailedCall && isLoconavRateLimited(r.error))) {
+        providerStopped = true
+        result.rateLimited = true
+        result.deferred += 1
+        continue
+      }
+
+      if (distance instanceof FailedCall) {
+        const status = distance.error instanceof LoconavHttpError ? distance.error.status : null
+        /*
+         * ⚠️ Two refusals are ANSWERS, not faults, and are written as terminal 'unavailable' in our
+         * own words, never the provider's:
+         *   422 — the tracker's LocoNav subscription has expired (measured 2026-09-11). No retry can
+         *         renew it.
+         *   404 — LocoNav no longer has that vehicle. A link can outlive its tracker on the account
+         *         (sync names it in a warning; only a person can unlink it), and retrying every
+         *         quarter hour would only confirm the same absence.
+         * A 400 stays a plain 'failed'. It means we built the request wrong, or met a limit nobody has
+         * measured on this endpoint — neither says anything about the car, and "No GPS data" would
+         * blame the drive for our bug. The retry budget bounds it instead.
+         */
+        const answer =
+          status === 422 ? 'The LocoNav subscription for this tracker has expired, so its drive history is not available.'
+          : status === 404 ? 'The tracker is no longer on the LocoNav account.'
+          : null
+        if (answer === null) throw distance.error
+        await writeTrip({
+          gatePassId: c.id, passNo: c.passNo, vin, providerVehicleUuid: uuid,
+          windowStart: start, windowEnd: end,
+          providerKm: null, odometerKm, maxSegmentAverageSpeedKph: null,
+          movingSeconds: null, stoppedSeconds: null, stopCount: null,
+          timeline: [], alerts: [],
+          status: 'unavailable',
+          detail: answer,
+        })
+        result.unavailable += 1
+        continue
+      }
+
+      /*
+       * ⚠️ The route and the alerts may each fail on their own. Before they could, a timeline error
+       * threw away a DISTANCE that had already arrived — the single most valuable number here.
+       *
+       * ⚠️ But every slice or none. A route missing one day summarises to confident, wrong numbers:
+       * moving time short by a day, and the rule that the first and last runs are the showroom applied
+       * to the wrong ends. A failed route is stored as [], summarises to nulls ("not measured", never
+       * zeros), and the detail names what is missing — an empty list must not read as "no stops".
+       */
+      const routeFailed = timelineParts.some((r) => r instanceof FailedCall)
+      const alertsFailed = alertParts.some((r) => r instanceof FailedCall)
+      for (const r of [...timelineParts, ...alertParts]) {
+        // The raw provider text stays here, server-side, like the failure path below.
+        if (r instanceof FailedCall) console.error('[loconav] trip route/alerts call failed', c.passNo, errorText(r.error))
+      }
+      /*
+       * ⚠️ A TIMEOUT OR A 5xx IS RETRIED, NOT FINALISED. 'reconciled' is terminal, so a route or an alert list lost to
+       * one slow answer stayed lost for good — the reason a 429 defers above. Until the pass's last attempt the failure
+       * goes to the catch below, whose 'failed' row the sweep picks up again after 15 minutes; only the last attempt
+       * keeps what did arrive. A 4xx is an answer about the request, and no retry changes it.
+       */
+      const transient = [...timelineParts, ...alertParts].find(
+        (r): r is FailedCall => r instanceof FailedCall && !(r.error instanceof LoconavHttpError && r.error.status < 500),
+      )
+      if (transient && (c.attempts ?? 0) + 1 < TRIP_MAX_ATTEMPTS) throw transient.error
+      const timeline = routeFailed ? [] : timelineParts.flatMap((r) => (r instanceof FailedCall ? [] : r))
+      // Neighbouring slices share their boundary instant, so an alert raised on it can arrive twice.
+      const alerts = alertsFailed ? [] : dedupeAlertsById(alertParts.flatMap((r) => (r instanceof FailedCall ? [] : r)))
+
+      const summary = summariseSegments(timeline)
       const providerKm = distance.km
+      const notes = [
+        routeSkipped ? 'Route not fetched: drives longer than 3 days are summarised by distance only.' : null,
+        routeFailed ? 'Route unavailable for this window.' : null,
+        alertsFailed ? 'Alerts unavailable for this window.' : null,
+        odometerDropped
+          ? 'The odometer difference is out of range — the reading looks mistyped, so only the GPS distance is shown.'
+          : null,
+      ].filter((note): note is string => note !== null)
 
       await writeTrip({
         gatePassId: c.id, passNo: c.passNo, vin, providerVehicleUuid: uuid,
         windowStart: start, windowEnd: end,
-        providerKm, odometerKm, maxSpeed: summary.maxSpeed,
+        providerKm, odometerKm,
+        /*
+         * ⚠️ averageSpeed, not a top speed — the timeline does not report one. max_speed_kph holds the
+         * highest MOVING-segment average, a floor on the real maximum and never the maximum itself,
+         * which is why the read type calls it maxSegmentAverageSpeedKph. A genuine top speed would have
+         * to come from overspeed alerts.
+         */
+        maxSegmentAverageSpeedKph: summary.maxSegmentAverageSpeed,
         movingSeconds: summary.movingSeconds,
         stoppedSeconds: summary.stoppedSeconds,
         stopCount: summary.stopCount,
@@ -437,15 +625,13 @@ export async function runTripReconciliation(
         status: providerKm === null ? 'unavailable' : 'reconciled',
         detail: providerKm === null
           ? 'LocoNav returned no distance for this window — the unit was offline, or the history has been pruned.'
-          : odometerDropped
-            ? 'The odometer difference is out of range — the reading looks mistyped, so only the GPS distance is shown.'
-            : null,
+          : notes.join(' ') || null,
       })
 
       if (providerKm === null) result.unavailable += 1
       else result.reconciled += 1
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = errorText(error)
       result.failed += 1
       result.failedPassNos.push(c.passNo)
       // The raw provider text stays here, server-side, and goes no further.
@@ -489,6 +675,59 @@ export type GatePassTrip = {
   windowStart: Date | null
   windowEnd: Date | null
   reconciledAt: Date | null
+  /**
+   * Set when the tracker that measured this drive was linked to the car only after the drive began, so the numbers
+   * may describe another car. No provider text and no coordinates: safe for every gate_pass.view user.
+   */
+  linkedAfterDrive: { linkedAt: string } | null
+}
+
+/**
+ * When the link that measured a trip row was made — returned only when that was after the drive started.
+ *
+ * ⚠️ THE PAIR THE ROW WAS MEASURED WITH, NOT THE CAR'S LINK TODAY. Old drives keep being reconciled after a link is
+ * made (owner decision, 2026-09-11), and trackers are moved off sold cars onto others, so a link made today says
+ * nothing about which car the unit was fitted to on the day. Without this mark a wrong or later link would brand an
+ * old drive a discrepancy with nothing on screen to say why.
+ *
+ * The link time is the latest 'link' event for (vin, provider_vehicle_uuid) no later than the check — a relink after
+ * it cannot move the answer. A chassis link writes no event, and nothing before 0060 did, so the tracker row's
+ * created_at stands in when it is also no later than the check. Every comparison is made in SQL against the row's own
+ * timestamps, so no Date crosses into the query.
+ *
+ * Advisory: a missing 0060 table or any failed read is null, never an error on the page path.
+ */
+async function readLinkedAfterDrive(gatePassId: string): Promise<GatePassTrip['linkedAfterDrive']> {
+  try {
+    const rows = await db.execute<{ linked_at: string | null; after_drive: boolean | null }>(sql`
+      SELECT to_char(l.linked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS linked_at,
+             l.linked_at > tr.window_start AS after_drive
+        FROM demo_gate_pass_trips tr
+        CROSS JOIN LATERAL (
+          SELECT COALESCE(
+            (SELECT max(e.created_at) FROM demo_vehicle_tracker_events e
+              WHERE e.action = 'link'
+                AND e.provider = tr.provider
+                AND upper(btrim(e.vin)) = upper(btrim(tr.vin))
+                AND e.provider_vehicle_uuid = tr.provider_vehicle_uuid
+                AND e.created_at <= COALESCE(tr.reconciled_at, tr.updated_at)),
+            (SELECT max(t.created_at) FROM demo_vehicle_trackers t
+              WHERE t.provider = tr.provider
+                AND upper(btrim(t.vin)) = upper(btrim(tr.vin))
+                AND t.provider_vehicle_uuid = tr.provider_vehicle_uuid
+                AND t.created_at <= COALESCE(tr.reconciled_at, tr.updated_at))
+          ) AS linked_at
+        ) l
+       WHERE tr.gate_pass_id = ${gatePassId}::uuid
+         AND tr.provider_vehicle_uuid IS NOT NULL
+         AND tr.window_start IS NOT NULL`)
+    const found = (rows as unknown as { linked_at?: string | null; after_drive?: boolean | null }[])[0]
+    if (!found?.after_drive || !found.linked_at) return null
+    return { linkedAt: found.linked_at }
+  } catch (error) {
+    console.error('[loconav] trip link-time read failed (is migration 0060 applied?):', error)
+    return null
+  }
 }
 
 /**
@@ -500,11 +739,15 @@ export type GatePassTrip = {
  */
 export async function getTripForPass(gatePassId: string): Promise<GatePassTrip | null> {
   try {
-    const [row] = await db
-      .select()
-      .from(demoGatePassTrips)
-      .where(eq(demoGatePassTrips.gatePassId, gatePassId))
-      .limit(1)
+    // In parallel: the link-time read settles to null on its own failure, so it can never reject this one.
+    const [[row], linkedAfterDrive] = await Promise.all([
+      db
+        .select()
+        .from(demoGatePassTrips)
+        .where(eq(demoGatePassTrips.gatePassId, gatePassId))
+        .limit(1),
+      readLinkedAfterDrive(gatePassId),
+    ])
     if (!row) return null
 
     const providerKm = num(row.providerDistanceKm)
@@ -527,6 +770,7 @@ export async function getTripForPass(gatePassId: string): Promise<GatePassTrip |
       windowStart: row.windowStart,
       windowEnd: row.windowEnd,
       reconciledAt: row.reconciledAt,
+      linkedAfterDrive: row.providerVehicleUuid ? linkedAfterDrive : null,
     }
   } catch (error) {
     console.error('[loconav] trip read failed (is migration 0058 applied?):', error)

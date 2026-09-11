@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, index, uniqueIndex, bigint, date } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, index, uniqueIndex, bigint, date, primaryKey } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
@@ -2177,6 +2177,11 @@ export const fuelApprovals = pgTable('fuel_approvals', {
   mdApprovedAt: timestamp('md_approved_at', { withTimezone: true }),
   mdRemarks: text('md_remarks'),
 
+  accountsApprovedBy: uuid('accounts_approved_by').references(() => users.id),
+  accountsApprovedByName: text('accounts_approved_by_name'),
+  accountsApprovedAt: timestamp('accounts_approved_at', { withTimezone: true }),
+  accountsRemarks: text('accounts_remarks'),
+
   rejectedBy: uuid('rejected_by').references(() => users.id),
   rejectedByName: text('rejected_by_name'),
   rejectedAt: timestamp('rejected_at', { withTimezone: true }),
@@ -2202,6 +2207,10 @@ export const fuelApprovalsRelations = relations(fuelApprovals, ({ one }) => ({
   }),
   ceoApprover: one(users, {
     fields: [fuelApprovals.ceoApprovedBy],
+    references: [users.id],
+  }),
+  accountsApprover: one(users, {
+    fields: [fuelApprovals.accountsApprovedBy],
     references: [users.id],
   }),
   eaApprover: one(users, {
@@ -2985,4 +2994,61 @@ export const demoGatePassTrips = pgTable('demo_gate_pass_trips', {
 }, (table) => ({
   demoGatePassTripsStatusIdx: index('demo_gate_pass_trips_status_idx').on(table.status, table.updatedAt),
   demoGatePassTripsVinIdx: index('demo_gate_pass_trips_vin_idx').on(table.vin),
+}))
+
+/**
+ * ── LocoNav tracker mapping (migration 0060) ──────────────────────────────────────────────────
+ *
+ * ⚠️ On the live account LocoNav's `chassisNumber` holds a PLATE or free text for 17 of 18 vehicles
+ * (measured 2026-09-11), so the automatic chassis rule links almost nothing. Links are confirmed by a
+ * person on the Trackers screen (`demoVehicleTrackers.matchedBy = 'manual'`); these two tables are
+ * what that screen stands on.
+ */
+
+/**
+ * The provider fleet as last listed by the sync — so no page ever has to call LocoNav.
+ * ⚠️ No coordinates and no device phone number, by design: not every unit on the account is a demo car.
+ */
+export const loconavProviderVehicles = pgTable('loconav_provider_vehicles', {
+  provider: text('provider').default('loconav').notNull(),
+  providerVehicleUuid: text('provider_vehicle_uuid').notNull(),
+  /** LocoNav's labels exactly as returned — evidence for a person choosing a link, never a join key. */
+  vehicleNumber: text('vehicle_number'),
+  displayNumber: text('display_number'),
+  chassisNumber: text('chassis_number'),
+  deviceSerialNumber: text('device_serial_number'),
+  deviceType: text('device_type'),
+  subscriptionExpiresAt: timestamp('subscription_expires_at', { withTimezone: true }),
+  /** DEVICE time of the latest GPS fix — how the person linking a unit sees that it has gone silent. */
+  lastFixAt: timestamp('last_fix_at', { withTimezone: true }),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  /** The last sync that listed this vehicle. Older than the latest successful sync = gone from the account. */
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  loconavProviderVehiclesPk: primaryKey({ columns: [table.provider, table.providerVehicleUuid] }),
+}))
+
+/** APPEND-ONLY link/unlink audit. A trigger in 0060 refuses UPDATE and DELETE outright. */
+export const demoVehicleTrackerEvents = pgTable('demo_vehicle_tracker_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 'link' | 'unlink' */
+  action: text('action').notNull(),
+  vin: text('vin').notNull(),
+  provider: text('provider').default('loconav').notNull(),
+  providerVehicleUuid: text('provider_vehicle_uuid').notNull(),
+  /** The label the person saw when they acted, so the row still reads after LocoNav relabels the unit. */
+  providerLabel: text('provider_label'),
+  matchedBy: text('matched_by'),
+  note: text('note'),
+  /** Null for a system actor; `actorName` is always set. */
+  actorId: uuid('actor_id'),
+  actorName: text('actor_name').notNull(),
+  actorRole: text('actor_role'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  demoVehicleTrackerEventsVinIdx: index('demo_vehicle_tracker_events_vin_idx').on(table.vin, table.createdAt),
+  demoVehicleTrackerEventsProviderUuidIdx: index('demo_vehicle_tracker_events_provider_uuid_idx')
+    .on(table.providerVehicleUuid, table.createdAt),
 }))

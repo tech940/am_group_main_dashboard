@@ -70,7 +70,8 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 //      all for the full 75-minute TTL — the exact failure the v31 note records.
 // v38: registers showroom_images (Showroom Images) in PERMISSION_GROUPS and SECTION_ROUTES.
 // v39: grants gate_pass view & create to all roles and employees with zero role restrictions.
-const PERMISSION_CACHE_VERSION = 'v39'
+// v40: registers fuel_management (PERMISSION_GROUPS, SECTION_ROUTES, DEFAULT_VISIBLE_SECTIONS)
+const PERMISSION_CACHE_VERSION = 'v40'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

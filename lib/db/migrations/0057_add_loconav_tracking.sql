@@ -100,9 +100,10 @@ ALTER TABLE public.demo_vehicle_trackers  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.demo_vehicle_positions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.loconav_sync_state     ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON public.demo_vehicle_trackers  FROM anon, PUBLIC;
-REVOKE ALL ON public.demo_vehicle_positions FROM anon, PUBLIC;
-REVOKE ALL ON public.loconav_sync_state     FROM anon, PUBLIC;
+-- `authenticated` added 2026-09-11 (see 0062): a rollback + re-apply of this file must not bring it back.
+REVOKE ALL ON public.demo_vehicle_trackers  FROM anon, authenticated, PUBLIC;
+REVOKE ALL ON public.demo_vehicle_positions FROM anon, authenticated, PUBLIC;
+REVOKE ALL ON public.loconav_sync_state     FROM anon, authenticated, PUBLIC;
 
 GRANT ALL ON public.demo_vehicle_trackers  TO service_role;
 GRANT ALL ON public.demo_vehicle_positions TO service_role;

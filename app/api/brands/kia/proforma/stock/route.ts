@@ -507,11 +507,10 @@ export async function GET(request: Request) {
         SELECT dkb.id, dkb.delivered_at, dkb.booking_number, dkb.customer_name,
                dkb.customer_phone, dkb.consultant_name, dkb.bank_name, dkb.status,
                dkb.amount_received
-        FROM kia_vehicle_allocations dva
-        JOIN kia_bookings dkb ON dkb.id = dva.booking_id
-         AND dkb.deleted_at IS NULL
-         AND dkb.status = 'delivered'
-        WHERE UPPER(TRIM(dva.vin_number)) = UPPER(TRIM(sm.vin_number))
+        FROM kia_bookings dkb
+        WHERE dkb.deleted_at IS NULL
+          AND dkb.status = 'delivered'
+          AND UPPER(TRIM(COALESCE(dkb.allocated_vin, ''))) = UPPER(TRIM(sm.vin_number))
         ORDER BY dkb.delivered_at DESC NULLS LAST
         LIMIT 1
       ) dlv ON TRUE
@@ -591,11 +590,10 @@ export async function GET(request: Request) {
         SELECT dkb.id, dkb.delivered_at, dkb.booking_number, dkb.customer_name,
                dkb.customer_phone, dkb.consultant_name, dkb.bank_name, dkb.status,
                dkb.amount_received
-        FROM kia_vehicle_allocations dva
-        JOIN kia_bookings dkb ON dkb.id = dva.booking_id
-         AND dkb.deleted_at IS NULL
-         AND dkb.status = 'delivered'
-        WHERE UPPER(TRIM(dva.vin_number)) = UPPER(TRIM(vt.vin_number))
+        FROM kia_bookings dkb
+        WHERE dkb.deleted_at IS NULL
+          AND dkb.status = 'delivered'
+          AND UPPER(TRIM(COALESCE(dkb.allocated_vin, ''))) = UPPER(TRIM(vt.vin_number))
         ORDER BY dkb.delivered_at DESC NULLS LAST
         LIMIT 1
       ) dlv ON TRUE
@@ -680,11 +678,10 @@ export async function GET(request: Request) {
         SELECT dkb.id, dkb.delivered_at, dkb.booking_number, dkb.customer_name,
                dkb.customer_phone, dkb.consultant_name, dkb.bank_name, dkb.status,
                dkb.amount_received
-        FROM kia_vehicle_allocations dva
-        JOIN kia_bookings dkb ON dkb.id = dva.booking_id
-         AND dkb.deleted_at IS NULL
-         AND dkb.status = 'delivered'
-        WHERE UPPER(TRIM(dva.vin_number)) = UPPER(TRIM(sm.vin_number))
+        FROM kia_bookings dkb
+        WHERE dkb.deleted_at IS NULL
+          AND dkb.status = 'delivered'
+          AND UPPER(TRIM(COALESCE(dkb.allocated_vin, ''))) = UPPER(TRIM(sm.vin_number))
         ORDER BY dkb.delivered_at DESC NULLS LAST
         LIMIT 1
       ) dlv ON TRUE
@@ -912,11 +909,10 @@ export async function GET(request: Request) {
         SELECT dkb.id, dkb.delivered_at, dkb.booking_number, dkb.customer_name,
                dkb.customer_phone, dkb.consultant_name, dkb.bank_name, dkb.status,
                dkb.amount_received
-        FROM kia_vehicle_allocations dva
-        JOIN kia_bookings dkb ON dkb.id = dva.booking_id
-         AND dkb.deleted_at IS NULL
-         AND dkb.status = 'delivered'
-        WHERE UPPER(TRIM(dva.vin_number)) = UPPER(TRIM(sm.vin_number))
+        FROM kia_bookings dkb
+        WHERE dkb.deleted_at IS NULL
+          AND dkb.status = 'delivered'
+          AND UPPER(TRIM(COALESCE(dkb.allocated_vin, ''))) = UPPER(TRIM(sm.vin_number))
         ORDER BY dkb.delivered_at DESC NULLS LAST
         LIMIT 1
       ) dlv ON TRUE

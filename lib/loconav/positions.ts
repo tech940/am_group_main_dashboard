@@ -32,7 +32,7 @@ export type TrackingState =
   | 'no_fix'
   /** No provider vehicle is mapped to this VIN — no device, or the mapping has not resolved. */
   | 'untracked'
-  /** LOCONAV_API_TOKEN is not set. Nothing is tracked, and that is a configuration fact, not a fault. */
+  /** LOCO_AUTH_TOKEN is not set. Nothing is tracked, and that is a configuration fact, not a fault. */
   | 'not_configured'
 
 export type VehiclePosition = {
@@ -60,7 +60,7 @@ const numOrNull = (v: unknown): number | null => {
 
 /**
  * ⚠️ THE ORDERING HAZARD THIS EXISTS FOR. Migration 0057 is applied BY HAND on the direct port. If
- * anyone sets LOCONAV_API_TOKEN in Vercel before running it — the natural order, since the env var
+ * anyone sets LOCO_AUTH_TOKEN in Vercel before running it — the natural order, since the env var
  * is the visible step — then every SELECT below hits a table that does not exist, Postgres raises
  * 42P01, and the failure is not scoped to tracking: it takes down the ENTIRE fleet board, because
  * getFleetStatus awaits this. That exact class of bug (naming a column added by an unapplied
@@ -130,7 +130,7 @@ export async function getPositionsForVins(
    */
   if (!(await tablesReady())) {
     console.warn(
-      '[loconav] LOCONAV_API_TOKEN is set but migration 0057 has not been applied — ' +
+      '[loconav] LOCO_AUTH_TOKEN is set but migration 0057 has not been applied — ' +
         'demo_vehicle_trackers / demo_vehicle_positions are missing. Tracking is reporting as not configured.',
     )
     for (const vin of keys) out.set(vin, blank(vin, 'not_configured'))

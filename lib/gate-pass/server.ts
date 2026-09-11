@@ -213,18 +213,19 @@ export async function listGatePasses(appUser: AppUser, raw: unknown) {
   const predicate = and(...where)
   const offset = (filters.page - 1) * filters.pageSize
 
-  const rows = await db
-    .select()
-    .from(demoGatePasses)
-    .where(predicate)
-    .orderBy(desc(demoGatePasses.createdAt))
-    .limit(filters.pageSize)
-    .offset(offset)
-
-  const [{ total }] = await db
-    .select({ total: sql<number>`COUNT(*)::int` })
-    .from(demoGatePasses)
-    .where(predicate)
+  const [rows, [{ total }]] = await Promise.all([
+    db
+      .select()
+      .from(demoGatePasses)
+      .where(predicate)
+      .orderBy(desc(demoGatePasses.createdAt))
+      .limit(filters.pageSize)
+      .offset(offset),
+    db
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(demoGatePasses)
+      .where(predicate),
+  ])
 
   const visible = filters.awaitingMe
     ? rows.filter((r) => canApproveGatePass(appUser, r.dealerCode))
@@ -236,6 +237,96 @@ export async function listGatePasses(appUser: AppUser, raw: unknown) {
     roleFiltered: filters.awaitingMe && visible.length !== rows.length,
     page: filters.page,
     pageSize: filters.pageSize,
+  }
+}
+
+export async function getGatePassSummary(appUser: AppUser, raw: unknown) {
+  const filters = listGatePassesSchema.parse(raw ?? {})
+  const scope = visibleDealerCodes(appUser)
+
+  const where = [inArray(demoGatePasses.dealerCode, scope)]
+
+  if (filters.dealerCode && filters.dealerCode !== 'all') {
+    const code = normalizeKiaDealerCode(filters.dealerCode)
+    if (code) where.push(eq(demoGatePasses.dealerCode, code))
+  }
+  if (filters.purpose && filters.purpose !== 'all') {
+    where.push(eq(demoGatePasses.purpose, filters.purpose))
+  }
+  if (filters.startDate) {
+    const isIsoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate.trim())
+    const start = isIsoDateOnly
+      ? new Date(`${filters.startDate.trim()}T00:00:00.000+05:30`)
+      : new Date(filters.startDate)
+    if (!Number.isNaN(start.getTime())) {
+      where.push(gte(demoGatePasses.createdAt, start))
+    }
+  }
+  if (filters.endDate) {
+    const isIsoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate.trim())
+    const end = isIsoDateOnly
+      ? new Date(`${filters.endDate.trim()}T23:59:59.999+05:30`)
+      : new Date(filters.endDate)
+    if (!Number.isNaN(end.getTime())) {
+      where.push(lte(demoGatePasses.createdAt, end))
+    }
+  }
+  if (filters.mine) where.push(eq(demoGatePasses.requestedBy, appUser.id))
+  if (filters.search) {
+    const needle = `%${filters.search.toLowerCase()}%`
+    where.push(sql`(
+      LOWER(${demoGatePasses.passNo}) LIKE ${needle}
+      OR LOWER(COALESCE(${demoGatePasses.registrationNumber}, '')) LIKE ${needle}
+      OR LOWER(COALESCE(${demoGatePasses.model}, '')) LIKE ${needle}
+      OR LOWER(${demoGatePasses.driverName}) LIKE ${needle}
+      OR LOWER(${demoGatePasses.requestedByName}) LIKE ${needle}
+    )`)
+  }
+
+  const predicate = and(...where)
+
+  const [agg] = await db
+    .select({
+      total: sql<number>`COUNT(*)::int`,
+      outNow: sql<number>`COUNT(*) FILTER (WHERE ${demoGatePasses.status} = 'out')::int`,
+      overdueNow: sql<number>`COUNT(*) FILTER (WHERE ${demoGatePasses.status} = 'out' AND ${demoGatePasses.expectedReturnAt} < NOW())::int`,
+      awaitingApproval: sql<number>`COUNT(*) FILTER (WHERE ${demoGatePasses.status} = 'pending_approval')::int`,
+      readyForGateOut: sql<number>`COUNT(*) FILTER (WHERE ${demoGatePasses.status} = 'approved')::int`,
+      completedTrips: sql<number>`COUNT(*) FILTER (WHERE ${demoGatePasses.status} = 'returned')::int`,
+      closedPasses: sql<number>`COUNT(*) FILTER (WHERE ${demoGatePasses.status} IN ('returned', 'rejected', 'cancelled', 'expired'))::int`,
+      onTimeReturns: sql<number>`COUNT(*) FILTER (WHERE ${demoGatePasses.status} = 'returned' AND ${demoGatePasses.gateInAt} <= ${demoGatePasses.expectedReturnAt})::int`,
+      totalDistanceKm: sql<number | null>`COALESCE(SUM(CASE WHEN ${demoGatePasses.status} = 'returned' AND ${demoGatePasses.gateInOdo} IS NOT NULL AND ${demoGatePasses.gateOutOdo} IS NOT NULL AND ${demoGatePasses.gateInOdo} >= ${demoGatePasses.gateOutOdo} THEN (${demoGatePasses.gateInOdo} - ${demoGatePasses.gateOutOdo}) ELSE 0 END), 0)::numeric`,
+      odometerAnomalies: sql<number>`COUNT(*) FILTER (WHERE ${demoGatePasses.gateInOdo} IS NOT NULL AND ${demoGatePasses.gateOutOdo} IS NOT NULL AND ${demoGatePasses.gateInOdo} < ${demoGatePasses.gateOutOdo})::int`,
+      passesMissingEvidence: sql<number>`COUNT(*) FILTER (WHERE (${demoGatePasses.status} = 'out' AND (${demoGatePasses.gateOutSignaturePath} IS NULL OR ${demoGatePasses.gateOutPhotoPaths} IS NULL)) OR (${demoGatePasses.status} = 'returned' AND (${demoGatePasses.gateInSignaturePath} IS NULL OR ${demoGatePasses.gateInPhotoPaths} IS NULL)))::int`,
+    })
+    .from(demoGatePasses)
+    .where(predicate)
+
+  const total = agg?.total ?? 0
+  const completedTrips = agg?.completedTrips ?? 0
+  const onTimeReturns = agg?.onTimeReturns ?? 0
+
+  return {
+    summary: {
+      total,
+      outNow: agg?.outNow ?? 0,
+      overdueNow: agg?.overdueNow ?? 0,
+      awaitingApproval: agg?.awaitingApproval ?? 0,
+      readyForGateOut: agg?.readyForGateOut ?? 0,
+      completedTrips,
+      closedPasses: agg?.closedPasses ?? 0,
+      onTimeReturns,
+      onTimeRate: completedTrips === 0 ? null : Math.round((onTimeReturns / completedTrips) * 100),
+      medianTripMinutes: null,
+      medianApprovalMinutes: null,
+      medianDispatchMinutes: null,
+      totalDistanceKm: agg?.totalDistanceKm !== null && agg?.totalDistanceKm !== undefined ? Number(agg.totalDistanceKm) : null,
+      passesMissingEvidence: agg?.passesMissingEvidence ?? 0,
+      odometerAnomalies: agg?.odometerAnomalies ?? 0,
+    },
+    truncated: false,
+    countedRows: total,
+    totalRows: total,
   }
 }
 

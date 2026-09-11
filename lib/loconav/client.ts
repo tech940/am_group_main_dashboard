@@ -17,20 +17,28 @@ import 'server-only'
  * `JK02C0059TC` is a trade-certificate plate on five different vehicles (lib/gate-pass/vehicles.ts).
  * `List Vehicles` returns `chassisNumber`, which IS the VIN, so the mapping is built from that and
  * the plate is never used as a key. `vehicleNumber` is deliberately not exposed as a filter here.
+ * ⚠️ On this account that field holds a plate or free text for 17 of 18 vehicles (measured
+ * 2026-09-11), so most links are confirmed by a person on the Trackers screen instead.
  *
  * ── Configuration ────────────────────────────────────────────────────────────────────────────
- * LOCONAV_API_TOKEN — the `User-Authentication` header value. Optional: when it is absent the whole
+ * LOCO_AUTH_TOKEN — the `User-Authentication` header value. Optional: when it is absent the whole
  * integration reports itself unconfigured and the fleet renders exactly as it did before. It is NOT
  * read at module load, because that would make importing this file fail at build time.
  * LOCONAV_API_BASE — override for the host, for staging or if the vendor moves it.
+ *
+ * ── Limits measured on the live account (2026-09-11) ─────────────────────────────────────────
+ * - 20 requests per window (`x-rate-limit-limit: 20`, `x-rate-limit-remaining`); about twenty quick
+ *   calls earn HTTP 429 "TOO MANY REQUESTS", cleared within ~2 minutes.
+ * - `/timeline` and `/alerts` refuse windows over 86,400 s (see lib/loconav/timeline.ts).
+ * - `/distance_travelled` answers 422 once the vehicle's LocoNav subscription has expired.
  */
 
 /**
- * ⚠️ Two hosts appear in the published collection: most endpoints on api.a.loconav.com, but the
- * fleet-wide `GET /alerts` on app.a.loconav.com. Only the api host is used here; if the alerts
- * endpoint is added later it needs its own base, not this one.
+ * ⚠️ NOT the host in the public documentation. This account lives on Sensorise's LocoNav deployment
+ * (the address the vendor emailed on 2026-09-11); the public `api.a.loconav.com` does not serve it,
+ * and the token must never be sent there to find out.
  */
-const DEFAULT_BASE = 'https://api.a.loconav.com/integration/api/v1'
+const DEFAULT_BASE = 'https://app.loconav.sensorise.net/integration/api/v1'
 
 export type LoconavVehicle = {
   vehicleUuid: string
@@ -66,7 +74,7 @@ export function loconavBase(): string {
 
 /** True when a token is present. Every caller must branch on this rather than catching a throw. */
 export function isLoconavConfigured(): boolean {
-  return Boolean(String(process.env.LOCONAV_API_TOKEN || '').trim())
+  return Boolean(String(process.env.LOCO_AUTH_TOKEN || '').trim())
 }
 
 /**
@@ -74,8 +82,8 @@ export function isLoconavConfigured(): boolean {
  * this file fail during the build. Mirrors lib/callyzer/client.ts:79-83.
  */
 function apiToken(): string {
-  const token = String(process.env.LOCONAV_API_TOKEN || '').trim()
-  if (!token) throw new Error('LOCONAV_API_TOKEN is not configured')
+  const token = String(process.env.LOCO_AUTH_TOKEN || '').trim()
+  if (!token) throw new Error('LOCO_AUTH_TOKEN is not configured')
   return token
 }
 
@@ -90,12 +98,74 @@ const numOrNull = (v: unknown): number | null => {
 }
 
 /**
+ * A response the provider refused. `status` lets a caller decide what the refusal MEANS — a 422 on a
+ * history call is an expired subscription, a 429 is "come back later" — without parsing message text.
+ * The message keeps the shape `LocoNav <path> failed: HTTP <status> <detail>` that classifyProviderFailure
+ * in trips.ts already reads.
+ */
+export class LoconavHttpError extends Error {
+  readonly status: number
+  readonly path: string
+  constructor(status: number, path: string, message: string) {
+    super(message)
+    this.name = 'LoconavHttpError'
+    this.status = status
+    this.path = path
+  }
+}
+
+/** HTTP 429. Never retried inside a request — see request(). */
+export class LoconavRateLimitError extends LoconavHttpError {
+  constructor(path: string, message: string) {
+    super(429, path, message)
+    this.name = 'LoconavRateLimitError'
+  }
+}
+
+export function isLoconavRateLimited(error: unknown): error is LoconavRateLimitError {
+  return error instanceof LoconavRateLimitError || (error instanceof LoconavHttpError && error.status === 429)
+}
+
+/**
+ * Refusals that another attempt cannot change. 401/403 are credentials; 400 is a request we built wrong
+ * (a history window over one day); 404 is a vehicle that is not on the account; 422 is an expired
+ * subscription. Retrying any of them only spends the rate limit.
+ */
+const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 422])
+
+/**
+ * The provider's own count of requests left, as of the latest response this instance saw.
+ *
+ * Module state, so it is a HINT: per serverless instance, and stale the moment another instance or a
+ * manual sync spends a request. A sweep uses it to stop early; it must never be the only guard.
+ */
+let rateLimitHint: { limit: number | null; remaining: number | null; atMs: number | null } = {
+  limit: null,
+  remaining: null,
+  atMs: null,
+}
+
+function recordRateLimit(headers: Headers, status: number) {
+  const limit = numOrNull(headers.get('x-rate-limit-limit'))
+  const remaining = status === 429 ? 0 : numOrNull(headers.get('x-rate-limit-remaining'))
+  if (limit === null && remaining === null) return
+  rateLimitHint = { limit, remaining, atMs: Date.now() }
+}
+
+export function getLoconavRateLimitHint(): { limit: number | null; remaining: number | null; atMs: number | null } {
+  return { ...rateLimitHint }
+}
+
+/**
  * One authenticated request, with the house retry policy.
  *
  * 401/403 throw immediately: they are configuration faults and retrying cannot help — copied
- * deliberately from the Callyzer client, which learned it the hard way. Everything else gets four
- * attempts with linear backoff. Upstream detail is truncated to 200 chars into the error message so
- * a provider stack trace never lands whole in a log line.
+ * deliberately from the Callyzer client, which learned it the hard way. 400/404/422 throw immediately
+ * for the same reason. Everything else gets four attempts with linear backoff. Upstream detail is
+ * truncated to 200 chars into the error message so a provider stack trace never lands whole in a log line.
+ *
+ * ⚠️ 429 THROWS IMMEDIATELY TOO. The account allows 20 requests per window; a 1.5 s backoff retry lands
+ * inside the same exhausted window and spends the next one as well. The caller decides whether to defer.
  */
 export type RequestPolicy = {
   /** Total tries, including the first. */
@@ -150,15 +220,23 @@ async function request<T>(
         signal: AbortSignal.timeout(timeoutMs),
       })
 
+      recordRateLimit(res.headers, res.status)
       if (res.ok) return (await res.json()) as T
 
       const detail = await res.text().catch(() => '')
       if (res.status === 401 || res.status === 403) {
-        throw new Error(`LocoNav auth failed: HTTP ${res.status} ${detail.slice(0, 200)}`)
+        throw new LoconavHttpError(res.status, path, `LocoNav auth failed: HTTP ${res.status} ${detail.slice(0, 200)}`)
       }
-      lastError = new Error(`LocoNav ${path} failed: HTTP ${res.status} ${detail.slice(0, 200)}`)
+      if (res.status === 429) {
+        throw new LoconavRateLimitError(path, `LocoNav ${path} failed: HTTP 429 ${detail.slice(0, 200)}`)
+      }
+      const error = new LoconavHttpError(res.status, path, `LocoNav ${path} failed: HTTP ${res.status} ${detail.slice(0, 200)}`)
+      if (NON_RETRYABLE_STATUSES.has(res.status)) throw error
+      lastError = error
     } catch (error) {
-      if (error instanceof Error && /auth failed|not configured/.test(error.message)) throw error
+      // Every LoconavHttpError that reaches here was THROWN, i.e. is non-retryable by construction.
+      if (error instanceof LoconavHttpError) throw error
+      if (error instanceof Error && /not configured/.test(error.message)) throw error
       lastError = error
     }
     if (attempt < attempts) await new Promise((r) => setTimeout(r, attempt * 1500))
@@ -313,6 +391,9 @@ export type LoconavTimelineSegment = {
  * ⚠️ A "Stopped" segment can carry null coordinates in the vendor's own sample (the first stop has
  * `coordinates: null` at its start). Every field is therefore nullable — do not assume a segment is
  * plottable.
+ *
+ * ⚠️ ONE DAY AT MOST per call — a longer window is refused with HTTP 400. Callers slice with
+ * sliceWindow() from lib/loconav/timeline.ts.
  */
 export async function fetchTimeline(
   vehicleUuid: string,
@@ -372,9 +453,8 @@ export type LoconavAlert = {
  * ignition, crash. This is what turns "the car came back" into "the car came back, and here is how
  * it was driven".
  *
- * ⚠️ The PER-VEHICLE endpoint, deliberately. The fleet-wide `GET /alerts` lives on a DIFFERENT host
- * (app.a.loconav.com) and would need its own base — this one is on the same api host as everything
- * else here, and is keyed on the provider uuid rather than on a plate.
+ * ⚠️ The PER-VEHICLE endpoint, deliberately: keyed on the provider uuid rather than on a plate.
+ * ⚠️ ONE DAY AT MOST per call, like the timeline.
  */
 export async function fetchAlerts(
   vehicleUuid: string,

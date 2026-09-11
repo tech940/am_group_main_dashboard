@@ -28,33 +28,28 @@ function toIsoDate(value: unknown): string {
   return String(value).slice(0, 10)
 }
 
-let attachmentsColumnChecked = false
-async function ensureScrapAttachmentsColumn() {
-  if (attachmentsColumnChecked) return
-  try {
-    await db.execute(sql.raw(`
-      ALTER TABLE scrap_transactions ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
-    `))
-    attachmentsColumnChecked = true
-  } catch (e) {
-    console.error('Failed to ensure attachments column:', e)
-  }
-}
-
-function parseAttachments(val: unknown): ScrapAttachment[] {
+function parseAttachments(val: unknown, includeUrls = false): ScrapAttachment[] {
+  let list: any[] = []
   if (Array.isArray(val)) {
-    return val as ScrapAttachment[]
-  }
-  if (typeof val === 'string' && val.trim()) {
+    list = val
+  } else if (typeof val === 'string' && val.trim()) {
     try {
       const parsed = JSON.parse(val)
-      if (Array.isArray(parsed)) return parsed as ScrapAttachment[]
+      if (Array.isArray(parsed)) list = parsed
     } catch {}
   }
-  return []
+  return list.map((item, idx) => ({
+    id: String(item.id || `att-${idx}`),
+    transactionId: String(item.transactionId || ''),
+    type: item.type || 'scrap_picture',
+    fileName: String(item.fileName || 'attachment'),
+    fileSize: typeof item.fileSize === 'number' ? item.fileSize : undefined,
+    mimeType: item.mimeType ? String(item.mimeType) : undefined,
+    url: includeUrls ? String(item.url || '') : '',
+  }))
 }
 
-function mapDbRowToTransaction(row: Record<string, unknown>): ScrapTransaction {
+function mapDbRowToTransaction(row: Record<string, unknown>, includeAttachmentUrls = false): ScrapTransaction {
   const soldDate = toIsoDate(row.sold_date)
   const timestamp = row.timestamp ? new Date(String(row.timestamp)).toISOString() : new Date().toISOString()
   const createdAt = row.created_at ? new Date(String(row.created_at)).toISOString() : new Date().toISOString()
@@ -100,7 +95,7 @@ function mapDbRowToTransaction(row: Record<string, unknown>): ScrapTransaction {
     paymentHandoverToName: String(row.payment_handover_to_name || ''),
     remarks: row.remarks ? String(row.remarks) : '',
     status,
-    attachments: parseAttachments(row.attachments),
+    attachments: parseAttachments(row.attachments, includeAttachmentUrls),
     isDistributed,
     sentToAccounts: Boolean(row.sent_to_accounts),
     accountsReceivedAt,
@@ -110,16 +105,7 @@ function mapDbRowToTransaction(row: Record<string, unknown>): ScrapTransaction {
   }
 }
 
-import fs from 'fs'
-
-function logToFile(msg: string) {
-  try {
-    fs.appendFileSync('c:\\Users\\sahil\\Downloads\\am_group_main_dashboard\\scrap-api-log.txt', `[${new Date().toISOString()}] ${msg}\n`)
-  } catch (e) {}
-}
-
 export async function GET(request: Request) {
-  logToFile('GET /api/scrap-erp called')
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -128,20 +114,71 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'You do not have access to Scrap ERP.' }, { status: 403 })
   }
   try {
-    await ensureScrapAttachmentsColumn()
     const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    const transactionNumber = searchParams.get('transactionNumber')
+    const includeAttachments = searchParams.get('includeAttachments') === 'true'
+
+    // If single transaction requested, fetch on-demand (with full attachments if requested)
+    if (id || transactionNumber) {
+      const whereClause = id
+        ? `id = '${id.replace(/'/g, "''")}'`
+        : `transaction_number = '${(transactionNumber || '').replace(/'/g, "''")}'`
+
+      const rows = await db.execute(sql.raw(`
+        SELECT *
+        FROM scrap_transactions
+        WHERE ${whereClause}
+        LIMIT 1
+      `))
+
+      if ((rows as any[]).length === 0) {
+        return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        transaction: mapDbRowToTransaction((rows as any[])[0], includeAttachments || true),
+      })
+    }
+
     const search = (searchParams.get('search') || '').toLowerCase().trim()
     const location = searchParams.get('location')
     const department = searchParams.get('department')
     const scrapType = searchParams.get('scrapType')
 
+    // Lightweight bulk projection: excludes heavy base64 strings from attachments jsonb
     const dbRows = await db.execute(sql.raw(`
-      SELECT *
+      SELECT 
+        id, transaction_number, timestamp, group_id, group_name, location_id, location_name,
+        department_id, department_name, scrap_type_id, scrap_type_name, unit, description,
+        weight_qty, rate_per_unit, calculated_total, amount_received, outstanding_amount,
+        sold_by_id, sold_by_name, sold_to, sold_date, payment_mode_id, payment_mode_name,
+        payment_handover_to_id, payment_handover_to_name, remarks, status, is_distributed,
+        sent_to_accounts, accounts_received_at, accounts_note, created_at, updated_at,
+        (
+          SELECT COALESCE(jsonb_agg(
+            jsonb_build_object(
+              'id', elem->>'id',
+              'transactionId', elem->>'transactionId',
+              'type', elem->>'type',
+              'fileName', elem->>'fileName',
+              'fileSize', elem->'fileSize',
+              'mimeType', elem->>'mimeType'
+            )
+          ), '[]'::jsonb)
+          FROM jsonb_array_elements(
+            CASE 
+              WHEN jsonb_typeof(attachments) = 'array' THEN attachments 
+              ELSE '[]'::jsonb 
+            END
+          ) AS elem
+        ) AS attachments
       FROM scrap_transactions
       ORDER BY created_at DESC, timestamp DESC
     `))
 
-    let transactions = (dbRows as any[]).map(mapDbRowToTransaction)
+    let transactions = (dbRows as any[]).map((row) => mapDbRowToTransaction(row, false))
 
     if (search) {
       transactions = transactions.filter(
@@ -173,7 +210,6 @@ export async function GET(request: Request) {
       totalCount: transactions.length,
     })
   } catch (error: any) {
-    logToFile(`GET /api/scrap-erp exception: ${String(error.message || error)}`)
     console.error('Error in GET /api/scrap-erp:', error)
     return NextResponse.json({ error: 'Failed to fetch scrap transactions' }, { status: 500 })
   }
@@ -187,7 +223,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'You do not have permission to create scrap records.' }, { status: 403 })
     }
 
-    await ensureScrapAttachmentsColumn()
     const body = await request.json()
 
     const weightQty = Number(body.weightQty || 0)
@@ -266,18 +301,16 @@ export async function POST(request: Request) {
     const insertedRow = (inserted as any[])[0]
     return NextResponse.json({
       success: true,
-      transaction: mapDbRowToTransaction(insertedRow),
+      transaction: mapDbRowToTransaction(insertedRow, true),
       message: 'Scrap transaction created successfully',
     })
   } catch (error: any) {
-    logToFile(`POST /api/scrap-erp exception: ${String(error.message || error)}`)
     console.error('Error in POST /api/scrap-erp:', error)
     return NextResponse.json({ error: 'Failed to create scrap transaction' }, { status: 500 })
   }
 }
 
 export async function PUT(request: Request) {
-  logToFile('PUT /api/scrap-erp called')
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -286,7 +319,6 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'You do not have permission to edit Scrap ERP entries.' }, { status: 403 })
   }
   try {
-    await ensureScrapAttachmentsColumn()
     const body = await request.json()
     if (!body.id && !body.transactionNumber) {
       return NextResponse.json({ error: 'Transaction ID or number required' }, { status: 400 })
@@ -307,21 +339,6 @@ export async function PUT(request: Request) {
     const weightQty = body.weightQty !== undefined ? Number(body.weightQty) : Number(existing.weight_qty || 0)
     const ratePerUnit = body.ratePerUnit !== undefined ? Number(body.ratePerUnit) : Number(existing.rate_per_unit || 0)
 
-    /**
-     * ⚠️ THE TOTAL IS AUTHORITATIVE INPUT, NOT A DERIVED VALUE.
-     *
-     * This used to be an unconditional `round(weightQty * ratePerUnit, 2)`, which DESTROYED money:
-     * 12 live rows carry a total stated directly on the source register with no qty or rate
-     * (Rs 92,994 in all), so any save recomputed them to ZERO while amount_received kept its real
-     * value. It was silent — outstanding clamps at 0 and status stayed COMPLETED.
-     *
-     * Worse, it did not need an edit form: the Distribution tab's one-click "mark distributed" PUTs
-     * only { id, isDistributed }, the qty/rate fell back to the existing zeros, and the total was
-     * wiped anyway.
-     *
-     * Order of precedence: an explicit total from the client, else qty x rate when BOTH are present,
-     * else keep whatever is already stored. The last branch is what protects those 12 rows.
-     */
     const derivedTotal = Math.round(weightQty * ratePerUnit * 100) / 100
     const calculatedTotal = body.calculatedTotal !== undefined
       ? Math.round(Number(body.calculatedTotal) * 100) / 100
@@ -330,7 +347,6 @@ export async function PUT(request: Request) {
         : Math.round(Number(existing.calculated_total || 0) * 100) / 100
 
     const amountReceived = body.amountReceived !== undefined ? Number(body.amountReceived) : Math.round(Number(existing.amount_received || 0) * 100) / 100
-    // Rounded, unlike before: the raw subtraction produced IEEE residue such as 0.0999999999985.
     const outstandingAmount = Math.max(0, Math.round((calculatedTotal - amountReceived) * 100) / 100)
     const status = outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED'
 
@@ -339,16 +355,6 @@ export async function PUT(request: Request) {
     const paymentHandoverToName = body.paymentHandoverToName !== undefined ? String(body.paymentHandoverToName) : String(existing.payment_handover_to_name || '')
     const accountsNote = body.accountsNote !== undefined ? String(body.accountsNote) : String(existing.accounts_note || '')
 
-    /**
-     * The SET list used to cover ONLY the money + workflow columns, so every descriptive edit was
-     * silently discarded: change a vendor, get "updated successfully", see it in the UI, and find
-     * the old value again on the next refresh. sold_to, location_name, department_name,
-     * scrap_type_name, description, remarks, group_name, unit, payment_mode_name and sold_date were
-     * all sent by the entry form and none were written.
-     *
-     * Each is applied ONLY when the request actually carries it, so a partial PUT (the Distribution
-     * tab sends just { id, isDistributed }) still cannot clobber a field it never mentioned.
-     */
     const q = (v: unknown) => `'${String(v ?? '').replace(/'/g, "''")}'`
     const textUpdates: string[] = []
     const TEXT_FIELDS: Array<[string, string]> = [
@@ -396,7 +402,7 @@ export async function PUT(request: Request) {
       RETURNING *
     `))
 
-    const updatedTx = mapDbRowToTransaction(updatedRes[0])
+    const updatedTx = mapDbRowToTransaction(updatedRes[0], true)
 
     return NextResponse.json({
       success: true,

@@ -20,6 +20,8 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   User,
   ShieldCheck,
   Mail,
@@ -29,6 +31,7 @@ import {
   RotateCcw,
   Compass,
   UserCheck,
+  Satellite,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -59,6 +62,7 @@ import { GatePassDetail } from './gate-pass-detail'
 import { GateOutDialog } from './gate-out-dialog'
 import { GateInDialog } from './gate-in-dialog'
 import { FleetPanel } from './fleet-panel'
+import { TrackersPanel } from './trackers-panel'
 import { type GatePassSummary } from '@/lib/gate-pass/metrics'
 import { cn } from '@/lib/utils'
 
@@ -277,9 +281,16 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
-export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUser }) {
+/*
+ * ⚠️ canManageTrackers is computed on the SERVER (app/gate-pass/page.tsx) with the same predicate the tracker
+ * mappings route enforces. Never derive it from `canApprove` below: that is a role list, and it disagrees with
+ * gate_pass.approve — ceo is on the list without the permission, and Access Map grants are not on it at all.
+ */
+export function GatePassClient({ currentUser, embedded = false, canManageTrackers = false }: { currentUser: GatePassCurrentUser; embedded?: boolean; canManageTrackers?: boolean }) {
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('all')
+  const [page, setPage] = useState<number>(1)
+  const [pageSize, setPageSize] = useState<number>(20)
   const [selectedDealer, setSelectedDealer] = useState<string>('all')
   const [selectedPurpose, setSelectedPurpose] = useState<string>('all')
   const [dateFilter, setDateFilter] = useState<string>('all')
@@ -293,6 +304,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
   const [remarks, setRemarks] = useState('')
   const [acting, setActing] = useState(false)
   const [showFleet, setShowFleet] = useState(false)
+  const [showTrackers, setShowTrackers] = useState(false)
   const [qr, setQr] = useState<{
     id: string
     passNo: string
@@ -342,6 +354,8 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
     queryKey: [
       'gate-passes',
       tab,
+      page,
+      pageSize,
       search,
       selectedDealer,
       selectedPurpose,
@@ -360,10 +374,13 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
       if (endDate) params.set('endDate', endDate)
       if (mineOnly) params.set('mine', 'true')
       if (awaitingMeOnly) params.set('awaitingMe', 'true')
+      params.set('page', String(page))
+      params.set('pageSize', String(pageSize))
       const res = await fetch(`/api/gate-pass?${params.toString()}`, { cache: 'no-store' })
       if (!res.ok) throw new Error('Failed to load gate passes.')
       return res.json() as Promise<{ rows?: PassRow[]; passes?: PassRow[]; total: number }>
     },
+    staleTime: 30_000,
   })
 
   const hasActiveFilters =
@@ -383,6 +400,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
     setMineOnly(false)
     setAwaitingMeOnly(false)
     setSearch('')
+    setPage(1)
   }
 
   const exportUrl = useMemo(() => {
@@ -399,6 +417,8 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
   }, [statusFilter, selectedDealer, selectedPurpose, startDate, endDate, mineOnly, awaitingMeOnly, search])
 
   const rawPasses = data?.rows ?? data?.passes ?? []
+  const totalCount = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
 
   // Client-side search for instantaneous feedback
   const rows = useMemo(() => {
@@ -416,14 +436,20 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
   }, [rawPasses, search])
 
   const { data: summaryData } = useQuery({
-    queryKey: ['gate-pass-summary', search],
+    queryKey: ['gate-pass-summary', search, selectedDealer, selectedPurpose, startDate, endDate, mineOnly],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
+      if (selectedDealer && selectedDealer !== 'all') params.set('dealerCode', selectedDealer)
+      if (selectedPurpose && selectedPurpose !== 'all') params.set('purpose', selectedPurpose)
+      if (startDate) params.set('startDate', startDate)
+      if (endDate) params.set('endDate', endDate)
+      if (mineOnly) params.set('mine', 'true')
       const res = await fetch(`/api/gate-pass/summary?${params.toString()}`, { cache: 'no-store' })
       if (!res.ok) throw new Error('Could not load the summary.')
       return res.json() as Promise<{ summary: GatePassSummary; truncated: boolean }>
     },
+    staleTime: 30_000,
   })
   const summary = summaryData?.summary
 
@@ -453,7 +479,8 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
         }>
       }>
     },
-    refetchInterval: 30_000,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
   })
 
   // Prefetch detail on hover or touchstart for 0ms instant modal display
@@ -472,16 +499,6 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
     },
     [queryClient],
   )
-
-  // Pre-warm top 10 visible passes into cache automatically
-  useEffect(() => {
-    if (rows && rows.length > 0) {
-      const topRows = rows.slice(0, 10)
-      topRows.forEach((r) => {
-        prefetchPassDetail(r.id)
-      })
-    }
-  }, [rows, prefetchPassDetail])
 
   // Direct 1-Click Approve (no remark prompt, no duplicate confirmation)
   const approvePass = async (row: PassRow) => {
@@ -631,8 +648,13 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
     }
   }
 
-  return (
-    <MainLayout>
+  const selectTab = (newTab: (typeof TABS)[number]['key']) => {
+    setTab(newTab)
+    setPage(1)
+  }
+
+  const content = (
+    <>
       <div className="space-y-5 p-4 sm:p-6 max-w-[1600px] mx-auto font-sans">
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
@@ -683,7 +705,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <button
               type="button"
-              onClick={() => setTab('awaiting')}
+              onClick={() => selectTab('awaiting')}
               className={cn(
                 'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
                 tab === 'awaiting'
@@ -710,7 +732,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
 
             <button
               type="button"
-              onClick={() => setTab('approved')}
+              onClick={() => selectTab('approved')}
               className={cn(
                 'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
                 tab === 'approved'
@@ -735,7 +757,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
 
             <button
               type="button"
-              onClick={() => setTab('out')}
+              onClick={() => selectTab('out')}
               className={cn(
                 'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
                 tab === 'out'
@@ -762,7 +784,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
 
             <button
               type="button"
-              onClick={() => setTab('all')}
+              onClick={() => selectTab('all')}
               className={cn(
                 'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
                 tab === 'all'
@@ -792,20 +814,35 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
         ) : null}
 
         {/* Fleet Details Toggle Strip */}
-        <div className="flex items-center justify-between px-1">
+        <div className="flex flex-wrap items-center gap-1 px-1">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setShowFleet((v) => !v)}
-            className="h-8 px-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 cursor-pointer gap-1.5"
+            className="h-8 px-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 cursor-pointer gap-1.5 [&_svg]:size-3.5"
           >
             <Car className="h-3.5 w-3.5" />
             {showFleet ? 'Hide Fleet Availability Panel' : 'Show Fleet Availability Panel'}
             {showFleet ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </Button>
+          {canManageTrackers ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowTrackers((v) => !v)}
+              aria-expanded={showTrackers}
+              className="h-8 px-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 cursor-pointer gap-1.5 [&_svg]:size-3.5"
+            >
+              <Satellite className="h-3.5 w-3.5" />
+              {showTrackers ? 'Hide GPS Trackers' : 'Show GPS Trackers'}
+              {showTrackers ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </Button>
+          ) : null}
         </div>
 
         {showFleet && <FleetPanel />}
+
+        {canManageTrackers && showTrackers && <TrackersPanel />}
 
         {/* Main Passes Table Card */}
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
@@ -830,7 +867,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                   <button
                     key={t.key}
                     type="button"
-                    onClick={() => setTab(t.key)}
+                    onClick={() => selectTab(t.key)}
                     className={cn(
                       'inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer',
                       active
@@ -868,13 +905,19 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
               <Input
                 placeholder="Search pass no, vehicle, driver..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setPage(1)
+                }}
                 className="h-9 pl-8.5 pr-8 text-xs rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-medium"
               />
               {search && (
                 <button
                   type="button"
-                  onClick={() => setSearch('')}
+                  onClick={() => {
+                    setSearch('')
+                    setPage(1)
+                  }}
                   className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -891,7 +934,13 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                 <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-slate-400" /> Branch:
                 </Label>
-                <Select value={selectedDealer} onValueChange={setSelectedDealer}>
+                <Select
+                  value={selectedDealer}
+                  onValueChange={(v) => {
+                    setSelectedDealer(v)
+                    setPage(1)
+                  }}
+                >
                   <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
                     <SelectValue placeholder="All Branches" />
                   </SelectTrigger>
@@ -911,7 +960,13 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                 <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
                   <Compass className="w-3.5 h-3.5 text-slate-400" /> Purpose:
                 </Label>
-                <Select value={selectedPurpose} onValueChange={setSelectedPurpose}>
+                <Select
+                  value={selectedPurpose}
+                  onValueChange={(v) => {
+                    setSelectedPurpose(v)
+                    setPage(1)
+                  }}
+                >
                   <SelectTrigger className="h-8.5 w-44 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
                     <SelectValue placeholder="All Purposes" />
                   </SelectTrigger>
@@ -931,7 +986,13 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                 <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5 text-slate-400" /> Date:
                 </Label>
-                <Select value={dateFilter} onValueChange={setDateFilter}>
+                <Select
+                  value={dateFilter}
+                  onValueChange={(v) => {
+                    setDateFilter(v)
+                    setPage(1)
+                  }}
+                >
                   <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
                     <SelectValue placeholder="All Time" />
                   </SelectTrigger>
@@ -952,14 +1013,20 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                   <Input
                     type="date"
                     value={customStartDate}
-                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    onChange={(e) => {
+                      setCustomStartDate(e.target.value)
+                      setPage(1)
+                    }}
                     className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
                   />
                   <span className="text-xs text-slate-400">to</span>
                   <Input
                     type="date"
                     value={customEndDate}
-                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    onChange={(e) => {
+                      setCustomEndDate(e.target.value)
+                      setPage(1)
+                    }}
                     className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
                   />
                 </div>
@@ -968,7 +1035,10 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
               {/* Quick Filter: My Passes */}
               <button
                 type="button"
-                onClick={() => setMineOnly((v) => !v)}
+                onClick={() => {
+                  setMineOnly((v) => !v)
+                  setPage(1)
+                }}
                 className={cn(
                   'h-8.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
                   mineOnly
@@ -984,7 +1054,10 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
               {canApprove && (
                 <button
                   type="button"
-                  onClick={() => setAwaitingMeOnly((v) => !v)}
+                  onClick={() => {
+                    setAwaitingMeOnly((v) => !v)
+                    setPage(1)
+                  }}
                   className={cn(
                     'h-8.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
                     awaitingMeOnly
@@ -1158,7 +1231,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                                     size="sm"
                                     disabled={approvingId === row.id}
                                     onClick={() => approvePass(row)}
-                                    className="h-7 px-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shadow-2xs gap-1"
+                                    className="h-7 px-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shadow-2xs gap-1 [&_svg]:size-3"
                                   >
                                     {approvingId === row.id ? (
                                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -1174,7 +1247,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                                       setDecisionFor(row)
                                       setRemarks('')
                                     }}
-                                    className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900 rounded-lg cursor-pointer"
+                                    className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900 rounded-lg cursor-pointer [&_svg]:size-3"
                                   >
                                     <X className="h-3 w-3 mr-0.5" /> Reject
                                   </Button>
@@ -1185,7 +1258,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                                 variant="outline"
                                 onClick={() => cancel(row)}
                                 title="Cancel gate pass request"
-                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1"
+                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3"
                               >
                                 <Ban className="h-3 w-3" /> Cancel
                               </Button>
@@ -1198,7 +1271,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                               <Button
                                 size="sm"
                                 onClick={() => setGateOutFor(row)}
-                                className="h-7 px-3 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-2xs cursor-pointer gap-1"
+                                className="h-7 px-3 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-2xs cursor-pointer gap-1 [&_svg]:size-3.5"
                               >
                                 <Car className="h-3.5 w-3.5" /> Gate Out
                               </Button>
@@ -1207,7 +1280,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                                 variant="outline"
                                 onClick={() => showQr(row)}
                                 title="Show Gate Out QR code"
-                                className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer"
+                                className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
                               >
                                 <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
                               </Button>
@@ -1216,7 +1289,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                                 variant="outline"
                                 onClick={() => cancel(row)}
                                 title="Cancel gate pass request (vehicle is at gate and yet to go out)"
-                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1"
+                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3"
                               >
                                 <Ban className="h-3 w-3" /> Cancel
                               </Button>
@@ -1229,7 +1302,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                               <Button
                                 size="sm"
                                 onClick={() => setGateInFor(row)}
-                                className="h-7 px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-2xs cursor-pointer gap-1"
+                                className="h-7 px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-2xs cursor-pointer gap-1 [&_svg]:size-3.5"
                               >
                                 <CheckCircle2 className="h-3.5 w-3.5" /> Gate In
                               </Button>
@@ -1238,7 +1311,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                                 variant="outline"
                                 onClick={() => showQr(row)}
                                 title="Show Gate In QR code"
-                                className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer"
+                                className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
                               >
                                 <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
                               </Button>
@@ -1251,7 +1324,7 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
                             variant="ghost"
                             onClick={() => setDetailId(row.id)}
                             title="View details"
-                            className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                            className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer [&_svg]:size-3.5"
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
@@ -1265,14 +1338,82 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
             </table>
           </div>
 
-          {/* Table Footer */}
-          {rows.length > 0 && (
-            <div className="p-3.5 border-t border-slate-100 dark:border-slate-800 text-right bg-slate-50/30 dark:bg-slate-900/30">
-              <span className="text-[11px] font-medium text-slate-400">
-                Showing {rows.length} {rows.length === 1 ? 'pass' : 'passes'}
-              </span>
+          {/* Table Footer with Pagination */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+              {totalCount > 0 ? (
+                <span>
+                  Showing <strong className="text-slate-700 dark:text-slate-200">{(page - 1) * pageSize + 1}</strong> to{' '}
+                  <strong className="text-slate-700 dark:text-slate-200">{Math.min(page * pageSize, totalCount)}</strong> of{' '}
+                  <strong className="text-slate-700 dark:text-slate-200">{totalCount}</strong> passes
+                </span>
+              ) : (
+                <span>No passes found</span>
+              )}
+              <span className="text-slate-300 dark:text-slate-700">·</span>
+              <span className="text-[11px] text-slate-400">20 per page</span>
             </div>
-          )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1 || isFetching}
+                  className="h-8 px-2.5 text-xs font-semibold rounded-xl border-slate-200 dark:border-slate-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed gap-1"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Prev</span>
+                </Button>
+
+                <div className="flex items-center gap-1 px-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                    .reduce<(number | string)[]>((acc, p, idx, arr) => {
+                      if (idx > 0 && p - (arr[idx - 1] as number) > 1) {
+                        acc.push('...')
+                      }
+                      acc.push(p)
+                      return acc
+                    }, [])
+                    .map((item, idx) =>
+                      typeof item === 'string' ? (
+                        <span key={`ellipsis-${idx}`} className="px-1 text-xs text-slate-400 select-none">
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => setPage(item)}
+                          disabled={isFetching}
+                          className={cn(
+                            'min-w-[28px] h-7 px-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer tabular-nums',
+                            item === page
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+                          )}
+                        >
+                          {item}
+                        </button>
+                      )
+                    )}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages || isFetching}
+                  className="h-8 px-2.5 text-xs font-semibold rounded-xl border-slate-200 dark:border-slate-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed gap-1"
+                >
+                  <span className="hidden sm:inline">Next</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1512,6 +1653,12 @@ export function GatePassClient({ currentUser }: { currentUser: GatePassCurrentUs
           ) : null}
         </DialogContent>
       </Dialog>
-    </MainLayout>
+    </>
   )
+
+  if (embedded) {
+    return content
+  }
+
+  return <MainLayout>{content}</MainLayout>
 }

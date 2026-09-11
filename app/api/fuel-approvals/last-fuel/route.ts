@@ -3,7 +3,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { fuelApprovals } from '@/lib/db/schema'
 import { desc, and, ne, or, ilike } from 'drizzle-orm'
-import { isPermissionDenied } from '@/lib/permissions/deny'
+import { canViewFuelApprovals } from '@/lib/fuel-approvals/view-access'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -15,7 +15,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (await isPermissionDenied(user, 'fuel_approvals.view')) {
+    // The same rule app/fuel-approvals/page.tsx enforces. This used to check ONLY an explicit
+    // Access-Map deny, so an employee the page turned away could still read any vehicle's last fill.
+    if (!(await canViewFuelApprovals(user))) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 

@@ -47,6 +47,8 @@ export async function GET(request: Request) {
       search: url.searchParams.get('search'),
       dealerCode: url.searchParams.get('dealer_code'),
       model: url.searchParams.get('model'),
+      variant: url.searchParams.get('variant'),
+      color: url.searchParams.get('color'),
       status: url.searchParams.get('status'),
       consultant: url.searchParams.get('consultant'),
       startDate: url.searchParams.get('startDate'),

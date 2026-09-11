@@ -29,8 +29,9 @@ import {
   Eye,
 } from 'lucide-react'
 import { FuelFormDialog } from './fuel-form-dialog'
-import { FUEL_LOCATIONS, FUEL_REQUIRED_FOR_OPTIONS, STATUS_LABELS, parseFuelSlipUrls } from '@/lib/fuel-approvals/constants'
+import { FUEL_LOCATIONS, FUEL_REQUIRED_FOR_OPTIONS, parseFuelSlipUrls } from '@/lib/fuel-approvals/constants'
 import type { FuelApprovalRecord, FuelApprovalStatus } from '@/lib/fuel-approvals/types'
+import { canUserApproveStage } from '@/lib/fuel-approvals/access'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
 const IST = INDIA_TIME_ZONE
@@ -103,6 +104,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
         counts: {
           pending: number
           ceoPending: number
+          accountsPending: number
           eaPending: number
           mdPending: number
           all: number
@@ -123,6 +125,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
   const counts = data?.counts || {
     pending: 0,
     ceoPending: 0,
+    accountsPending: 0,
     eaPending: 0,
     mdPending: 0,
     all: 0,
@@ -278,36 +281,11 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
 
   // Check if current user is authorized to act on a record's current stage
   const canActOnRecord = (record: FuelApprovalRecord) => {
-    const role = currentUser.role?.trim().toLowerCase() || ''
-    if (role === 'developer' || role === 'admin') return true
-    const stage = record.currentStage
-    const status = record.status
-
-    if (stage === 'ceo' && (status === 'ceo_pending' || status === 'ceo_on_hold')) {
-      return role === 'ceo'
-    }
-    if (stage === 'ea' && (status === 'ea_pending' || status === 'ea_on_hold')) {
-      return role === 'ea' || role === 'eba'
-    }
-    if (stage === 'md' && (status === 'md_pending' || status === 'md_on_hold')) {
-      return role === 'md'
-    }
-    // Legacy fallback
-    if (stage === 'ed' && (status === 'ed_pending' || status === 'ed_on_hold')) {
-      return role === 'ed' || role === 'ceo'
-    }
-    if (stage === 'hr' && (status === 'hr_pending' || status === 'hr_on_hold')) {
-      return role === 'hr' || role === 'ea' || role === 'eba'
-    }
-    return false
+    return canUserApproveStage(currentUser, record.status, record.currentStage)
   }
 
   const getStageActionLabel = (stage: string) => {
-    if (stage === 'ceo') return 'Approve (CEO)'
-    if (stage === 'ea') return 'Approve (EA)'
-    if (stage === 'md') return 'Approve (MD)'
-    if (stage === 'ed') return 'Approve (CEO)'
-    if (stage === 'hr') return 'Approve (EA)'
+    if (stage === 'ceo' || stage === 'ed') return 'Approve (CEO)'
     return 'Approve'
   }
 
@@ -414,6 +392,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
             <RotateCcw className="w-3.5 h-3.5 mr-1 text-amber-600" /> Sent Back
           </span>
         )
+      case 'accounts_on_hold':
       case 'ceo_on_hold':
       case 'ea_on_hold':
       case 'md_on_hold':
@@ -429,6 +408,12 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
         return (
           <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
             <Clock className="w-3.5 h-3.5 mr-1 text-blue-600" /> CEO Review
+          </span>
+        )
+      case 'accounts_pending':
+        return (
+          <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+            <Clock className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Accounts Review
           </span>
         )
       case 'ea_pending':
@@ -526,7 +511,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
               {counts.approved}
             </span>
           </div>
-          <span className="text-[11px] text-slate-400 mt-1 block font-medium">MD final approved</span>
+          <span className="text-[11px] text-slate-400 mt-1 block font-medium">CEO approved</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
@@ -1340,10 +1325,10 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                   </div>
                 )}
 
-                {/* Approval Progress Tracker (Submit → CEO → EA → MD) */}
+                {/* Approval Progress Tracker (Submit → CEO) */}
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-3">
-                    Approval Track (Submit → CEO → EA → MD)
+                    Approval Track (Submit → CEO Approval)
                   </span>
 
                   <div className="space-y-3">
@@ -1368,22 +1353,24 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                     {/* Step 2: CEO */}
                     <div className="flex items-start gap-3">
                       <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5 shrink-0 ${
-                        selectedRecord.ceoApprovedAt || selectedRecord.edApprovedAt
+                        selectedRecord.status === 'approved' || selectedRecord.ceoApprovedAt || selectedRecord.edApprovedAt
                           ? 'bg-teal-700 text-white'
                           : selectedRecord.status === 'ceo_pending' || selectedRecord.status === 'ed_pending'
                           ? 'border-2 border-blue-700 text-blue-800 font-bold'
                           : 'bg-slate-200 text-slate-400'
                       }`}>
-                        {selectedRecord.ceoApprovedAt || selectedRecord.edApprovedAt ? '✓' : '2'}
+                        {selectedRecord.status === 'approved' || selectedRecord.ceoApprovedAt || selectedRecord.edApprovedAt ? '✓' : '2'}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                          <span>CEO Approval</span>
+                          <span>CEO Approval (Confirmed)</span>
                           <span className="text-[10px] font-normal text-slate-500">
                             {selectedRecord.ceoApprovedAt
                               ? istDate(selectedRecord.ceoApprovedAt)
                               : selectedRecord.edApprovedAt
                               ? istDate(selectedRecord.edApprovedAt)
+                              : selectedRecord.status === 'approved'
+                              ? istDate(selectedRecord.updatedAt)
                               : 'Pending'}
                           </span>
                         </div>
@@ -1394,73 +1381,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                         )}
                         {(selectedRecord.ceoRemarks || selectedRecord.edRemarks) && (
                           <p className="text-[11px] text-slate-600 italic mt-0.5">
-                            "{selectedRecord.ceoRemarks || selectedRecord.edRemarks}"
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Step 3: EA */}
-                    <div className="flex items-start gap-3">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5 shrink-0 ${
-                        selectedRecord.eaApprovedAt || selectedRecord.hrApprovedAt
-                          ? 'bg-teal-700 text-white'
-                          : selectedRecord.status === 'ea_pending' || selectedRecord.status === 'hr_pending'
-                          ? 'border-2 border-purple-700 text-purple-800 font-bold'
-                          : 'bg-slate-200 text-slate-400'
-                      }`}>
-                        {selectedRecord.eaApprovedAt || selectedRecord.hrApprovedAt ? '✓' : '3'}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                          <span>EA Approval</span>
-                          <span className="text-[10px] font-normal text-slate-500">
-                            {selectedRecord.eaApprovedAt
-                              ? istDate(selectedRecord.eaApprovedAt)
-                              : selectedRecord.hrApprovedAt
-                              ? istDate(selectedRecord.hrApprovedAt)
-                              : 'Pending'}
-                          </span>
-                        </div>
-                        {(selectedRecord.eaApprovedByName || selectedRecord.hrApprovedByName) && (
-                          <p className="text-[11px] text-slate-500">
-                            By {selectedRecord.eaApprovedByName || selectedRecord.hrApprovedByName}
-                          </p>
-                        )}
-                        {(selectedRecord.eaRemarks || selectedRecord.hrRemarks) && (
-                          <p className="text-[11px] text-slate-600 italic mt-0.5">
-                            "{selectedRecord.eaRemarks || selectedRecord.hrRemarks}"
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Step 4: MD */}
-                    <div className="flex items-start gap-3">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5 shrink-0 ${
-                        selectedRecord.mdApprovedAt
-                          ? 'bg-teal-700 text-white'
-                          : selectedRecord.status === 'md_pending'
-                          ? 'border-2 border-indigo-700 text-indigo-800 font-bold'
-                          : 'bg-slate-200 text-slate-400'
-                      }`}>
-                        {selectedRecord.mdApprovedAt ? '✓' : '4'}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                          <span>MD Final Approval</span>
-                          <span className="text-[10px] font-normal text-slate-500">
-                            {selectedRecord.mdApprovedAt ? istDate(selectedRecord.mdApprovedAt) : 'Pending'}
-                          </span>
-                        </div>
-                        {selectedRecord.mdApprovedByName && (
-                          <p className="text-[11px] text-slate-500">
-                            By {selectedRecord.mdApprovedByName}
-                          </p>
-                        )}
-                        {selectedRecord.mdRemarks && (
-                          <p className="text-[11px] text-slate-600 italic mt-0.5">
-                            "{selectedRecord.mdRemarks}"
+                            &ldquo;{selectedRecord.ceoRemarks || selectedRecord.edRemarks}&rdquo;
                           </p>
                         )}
                       </div>
@@ -1552,7 +1473,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                       <div className="py-2">
                         <span className="text-slate-500 block mb-0.5">Submitter Notes</span>
                         <p className="text-slate-700 italic">
-                          "{selectedRecord.remarks}"
+                          &ldquo;{selectedRecord.remarks}&rdquo;
                         </p>
                       </div>
                     )}
@@ -1744,7 +1665,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
   return (
     <MainLayout
       title="Fuel Approvals"
-      subtitle="Requisition, slip verification and multi-stage workflow (Submit → CEO → EA → MD)"
+      subtitle="Requisition, slip verification and workflow (Submit → CEO Approval)"
     >
       {mainContent}
     </MainLayout>

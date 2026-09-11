@@ -1,6 +1,6 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewGatePass } from '@/lib/gate-pass/access'
+import { canViewGatePass, checkGatePassPermission } from '@/lib/gate-pass/access'
 import { isPermissionDenied } from '@/lib/permissions/deny'
 import { GatePassClient } from '@/features/gate-pass/gate-pass-client'
 
@@ -37,6 +37,22 @@ export default async function GatePassPage() {
     forbidden()
   }
 
+  /*
+   * ⚠️ Decided HERE, on the server, by the resolution the Trackers route enforces —
+   * requireGatePassAccess('gate_pass.approve') answers with checkGatePassPermission. The client's own
+   * approver test is isGatePassApproverRole, a role list that disagrees with the permission: ceo passes
+   * it and the route refuses them; an Access-Map grant fails it and the route admits them.
+   *
+   * A failure to resolve hides the panel rather than failing the page. The pass list is the section;
+   * the Trackers panel is a tool on top of it.
+   */
+  const canManageTrackers = await checkGatePassPermission(appUser, 'gate_pass.approve')
+    .then((permission) => permission.allowed)
+    .catch((error) => {
+      console.error('[gate-pass] could not resolve gate_pass.approve for the Trackers panel:', error)
+      return false
+    })
+
   return (
     <GatePassClient
       currentUser={{
@@ -47,6 +63,7 @@ export default async function GatePassPage() {
         brand: appUser.brand,
         dealers: appUser.dealers,
       }}
+      canManageTrackers={canManageTrackers}
     />
   )
 }

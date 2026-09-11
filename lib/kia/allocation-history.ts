@@ -149,13 +149,13 @@ function buildWhere(f: AllocationHistoryFilters): string {
   // Each branch mirrors one label in the outcome derivation below — same order, same exclusivity.
   switch ((f.outcome || '').trim()) {
     case 'active':
-      c.push('a.released_at IS NULL AND a.payment_confirmed_at IS NULL')
+      c.push("a.released_at IS NULL AND a.payment_confirmed_at IS NULL AND COALESCE(b.status, '') <> 'delivered'")
       break
     case 'paid':
-      c.push('a.released_at IS NULL AND a.payment_confirmed_at IS NOT NULL')
+      c.push("(a.released_at IS NULL AND (a.payment_confirmed_at IS NOT NULL OR COALESCE(b.status, '') = 'delivered'))")
       break
     case 'overdue':
-      c.push('a.released_at IS NULL AND a.payment_confirmed_at IS NULL AND a.expires_at IS NOT NULL AND a.expires_at < NOW()')
+      c.push("a.released_at IS NULL AND a.payment_confirmed_at IS NULL AND COALESCE(b.status, '') <> 'delivered' AND a.expires_at IS NOT NULL AND a.expires_at < NOW()")
       break
     case 'no_payment':
       c.push(`a.released_at IS NOT NULL AND a.release_reason = '${esc(AUTO_EXPIRY_REASON)}'`)
@@ -181,6 +181,7 @@ export async function getAllocationHistory(filters: AllocationHistoryFilters) {
       a.id::text, a.booking_id::text,
       COALESCE(b.booking_number, '') AS booking_number,
       COALESCE(b.customer_name, '') AS customer_name,
+      COALESCE(b.status, '') AS booking_status,
       COALESCE(a.dealer_code, '') AS dealer_code,
       COALESCE(a.vin_number, '') AS vin,
       COALESCE(a.model, '') AS model,
@@ -236,13 +237,14 @@ export async function getAllocationHistory(filters: AllocationHistoryFilters) {
     const releasedAt = iso(r.released_at)
     const reason = r.release_reason ? String(r.release_reason) : null
     const paid = iso(r.payment_confirmed_at)
+    const bookingStatus = str(r.booking_status)
     const outcome: AllocationHistoryRow['outcome'] = releasedAt
       ? reason === AUTO_EXPIRY_REASON
         ? 'Released — no payment'
         : reason
           ? 'Released — manual'
           : 'Released'
-      : paid
+      : (paid || bookingStatus === 'delivered')
         ? 'Payment confirmed'
         : 'Awaiting payment'
     const expiresAt = iso(r.expires_at)
@@ -291,9 +293,9 @@ export async function getAllocationHistorySummary(filters: AllocationHistoryFilt
       COUNT(*)::int AS total,
       -- Mirrors the exclusive outcome buckets: released decides first, then payment. active + paid +
       -- no_payment + manual + unreasoned releases = total, exactly.
-      COUNT(*) FILTER (WHERE a.released_at IS NULL AND a.payment_confirmed_at IS NULL)::int AS active,
-      COUNT(*) FILTER (WHERE a.released_at IS NULL AND a.payment_confirmed_at IS NOT NULL)::int AS paid,
-      COUNT(*) FILTER (WHERE a.released_at IS NULL AND a.payment_confirmed_at IS NULL
+      COUNT(*) FILTER (WHERE a.released_at IS NULL AND a.payment_confirmed_at IS NULL AND COALESCE(b.status, '') <> 'delivered')::int AS active,
+      COUNT(*) FILTER (WHERE a.released_at IS NULL AND (a.payment_confirmed_at IS NOT NULL OR COALESCE(b.status, '') = 'delivered'))::int AS paid,
+      COUNT(*) FILTER (WHERE a.released_at IS NULL AND a.payment_confirmed_at IS NULL AND COALESCE(b.status, '') <> 'delivered'
                          AND a.expires_at IS NOT NULL AND a.expires_at < NOW())::int AS overdue,
       COUNT(*) FILTER (WHERE a.released_at IS NOT NULL AND a.release_reason = '${esc(AUTO_EXPIRY_REASON)}')::int AS no_payment,
       COUNT(*) FILTER (WHERE a.released_at IS NOT NULL AND COALESCE(a.release_reason, '') <> '${esc(AUTO_EXPIRY_REASON)}')::int AS manual,

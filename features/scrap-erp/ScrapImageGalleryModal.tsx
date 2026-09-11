@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ScrapTransaction, ScrapAttachment } from '@/lib/scrap-erp/types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Download, ZoomIn, ZoomOut, RotateCw, Upload, Image as ImageIcon, Loader2 } from 'lucide-react'
@@ -32,9 +32,36 @@ export function ScrapImageGalleryModal({
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
+  const [isLoadingAttachments, setIsLoadingAttachments] = useState(false)
   const [localAttachments, setLocalAttachments] = useState<ScrapAttachment[] | null>(null)
 
   const isDialogOpen = open !== undefined ? open : Boolean(isOpen)
+
+  useEffect(() => {
+    if (!transaction || !isDialogOpen) {
+      setLocalAttachments(null)
+      setActiveIdx(0)
+      return
+    }
+    const hasMissingUrls = (transaction.attachments || []).some((a) => !a.url)
+    if (hasMissingUrls && transaction.id) {
+      setIsLoadingAttachments(true)
+      fetch(`/api/scrap-erp?id=${encodeURIComponent(transaction.id)}&includeAttachments=true`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.transaction) {
+            setLocalAttachments(data.transaction.attachments || [])
+            if (onAttachmentsUpdated) {
+              onAttachmentsUpdated(data.transaction)
+            }
+          }
+        })
+        .catch((err) => console.error('Failed to load attachments on-demand:', err))
+        .finally(() => setIsLoadingAttachments(false))
+    } else {
+      setLocalAttachments(transaction.attachments || [])
+    }
+  }, [transaction?.id, isDialogOpen])
 
   if (!transaction) return null
 
@@ -184,7 +211,12 @@ export function ScrapImageGalleryModal({
                 </Button>
               </div>
 
-              {current && (
+              {isLoadingAttachments ? (
+                <div className="w-full flex flex-col items-center justify-center gap-2 min-h-[280px]">
+                  <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+                  <p className="text-xs text-muted-foreground font-semibold">Loading full resolution media...</p>
+                </div>
+              ) : current ? (
                 <div className="w-full flex items-center justify-center overflow-hidden rounded-xl bg-background border border-border p-2 min-h-[280px]">
                   {current.url.startsWith('data:application/pdf') || current.fileName.endsWith('.pdf') ? (
                     <div className="text-center p-8 space-y-3">
@@ -199,7 +231,7 @@ export function ScrapImageGalleryModal({
                         <Download className="h-3.5 w-3.5" /> Open / Download PDF
                       </a>
                     </div>
-                  ) : (
+                  ) : current.url ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       src={current.url}
@@ -207,9 +239,14 @@ export function ScrapImageGalleryModal({
                       className="max-h-[300px] object-contain transition-transform duration-200"
                       style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
                     />
+                  ) : (
+                    <div className="text-center p-8 space-y-2">
+                      <ImageIcon className="h-8 w-8 mx-auto text-muted-foreground opacity-50" />
+                      <p className="text-xs text-muted-foreground">{current.fileName}</p>
+                    </div>
                   )}
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Right Col: Attachments Thumbnails */}

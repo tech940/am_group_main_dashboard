@@ -80,7 +80,8 @@ CREATE INDEX IF NOT EXISTS demo_gate_pass_trips_vin_idx
 -- RLS lockdown, as 0051 and 0057. The public anon key holds write access to 174 tables in this
 -- database; new tables do not join that list.
 ALTER TABLE public.demo_gate_pass_trips ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.demo_gate_pass_trips FROM anon, PUBLIC;
+-- `authenticated` added 2026-09-11 (see 0062): a rollback + re-apply of this file must not bring it back.
+REVOKE ALL ON public.demo_gate_pass_trips FROM anon, authenticated, PUBLIC;
 GRANT ALL ON public.demo_gate_pass_trips TO service_role;
 
 COMMIT;

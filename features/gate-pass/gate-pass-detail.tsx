@@ -33,9 +33,10 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { formatIndiaDateTime } from '@/lib/date-time'
+import { formatIndiaDate, formatIndiaDateTime } from '@/lib/date-time'
 import { formatDuration, type GatePassMetrics } from '@/lib/gate-pass/metrics'
 import { getGatePassStatusInfo } from '@/lib/gate-pass/status'
+import { groupAlerts } from '@/lib/loconav/timeline'
 
 const STATUS_TONE_STYLES: Record<string, string> = {
   pending: 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
@@ -57,7 +58,9 @@ type Trip = {
   stoppedSeconds: number | null
   stopCount: number | null
   alertCount: number
-  alerts: Array<{ label: string | null; eventTimeMs: number | null; address: string | null; value: number | null; unit: string | null }>
+  alerts: Array<{ label: string | null; eventType?: string | null; eventTimeMs: number | null; address: string | null; value: number | null; unit: string | null }>
+  /** Set when the tracker that measured this drive was linked to the car only after it — see getTripForPass. */
+  linkedAfterDrive: { linkedAt: string } | null
 }
 
 type Detail = {
@@ -174,6 +177,34 @@ export function GatePassDetail({
   const m = data?.metrics
   const ev = data?.evidence
   const statusInfo = p?.status ? getGatePassStatusInfo(p.status) : null
+  /*
+   * ⚠️ Grouped by type, never a bare count. Every alert on the first real drives was a Geofence event — the
+   * car leaving and re-entering the showroom fence — and "5 alerts" on its own reads as bad driving.
+   * Empty for non-approvers: the route redacts the alert list together with the route.
+   */
+  const alertSummary = groupAlerts(
+    (data?.trip?.alerts ?? []).map((a) => ({ label: a.label, eventType: a.eventType ?? null })),
+  )
+    .map((g) => `${g.label} ×${g.count}`)
+    .join(' · ')
+  /*
+   * ⚠️ The trip's own note — an expired subscription, a route or alert list that could not be fetched, a mistyped
+   * odometer — must not pass for a quiet drive, so the alert summary never stands in for it. An untracked pass's
+   * stored note predates linking trackers on the Trackers screen; its tile already says what it needs to.
+   */
+  const tripNote = data?.trip && data.trip.status !== 'untracked' ? data.trip.detail : null
+  /*
+   * ⚠️ Checked with a tracker linked to this car only after the drive. Trackers are moved off sold cars onto others, so
+   * the unit may have been on a different car that day: a gap between GPS and odometer is a question about the link
+   * first, and must never read as a proven mismatch.
+   */
+  const linkedAfter = data?.trip?.linkedAfterDrive ?? null
+  const linkNote = linkedAfter
+    ? `Checked with a tracker linked on ${formatIndiaDate(linkedAfter.linkedAt)}, after this drive.` +
+      (data?.trip?.discrepancy
+        ? ' The gap between GPS and odometer may be because the tracker was not on this car at the time.'
+        : '')
+    : null
 
   // Extract events by stage for row-wise display
   const createdEvt = data?.events.find((e) => e.action === 'created')
@@ -353,6 +384,9 @@ export function GatePassDetail({
                   /* Flagged only when BOTH thresholds trip — see isTripDiscrepancy. A prompt to look,
                      never an accusation: GPS and a typed odometer disagree for honest reasons. */
                   alert={Boolean(data?.trip?.discrepancy)}
+                  /* The alert groups only. The trip's own note has a full-width line under the tiles: sharing this
+                     clamped line, it was hidden whenever the drive had an alert, and cut to a few words on a phone. */
+                  sub={data?.trip?.status === 'untracked' ? 'No tracker linked' : alertSummary || undefined}
                 />
                 <MetricCard
                   label="Trip Duration"
@@ -362,6 +396,16 @@ export function GatePassDetail({
                   border="border-sky-200 dark:border-sky-900/50"
                   textColor="text-sky-950 dark:text-sky-200"
                 />
+                {linkNote ? (
+                  <p className="col-span-2 break-words text-[11px] font-medium text-slate-500 sm:col-span-4">
+                    {linkNote}
+                  </p>
+                ) : null}
+                {tripNote ? (
+                  <p className="col-span-2 break-words text-[11px] font-medium text-slate-500 sm:col-span-4">
+                    GPS check: {tripNote}
+                  </p>
+                ) : null}
               </div>
 
               {/* ── 2. Trip Status Banner ── */}
@@ -660,6 +704,7 @@ function MetricCard({
   border,
   textColor,
   alert,
+  sub,
 }: {
   label: string
   value: string
@@ -668,6 +713,7 @@ function MetricCard({
   border: string
   textColor: string
   alert?: boolean
+  sub?: string
 }) {
   return (
     <div className={`rounded-xl border p-3.5 flex flex-col justify-between transition-all ${bg} ${border} shadow-xs`}>
@@ -678,6 +724,11 @@ function MetricCard({
       <p className={`mt-2 text-lg sm:text-xl font-black font-mono ${alert ? 'text-rose-600' : textColor}`}>
         {value}
       </p>
+      {sub ? (
+        <p className="mt-0.5 line-clamp-2 break-words text-[11px] font-medium text-slate-500" title={sub}>
+          {sub}
+        </p>
+      ) : null}
     </div>
   )
 }
