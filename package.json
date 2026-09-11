@@ -121,6 +121,7 @@
     "verify:approval-history": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approval-history-labels.ts",
     "verify:loconav": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-loconav.ts",
     "verify:fuel-management": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-fuel-management.ts",
+    "backfill:fuel-entry": "tsx --tsconfig ./tsconfig.verify.json scripts/backfill-fuel-entry-columns.ts",
     "loconav:sync": "tsx scripts/loconav-sync-scheduler.mjs"
   },
   "dependencies": {

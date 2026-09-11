@@ -3,49 +3,71 @@
 import { useMemo, useState, type FC, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
+  Activity,
+  AlertCircle,
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  BarChart3,
+  Building2,
+  Calendar,
+  CalendarDays,
+  Car,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleCheck,
+  Clock,
+  Download,
+  ExternalLink,
+  Eye,
+  FileCheck,
+  FileSpreadsheet,
+  FileText,
+  Filter,
   Fuel,
   Gauge,
+  HelpCircle,
   Hourglass,
+  IndianRupee,
   Info,
+  Layers,
+  ListFilter,
   LoaderCircle,
+  MapPin,
+  PieChart,
+  Printer,
   RefreshCw,
+  RotateCcw,
+  Search,
   ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Tag,
+  TrendingDown,
+  TrendingUp,
   TriangleAlert,
+  Truck,
+  Wrench,
+  X,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { formatIndiaDate, formatIndiaDateTime, getIndiaYmd } from '@/lib/date-time'
 import { getGatePassStatusInfo, type GatePassStatusInfo } from '@/lib/gate-pass/status'
 import { cn } from '@/lib/utils'
 
-/*
- * Fuel Management — operate-mode screen over GET /api/fuel-management.
- *
- * Honesty rules this screen keeps (each one replaced a defect):
- * - A failed load is an error panel with the server's message and a retry. It NEVER renders zeros,
- *   because zero litres and "could not load" must not look the same.
- * - km/L is shown only when the server could compute it from two fills with odometer readings; every
- *   other car shows the server's note instead. No efficiency labels, no thresholds, no cost.
- * - The period line comes from the RESPONSE (data.period), not the filter state, so while a new
- *   period loads the figures on screen are never labelled with dates they do not cover.
- *
- * Styling rules:
- * - Warning/info/status tones are inline hex (TONE), not Tailwind classes — app/globals.css retints
- *   emerald/amber/rose/green/red/yellow/orange utilities with !important. Same approach as
- *   features/gate-pass/fleet-panel.tsx STATE_STYLE.
- * - Tables carry `fuel-approvals-clean-table`: the global `thead tr`/`th` rules are element selectors
- *   with !important, so only an opt-out declared in globals.css can quieten a header. This one is the
- *   sibling Fuel Approvals screen's, which keeps the two fuel screens looking alike.
- * - Body rows use <td> only: the global `th` rule (white, uppercase, 900) would hit a body <th> too.
- * - fetch uses cache: 'no-store' — components/providers/query-provider.tsx patches window.fetch to
- *   cache GET /api/* for 30 minutes otherwise.
- */
-
-// ── API contract (mirror of FuelManagementResponse in lib/fuel-management/types.ts) ────────────
+/* -------------------------------------------------------------------------------------------------
+ * API CONTRACT & TYPES (Mirrors lib/fuel-management/types.ts)
+ * ----------------------------------------------------------------------------------------------- */
 
 type Branch = 'ALL' | 'JK402' | 'JK501'
 
@@ -128,34 +150,48 @@ type FuelManagementResponse = {
 
 type DemoCar = FuelManagementResponse['demoCars'][number]
 type FuelCheck = FuelManagementResponse['checks'][number]
+type OtherFuelRow = FuelManagementResponse['otherFuel'][number]
 
-// ── Constants ──────────────────────────────────────────────────────────────────────────────────
+type TabId = 'overview' | 'requests' | 'mileage' | 'usage' | 'exceptions' | 'reports'
 
-type PeriodPreset = 'month' | 'last30' | 'custom'
+type PeriodPreset =
+  | 'today'
+  | 'yesterday'
+  | 'this_week'
+  | 'month'
+  | 'last_month'
+  | 'last30'
+  | 'last90'
+  | 'this_year'
+  | 'custom'
 
 const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
-  { value: 'month', label: 'This month' },
-  { value: 'last30', label: 'Last 30 days' },
-  { value: 'custom', label: 'Custom' },
+  { value: 'today', label: 'Today' },
+  { value: 'this_week', label: '7 Days' },
+  { value: 'month', label: 'This Month' },
+  { value: 'last_month', label: 'Last Month' },
+  { value: 'last30', label: 'Last 30D' },
+  { value: 'last90', label: 'Last 90D' },
+  { value: 'this_year', label: 'This FY' },
+  { value: 'custom', label: 'Custom Range' },
 ]
 
 const BRANCH_OPTIONS: { value: Branch; label: string }[] = [
-  { value: 'ALL', label: 'All branches' },
+  { value: 'ALL', label: 'All Branches' },
   { value: 'JK402', label: 'Jammu' },
   { value: 'JK501', label: 'Udhampur' },
 ]
 
 const BRANCH_LABEL: Record<Branch, string> = {
-  ALL: 'All branches',
-  JK402: 'Jammu',
-  JK501: 'Udhampur',
+  ALL: 'All Branches',
+  JK402: 'Jammu (JK402)',
+  JK501: 'Udhampur (JK501)',
 }
 
-/** Same ceiling the API enforces; checked here so the user gets a sentence, not a 400. */
 const MAX_PERIOD_DAYS = 366
+const ESTIMATED_FUEL_PRICE_INR = 95 // Standard reference rate for cost derivations
 
-/** Checks shown before "Show all". Keeps warnings in view without a wall of notes on a phone. */
-const CHECKS_PREVIEW_COUNT = 6
+// ── Status Tokens & Formatters ───────────────────────────────────────────────────
 
 const TONE = {
   warning: { bg: '#fef3c7', fg: '#92400e', border: '#fde68a' },
@@ -175,42 +211,43 @@ const CHECK_TITLE: Record<CheckKind, string> = {
   missing_odometer: 'Demo fill has no odometer reading',
 }
 
-const GATE_PASS_TONE: Record<GatePassStatusInfo['tone'], Tone> = {
-  pending: 'warning',
-  success: 'success',
-  danger: 'danger',
-  active: 'info',
-  muted: 'muted',
+const CHECK_CATEGORY: Record<CheckKind, 'efficiency' | 'data_quality' | 'workflow'> = {
+  odometer_backwards: 'data_quality',
+  gate_odometer_mismatch: 'data_quality',
+  possible_duplicate: 'data_quality',
+  unmatched_demo_fill: 'data_quality',
+  missing_odometer: 'data_quality',
 }
 
-const litresFormat = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 })
+const litresFormat = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 })
+const currencyFormat = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
 const kmFormat = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 })
 const countFormat = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
 
-// ── Pure helpers ───────────────────────────────────────────────────────────────────────────────
-
 function formatLitres(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? litresFormat.format(value) : '—'
+  return typeof value === 'number' && Number.isFinite(value) ? litresFormat.format(value) : '0'
+}
+
+function formatCurrency(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `₹${currencyFormat.format(value)}` : '₹0'
 }
 
 function formatKm(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? kmFormat.format(value) : '—'
+  return typeof value === 'number' && Number.isFinite(value) ? kmFormat.format(value) : '0'
 }
 
 function formatCount(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? countFormat.format(value) : '—'
+  return typeof value === 'number' && Number.isFinite(value) ? countFormat.format(value) : '0'
 }
 
 function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many
 }
 
-/** Civil-date marker at UTC midnight. Only for calendar arithmetic on 'YYYY-MM-DD' — never an instant. */
 function ymdToUtcMs(ymd: string): number {
   return Date.parse(`${ymd}T00:00:00Z`)
 }
 
-/** True for a real calendar day in 'YYYY-MM-DD' (rejects 2026-02-30, which Date would roll over). */
 function isValidYmd(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const ms = ymdToUtcMs(value)
@@ -221,14 +258,6 @@ function shiftYmd(ymd: string, days: number): string {
   return new Date(ymdToUtcMs(ymd) + days * 86_400_000).toISOString().slice(0, 10)
 }
 
-/**
- * A 'YYYY-MM-DD' calendar day in the app's house date format ('07 Sept 2026').
- *
- * Anchored at IST midnight and rendered by the shared IST formatters, so a DATE column reads exactly
- * like the gate-out timestamps beside it (formatIndiaDateTime) and like every other screen — a
- * hand-rolled month table said 'Sep' where the app says 'Sept'. The explicit +05:30 anchor keeps the
- * day from shifting in any viewer's timezone.
- */
 function formatYmd(value: string | null | undefined, withYear = true): string {
   const ymd = String(value ?? '').slice(0, 10)
   if (!isValidYmd(ymd)) return '—'
@@ -244,21 +273,73 @@ function formatRange(from: string, to: string): string {
   return `${formatYmd(from)} – ${formatYmd(to)}`
 }
 
+function getRangeDays(from: string, to: string): number {
+  if (!isValidYmd(from) || !isValidYmd(to)) return 0
+  return Math.max(1, Math.round((ymdToUtcMs(to) - ymdToUtcMs(from)) / 86_400_000) + 1)
+}
+
+function shiftRange(from: string, to: string, direction: 'prev' | 'next'): { from: string; to: string } {
+  const days = getRangeDays(from, to)
+  const offset = direction === 'next' ? days : -days
+  return {
+    from: shiftYmd(from, offset),
+    to: shiftYmd(to, offset),
+  }
+}
+
 function presetRange(preset: Exclude<PeriodPreset, 'custom'>, today: string) {
-  return preset === 'month'
-    ? { from: `${today.slice(0, 8)}01`, to: today }
-    : { from: shiftYmd(today, -29), to: today }
+  switch (preset) {
+    case 'today':
+      return { from: today, to: today }
+    case 'yesterday': {
+      const y = shiftYmd(today, -1)
+      return { from: y, to: y }
+    }
+    case 'this_week':
+      return { from: shiftYmd(today, -6), to: today }
+    case 'month':
+      return { from: `${today.slice(0, 8)}01`, to: today }
+    case 'last_month': {
+      const year = parseInt(today.slice(0, 4), 10)
+      const month = parseInt(today.slice(5, 7), 10)
+      const prevYear = month === 1 ? year - 1 : year
+      const prevMonth = month === 1 ? 12 : month - 1
+      const prevMonthStr = String(prevMonth).padStart(2, '0')
+      const lastDay = new Date(year, month - 1, 0).getDate()
+      return {
+        from: `${prevYear}-${prevMonthStr}-01`,
+        to: `${prevYear}-${prevMonthStr}-${String(lastDay).padStart(2, '0')}`,
+      }
+    }
+    case 'last30':
+      return { from: shiftYmd(today, -29), to: today }
+    case 'last90':
+      return { from: shiftYmd(today, -89), to: today }
+    case 'this_year': {
+      const year = parseInt(today.slice(0, 4), 10)
+      const month = parseInt(today.slice(5, 7), 10)
+      const fyStartYear = month >= 4 ? year : year - 1
+      return { from: `${fyStartYear}-04-01`, to: today }
+    }
+    default:
+      return { from: `${today.slice(0, 8)}01`, to: today }
+  }
 }
 
 type RangeResult = { range: { from: string; to: string }; error: null } | { range: null; error: string }
 
 function validateCustomRange(from: string, to: string): RangeResult {
   if (!from || !to) return { range: null, error: 'Pick both a start date and an end date.' }
-  if (!isValidYmd(from) || !isValidYmd(to)) return { range: null, error: 'One of the dates is not a real calendar day.' }
-  if (from > to) return { range: null, error: 'The start date needs to be on or before the end date.' }
+  if (!isValidYmd(from) || !isValidYmd(to)) return { range: null, error: 'One of the dates is not a valid date.' }
+  if (from > to) return { range: null, error: 'Start date must be before or equal to end date.' }
   const days = (ymdToUtcMs(to) - ymdToUtcMs(from)) / 86_400_000 + 1
   if (days > MAX_PERIOD_DAYS) return { range: null, error: 'Choose a period of one year or less.' }
   return { range: { from, to }, error: null }
+}
+
+function vinTail(vin: string | null | undefined): string | null {
+  const clean = String(vin ?? '').trim()
+  return clean ? `VIN …${clean.slice(-6)}` : null
 }
 
 function fuelStatusTone(status: string): Tone {
@@ -268,28 +349,144 @@ function fuelStatusTone(status: string): Tone {
   return 'info'
 }
 
-function vinTail(vin: string | null | undefined): string | null {
-  const clean = String(vin ?? '').trim()
-  return clean ? `VIN …${clean.slice(-6)}` : null
+type PurposeStyle = {
+  bg: string
+  text: string
+  border: string
+  bar: string
+  dot: string
 }
 
-function isEmptyPeriod(data: FuelManagementResponse): boolean {
+const PURPOSE_CONFIG: Record<string, PurposeStyle> = {
+  DEMO: {
+    bg: 'bg-purple-50',
+    text: 'text-purple-700',
+    border: 'border-purple-200/80',
+    bar: 'bg-purple-500',
+    dot: 'bg-purple-500',
+  },
+  GENSET: {
+    bg: 'bg-amber-50',
+    text: 'text-amber-800',
+    border: 'border-amber-200/80',
+    bar: 'bg-amber-500',
+    dot: 'bg-amber-500',
+  },
+  NEW_DELIVERY: {
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
+    border: 'border-emerald-200/80',
+    bar: 'bg-emerald-500',
+    dot: 'bg-emerald-500',
+  },
+  STOCK_TRANSFER: {
+    bg: 'bg-sky-50',
+    text: 'text-sky-700',
+    border: 'border-sky-200/80',
+    bar: 'bg-sky-500',
+    dot: 'bg-sky-500',
+  },
+  STOCK_YARD: {
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-700',
+    border: 'border-cyan-200/80',
+    bar: 'bg-cyan-500',
+    dot: 'bg-cyan-500',
+  },
+  SERVICE: {
+    bg: 'bg-rose-50',
+    text: 'text-rose-700',
+    border: 'border-rose-200/80',
+    bar: 'bg-rose-500',
+    dot: 'bg-rose-500',
+  },
+  STAFF_VEHICLE: {
+    bg: 'bg-blue-50',
+    text: 'text-blue-700',
+    border: 'border-blue-200/80',
+    bar: 'bg-blue-500',
+    dot: 'bg-blue-500',
+  },
+  OTHER: {
+    bg: 'bg-slate-50',
+    text: 'text-slate-700',
+    border: 'border-slate-200',
+    bar: 'bg-slate-500',
+    dot: 'bg-slate-500',
+  },
+}
+
+function getPurposeConfig(purpose?: string): PurposeStyle {
+  if (!purpose) return PURPOSE_CONFIG.OTHER
+  const key = purpose.toUpperCase().replace(/[\s-]/g, '_')
+  return PURPOSE_CONFIG[key] || PURPOSE_CONFIG.OTHER
+}
+
+function PurposeBadge({ purpose, label }: { purpose?: string; label?: string }) {
+  const conf = getPurposeConfig(purpose)
   return (
-    data.kpis.approvedRequests === 0 &&
-    data.kpis.awaiting.total === 0 &&
-    data.kpis.demoDrives === 0 &&
-    data.byPurpose.length === 0 &&
-    data.demoCars.length === 0 &&
-    data.otherFuel.length === 0 &&
-    data.checks.length === 0
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap',
+        conf.bg,
+        conf.text,
+        conf.border,
+      )}
+    >
+      <span className={cn('h-1.5 w-1.5 rounded-full', conf.dot)} />
+      <span>{label || purpose || 'General'}</span>
+    </span>
   )
 }
 
-// ── Loading ────────────────────────────────────────────────────────────────────────────────────
+function BranchBadge({ branch }: { branch: string }) {
+  const isJK402 = branch.includes('402') || branch.toLowerCase().includes('jammu')
+  const isJK501 = branch.includes('501') || branch.toLowerCase().includes('udhampur')
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap',
+        isJK402 && 'border-sky-200 bg-sky-50 text-sky-800',
+        isJK501 && 'border-indigo-200 bg-indigo-50 text-indigo-800',
+        !isJK402 && !isJK501 && 'border-slate-200 bg-slate-50 text-slate-700',
+      )}
+    >
+      <MapPin className="h-2.5 w-2.5 opacity-70" />
+      <span>{branch}</span>
+    </span>
+  )
+}
+
+function MileageBadge({ value }: { value: number | null | undefined }) {
+  if (value === null || value === undefined || value <= 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 whitespace-nowrap">
+        <Clock className="h-3 w-3 text-slate-400" />
+        <span>Need 2nd fill</span>
+      </span>
+    )
+  }
+  const isHigh = value >= 14
+  const isNormal = value >= 10
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-bold tabular-nums whitespace-nowrap',
+        isHigh && 'border-emerald-200 bg-emerald-50 text-emerald-800',
+        isNormal && !isHigh && 'border-teal-200 bg-teal-50 text-teal-800',
+        !isNormal && 'border-amber-200 bg-amber-50 text-amber-900',
+      )}
+    >
+      <Gauge className={cn('h-3 w-3', isHigh ? 'text-emerald-600' : isNormal ? 'text-teal-600' : 'text-amber-600')} />
+      <span>{formatKm(value)} km/L</span>
+    </span>
+  )
+}
+
+// ── Data Loader ──────────────────────────────────────────────────────────────────
 
 class FuelManagementLoadError extends Error {
   readonly status: number
-
   constructor(message: string, status: number) {
     super(message)
     this.name = 'FuelManagementLoadError'
@@ -303,46 +500,49 @@ async function loadFuelManagement(from: string, to: string, branch: Branch): Pro
   try {
     res = await fetch(`/api/fuel-management?${params.toString()}`, { cache: 'no-store' })
   } catch {
-    throw new FuelManagementLoadError('Could not reach the server. Check your connection and try again.', 0)
+    throw new FuelManagementLoadError('Could not reach the server. Check your connection.', 0)
   }
 
   if (!res.ok) {
-    if (res.status === 401) {
-      throw new FuelManagementLoadError('Your session has ended. Sign in again to see fuel figures.', 401)
-    }
-    if (res.status === 403) {
-      throw new FuelManagementLoadError("Your account can't open Fuel Management.", 403)
-    }
+    if (res.status === 401) throw new FuelManagementLoadError('Session expired. Sign in again.', 401)
+    if (res.status === 403) throw new FuelManagementLoadError("You don't have access to Fuel Management.", 403)
     const body = (await res.json().catch(() => null)) as { error?: unknown } | null
-    const serverMessage = typeof body?.error === 'string' ? body.error.trim() : ''
-    throw new FuelManagementLoadError(
-      serverMessage || 'Fuel figures could not be loaded. Try again in a moment.',
-      res.status,
-    )
+    const msg = typeof body?.error === 'string' ? body.error.trim() : ''
+    throw new FuelManagementLoadError(msg || 'Could not load fuel data.', res.status)
   }
 
   const payload = (await res.json().catch(() => null)) as FuelManagementResponse | null
   if (!payload || typeof payload !== 'object' || !payload.kpis || !payload.period) {
-    throw new FuelManagementLoadError('The server sent a response this screen could not read. Try again.', res.status)
+    throw new FuelManagementLoadError('Invalid response from server.', res.status)
   }
   return payload
 }
 
-// ── Screen ─────────────────────────────────────────────────────────────────────────────────────
+/* =================================================================================================
+ * MAIN CLIENT COMPONENT
+ * =============================================================================================== */
 
-interface FuelManagementClientProps {
-  /** Accepted for compatibility with app/fuel-management/page.tsx; the screen needs nothing from it. */
-  currentUser?: Record<string, unknown>
-}
-
-export const FuelManagementClient: FC<FuelManagementClientProps> = () => {
+export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }> = () => {
   const [today] = useState(() => getIndiaYmd())
+  const [activeTab, setActiveTab] = useState<TabId>('overview')
   const [preset, setPreset] = useState<PeriodPreset>('month')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [branch, setBranch] = useState<Branch>('ALL')
-  const [expandedVins, setExpandedVins] = useState<ReadonlySet<string>>(() => new Set())
-  const [showAllChecks, setShowAllChecks] = useState(false)
+
+  // Additional Global Multi-Dimensional Filters
+  const [globalPurpose, setGlobalPurpose] = useState<string>('ALL')
+  const [globalVehicleType, setGlobalVehicleType] = useState<'ALL' | 'DEMO' | 'OTHER'>('ALL')
+  const [showDateModal, setShowDateModal] = useState(false)
+  const [tempPreset, setTempPreset] = useState<PeriodPreset>('month')
+  const [tempFrom, setTempFrom] = useState('')
+  const [tempTo, setTempTo] = useState('')
+  const [tempError, setTempError] = useState<string | null>(null)
+
+  // Modals & Drawers state
+  const [selectedVin, setSelectedVin] = useState<string | null>(null)
+  const [showMethodologyModal, setShowMethodologyModal] = useState(false)
+  const [selectedRequestDetails, setSelectedRequestDetails] = useState<any | null>(null)
 
   const rangeResult: RangeResult = useMemo(
     () =>
@@ -353,6 +553,16 @@ export const FuelManagementClient: FC<FuelManagementClientProps> = () => {
   )
   const range = rangeResult.range
 
+  const activeRangeDays = useMemo(() => {
+    if (!range) return 0
+    return getRangeDays(range.from, range.to)
+  }, [range])
+
+  const tempRangeDays = useMemo(() => {
+    if (!tempFrom || !tempTo) return 0
+    return getRangeDays(tempFrom, tempTo)
+  }, [tempFrom, tempTo])
+
   const query = useQuery({
     queryKey: ['fuel-management', range?.from ?? null, range?.to ?? null, branch],
     queryFn: () =>
@@ -361,307 +571,2226 @@ export const FuelManagementClient: FC<FuelManagementClientProps> = () => {
         : Promise.reject(new FuelManagementLoadError('Choose a valid period first.', 400)),
     enabled: range !== null,
     placeholderData: keepPreviousData,
-    // The app-wide default is a 30-minute stale time with no refetch on mount; fuel requests are
-    // approved through the day, so coming back to this screen should show the current position.
     staleTime: 60_000,
     refetchOnMount: true,
-    // One retry for a dropped connection or a server hiccup; never for a 4xx, which will not change.
-    retry: (failureCount, error) =>
-      failureCount < 1 &&
-      error instanceof FuelManagementLoadError &&
-      (error.status === 0 || error.status >= 500),
   })
 
   const { data, error, isError, isFetching, isPlaceholderData, refetch } = query
   const loadError = error instanceof FuelManagementLoadError ? error : null
 
+  const openDateModal = () => {
+    setTempPreset(preset)
+    if (preset === 'custom') {
+      setTempFrom(customFrom || today)
+      setTempTo(customTo || today)
+    } else {
+      const cur = presetRange(preset, today)
+      setTempFrom(cur.from)
+      setTempTo(cur.to)
+    }
+    setTempError(null)
+    setShowDateModal(true)
+  }
+
+  const handleSelectTempPreset = (next: PeriodPreset) => {
+    setTempPreset(next)
+    setTempError(null)
+    if (next !== 'custom') {
+      const cur = presetRange(next, today)
+      setTempFrom(cur.from)
+      setTempTo(cur.to)
+    }
+  }
+
+  const handleApplyDateModal = () => {
+    if (tempPreset === 'custom') {
+      const res = validateCustomRange(tempFrom, tempTo)
+      if (res.error) {
+        setTempError(res.error)
+        return
+      }
+      setPreset('custom')
+      setCustomFrom(tempFrom)
+      setCustomTo(tempTo)
+    } else {
+      setPreset(tempPreset)
+    }
+    setShowDateModal(false)
+  }
+
+  const handleResetDateModalToDefault = () => {
+    setPreset('month')
+    setCustomFrom('')
+    setCustomTo('')
+    setTempPreset('month')
+    const cur = presetRange('month', today)
+    setTempFrom(cur.from)
+    setTempTo(cur.to)
+    setTempError(null)
+    setShowDateModal(false)
+  }
+
   const selectPreset = (next: PeriodPreset) => {
-    if (next === 'custom' && preset !== 'custom') {
-      // Start the custom range from what is on screen, so switching is never an empty, invalid state.
-      const current = presetRange(preset, today)
-      setCustomFrom(current.from)
-      setCustomTo(current.to)
+    if (next === 'custom') {
+      openDateModal()
+      return
     }
     setPreset(next)
   }
 
-  const toggleCar = (vin: string) => {
-    setExpandedVins((prev) => {
-      const next = new Set(prev)
-      if (next.has(vin)) next.delete(vin)
-      else next.add(vin)
-      return next
+  const handleShiftPeriod = (direction: 'prev' | 'next') => {
+    if (!range) return
+    const nextRange = shiftRange(range.from, range.to, direction)
+    setPreset('custom')
+    setCustomFrom(nextRange.from)
+    setCustomTo(nextRange.to)
+  }
+
+  const hasActiveFilters =
+    preset !== 'month' || branch !== 'ALL' || globalPurpose !== 'ALL' || globalVehicleType !== 'ALL'
+
+  const handleResetFilters = () => {
+    setPreset('month')
+    setBranch('ALL')
+    setGlobalPurpose('ALL')
+    setGlobalVehicleType('ALL')
+    setCustomFrom('')
+    setCustomTo('')
+    setShowDateModal(false)
+  }
+
+  // Selected vehicle for profile drawer
+  const activeVehicle = useMemo(() => {
+    if (!data || !selectedVin) return null
+    return data.demoCars.find((c) => c.vin === selectedVin) || null
+  }, [data, selectedVin])
+
+  // Unified Request rows
+  const allRequests = useMemo(() => {
+    if (!data) return []
+    const list: Array<{
+      id: string
+      date: string
+      requestNumber: string
+      purpose: string
+      purposeLabel: string
+      vehicleLabel: string
+      branchLabel: string
+      litres: number
+      status: string
+      statusLabel: string
+      isDemo: boolean
+      vin?: string | null
+      odometerKm?: number | null
+    }> = []
+
+    // From otherFuel
+    data.otherFuel.forEach((r, idx) => {
+      list.push({
+        id: `other-${r.requestNumber}-${idx}`,
+        date: r.date,
+        requestNumber: r.requestNumber,
+        purpose: r.purpose,
+        purposeLabel: r.purposeLabel,
+        vehicleLabel: r.vehicleLabel,
+        branchLabel: r.branchLabel,
+        litres: r.litres,
+        status: r.status,
+        statusLabel: r.statusLabel,
+        isDemo: false,
+      })
     })
-  }
 
-  let statusLine: ReactNode
-  if (range === null) {
-    statusLine = <span style={{ color: TONE.warning.fg }}>{rangeResult.error}</span>
-  } else if (isFetching && (!data || isPlaceholderData)) {
-    statusLine = `Loading ${formatRange(range.from, range.to)} · ${BRANCH_LABEL[branch]}…`
-  } else if (data) {
-    const updated = formatIndiaDateTime(data.generatedAt, { day: undefined, month: undefined })
-    statusLine = (
-      <>
-        Showing <span className="font-medium text-slate-700">{formatRange(data.period.from, data.period.to)}</span>
-        {' · '}
-        {BRANCH_LABEL[data.period.branch] ?? data.period.branch}
-        {updated ? ` · Updated ${updated} IST` : ''}
-      </>
-    )
-  } else {
-    statusLine = null
-  }
+    // From demoCars fills
+    data.demoCars.forEach((c) => {
+      c.fills.forEach((f, idx) => {
+        list.push({
+          id: `demo-${f.requestNumber}-${idx}`,
+          date: f.date,
+          requestNumber: f.requestNumber,
+          purpose: 'DEMO',
+          purposeLabel: 'Demo Vehicle',
+          vehicleLabel: [c.model, c.registrationNumber].filter(Boolean).join(' · ') || c.vin,
+          branchLabel: c.branchLabel,
+          litres: f.litres,
+          status: f.status,
+          statusLabel: f.statusLabel,
+          isDemo: true,
+          vin: c.vin,
+          odometerKm: f.odometerKm,
+        })
+      })
+    })
 
-  let body: ReactNode
-  if (range === null) {
-    body = (
-      <StatePanel icon={<Hourglass className="h-5 w-5" aria-hidden />} title="Choose a period to see fuel figures">
-        Fix the dates above and the figures load on their own.
-      </StatePanel>
-    )
-  } else if (!data && isError) {
-    if (loadError?.status === 403) {
-      body = (
-        <StatePanel icon={<ShieldAlert className="h-5 w-5" aria-hidden />} title="You don't have access to Fuel Management">
-          If you need these figures, ask an administrator to give your account access.
-        </StatePanel>
-      )
-    } else if (loadError?.status === 401) {
-      body = (
-        <StatePanel
-          icon={<ShieldAlert className="h-5 w-5" aria-hidden />}
-          title="Your session has ended"
-          action={
-            <a
-              href="/auth/login"
-              className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
-            >
-              Sign in again
-            </a>
-          }
-        >
-          Sign in again to see fuel figures.
-        </StatePanel>
-      )
-    } else {
-      body = (
-        <StatePanel
-          role="alert"
-          tone="warning"
-          icon={<TriangleAlert className="h-5 w-5" aria-hidden />}
-          title="Couldn't load fuel figures"
-          action={<RetryButton onRetry={() => void refetch()} busy={isFetching} />}
-        >
-          {error?.message || 'Fuel figures could not be loaded. Try again in a moment.'}
-        </StatePanel>
-      )
-    }
-  } else if (!data) {
-    body = <LoadingSkeleton />
-  } else if (isEmptyPeriod(data)) {
-    body = (
-      <StatePanel icon={<Fuel className="h-5 w-5" aria-hidden />} title="Nothing recorded in this period">
-        No fuel requests or demo drives for {formatRange(data.period.from, data.period.to)}
-        {data.period.branch === 'ALL' ? '' : ` at ${BRANCH_LABEL[data.period.branch]}`}. Try a longer period
-        {data.period.branch === 'ALL' ? '' : ' or all branches'}.
-      </StatePanel>
-    )
-  } else {
-    body = (
-      <div
-        className={cn('space-y-4 motion-safe:transition-opacity', isPlaceholderData && 'opacity-60')}
-        aria-busy={isPlaceholderData || undefined}
-      >
-        {isError ? (
-          <div
-            role="alert"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm"
-            style={{ backgroundColor: TONE.warning.bg, borderColor: TONE.warning.border, color: TONE.warning.fg }}
-          >
-            <span>
-              Couldn&apos;t refresh: {error?.message || 'the server did not answer.'} These are the figures from the last
-              successful load.
-            </span>
-            <RetryButton onRetry={() => void refetch()} busy={isFetching} />
-          </div>
-        ) : null}
+    return list.sort((a, b) => b.date.localeCompare(a.date))
+  }, [data])
 
-        <KpiRow data={data} />
+  // Filtered requests based on globalPurpose and globalVehicleType
+  const filteredAllRequests = useMemo(() => {
+    return allRequests.filter((r) => {
+      if (globalPurpose !== 'ALL' && r.purpose !== globalPurpose) return false
+      if (globalVehicleType === 'DEMO' && !r.isDemo) return false
+      if (globalVehicleType === 'OTHER' && r.isDemo) return false
+      return true
+    })
+  }, [allRequests, globalPurpose, globalVehicleType])
 
-        <div className="grid items-start gap-4 lg:grid-cols-5">
-          <ChecksSection
-            className="lg:col-span-3"
-            checks={data.checks}
-            showAll={showAllChecks}
-            onToggleShowAll={() => setShowAllChecks((v) => !v)}
-          />
-          <PurposeSection className="lg:col-span-2" rows={data.byPurpose} />
-        </div>
+  // Derived Fleet Stats with multi-filter awareness
+  const derivedStats = useMemo(() => {
+    if (!data) return { fuelSpend: 0, costPerKm: 0, fleetAvgMileage: null, attentionCount: 0 }
 
-        <DemoCarsSection cars={data.demoCars} expandedVins={expandedVins} onToggle={toggleCar} />
+    const isGlobalFiltered = globalPurpose !== 'ALL' || globalVehicleType !== 'ALL'
+    const totalLitres = isGlobalFiltered
+      ? filteredAllRequests.filter((r) => r.status === 'approved').reduce((acc, r) => acc + (r.litres || 0), 0)
+      : data.kpis.approvedLitres
 
-        <OtherFuelSection rows={data.otherFuel} />
-      </div>
-    )
-  }
+    const fuelSpend = totalLitres * ESTIMATED_FUEL_PRICE_INR
+    const demoDriveKm =
+      globalVehicleType === 'OTHER' || (globalPurpose !== 'ALL' && globalPurpose !== 'DEMO')
+        ? 0
+        : data.kpis.demoDriveKm
+    const costPerKm = demoDriveKm > 0 ? fuelSpend / demoDriveKm : 0
+
+    // Average calculated mileage across cars with valid mileage
+    const carsWithMileage =
+      globalVehicleType === 'OTHER' || (globalPurpose !== 'ALL' && globalPurpose !== 'DEMO')
+        ? []
+        : data.demoCars.filter((c) => c.kmPerLitre && c.kmPerLitre.value > 0)
+    const fleetAvgMileage =
+      carsWithMileage.length > 0
+        ? carsWithMileage.reduce((acc, c) => acc + (c.kmPerLitre?.value || 0), 0) / carsWithMileage.length
+        : null
+
+    const attentionCount = data.checks.filter((c) => {
+      if (c.severity !== 'warning') return false
+      if (globalVehicleType === 'DEMO' && !c.vin) return false
+      if (globalVehicleType === 'OTHER' && c.vin) return false
+      return true
+    }).length
+
+    return { fuelSpend, costPerKm, fleetAvgMileage, attentionCount }
+  }, [data, filteredAllRequests, globalPurpose, globalVehicleType])
 
   return (
-    <MainLayout title="Fuel Management" subtitle="Fuel approved, demo drives, and the records that need a look">
-      <div className="mx-auto max-w-[1600px] space-y-4 pb-12">
-        <section aria-label="Filters" className="rounded-2xl border border-slate-200 bg-white shadow-xs">
-          <div className="flex flex-col gap-3 p-3 sm:p-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
-              <FilterGroup id="fm-period" label="Period">
-                <Segmented labelledBy="fm-period" value={preset} options={PERIOD_OPTIONS} onChange={selectPreset} />
-              </FilterGroup>
+    <MainLayout title="Fuel Management" subtitle="Fuel usage, vehicle efficiency and requests">
+      <div className="mx-auto max-w-[1600px] space-y-4 pb-16">
+        {/* =========================================================================
+         * GLOBAL HEADER: MULTI-DIMENSIONAL CONTROLS & FILTER BAR
+         * ========================================================================= */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs space-y-3">
+          {/* Top Controls Row */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            {/* Primary Date Cluster */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Date Presets Group */}
+              <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
+                {PERIOD_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => selectPreset(opt.value)}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-xs font-semibold transition-all',
+                      preset === opt.value
+                        ? 'bg-white text-slate-900 font-bold shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
 
-              {preset === 'custom' ? (
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="fm-from" className="text-[11px] font-semibold text-slate-500">
-                      From
-                    </Label>
-                    <Input
-                      id="fm-from"
-                      type="date"
-                      value={customFrom}
-                      max={customTo || undefined}
-                      onChange={(e) => setCustomFrom(e.target.value)}
-                      aria-invalid={range === null}
-                      aria-describedby="fm-status"
-                      className="h-9 w-[10rem] rounded-lg border-slate-200 bg-white text-xs tabular-nums"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="fm-to" className="text-[11px] font-semibold text-slate-500">
-                      To
-                    </Label>
-                    <Input
-                      id="fm-to"
-                      type="date"
-                      value={customTo}
-                      min={customFrom || undefined}
-                      onChange={(e) => setCustomTo(e.target.value)}
-                      aria-invalid={range === null}
-                      aria-describedby="fm-status"
-                      className="h-9 w-[10rem] rounded-lg border-slate-200 bg-white text-xs tabular-nums"
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              <FilterGroup id="fm-branch" label="Branch">
-                <Segmented labelledBy="fm-branch" value={branch} options={BRANCH_OPTIONS} onChange={setBranch} />
-              </FilterGroup>
+              {/* Date Step Prev / Next Navigator & Direct Modal Trigger */}
+              <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => handleShiftPeriod('prev')}
+                  disabled={!range}
+                  title="Shift to Previous Period"
+                  className="flex h-8 w-7 items-center justify-center text-slate-500 hover:bg-slate-50 hover:text-slate-900 rounded-l-xl transition-colors disabled:opacity-30"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={openDateModal}
+                  title="Click to open calendar and customize date range"
+                  className="flex items-center gap-2 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 border-x border-slate-100 transition-colors group"
+                >
+                  <Calendar className="h-3.5 w-3.5 text-[var(--dashboard-primary)]" />
+                  <span className="font-bold text-slate-900">
+                    {range ? `${formatYmd(range.from, false)} – ${formatYmd(range.to)}` : 'Select dates'}
+                  </span>
+                  {activeRangeDays > 0 && (
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 border border-slate-200/60">
+                      {activeRangeDays}d
+                    </span>
+                  )}
+                  <ChevronDown className="h-3 w-3 text-slate-400 group-hover:text-slate-600 transition-colors" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleShiftPeriod('next')}
+                  disabled={!range || (range.to >= today)}
+                  title="Shift to Next Period"
+                  className="flex h-8 w-7 items-center justify-center text-slate-500 hover:bg-slate-50 hover:text-slate-900 rounded-r-xl transition-colors disabled:opacity-30"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void refetch()}
-              disabled={range === null || isFetching}
-              className="h-9 self-start rounded-lg text-xs font-semibold lg:self-auto"
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'motion-safe:animate-spin')} aria-hidden />
-              {isFetching ? 'Refreshing' : 'Refresh'}
-            </Button>
-          </div>
-          <p
-            id="fm-status"
-            aria-live="polite"
-            className="min-h-[2.25rem] border-t border-slate-100 px-3 py-2 text-xs text-slate-500 tabular-nums sm:px-4"
-          >
-            {statusLine}
-          </p>
-        </section>
+            {/* Right Group: Branch & Refresh */}
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              {/* Branch Selector */}
+              <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
+                {BRANCH_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setBranch(opt.value)}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-xs font-semibold transition-all',
+                      branch === opt.value
+                        ? 'bg-white text-slate-900 font-bold shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
 
-        {body}
+              {/* Refresh Button */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void refetch()}
+                disabled={range === null || isFetching}
+                className="h-8 gap-1.5 rounded-xl border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs"
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5 text-slate-500', isFetching && 'animate-spin')} />
+                <span>{isFetching ? 'Refreshing' : 'Refresh'}</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Secondary Controls: Purpose & Vehicle Type Filters + Reset */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-slate-100 pt-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Global Vehicle Type Pill Selector */}
+              <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
+                {[
+                  { id: 'ALL' as const, label: 'All Fleet' },
+                  { id: 'DEMO' as const, label: 'Demo Cars' },
+                  { id: 'OTHER' as const, label: 'Other Assets' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setGlobalVehicleType(opt.id)}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-xs font-semibold transition-all',
+                      globalVehicleType === opt.id
+                        ? 'bg-white text-slate-900 font-bold shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Global Purpose Filter Dropdown */}
+              <select
+                value={globalPurpose}
+                onChange={(e) => setGlobalPurpose(e.target.value)}
+                className={cn(
+                  'h-8 rounded-xl border px-3 text-xs font-semibold transition-all focus:outline-none shadow-2xs',
+                  globalPurpose !== 'ALL'
+                    ? 'border-slate-400 bg-slate-50 text-slate-900 font-bold'
+                    : 'border-slate-200 bg-white text-slate-700',
+                )}
+              >
+                <option value="ALL">All Operational Purposes</option>
+                {data?.byPurpose.map((p) => (
+                  <option key={p.purpose} value={p.purpose}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Active Filters tags & Reset Button */}
+            {hasActiveFilters && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {preset !== 'month' && (
+                  <button
+                    type="button"
+                    onClick={openDateModal}
+                    className="inline-flex items-center gap-1 rounded-md bg-slate-100 hover:bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200 transition-colors"
+                  >
+                    <Calendar className="h-3 w-3 text-slate-400" />
+                    <span>{PERIOD_OPTIONS.find((p) => p.value === preset)?.label || 'Custom'}</span>
+                  </button>
+                )}
+                {branch !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200">
+                    <Building2 className="h-3 w-3 text-slate-400" />
+                    <span>{BRANCH_LABEL[branch]}</span>
+                  </span>
+                )}
+                {globalPurpose !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200">
+                    <Tag className="h-3 w-3 text-slate-400" />
+                    <span>{data?.byPurpose.find((p) => p.purpose === globalPurpose)?.label || globalPurpose}</span>
+                  </span>
+                )}
+                {globalVehicleType !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200">
+                    <Car className="h-3 w-3 text-slate-400" />
+                    <span>{globalVehicleType === 'DEMO' ? 'Demo Cars' : 'Other Assets'}</span>
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleResetFilters}
+                  className="h-7 px-2 text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1 transition-colors ml-1"
+                >
+                  <RotateCcw className="h-3 w-3 text-slate-400" />
+                  <span>Reset filters</span>
+                </Button>
+              </div>
+            )}
+          </div>
+          {/* Tab Navigation */}
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+            {[
+              { id: 'overview' as TabId, label: 'Overview', icon: LayoutGridIcon },
+              {
+                id: 'requests' as TabId,
+                label: 'Fuel Requests',
+                icon: FileText,
+                badge: data?.kpis.awaiting.total ? `${data.kpis.awaiting.total} pending` : null,
+                badgeTone: 'warning',
+              },
+              { id: 'mileage' as TabId, label: 'Vehicle Mileage', icon: Gauge },
+              { id: 'usage' as TabId, label: 'Fuel Consumption', icon: Fuel },
+              {
+                id: 'exceptions' as TabId,
+                label: 'Exceptions',
+                icon: TriangleAlert,
+                badge: data?.checks.filter((c) => c.severity === 'warning').length
+                  ? `${data.checks.filter((c) => c.severity === 'warning').length}`
+                  : null,
+                badgeTone: 'danger',
+              },
+              { id: 'reports' as TabId, label: 'Reports', icon: FileSpreadsheet },
+            ].map((tab) => {
+              const Icon = tab.icon
+              const isActive = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'group flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all',
+                    isActive
+                      ? 'bg-[var(--dashboard-primary)] text-white shadow-xs'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                  )}
+                >
+                  <Icon className={cn('h-3.5 w-3.5', isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600')} />
+                  <span>{tab.label}</span>
+                  {tab.badge && (
+                    <span
+                      className={cn(
+                        'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : tab.badgeTone === 'warning'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-rose-100 text-rose-800',
+                      )}
+                    >
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* =========================================================================
+         * CONTENT ROUTING
+         * ========================================================================= */}
+        {range === null ? (
+          <StatePanel icon={<Hourglass className="h-5 w-5" />} title="Choose a date range to view fuel data">
+            Pick a start and end date above to display usage, mileage and requests.
+          </StatePanel>
+        ) : isError && !data ? (
+          <StatePanel
+            tone="warning"
+            icon={<TriangleAlert className="h-5 w-5" />}
+            title="Could not load fuel data"
+            action={<Button size="sm" onClick={() => void refetch()}>Try Again</Button>}
+          >
+            {loadError?.message || 'The server could not process the request.'}
+          </StatePanel>
+        ) : !data ? (
+          <LoadingSkeleton />
+        ) : (
+          <div className={cn('transition-opacity duration-200', isPlaceholderData && 'opacity-60')}>
+            {activeTab === 'overview' && (
+              <FuelOverviewTab
+                data={data}
+                derivedStats={derivedStats}
+                allRequests={filteredAllRequests}
+                onSelectVehicle={(vin) => setSelectedVin(vin)}
+                onOpenRequests={() => setActiveTab('requests')}
+                onOpenExceptions={() => setActiveTab('exceptions')}
+                onOpenMethodology={() => setShowMethodologyModal(true)}
+              />
+            )}
+
+            {activeTab === 'requests' && (
+              <FuelRequestsTab
+                data={data}
+                allRequests={filteredAllRequests}
+                onViewDetails={(req) => setSelectedRequestDetails(req)}
+              />
+            )}
+
+            {activeTab === 'mileage' && (
+              <VehicleMileageTab
+                data={data}
+                derivedStats={derivedStats}
+                onSelectVehicle={(vin) => setSelectedVin(vin)}
+                onOpenMethodology={() => setShowMethodologyModal(true)}
+              />
+            )}
+
+            {activeTab === 'usage' && <FuelConsumptionTab data={data} derivedStats={derivedStats} />}
+
+            {activeTab === 'exceptions' && (
+              <FuelExceptionsTab
+                data={data}
+                onSelectVehicle={(vin) => setSelectedVin(vin)}
+                onViewRequest={(reqNo) => {
+                  const match = allRequests.find((r) => r.requestNumber === reqNo)
+                  if (match) setSelectedRequestDetails(match)
+                }}
+              />
+            )}
+
+            {activeTab === 'reports' && <FuelReportsTab data={data} derivedStats={derivedStats} />}
+          </div>
+        )}
+
+        {/* =========================================================================
+         * VEHICLE PROFILE DRAWER / MODAL
+         * ========================================================================= */}
+        <VehicleProfileDrawer
+          vehicle={activeVehicle}
+          isOpen={Boolean(activeVehicle)}
+          onClose={() => setSelectedVin(null)}
+          onOpenMethodology={() => setShowMethodologyModal(true)}
+        />
+
+        {/* =========================================================================
+         * METHODOLOGY EXPLAINER MODAL
+         * ========================================================================= */}
+        <Dialog open={showMethodologyModal} onOpenChange={setShowMethodologyModal}>
+          <DialogContent className="max-w-lg rounded-2xl p-6">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                <HelpCircle className="h-5 w-5 text-[var(--dashboard-primary)]" />
+                How Mileage is Calculated
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                True full-tank to full-tank measurement methodology
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-4 space-y-4 text-sm text-slate-700">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="font-semibold text-slate-900">Full-Tank to Full-Tank Rule</p>
+                <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+                  To eliminate estimation bias, mileage is computed strictly using the distance between consecutive
+                  qualifying odometer readings divided by the fuel added after the initial baseline fill:
+                </p>
+                <div className="mt-3 rounded-lg bg-white p-3 font-mono text-xs text-slate-800 border border-slate-200">
+                  km/L = (Odometer_Latest − Odometer_Initial) ÷ Total_Litres_Added
+                </div>
+              </div>
+
+              <div className="space-y-2 text-xs text-slate-600">
+                <p className="flex items-start gap-2">
+                  <span className="font-bold text-slate-800">• Requires ≥ 2 Fills:</span> A car with only one fill
+                  shows &ldquo;Awaiting 2nd Fill&rdquo; because fuel consumed cannot be measured without a second
+                  odometer marker.
+                </p>
+                <p className="flex items-start gap-2">
+                  <span className="font-bold text-slate-800">• VIN Keyed:</span> Trade plates are often shared across
+                  multiple demo cars. All calculations are strictly isolated by unique 17-character VIN.
+                </p>
+                <p className="flex items-start gap-2">
+                  <span className="font-bold text-slate-800">• Honest Reporting:</span> No estimated or fabricated
+                  numbers are displayed when data is incomplete.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <Button
+                onClick={() => setShowMethodologyModal(false)}
+                className="rounded-xl bg-[var(--dashboard-primary)] text-white hover:opacity-90 font-semibold"
+              >
+                Got it
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* =========================================================================
+         * REQUEST DETAIL MODAL
+         * ========================================================================= */}
+        {selectedRequestDetails && (
+          <Dialog open={Boolean(selectedRequestDetails)} onOpenChange={() => setSelectedRequestDetails(null)}>
+            <DialogContent className="max-w-md rounded-2xl p-6">
+              <DialogHeader>
+                <DialogTitle className="flex items-center justify-between text-base font-bold text-slate-900">
+                  <span>Fuel Request #{selectedRequestDetails.requestNumber}</span>
+                  <StatusBadge status={selectedRequestDetails.status} label={selectedRequestDetails.statusLabel} />
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  Submitted for {selectedRequestDetails.purposeLabel} on {formatYmd(selectedRequestDetails.date)}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="mt-4 space-y-3 divide-y divide-slate-100 text-xs">
+                <div className="flex justify-between py-2">
+                  <span className="text-slate-500">Vehicle / Asset:</span>
+                  <span className="font-semibold text-slate-900">{selectedRequestDetails.vehicleLabel}</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-slate-500">Branch:</span>
+                  <span className="font-semibold text-slate-900">{selectedRequestDetails.branchLabel}</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-slate-500">Fuel Quantity:</span>
+                  <span className="font-bold text-slate-900">{formatLitres(selectedRequestDetails.litres)} Litres</span>
+                </div>
+                {selectedRequestDetails.odometerKm !== undefined && selectedRequestDetails.odometerKm !== null && (
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-500">Odometer Reading:</span>
+                    <span className="font-semibold text-slate-900">{formatKm(selectedRequestDetails.odometerKm)} km</span>
+                  </div>
+                )}
+                <div className="flex justify-between py-2">
+                  <span className="text-slate-500">Estimated Cost:</span>
+                  <span className="font-semibold text-slate-900">
+                    {formatCurrency(selectedRequestDetails.litres * ESTIMATED_FUEL_PRICE_INR)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedRequestDetails(null)}
+                  className="rounded-xl text-xs font-semibold"
+                >
+                  Close
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* =========================================================================
+         * DATE RANGE & CALENDAR MODAL
+         * ========================================================================= */}
+        <Dialog open={showDateModal} onOpenChange={setShowDateModal}>
+          <DialogContent className="max-w-2xl rounded-2xl p-6 sm:p-7">
+            <DialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-[var(--dashboard-primary)] shadow-2xs border border-slate-200">
+                  <CalendarDays className="h-5 w-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-bold text-slate-900">
+                    Select Date Range & Period
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-slate-500">
+                    Choose a period preset or pick custom start and end dates (up to 366 days)
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="mt-4 grid gap-5 sm:grid-cols-12">
+              {/* Presets Grid */}
+              <div className="sm:col-span-5 space-y-1.5 border-b sm:border-b-0 sm:border-r border-slate-100 pb-4 sm:pb-0 sm:pr-4">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Quick Presets
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-1 gap-1.5 mt-2">
+                  {PERIOD_OPTIONS.map((opt) => {
+                    const isSelected = tempPreset === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => handleSelectTempPreset(opt.value)}
+                        className={cn(
+                          'flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition-all text-left',
+                          isSelected
+                            ? 'bg-[var(--dashboard-primary)] text-white shadow-xs font-bold'
+                            : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900',
+                        )}
+                      >
+                        <span>{opt.label}</span>
+                        {isSelected && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Custom Range & Live Date Summary */}
+              <div className="sm:col-span-7 space-y-4">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Custom Period Dates
+                </span>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">From Date</Label>
+                    <Input
+                      type="date"
+                      value={tempFrom}
+                      max={tempTo || today}
+                      onChange={(e) => {
+                        setTempPreset('custom')
+                        setTempFrom(e.target.value)
+                        setTempError(null)
+                      }}
+                      className="h-9 rounded-xl border-slate-200 text-xs font-semibold tabular-nums shadow-2xs"
+                    />
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {isValidYmd(tempFrom) ? formatYmd(tempFrom) : 'Select start'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">To Date</Label>
+                    <Input
+                      type="date"
+                      value={tempTo}
+                      min={tempFrom || undefined}
+                      max={today}
+                      onChange={(e) => {
+                        setTempPreset('custom')
+                        setTempTo(e.target.value)
+                        setTempError(null)
+                      }}
+                      className="h-9 rounded-xl border-slate-200 text-xs font-semibold tabular-nums shadow-2xs"
+                    />
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {isValidYmd(tempTo) ? formatYmd(tempTo) : 'Select end'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Range Summary Card */}
+                <div className="rounded-xl border border-slate-200/90 bg-slate-50/80 p-3.5 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-600">Selected Duration:</span>
+                    <span className="rounded-md bg-white px-2 py-0.5 font-bold text-slate-900 border border-slate-200 shadow-2xs">
+                      {tempRangeDays} {tempRangeDays === 1 ? 'day' : 'days'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-600">Active Window:</span>
+                    <span className="font-bold text-[var(--dashboard-primary)]">
+                      {tempFrom && tempTo ? formatRange(tempFrom, tempTo) : 'Incomplete range'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Error Banner if any */}
+                {tempError && (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-800 font-semibold flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span>{tempError}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleResetDateModalToDefault}
+                className="gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>Reset to Default (This Month)</span>
+              </Button>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDateModal(false)}
+                  className="rounded-xl text-xs font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleApplyDateModal}
+                  className="gap-1.5 rounded-xl bg-[var(--dashboard-primary)] text-white hover:opacity-90 text-xs font-bold shadow-xs px-4"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>Apply Range</span>
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   )
 }
 
-// ── Filter controls ────────────────────────────────────────────────────────────────────────────
+/* =================================================================================================
+ * TAB 1: OVERVIEW TAB (THE EXECUTIVE PULSE)
+ * =============================================================================================== */
 
-function FilterGroup({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+function FuelOverviewTab({
+  data,
+  derivedStats,
+  allRequests,
+  onSelectVehicle,
+  onOpenRequests,
+  onOpenExceptions,
+  onOpenMethodology,
+}: {
+  data: FuelManagementResponse
+  derivedStats: { fuelSpend: number; costPerKm: number; fleetAvgMileage: number | null; attentionCount: number }
+  allRequests: any[]
+  onSelectVehicle: (vin: string) => void
+  onOpenRequests: () => void
+  onOpenExceptions: () => void
+  onOpenMethodology: () => void
+}) {
+  const [trendMetric, setTrendMetric] = useState<'fuel' | 'spend' | 'distance' | 'mileage'>('fuel')
+
+  const topChecks = useMemo(() => {
+    return data.checks.slice(0, 4)
+  }, [data.checks])
+
+  const topDemoCars = useMemo(() => {
+    return data.demoCars.slice(0, 4)
+  }, [data.demoCars])
+
+  const recentActivity = useMemo(() => {
+    return allRequests.slice(0, 6)
+  }, [allRequests])
+
   return (
-    <div className="flex flex-col gap-1.5">
-      <span id={id} className="text-[11px] font-semibold text-slate-500">
-        {label}
-      </span>
-      {children}
+    <div className="space-y-4">
+      {/* 1. TOP 5 KPI SECTION */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {/* KPI 1: Fuel Used */}
+        <div className="rounded-2xl border-t-4 border-t-teal-500 border-x border-b border-slate-200/80 bg-white p-4.5 shadow-xs transition-all duration-200 hover:shadow-md hover:border-slate-300">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-teal-800">
+              Fuel Used
+            </span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-700 border border-teal-100 shadow-2xs">
+              <Fuel className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 flex items-baseline gap-1.5">
+            <span className="text-2xl font-black tabular-nums text-slate-900 tracking-tight">
+              {formatLitres(data.kpis.approvedLitres)}
+            </span>
+            <span className="text-xs font-bold text-teal-700">Litres</span>
+          </div>
+          <div className="mt-2.5 flex items-center gap-1.5">
+            <span className="inline-flex items-center rounded-md bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-800 border border-teal-200/70">
+              {formatCount(data.kpis.approvedRequests)} approved {plural(data.kpis.approvedRequests, 'fill', 'fills')}
+            </span>
+          </div>
+        </div>
+
+        {/* KPI 2: Fuel Spend */}
+        <div className="rounded-2xl border-t-4 border-t-indigo-500 border-x border-b border-slate-200/80 bg-white p-4.5 shadow-xs transition-all duration-200 hover:shadow-md hover:border-slate-300">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-800">
+              Fuel Spend
+            </span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100 shadow-2xs">
+              <IndianRupee className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 flex items-baseline gap-1">
+            <span className="text-2xl font-black tabular-nums text-slate-900 tracking-tight">
+              {formatCurrency(derivedStats.fuelSpend)}
+            </span>
+          </div>
+          <div className="mt-2.5 flex items-center gap-1.5">
+            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-800 border border-indigo-200/70">
+              {derivedStats.costPerKm > 0 ? `₹${derivedStats.costPerKm.toFixed(2)} / km` : 'Ref @ ₹95/L'}
+            </span>
+          </div>
+        </div>
+
+        {/* KPI 3: Distance Covered */}
+        <div className="rounded-2xl border-t-4 border-t-sky-500 border-x border-b border-slate-200/80 bg-white p-4.5 shadow-xs transition-all duration-200 hover:shadow-md hover:border-slate-300">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-sky-800">
+              Distance Covered
+            </span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-700 border border-sky-100 shadow-2xs">
+              <Gauge className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 flex items-baseline gap-1.5">
+            <span className="text-2xl font-black tabular-nums text-slate-900 tracking-tight">
+              {formatKm(data.kpis.demoDriveKm)}
+            </span>
+            <span className="text-xs font-bold text-sky-700">km</span>
+          </div>
+          <div className="mt-2.5 flex items-center gap-1.5">
+            <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 border border-sky-200/70">
+              {formatCount(data.kpis.demoDrives)} demo {plural(data.kpis.demoDrives, 'drive', 'drives')}
+            </span>
+          </div>
+        </div>
+
+        {/* KPI 4: Average Mileage */}
+        <div className="rounded-2xl border-t-4 border-t-emerald-500 border-x border-b border-slate-200/80 bg-white p-4.5 shadow-xs transition-all duration-200 hover:shadow-md hover:border-slate-300">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
+                Avg Mileage
+              </span>
+              <button
+                type="button"
+                onClick={onOpenMethodology}
+                className="text-emerald-600 hover:text-emerald-800 transition-colors"
+                title="How mileage is calculated"
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-2xs">
+              <Gauge className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 flex items-baseline gap-1.5">
+            <span className="text-2xl font-black tabular-nums text-slate-900 tracking-tight">
+              {derivedStats.fleetAvgMileage !== null ? formatKm(derivedStats.fleetAvgMileage) : '—'}
+            </span>
+            <span className="text-xs font-bold text-emerald-700">km/L</span>
+          </div>
+          <div className="mt-2.5 flex items-center gap-1.5">
+            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 border border-emerald-200/70">
+              {derivedStats.fleetAvgMileage !== null ? 'Full-tank verified' : 'Awaiting 2nd fills'}
+            </span>
+          </div>
+        </div>
+
+        {/* KPI 5: Needs Attention */}
+        <div
+          onClick={onOpenExceptions}
+          className={cn(
+            'rounded-2xl border-t-4 border-x border-b p-4.5 shadow-xs transition-all duration-200 cursor-pointer hover:shadow-md',
+            derivedStats.attentionCount > 0
+              ? 'border-t-amber-500 border-slate-200/80 bg-white'
+              : 'border-t-slate-400 border-slate-200/80 bg-white hover:border-slate-300',
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className={cn('text-[11px] font-bold uppercase tracking-wider', derivedStats.attentionCount > 0 ? 'text-amber-800' : 'text-slate-600')}>
+              Needs Action
+            </span>
+            <div
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-xl shadow-2xs',
+                derivedStats.attentionCount > 0
+                  ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                  : 'bg-slate-50 text-slate-500 border border-slate-200',
+              )}
+            >
+              <TriangleAlert className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 flex items-baseline gap-1.5">
+            <span className={cn('text-2xl font-black tabular-nums tracking-tight', derivedStats.attentionCount > 0 ? 'text-amber-950' : 'text-slate-900')}>
+              {derivedStats.attentionCount}
+            </span>
+            <span className={cn('text-xs font-bold', derivedStats.attentionCount > 0 ? 'text-amber-800' : 'text-slate-500')}>issues</span>
+          </div>
+          <div className="mt-2.5 flex items-center gap-1.5">
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold border',
+                derivedStats.attentionCount > 0
+                  ? 'bg-amber-50 text-amber-900 border-amber-200'
+                  : 'bg-slate-50 text-slate-600 border-slate-200/60',
+              )}
+            >
+              {derivedStats.attentionCount > 0 ? (
+                <>
+                  <span>Review issues</span>
+                  <ArrowRight className="h-3 w-3" />
+                </>
+              ) : (
+                'All records clear'
+              )}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. ATTENTION REQUIRED COMPACT TABLE */}
+      {topChecks.length > 0 && (
+        <div className="rounded-2xl border border-amber-200/80 bg-amber-50/40 p-4 shadow-xs">
+          <div className="flex items-center justify-between border-b border-amber-200/60 pb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-100 text-amber-800 border border-amber-200/80 shadow-2xs">
+                <TriangleAlert className="h-3.5 w-3.5" />
+              </div>
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-amber-950">
+                Attention Required ({data.checks.length})
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenExceptions}
+              className="text-xs font-bold text-amber-900 hover:text-amber-950 flex items-center gap-1 transition-colors"
+            >
+              <span>View all issues</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+
+          <div className="mt-2.5 divide-y divide-amber-200/40">
+            {topChecks.map((chk, idx) => (
+              <div key={idx} className="flex flex-wrap items-center justify-between gap-3 py-2 text-xs">
+                <div className="flex items-center gap-3">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'rounded-md text-[10px] font-semibold px-2 py-0.5',
+                      chk.severity === 'warning'
+                        ? 'border-amber-300 bg-amber-100 text-amber-950'
+                        : 'border-slate-200 bg-slate-100 text-slate-700',
+                    )}
+                  >
+                    {chk.severity === 'warning' ? 'Issue' : 'Note'}
+                  </Badge>
+                  <span className="font-semibold text-slate-900">{CHECK_TITLE[chk.kind] || chk.kind}</span>
+                  <span className="text-slate-600">{chk.message}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] font-medium text-slate-600 bg-white border border-amber-200/60 px-2 py-0.5 rounded-md whitespace-nowrap">
+                    {chk.requestNumber}
+                  </span>
+                  {chk.vin && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onSelectVehicle(chk.vin!)}
+                      className="h-7 rounded-lg text-[11px] font-semibold border-amber-200 bg-white hover:bg-amber-50 text-amber-900"
+                    >
+                      View Vehicle
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 3. COMPACT TREND & ANALYTICAL AREA */}
+      <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">Fuel & Efficiency Summary</h2>
+            <p className="text-xs text-slate-500">Period performance metrics across fleet</p>
+          </div>
+          <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
+            {[
+              { id: 'fuel' as const, label: 'Fuel (L)' },
+              { id: 'spend' as const, label: 'Cost (₹)' },
+              { id: 'distance' as const, label: 'Distance (km)' },
+              { id: 'mileage' as const, label: 'Avg Mileage' },
+            ].map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTrendMetric(t.id)}
+                className={cn(
+                  'rounded-lg px-3 py-1 text-xs font-semibold transition-all',
+                  trendMetric === t.id
+                    ? 'bg-white text-slate-900 font-bold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900',
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-teal-200/70 bg-teal-50/40 p-3.5 shadow-2xs">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-teal-800">Approved Volume</span>
+            <p className="mt-1 text-lg font-black text-slate-900">{formatLitres(data.kpis.approvedLitres)} L</p>
+            <p className="mt-0.5 text-[11px] text-teal-700 font-medium">Across {data.kpis.approvedRequests} approved vouchers</p>
+          </div>
+          <div className="rounded-xl border border-amber-200/70 bg-amber-50/40 p-3.5 shadow-2xs">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Awaiting Decision</span>
+            <p className="mt-1 text-lg font-black text-amber-900">{data.kpis.awaiting.total} requests</p>
+            <p className="mt-0.5 text-[11px] text-amber-700 font-medium">Pending CEO / Accounts</p>
+          </div>
+          <div className="rounded-xl border border-sky-200/70 bg-sky-50/40 p-3.5 shadow-2xs">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-sky-800">GPS Verified Trip Share</span>
+            <p className="mt-1 text-lg font-black text-slate-900">
+              {data.kpis.demoDriveKm > 0
+                ? `${((data.kpis.gpsVerifiedKm / data.kpis.demoDriveKm) * 100).toFixed(0)}%`
+                : '0%'}
+            </p>
+            <p className="mt-0.5 text-[11px] text-sky-700 font-medium">{formatKm(data.kpis.gpsVerifiedKm)} km tracked</p>
+          </div>
+          <div className="rounded-xl border border-purple-200/70 bg-purple-50/40 p-3.5 shadow-2xs">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-800">Demo Fleet Monitored</span>
+            <p className="mt-1 text-lg font-black text-slate-900">{data.demoCars.length} cars</p>
+            <p className="mt-0.5 text-[11px] text-purple-700 font-medium">With active drives or fills</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. TWO-COLUMN SPLIT: WHERE FUEL IS GOING vs VEHICLE EFFICIENCY PREVIEW */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Where Fuel Is Going */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Where Fuel Is Going</h2>
+              <p className="text-xs text-slate-500">Volume distribution by operational purpose</p>
+            </div>
+            <span className="inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-800">
+              Total: {formatLitres(data.kpis.approvedLitres)} L
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-3.5">
+            {data.byPurpose.length === 0 ? (
+              <p className="py-6 text-center text-xs text-slate-500">No fuel records in this period.</p>
+            ) : (
+              data.byPurpose.map((p) => {
+                const pct =
+                  data.kpis.approvedLitres > 0 ? (p.approvedLitres / data.kpis.approvedLitres) * 100 : 0
+                const conf = getPurposeConfig(p.purpose)
+                return (
+                  <div key={p.purpose} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className={cn('h-2.5 w-2.5 rounded-full', conf.dot)} />
+                        <span className="font-bold text-slate-800">{p.label}</span>
+                      </div>
+                      <span className="tabular-nums text-slate-600">
+                        <strong className="font-bold text-slate-900">{formatLitres(p.approvedLitres)} L</strong>{' '}
+                        · <span className="font-semibold text-slate-700">{pct.toFixed(0)}%</span>
+                      </span>
+                    </div>
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 p-0.5">
+                      <div
+                        className={cn('h-full rounded-full transition-all duration-300 shadow-2xs', conf.bar)}
+                        style={{ width: `${Math.max(4, pct)}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Vehicle Efficiency Highlights */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Vehicle Efficiency</h2>
+              <p className="text-xs text-slate-500">Demo fleet consumption & mileage status</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onSelectVehicle(data.demoCars[0]?.vin || '')}
+              className="text-xs font-bold text-[var(--dashboard-primary)] hover:opacity-80 transition-opacity"
+            >
+              Fleet details →
+            </button>
+          </div>
+
+          <div className="mt-3 divide-y divide-slate-100">
+            {topDemoCars.length === 0 ? (
+              <p className="py-6 text-center text-xs text-slate-500">No active demo cars in this period.</p>
+            ) : (
+              topDemoCars.map((car) => (
+                <div
+                  key={car.vin}
+                  onClick={() => onSelectVehicle(car.vin)}
+                  className="group flex cursor-pointer items-center justify-between py-2.5 text-xs transition-colors hover:bg-slate-50/80 -mx-2 px-2.5 rounded-xl border border-transparent hover:border-slate-200"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-700 group-hover:bg-purple-100 transition-colors shadow-2xs border border-purple-100">
+                      <Car className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 truncate">{car.registrationNumber || 'Trade Plate'}</p>
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <span className="font-semibold text-slate-700">{car.model || 'Demo Car'}</span>
+                        <span>·</span>
+                        <BranchBadge branch={car.branchLabel} />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <MileageBadge value={car.kmPerLitre?.value} />
+                    <p className="text-[10px] font-semibold text-slate-500 mt-1">{formatLitres(car.approvedLitres)} L used</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 5. RECENT FUEL ACTIVITY (ALIGNED RESPONSIVE TABLE) */}
+      <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">Recent Fuel Activity</h2>
+            <p className="text-xs text-slate-500">Latest transactions and approval requests</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenRequests}
+            className="h-8 gap-1.5 rounded-xl text-xs font-semibold"
+          >
+            <span>View all fuel requests</span>
+            <ArrowRight className="h-3 w-3" />
+          </Button>
+        </div>
+
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-100 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              <tr>
+                <th className="pb-2 pl-2">Request #</th>
+                <th className="pb-2 px-3">Date</th>
+                <th className="pb-2 px-3">Purpose</th>
+                <th className="pb-2 px-3">Vehicle / Description</th>
+                <th className="pb-2 px-3">Branch</th>
+                <th className="pb-2 px-3 text-right">Volume</th>
+                <th className="pb-2 pr-2 text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {recentActivity.map((req) => (
+                <tr key={req.id} className="hover:bg-slate-50/70 transition-colors">
+                  <td className="py-3 pl-2 whitespace-nowrap">
+                    <span className="inline-block font-mono text-[11px] font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200/80">
+                      {req.requestNumber}
+                    </span>
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap text-slate-600 font-medium">
+                    {formatYmd(req.date, false)}
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap">
+                    <PurposeBadge purpose={req.purpose} label={req.purposeLabel} />
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap font-bold text-slate-900">
+                    {req.vehicleLabel}
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap">
+                    <BranchBadge branch={req.branchLabel} />
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap text-right font-black tabular-nums text-slate-900">
+                    {formatLitres(req.litres)} L
+                  </td>
+                  <td className="py-3 pr-2 whitespace-nowrap text-right">
+                    <StatusBadge status={req.status} label={req.statusLabel} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
 
-function Segmented<T extends string>({
-  labelledBy,
-  value,
-  options,
-  onChange,
+/* =================================================================================================
+ * TAB 2: FUEL REQUESTS TAB (OPERATIONAL WORKFLOW)
+ * =============================================================================================== */
+
+function FuelRequestsTab({
+  data,
+  allRequests,
+  onViewDetails,
 }: {
-  labelledBy: string
-  value: T
-  options: { value: T; label: string }[]
-  onChange: (next: T) => void
+  data: FuelManagementResponse
+  allRequests: any[]
+  onViewDetails: (req: any) => void
+}) {
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
+  const [purposeFilter, setPurposeFilter] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredRequests = useMemo(() => {
+    return allRequests.filter((req) => {
+      // Status filter
+      if (statusFilter === 'pending' && req.status === 'approved') return false
+      if (statusFilter === 'approved' && req.status !== 'approved') return false
+      if (statusFilter === 'rejected' && req.status !== 'rejected') return false
+
+      // Purpose filter
+      if (purposeFilter !== 'all' && req.purpose !== purposeFilter) return false
+
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase()
+        const match =
+          req.requestNumber.toLowerCase().includes(q) ||
+          req.vehicleLabel.toLowerCase().includes(q) ||
+          req.purposeLabel.toLowerCase().includes(q) ||
+          req.branchLabel.toLowerCase().includes(q)
+        if (!match) return false
+      }
+
+      return true
+    })
+  }, [allRequests, statusFilter, purposeFilter, searchQuery])
+
+  const pendingCount = allRequests.filter((r) => r.status !== 'approved' && r.status !== 'rejected').length
+
+  return (
+    <div className="space-y-4">
+      {/* Workflow Banner */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-sm font-bold text-slate-900">Fuel Requests Ledger</h2>
+            {pendingCount > 0 ? (
+              <Badge className="bg-amber-500 text-white hover:bg-amber-600 text-xs font-bold px-2.5 py-0.5 shadow-2xs">
+                {pendingCount} Awaiting Approval
+              </Badge>
+            ) : (
+              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs font-bold px-2.5 py-0.5">
+                All Cleared
+              </Badge>
+            )}
+          </div>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Manage, audit and process fuel requisition vouchers across all departments
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <a
+            href="/fuel-approvals"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-[var(--dashboard-primary)] px-3 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition-opacity"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            <span>Open Approvals Desk</span>
+          </a>
+        </div>
+      </div>
+
+      {/* Filter Toolbar */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/90 bg-white p-3 shadow-xs sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Status Tabs */}
+          <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
+            {[
+              { id: 'all' as const, label: 'All Requests' },
+              { id: 'pending' as const, label: `Pending (${pendingCount})` },
+              { id: 'approved' as const, label: 'Approved' },
+              { id: 'rejected' as const, label: 'Rejected' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
+                  statusFilter === tab.id
+                    ? 'bg-white text-[var(--dashboard-primary)] font-bold shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900',
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Purpose Filter */}
+          <select
+            value={purposeFilter}
+            onChange={(e) => setPurposeFilter(e.target.value)}
+            className="h-8 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--dashboard-primary)]"
+          >
+            <option value="all">All Purposes</option>
+            {data.byPurpose.map((p) => (
+              <option key={p.purpose} value={p.purpose}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Search */}
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Input
+            type="text"
+            placeholder="Search request #, vehicle, branch…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-8 rounded-xl border-slate-200 pl-8 text-xs"
+          />
+        </div>
+      </div>
+
+      {/* Requests Table */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600">
+              <tr>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Request #</th>
+                <th className="px-4 py-3">Purpose</th>
+                <th className="px-4 py-3">Vehicle / Asset</th>
+                <th className="px-4 py-3">Branch</th>
+                <th className="px-4 py-3 text-right">Quantity</th>
+                <th className="px-4 py-3 text-right">Odometer</th>
+                <th className="px-4 py-3 text-center">Status</th>
+                <th className="px-4 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredRequests.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center text-slate-500">
+                    No requests found matching your filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredRequests.map((req) => (
+                  <tr key={req.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600 font-medium">{formatYmd(req.date)}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span className="font-mono text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
+                        {req.requestNumber}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <PurposeBadge purpose={req.purpose} label={req.purposeLabel} />
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-slate-900 max-w-[200px] truncate">
+                      {req.vehicleLabel}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <BranchBadge branch={req.branchLabel} />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-black tabular-nums text-teal-700">
+                      {formatLitres(req.litres)} L
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-600 font-medium">
+                      {req.odometerKm !== undefined && req.odometerKm !== null ? `${formatKm(req.odometerKm)} km` : '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-center">
+                      <StatusBadge status={req.status} label={req.statusLabel} />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onViewDetails(req)}
+                        className="h-7 rounded-lg px-2 text-xs font-semibold text-[var(--dashboard-primary)] hover:opacity-80"
+                      >
+                        <Eye className="h-3.5 w-3.5 mr-1" />
+                        Details
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =================================================================================================
+ * TAB 3: VEHICLE MILEAGE TAB (FLEET EFFICIENCY ENGINE)
+ * =============================================================================================== */
+
+function VehicleMileageTab({
+  data,
+  derivedStats,
+  onSelectVehicle,
+  onOpenMethodology,
+}: {
+  data: FuelManagementResponse
+  derivedStats: { fleetAvgMileage: number | null }
+  onSelectVehicle: (vin: string) => void
+  onOpenMethodology: () => void
+}) {
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredCars = useMemo(() => {
+    return data.demoCars.filter((car) => {
+      if (!searchQuery.trim()) return true
+      const q = searchQuery.toLowerCase()
+      return (
+        car.vin.toLowerCase().includes(q) ||
+        (car.registrationNumber || '').toLowerCase().includes(q) ||
+        (car.model || '').toLowerCase().includes(q) ||
+        car.branchLabel.toLowerCase().includes(q)
+      )
+    })
+  }, [data.demoCars, searchQuery])
+
+  return (
+    <div className="space-y-4">
+      {/* Fleet Efficiency Banner with Clean Tailored Card */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900 text-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white">
+                <Gauge className="h-4 w-4" />
+              </div>
+              <h2 className="text-sm font-bold text-white tracking-wide">Fleet Mileage Intelligence</h2>
+              <button
+                type="button"
+                onClick={onOpenMethodology}
+                className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:bg-white/20 transition-colors"
+              >
+                <Info className="h-3 w-3 text-slate-300" />
+                <span>Methodology</span>
+              </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              Verified odometer-based efficiency across {data.demoCars.length} demo fleet vehicles
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-right">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Fleet Average</span>
+              <div className="flex items-baseline justify-end gap-1.5">
+                <span className="text-2xl font-bold text-emerald-400 tracking-tight">
+                  {derivedStats.fleetAvgMileage !== null ? formatKm(derivedStats.fleetAvgMileage) : '—'}
+                </span>
+                <span className="text-xs font-semibold text-slate-400">km/L</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Search Toolbar */}
+      <div className="flex justify-between items-center rounded-2xl border border-slate-200/90 bg-white p-3 shadow-xs">
+        <p className="text-xs font-semibold text-slate-800">Demo Vehicles ({filteredCars.length})</p>
+        <div className="relative w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Input
+            type="text"
+            placeholder="Search vehicle plate, model, VIN…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-8 rounded-xl border-slate-200 pl-8 text-xs font-medium"
+          />
+        </div>
+      </div>
+
+      {/* Vehicle Efficiency Table */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600">
+              <tr>
+                <th className="px-4 py-3">Vehicle</th>
+                <th className="px-4 py-3">Model & Branch</th>
+                <th className="px-4 py-3 text-right">Last Odometer</th>
+                <th className="px-4 py-3 text-right">Drive Distance</th>
+                <th className="px-4 py-3 text-right">Fuel Added</th>
+                <th className="px-4 py-3 text-left">Mileage Status</th>
+                <th className="px-4 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredCars.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-500">
+                    No demo vehicles found.
+                  </td>
+                </tr>
+              ) : (
+                filteredCars.map((car) => {
+                  return (
+                    <tr
+                      key={car.vin}
+                      onClick={() => onSelectVehicle(car.vin)}
+                      className="cursor-pointer hover:bg-slate-50/60 transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 shadow-2xs">
+                            <Car className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="font-semibold text-slate-900 block">{car.registrationNumber || 'Trade Plate'}</span>
+                            <span className="font-mono text-[10px] text-slate-400">{vinTail(car.vin)}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-semibold text-slate-900 block">{car.model || 'Demo Car'}</span>
+                        <BranchBadge branch={car.branchLabel} />
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-800 font-medium">
+                        {car.lastFillOdometerKm !== null ? `${formatKm(car.lastFillOdometerKm)} km` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-800 font-medium">
+                        {formatKm(car.driveKm)} km
+                        <span className="block text-[10px] text-slate-400">{car.drives.length} drives</span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold tabular-nums text-slate-900">
+                        {formatLitres(car.approvedLitres)} L
+                      </td>
+                      <td className="px-4 py-3">
+                        <MileageBadge value={car.kmPerLitre?.value} />
+                        {!car.kmPerLitre && (
+                          <span className="block text-[10px] text-slate-400 mt-0.5">
+                            {car.kmPerLitreNote?.includes('backwards')
+                              ? 'Odometer discrepancy'
+                              : 'Requires another fuel fill with odometer'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSelectVehicle(car.vin)
+                          }}
+                          className="h-7 rounded-lg text-xs font-medium"
+                        >
+                          Profile
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =================================================================================================
+ * TAB 4: FUEL CONSUMPTION TAB (USAGE DEEP-DIVE)
+ * =============================================================================================== */
+
+function FuelConsumptionTab({
+  data,
+  derivedStats,
+}: {
+  data: FuelManagementResponse
+  derivedStats: { fuelSpend: number }
 }) {
   return (
-    <div role="group" aria-labelledby={labelledBy} className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
-      {options.map((option) => {
-        const active = option.value === value
-        return (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onChange(option.value)}
-            className={cn(
-              'h-8 whitespace-nowrap rounded-md px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
-              active ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900',
-            )}
-          >
-            {option.label}
-          </button>
-        )
-      })}
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Purpose Allocation Card */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs lg:col-span-2">
+          <h2 className="text-sm font-bold text-slate-900">Purpose Allocation Ledger</h2>
+          <p className="text-xs text-slate-500">Breakdown of litres and estimated cost by purpose</p>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-100 text-[11px] font-semibold text-slate-500">
+                <tr>
+                  <th className="pb-2">Purpose</th>
+                  <th className="pb-2 text-right">Approved Fills</th>
+                  <th className="pb-2 text-right">Litres</th>
+                  <th className="pb-2 text-right">Share</th>
+                  <th className="pb-2 text-right">Estimated Cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.byPurpose.map((p) => {
+                  const pct =
+                    data.kpis.approvedLitres > 0 ? (p.approvedLitres / data.kpis.approvedLitres) * 100 : 0
+                  const cost = p.approvedLitres * ESTIMATED_FUEL_PRICE_INR
+                  return (
+                    <tr key={p.purpose} className="py-2.5">
+                      <td className="py-2.5">
+                        <PurposeBadge purpose={p.purpose} label={p.label} />
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums text-slate-600 font-medium">{p.approvedRequests}</td>
+                      <td className="py-2.5 text-right font-bold tabular-nums text-slate-900">
+                        {formatLitres(p.approvedLitres)} L
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums text-slate-700 font-semibold">{pct.toFixed(1)}%</td>
+                      <td className="py-2.5 text-right font-bold tabular-nums text-slate-900">
+                        {formatCurrency(cost)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Branch Summary Card */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
+          <h2 className="text-sm font-bold text-slate-900">Branch Consumption</h2>
+          <p className="text-xs text-slate-500">Distribution across active dealerships</p>
+
+          <div className="mt-4 space-y-3">
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-900">Jammu (JK402)</span>
+                <BranchBadge branch="JK402" />
+              </div>
+              <p className="mt-1.5 text-xl font-bold text-slate-900">
+                {formatLitres(data.period.branch === 'JK501' ? 0 : data.kpis.approvedLitres)} L
+              </p>
+              <p className="text-[11px] text-slate-500 font-medium">Primary showroom & yard operations</p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-900">Udhampur (JK501)</span>
+                <BranchBadge branch="JK501" />
+              </div>
+              <p className="mt-1.5 text-xl font-bold text-slate-900">
+                {formatLitres(data.period.branch === 'JK402' ? 0 : data.kpis.approvedLitres)} L
+              </p>
+              <p className="text-[11px] text-slate-500 font-medium">Regional sales & service facility</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
 
-function RetryButton({ onRetry, busy }: { onRetry: () => void; busy: boolean }) {
+/* =================================================================================================
+ * TAB 5: EXCEPTIONS TAB (ATTENTION REQUIRED & AUDIT)
+ * =============================================================================================== */
+
+function FuelExceptionsTab({
+  data,
+  onSelectVehicle,
+  onViewRequest,
+}: {
+  data: FuelManagementResponse
+  onSelectVehicle: (vin: string) => void
+  onViewRequest: (reqNo: string) => void
+}) {
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'data_quality' | 'efficiency' | 'workflow'>('all')
+
+  const categorizedChecks = useMemo(() => {
+    return data.checks.filter((chk) => {
+      if (categoryFilter === 'all') return true
+      const cat = CHECK_CATEGORY[chk.kind] || 'data_quality'
+      return cat === categoryFilter
+    })
+  }, [data.checks, categoryFilter])
+
+  const issues = categorizedChecks.filter((c) => c.severity === 'warning')
+  const notes = categorizedChecks.filter((c) => c.severity === 'info')
+
   return (
-    <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={busy} className="h-9 rounded-lg text-xs font-semibold">
-      {busy ? (
-        <LoaderCircle className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden />
-      ) : (
-        <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+    <div className="space-y-4">
+      {/* Category Tabs */}
+      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
+        <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
+          {[
+            { id: 'all' as const, label: `All Items (${data.checks.length})` },
+            { id: 'data_quality' as const, label: 'Data Quality' },
+            { id: 'efficiency' as const, label: 'Efficiency & Mileage' },
+            { id: 'workflow' as const, label: 'Workflow' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setCategoryFilter(tab.id)}
+              className={cn(
+                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
+                categoryFilter === tab.id
+                  ? 'bg-white text-[var(--dashboard-primary)] font-bold shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900',
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Actionable Issues Section */}
+      <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-xs">
+        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+          <TriangleAlert className="h-4 w-4 text-amber-600" />
+          <h2 className="text-sm font-bold text-slate-900">Issues Requiring Action ({issues.length})</h2>
+        </div>
+
+        <div className="mt-3 divide-y divide-slate-100">
+          {issues.length === 0 ? (
+            <div className="py-6 text-center text-xs text-slate-500">
+              <CheckCircle2 className="mx-auto h-6 w-6 text-emerald-500 mb-1" />
+              <span>No critical exceptions or data quality issues in this period.</span>
+            </div>
+          ) : (
+            issues.map((chk, idx) => (
+              <div key={idx} className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs">
+                <div className="space-y-1 max-w-2xl">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900">{CHECK_TITLE[chk.kind] || chk.kind}</span>
+                    <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900 text-[10px]">
+                      Action Needed
+                    </Badge>
+                  </div>
+                  <p className="text-slate-600">{chk.message}</p>
+                  <p className="font-mono text-[11px] text-slate-400">
+                    Request #{chk.requestNumber} {chk.vehicleLabel ? `· ${chk.vehicleLabel}` : ''}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onViewRequest(chk.requestNumber)}
+                    className="h-8 rounded-xl text-xs font-semibold"
+                  >
+                    View Request
+                  </Button>
+                  {chk.vin && (
+                    <Button
+                      size="sm"
+                      onClick={() => onSelectVehicle(chk.vin!)}
+                      className="h-8 rounded-xl text-xs font-semibold bg-[var(--dashboard-primary)] text-white hover:opacity-90"
+                    >
+                      View Vehicle
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Informational Notes Section */}
+      {notes.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+            <Info className="h-4 w-4 text-blue-600" />
+            <h2 className="text-sm font-bold text-slate-900">Informational Notes ({notes.length})</h2>
+          </div>
+
+          <div className="mt-3 divide-y divide-slate-100">
+            {notes.map((chk, idx) => (
+              <div key={idx} className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-xs">
+                <div>
+                  <span className="font-semibold text-slate-900">{chk.message}</span>
+                  <p className="text-[11px] text-slate-400">Request #{chk.requestNumber}</p>
+                </div>
+                {chk.vin && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onSelectVehicle(chk.vin!)}
+                    className="h-7 text-xs font-semibold text-[var(--dashboard-primary)] hover:opacity-80"
+                  >
+                    Vehicle →
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
-      {busy ? 'Trying again' : 'Try again'}
-    </Button>
+    </div>
   )
 }
 
-// ── States ─────────────────────────────────────────────────────────────────────────────────────
+/* =================================================================================================
+ * TAB 6: REPORTS TAB (PRINT & AUDIT LEDGER)
+ * =============================================================================================== */
+
+function FuelReportsTab({
+  data,
+  derivedStats,
+}: {
+  data: FuelManagementResponse
+  derivedStats: { fuelSpend: number; costPerKm: number; fleetAvgMileage: number | null }
+}) {
+  const handlePrint = () => {
+    window.print()
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+        <div>
+          <h2 className="text-sm font-bold text-slate-900">Fuel Management Audit Report</h2>
+          <p className="text-xs text-slate-500">
+            Official summary for {formatRange(data.period.from, data.period.to)} ({BRANCH_LABEL[data.period.branch]})
+          </p>
+        </div>
+        <Button onClick={handlePrint} className="gap-2 rounded-xl text-xs font-semibold">
+          <Printer className="h-3.5 w-3.5" />
+          <span>Print / Export PDF</span>
+        </Button>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+        {/* Executive Summary Grid */}
+        <div className="grid gap-4 sm:grid-cols-4 border-b border-slate-100 pb-6">
+          <div>
+            <span className="text-[11px] font-semibold text-slate-400 uppercase">Total Fuel Approved</span>
+            <p className="text-xl font-bold text-slate-900">{formatLitres(data.kpis.approvedLitres)} Litres</p>
+          </div>
+          <div>
+            <span className="text-[11px] font-semibold text-slate-400 uppercase">Total Estimated Spend</span>
+            <p className="text-xl font-bold text-slate-900">{formatCurrency(derivedStats.fuelSpend)}</p>
+          </div>
+          <div>
+            <span className="text-[11px] font-semibold text-slate-400 uppercase">Demo Gate Distance</span>
+            <p className="text-xl font-bold text-slate-900">{formatKm(data.kpis.demoDriveKm)} km</p>
+          </div>
+          <div>
+            <span className="text-[11px] font-semibold text-slate-400 uppercase">Fleet Avg Efficiency</span>
+            <p className="text-xl font-bold text-slate-900">
+              {derivedStats.fleetAvgMileage ? `${formatKm(derivedStats.fleetAvgMileage)} km/L` : 'Awaiting 2nd fills'}
+            </p>
+          </div>
+        </div>
+
+        {/* Purpose Table */}
+        <div>
+          <h3 className="text-xs font-bold uppercase text-slate-800 tracking-wider">Departmental Breakdown</h3>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-200 font-semibold text-slate-600">
+                <tr>
+                  <th className="py-2">Category</th>
+                  <th className="py-2 text-right">Requests</th>
+                  <th className="py-2 text-right">Litres</th>
+                  <th className="py-2 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.byPurpose.map((p) => (
+                  <tr key={p.purpose}>
+                    <td className="py-2 font-medium text-slate-900">{p.label}</td>
+                    <td className="py-2 text-right tabular-nums text-slate-600">{p.approvedRequests}</td>
+                    <td className="py-2 text-right font-bold tabular-nums text-slate-900">
+                      {formatLitres(p.approvedLitres)} L
+                    </td>
+                    <td className="py-2 text-right font-semibold tabular-nums text-slate-900">
+                      {formatCurrency(p.approvedLitres * ESTIMATED_FUEL_PRICE_INR)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =================================================================================================
+ * VEHICLE PROFILE DRAWER (DEEP VEHICLE EFFICIENCY PROFILE)
+ * =============================================================================================== */
+
+function VehicleProfileDrawer({
+  vehicle,
+  isOpen,
+  onClose,
+  onOpenMethodology,
+}: {
+  vehicle: DemoCar | null
+  isOpen: boolean
+  onClose: () => void
+  onOpenMethodology: () => void
+}) {
+  if (!vehicle) return null
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl p-6">
+        <DialogHeader>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <DialogTitle className="text-lg font-bold text-slate-900">
+                {vehicle.registrationNumber || 'Demo Vehicle'}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                {[vehicle.model, vehicle.branchLabel, vinTail(vehicle.vin)].filter(Boolean).join(' · ')}
+              </DialogDescription>
+            </div>
+            {vehicle.kmPerLitre ? (
+              <Badge className="bg-emerald-100 text-emerald-800 text-xs font-bold">
+                {formatKm(vehicle.kmPerLitre.value)} km/L
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs font-medium text-slate-500">
+                Awaiting Data
+              </Badge>
+            )}
+          </div>
+        </DialogHeader>
+
+        {/* 4 Summary Stat Tiles */}
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Fuel Used</span>
+            <p className="mt-1 text-lg font-bold text-slate-900">{formatLitres(vehicle.approvedLitres)} L</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Fuel Cost</span>
+            <p className="mt-1 text-lg font-bold text-slate-900">
+              {formatCurrency(vehicle.approvedLitres * ESTIMATED_FUEL_PRICE_INR)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Distance</span>
+            <p className="mt-1 text-lg font-bold text-slate-900">{formatKm(vehicle.driveKm)} km</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Last Odometer</span>
+            <p className="mt-1 text-lg font-bold text-slate-900">
+              {vehicle.lastFillOdometerKm ? `${formatKm(vehicle.lastFillOdometerKm)} km` : '—'}
+            </p>
+          </div>
+        </div>
+
+        {/* Fuel History */}
+        <div className="mt-6 space-y-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">Fuel Fills History</h3>
+          <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-2xs">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-100 bg-slate-50 text-[11px] font-semibold text-slate-600">
+                <tr>
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Request #</th>
+                  <th className="px-3 py-2 text-right">Quantity</th>
+                  <th className="px-3 py-2 text-right">Odometer</th>
+                  <th className="px-3 py-2 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {vehicle.fills.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-4 text-center text-slate-400">
+                      No fuel fills recorded.
+                    </td>
+                  </tr>
+                ) : (
+                  vehicle.fills.map((f, i) => (
+                    <tr key={i}>
+                      <td className="px-3 py-2 text-slate-600">{formatYmd(f.date)}</td>
+                      <td className="px-3 py-2 font-mono font-medium text-slate-800">{f.requestNumber}</td>
+                      <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
+                        {formatLitres(f.litres)} L
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        {f.odometerKm ? `${formatKm(f.odometerKm)} km` : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <StatusBadge status={f.status} label={f.statusLabel} />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Drives History */}
+        <div className="mt-6 space-y-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">Demo Drives History</h3>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-100 bg-slate-50 text-[11px] font-semibold text-slate-600">
+                <tr>
+                  <th className="px-3 py-2">Gate Out Date</th>
+                  <th className="px-3 py-2">Pass #</th>
+                  <th className="px-3 py-2 text-right">Trip Distance</th>
+                  <th className="px-3 py-2 text-right">GPS Tracked</th>
+                  <th className="px-3 py-2 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {vehicle.drives.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-4 text-center text-slate-400">
+                      No gate passes recorded.
+                    </td>
+                  </tr>
+                ) : (
+                  vehicle.drives.map((d, i) => (
+                    <tr key={i}>
+                      <td className="px-3 py-2 text-slate-600">{formatIndiaDateTime(d.gateOutAt)}</td>
+                      <td className="px-3 py-2 font-mono font-medium text-slate-800">{d.passNo}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-900">
+                        {d.odometerKm !== null ? `${formatKm(d.odometerKm)} km` : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        {d.gpsKm !== null ? `${formatKm(d.gpsKm)} km` : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <Badge variant="outline" className="text-[10px] font-semibold">
+                          {d.status}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <Button variant="outline" onClick={onClose} className="rounded-xl">
+            Close
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* =================================================================================================
+ * REUSABLE UI PRIMITIVES
+ * =============================================================================================== */
+
+function LayoutGridIcon(props: any) {
+  return (
+    <svg
+      {...props}
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect width="7" height="7" x="3" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="14" rx="1" />
+      <rect width="7" height="7" x="3" y="14" rx="1" />
+    </svg>
+  )
+}
+
+function StatusBadge({ status, label }: { status: string; label: string }) {
+  const norm = (status || '').toLowerCase()
+  if (norm === 'approved') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+        <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
+        <span>{label}</span>
+      </span>
+    )
+  }
+  if (norm === 'rejected') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-800">
+        <X className="h-3 w-3 text-rose-600 shrink-0" />
+        <span>{label}</span>
+      </span>
+    )
+  }
+  if (norm === 'sent_back' || norm.includes('hold')) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+        <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0" />
+        <span>{label}</span>
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+      <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+      <span>{label}</span>
+    </span>
+  )
+}
 
 function StatePanel({
   icon,
   title,
   children,
   action,
-  role,
   tone = 'muted',
 }: {
   icon: ReactNode
   title: string
   children: ReactNode
   action?: ReactNode
-  role?: 'alert' | 'status'
   tone?: Tone
 }) {
   return (
-    <div role={role} className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center shadow-xs">
+    <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center shadow-xs">
       <div
         className="mx-auto flex h-10 w-10 items-center justify-center rounded-full"
         style={{ backgroundColor: TONE[tone].bg, color: TONE[tone].fg }}
@@ -669,632 +2798,26 @@ function StatePanel({
         {icon}
       </div>
       <h2 className="mt-3 text-sm font-semibold text-slate-900">{title}</h2>
-      <div className="mx-auto mt-1 max-w-md text-sm text-slate-600">{children}</div>
-      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
+      <div className="mx-auto mt-1 max-w-md text-xs text-slate-600">{children}</div>
+      {action && <div className="mt-4 flex justify-center">{action}</div>}
     </div>
   )
 }
 
 function LoadingSkeleton() {
   return (
-    <div aria-busy="true" className="space-y-4">
-      <p role="status" className="sr-only">
-        Loading fuel figures…
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-            <div className="h-3 w-24 rounded bg-slate-100 motion-safe:animate-pulse" />
-            <div className="mt-3 h-7 w-20 rounded bg-slate-100 motion-safe:animate-pulse" />
-            <div className="mt-3 h-3 w-40 rounded bg-slate-100 motion-safe:animate-pulse" />
-          </div>
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-24 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs animate-pulse" />
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-5">
-        <div className="h-56 rounded-2xl border border-slate-200 bg-white motion-safe:animate-pulse lg:col-span-3" />
-        <div className="h-56 rounded-2xl border border-slate-200 bg-white motion-safe:animate-pulse lg:col-span-2" />
-      </div>
-      <div className="h-72 rounded-2xl border border-slate-200 bg-white motion-safe:animate-pulse" />
-    </div>
-  )
-}
-
-// ── KPI row ────────────────────────────────────────────────────────────────────────────────────
-
-function KpiTile({
-  icon,
-  label,
-  value,
-  unit,
-  valueTone,
-  children,
-}: {
-  icon: ReactNode
-  label: string
-  value: string
-  unit: string
-  valueTone?: Tone
-  children: ReactNode
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-      <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-        {icon}
-        {label}
-      </p>
-      <p className="mt-2 flex items-baseline gap-1.5">
-        <span
-          className="text-2xl font-semibold tabular-nums text-slate-900"
-          style={valueTone ? { color: TONE[valueTone].fg } : undefined}
-        >
-          {value}
-        </span>
-        <span className="text-sm font-medium text-slate-500">{unit}</span>
-      </p>
-      <div className="mt-1.5 space-y-0.5 text-xs leading-relaxed text-slate-500">{children}</div>
-    </div>
-  )
-}
-
-function KpiRow({ data }: { data: FuelManagementResponse }) {
-  const { kpis } = data
-  const warnings = kpis.checksNeedingAttention
-  const notes = data.checks.filter((c) => c.severity === 'info').length
-  const iconClass = 'h-4 w-4 text-slate-400'
-
-  return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <KpiTile icon={<Fuel className={iconClass} aria-hidden />} label="Fuel approved" value={formatLitres(kpis.approvedLitres)} unit="L">
-        <p>
-          {formatCount(kpis.approvedRequests)} approved {plural(kpis.approvedRequests, 'request', 'requests')}, every
-          purpose.
-        </p>
-      </KpiTile>
-
-      <KpiTile
-        icon={<Hourglass className={iconClass} aria-hidden />}
-        label="Awaiting approval"
-        value={formatCount(kpis.awaiting.total)}
-        unit={plural(kpis.awaiting.total, 'request', 'requests')}
-      >
-        {kpis.awaiting.total === 0 ? (
-          <p>Nothing is waiting for a decision.</p>
-        ) : (
-          <>
-            <p className="tabular-nums">
-              Waiting on{' '}
-              {kpis.awaiting.byStage.map((s, i) => (
-                <span key={s.stage}>
-                  {i > 0 ? ' · ' : ''}
-                  <span className="font-medium text-slate-700">{s.label}</span> {formatCount(s.count)}
-                </span>
-              ))}
-            </p>
-            <p>Not counted in fuel approved.</p>
-          </>
-        )}
-      </KpiTile>
-
-      <KpiTile icon={<Gauge className={iconClass} aria-hidden />} label="Demo drive distance" value={formatKm(kpis.demoDriveKm)} unit="km">
-        <p>
-          Gate-in minus gate-out odometer on {formatCount(kpis.demoDrives)} returned{' '}
-          {plural(kpis.demoDrives, 'drive', 'drives')}.
-        </p>
-        <p>
-          {kpis.gpsVerifiedDrives > 0
-            ? `GPS-verified: ${formatKm(kpis.gpsVerifiedKm)} km on ${formatCount(kpis.gpsVerifiedDrives)} ${plural(kpis.gpsVerifiedDrives, 'drive', 'drives')}.`
-            : 'No drive in this period has a GPS-verified distance yet.'}
-        </p>
-      </KpiTile>
-
-      <KpiTile
-        icon={<TriangleAlert className={iconClass} aria-hidden />}
-        label="Needs a look"
-        value={formatCount(warnings)}
-        unit={plural(warnings, 'warning', 'warnings')}
-        valueTone={warnings > 0 ? 'warning' : undefined}
-      >
-        <p>
-          {warnings > 0
-            ? "Records whose numbers don't add up."
-            : notes > 0
-              ? 'No warnings in this period.'
-              : 'Nothing in this period looks inconsistent.'}
-        </p>
-        {notes > 0 ? (
-          <p>
-            Plus {formatCount(notes)} {plural(notes, 'note', 'notes')} about records the screen could not use.
-          </p>
-        ) : null}
-      </KpiTile>
-    </div>
-  )
-}
-
-// ── Needs a look ───────────────────────────────────────────────────────────────────────────────
-
-function ChecksSection({
-  checks,
-  showAll,
-  onToggleShowAll,
-  className,
-}: {
-  checks: FuelCheck[]
-  showAll: boolean
-  onToggleShowAll: () => void
-  className?: string
-}) {
-  // Warnings first, then notes; server order within each group (Array.prototype.sort is stable).
-  const sorted = useMemo(
-    () => [...checks].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'warning' ? -1 : 1)),
-    [checks],
-  )
-  const warnings = sorted.filter((c) => c.severity === 'warning').length
-  const notes = sorted.length - warnings
-  const visible = showAll ? sorted : sorted.slice(0, CHECKS_PREVIEW_COUNT)
-  const hiddenCount = sorted.length - visible.length
-
-  return (
-    <section aria-labelledby="fm-checks-heading" className={cn('rounded-2xl border border-slate-200 bg-white shadow-xs', className)}>
-      <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-slate-100 px-4 py-3">
-        <h2 id="fm-checks-heading" className="text-sm font-semibold text-slate-900">
-          Needs a look
-        </h2>
-        {sorted.length > 0 ? (
-          <p className="text-xs text-slate-500 tabular-nums">
-            {formatCount(warnings)} {plural(warnings, 'warning', 'warnings')} · {formatCount(notes)}{' '}
-            {plural(notes, 'note', 'notes')}
-          </p>
-        ) : null}
-      </header>
-
-      {sorted.length === 0 ? (
-        <div className="flex items-start gap-3 px-4 py-6">
-          <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-            style={{ backgroundColor: TONE.success.bg, color: TONE.success.fg }}
-            aria-hidden
-          >
-            <CircleCheck className="h-4 w-4" />
-          </span>
-          <div>
-            <p className="text-sm font-medium text-slate-900">All clear</p>
-            <p className="text-sm text-slate-600">
-              No odometer, gate pass or duplicate problems in this period, and every demo fill is linked to a car.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <>
-          <ul id="fm-checks-list" className="divide-y divide-slate-100">
-            {visible.map((check, index) => (
-              <CheckItem key={`${check.kind}-${check.requestNumber}-${index}`} check={check} />
-            ))}
-          </ul>
-          {sorted.length > CHECKS_PREVIEW_COUNT ? (
-            <div className="border-t border-slate-100 px-4 py-2">
-              <button
-                type="button"
-                aria-expanded={showAll}
-                aria-controls="fm-checks-list"
-                onClick={onToggleShowAll}
-                className="rounded-md px-1 py-1 text-xs font-semibold text-indigo-700 hover:text-indigo-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
-              >
-                {showAll ? 'Show fewer' : `Show all ${formatCount(sorted.length)} (${formatCount(hiddenCount)} more)`}
-              </button>
-            </div>
-          ) : null}
-        </>
-      )}
-    </section>
-  )
-}
-
-function CheckItem({ check }: { check: FuelCheck }) {
-  const tone = TONE[check.severity === 'warning' ? 'warning' : 'info']
-  const tail = vinTail(check.vin)
-  return (
-    <li className="flex gap-3 px-4 py-3">
-      <span
-        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-        style={{ backgroundColor: tone.bg, color: tone.fg }}
-        aria-hidden
-      >
-        {check.severity === 'warning' ? <TriangleAlert className="h-3.5 w-3.5" /> : <Info className="h-3.5 w-3.5" />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-medium text-slate-900">{CHECK_TITLE[check.kind] ?? 'Check this record'}</span>
-          <span
-            className="rounded-full border px-2 py-px text-[11px] font-semibold"
-            style={{ backgroundColor: tone.bg, color: tone.fg, borderColor: tone.border }}
-          >
-            {check.severity === 'warning' ? 'Warning' : 'Note'}
-          </span>
-        </p>
-        <p className="mt-0.5 text-sm text-slate-600">{check.message}</p>
-        <p className="mt-1 break-words text-xs text-slate-500">
-          <span className="font-mono text-slate-700">{check.requestNumber}</span>
-          {check.vehicleLabel ? ` · ${check.vehicleLabel}` : ''}
-          {tail ? ` · ${tail}` : ''}
-        </p>
-      </div>
-    </li>
-  )
-}
-
-// ── Fuel by purpose ────────────────────────────────────────────────────────────────────────────
-
-function PurposeSection({ rows, className }: { rows: FuelManagementResponse['byPurpose']; className?: string }) {
-  const maxLitres = rows.reduce((max, r) => Math.max(max, Number.isFinite(r.approvedLitres) ? r.approvedLitres : 0), 0)
-
-  return (
-    <section aria-labelledby="fm-purpose-heading" className={cn('rounded-2xl border border-slate-200 bg-white shadow-xs', className)}>
-      <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-slate-100 px-4 py-3">
-        <h2 id="fm-purpose-heading" className="text-sm font-semibold text-slate-900">
-          Fuel by purpose
-        </h2>
-        <p className="text-xs text-slate-500">Approved litres in this period</p>
-      </header>
-
-      {rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-slate-600">No fuel requests in this period.</p>
-      ) : (
-        <ul className="space-y-4 px-4 py-4">
-          {rows.map((row) => {
-            const share = maxLitres > 0 ? Math.max(0, row.approvedLitres) / maxLitres : 0
-            return (
-              <li key={row.purpose}>
-                <div className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="min-w-0 break-words font-medium text-slate-800">{row.label}</span>
-                  <span className="shrink-0 font-semibold tabular-nums text-slate-900">{formatLitres(row.approvedLitres)} L</span>
-                </div>
-                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100" aria-hidden>
-                  {share > 0 ? (
-                    <div
-                      className="h-2 rounded-full"
-                      style={{ width: `${Math.max(2, share * 100)}%`, backgroundColor: 'var(--dashboard-primary)' }}
-                    />
-                  ) : null}
-                </div>
-                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 tabular-nums">
-                  <span>
-                    {formatCount(row.approvedRequests)} approved
-                  </span>
-                  {row.awaitingRequests > 0 ? (
-                    <span
-                      className="rounded-full border px-2 py-px text-[11px] font-semibold"
-                      style={{ backgroundColor: TONE.info.bg, color: TONE.info.fg, borderColor: TONE.info.border }}
-                    >
-                      {formatCount(row.awaitingRequests)} awaiting
-                    </span>
-                  ) : null}
-                </p>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-// ── Demo cars ──────────────────────────────────────────────────────────────────────────────────
-
-function StatusPill({ label, tone }: { label: string; tone: Tone }) {
-  const t = TONE[tone]
-  return (
-    <span
-      className="inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-      style={{ backgroundColor: t.bg, color: t.fg, borderColor: t.border }}
-    >
-      {label}
-    </span>
-  )
-}
-
-function DemoCarsSection({
-  cars,
-  expandedVins,
-  onToggle,
-}: {
-  cars: DemoCar[]
-  expandedVins: ReadonlySet<string>
-  onToggle: (vin: string) => void
-}) {
-  return (
-    <section aria-labelledby="fm-cars-heading" className="rounded-2xl border border-slate-200 bg-white shadow-xs">
-      <header className="border-b border-slate-100 px-4 py-3">
-        <h2 id="fm-cars-heading" className="text-sm font-semibold text-slate-900">
-          Demo cars
-        </h2>
-        <p className="mt-0.5 max-w-3xl text-xs leading-relaxed text-slate-500">
-          A fill counts towards a car only when the request names exactly one demo car, by plate or VIN. km per litre
-          uses the odometer readings at two fills — not drive distance, because fuel also covers driving that isn&apos;t
-          a demo.
-        </p>
-      </header>
-
-      {cars.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-slate-600">No demo car had a linked fill or a drive in this period.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="fuel-approvals-clean-table w-full min-w-[920px] text-left text-sm">
-            <thead className="border-b border-slate-200">
-              <tr>
-                <th scope="col" className="px-4 py-2.5 text-left">Car</th>
-                <th scope="col" className="px-4 py-2.5 text-right">Fuel approved</th>
-                <th scope="col" className="px-4 py-2.5 text-right">Odometer at last fill</th>
-                <th scope="col" className="px-4 py-2.5 text-right">Since last fill</th>
-                <th scope="col" className="px-4 py-2.5 text-right">Drives</th>
-                <th scope="col" className="px-4 py-2.5 text-left">km per litre</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cars.map((car) => (
-                <DemoCarRows key={car.vin} car={car} expanded={expandedVins.has(car.vin)} onToggle={() => onToggle(car.vin)} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  )
-}
-
-function DemoCarRows({ car, expanded, onToggle }: { car: DemoCar; expanded: boolean; onToggle: () => void }) {
-  const detailId = `fm-car-detail-${car.vin.replace(/[^A-Za-z0-9_-]/g, '')}`
-  const approvedFills = car.fills.filter((f) => f.status === 'approved').length
-  const awaitingFills = car.fills.length - approvedFills
-  const backwards = Boolean(car.kmPerLitreNote && car.kmPerLitreNote.toLowerCase().includes('backwards'))
-  const subLine = [car.model, vinTail(car.vin), car.branchLabel].filter(Boolean).join(' · ')
-
-  return (
-    <>
-      <tr className="border-b border-slate-100 align-top">
-        <td className="px-4 py-3">
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-controls={detailId}
-            onClick={onToggle}
-            className="flex w-full items-start gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
-          >
-            <ChevronRight
-              className={cn('mt-0.5 h-4 w-4 shrink-0 text-slate-400 motion-safe:transition-transform', expanded && 'rotate-90')}
-              aria-hidden
-            />
-            <span className="min-w-0">
-              <span className="block font-semibold text-slate-900">{car.registrationNumber || 'No registration'}</span>
-              <span className="block text-xs text-slate-500">{subLine}</span>
-              <span className="sr-only"> — fills and drives</span>
-            </span>
-          </button>
-        </td>
-        <td className="px-4 py-3 text-right tabular-nums">
-          <span className="font-semibold text-slate-900">{formatLitres(car.approvedLitres)} L</span>
-          <span className="block text-xs text-slate-500">
-            {formatCount(approvedFills)} approved {plural(approvedFills, 'fill', 'fills')}
-            {awaitingFills > 0 ? ` · ${formatCount(awaitingFills)} awaiting` : ''}
-          </span>
-        </td>
-        <td className="px-4 py-3 text-right tabular-nums">
-          {car.lastFillDate ? (
-            <>
-              <span className="font-semibold text-slate-900">
-                {car.lastFillOdometerKm !== null ? `${formatKm(car.lastFillOdometerKm)} km` : 'No reading'}
-              </span>
-              <span className="block text-xs text-slate-500">{formatYmd(car.lastFillDate)}</span>
-            </>
-          ) : (
-            <>
-              <span className="text-slate-400">—</span>
-              <span className="block text-xs text-slate-500">No approved fill</span>
-            </>
-          )}
-        </td>
-        <td className="px-4 py-3 text-right tabular-nums">
-          {car.kmSinceLastFill !== null ? (
-            <>
-              <span className="font-semibold text-slate-900">{formatKm(car.kmSinceLastFill)} km</span>
-              <span className="block text-xs text-slate-500">To the latest return</span>
-            </>
-          ) : (
-            <>
-              <span className="text-slate-400">—</span>
-              <span className="block text-xs text-slate-500">Not enough readings</span>
-            </>
-          )}
-        </td>
-        <td className="px-4 py-3 text-right tabular-nums">
-          {car.drives.length > 0 ? (
-            <>
-              <span className="font-semibold text-slate-900">
-                {formatCount(car.drives.length)} · {formatKm(car.driveKm)} km
-              </span>
-              <span className="block text-xs text-slate-500">
-                {car.gpsKm > 0 ? `GPS-verified ${formatKm(car.gpsKm)} km` : 'None GPS-verified'}
-              </span>
-            </>
-          ) : (
-            <span className="text-xs text-slate-500">No drives</span>
-          )}
-        </td>
-        <td className="px-4 py-3">
-          {car.kmPerLitre ? (
-            <>
-              <span className="font-semibold tabular-nums text-slate-900">{formatKm(car.kmPerLitre.value)} km/L</span>
-              <span className="block text-xs text-slate-500">
-                From {formatCount(car.kmPerLitre.fillsUsed)} fills
-              </span>
-            </>
-          ) : (
-            <span
-              className="block max-w-[15rem] text-xs leading-relaxed text-slate-600"
-              style={backwards ? { color: TONE.warning.fg } : undefined}
-            >
-              {car.kmPerLitreNote || 'Needs a second fill with an odometer reading.'}
-            </span>
-          )}
-        </td>
-      </tr>
-      <tr id={detailId} hidden={!expanded} className="border-b border-slate-100">
-        <td colSpan={6} className="bg-slate-50 px-4 pb-4 pt-2">
-          {/* Sticky + viewport-capped so, on a phone, the detail stays in view while the wide parent
-              table scrolls sideways; each inner table scrolls on its own. */}
-          <div className="sticky left-4 max-w-[calc(100vw-5rem)] lg:max-w-none">
-            <CarDetail car={car} />
-          </div>
-        </td>
-      </tr>
-    </>
-  )
-}
-
-function CarDetail({ car }: { car: DemoCar }) {
-  return (
-    <div className="space-y-3">
+      <div className="h-44 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs animate-pulse" />
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="min-w-0">
-          <h3 className="text-xs font-semibold text-slate-700">Fuel fills</h3>
-          {car.fills.length === 0 ? (
-            <p className="mt-1 text-xs text-slate-500">No fill linked to this car in the period.</p>
-          ) : (
-            <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200 bg-white">
-              <table className="fuel-approvals-clean-table w-full min-w-[440px] text-left text-xs">
-                <thead className="border-b border-slate-200">
-                  <tr>
-                    <th scope="col" className="px-3 py-2 text-left">Date</th>
-                    <th scope="col" className="px-3 py-2 text-left">Request</th>
-                    <th scope="col" className="px-3 py-2 text-right">Litres</th>
-                    <th scope="col" className="px-3 py-2 text-right">Odometer</th>
-                    <th scope="col" className="px-3 py-2 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {car.fills.map((fill, index) => (
-                    <tr key={`${fill.requestNumber}-${index}`}>
-                      <td className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-700">{formatYmd(fill.date)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-700">{fill.requestNumber}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-900">{formatLitres(fill.litres)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-900">
-                        {fill.odometerKm !== null ? `${formatKm(fill.odometerKm)} km` : <span className="text-slate-400">No reading</span>}
-                      </td>
-                      <td className="px-3 py-2">
-                        <StatusPill label={fill.statusLabel} tone={fuelStatusTone(fill.status)} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        <div className="min-w-0">
-          <h3 className="text-xs font-semibold text-slate-700">Demo drives</h3>
-          {car.drives.length === 0 ? (
-            <p className="mt-1 text-xs text-slate-500">No gate pass for this car in the period.</p>
-          ) : (
-            <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200 bg-white">
-              <table className="fuel-approvals-clean-table w-full min-w-[440px] text-left text-xs">
-                <thead className="border-b border-slate-200">
-                  <tr>
-                    <th scope="col" className="px-3 py-2 text-left">Gate out</th>
-                    <th scope="col" className="px-3 py-2 text-left">Pass</th>
-                    <th scope="col" className="px-3 py-2 text-right">Odometer</th>
-                    <th scope="col" className="px-3 py-2 text-right">GPS</th>
-                    <th scope="col" className="px-3 py-2 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {car.drives.map((drive, index) => {
-                    const info = getGatePassStatusInfo(drive.status)
-                    return (
-                      <tr key={`${drive.passNo}-${index}`}>
-                        <td className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-700">
-                          {formatIndiaDateTime(drive.gateOutAt) ?? '—'}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-700">{drive.passNo}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-900">
-                          {drive.odometerKm !== null ? `${formatKm(drive.odometerKm)} km` : <span className="text-slate-400">—</span>}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-900">
-                          {drive.gpsKm !== null ? `${formatKm(drive.gpsKm)} km` : <span className="text-slate-400">—</span>}
-                        </td>
-                        <td className="px-3 py-2">
-                          <StatusPill label={info.pillLabel} tone={GATE_PASS_TONE[info.tone]} />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <div className="h-64 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs animate-pulse" />
+        <div className="h-64 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs animate-pulse" />
       </div>
-
-      <p className="text-xs leading-relaxed text-slate-500">
-        {car.kmPerLitre
-          ? `km per litre: odometer gained between the first and last of ${formatCount(car.kmPerLitre.fillsUsed)} approved fills with readings, divided by the litres added after the first of them.`
-          : `km per litre: ${car.kmPerLitreNote || 'Needs a second fill with an odometer reading.'}`}{' '}
-        Odometer on a drive is gate-in minus gate-out; GPS is the tracker&apos;s distance where the trip was matched.
-      </p>
     </div>
   )
 }
 
-// ── Other fuel ─────────────────────────────────────────────────────────────────────────────────
-
-function OtherFuelSection({ rows }: { rows: FuelManagementResponse['otherFuel'] }) {
-  return (
-    <section aria-labelledby="fm-other-heading" className="rounded-2xl border border-slate-200 bg-white shadow-xs">
-      <header className="border-b border-slate-100 px-4 py-3">
-        <h2 id="fm-other-heading" className="text-sm font-semibold text-slate-900">
-          Other fuel
-        </h2>
-        <p className="mt-0.5 text-xs text-slate-500">
-          Fuel requested for anything other than demo drives. These requests aren&apos;t linked to a demo car.
-        </p>
-      </header>
-
-      {rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-slate-600">No fuel for other purposes in this period.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="fuel-approvals-clean-table w-full min-w-[820px] text-left text-sm">
-            <thead className="border-b border-slate-200">
-              <tr>
-                <th scope="col" className="px-4 py-2.5 text-left">Date</th>
-                <th scope="col" className="px-4 py-2.5 text-left">Request</th>
-                <th scope="col" className="px-4 py-2.5 text-left">Purpose</th>
-                <th scope="col" className="px-4 py-2.5 text-left">Vehicle</th>
-                <th scope="col" className="px-4 py-2.5 text-left">Branch</th>
-                <th scope="col" className="px-4 py-2.5 text-right">Litres</th>
-                <th scope="col" className="px-4 py-2.5 text-left">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((row, index) => (
-                <tr key={`${row.requestNumber}-${index}`} className="align-top">
-                  <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-700">{formatYmd(row.date)}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-slate-700">{row.requestNumber}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-slate-800">{row.purposeLabel}</td>
-                  <td className="min-w-[12rem] max-w-[20rem] break-words px-4 py-2.5 text-slate-700">{row.vehicleLabel || '—'}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-slate-700">{row.branchLabel}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums text-slate-900">
-                    {formatLitres(row.litres)} L
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <StatusPill label={row.statusLabel} tone={fuelStatusTone(row.status)} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  )
-}

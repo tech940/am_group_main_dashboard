@@ -31,24 +31,20 @@ import { getUserPermissionSnapshot } from '@/lib/permissions/service'
 export const FUEL_MANAGEMENT_VIEW_PERMISSION = 'fuel_management.view' as const
 export type FuelManagementViewPermission = typeof FUEL_MANAGEMENT_VIEW_PERMISSION
 
-/** Permissions whose grant also opens this section: it is built from those two sections' records. */
-const GRANTING_PERMISSIONS = [FUEL_MANAGEMENT_VIEW_PERMISSION, 'fuel_approvals.view', 'gate_pass.view'] as const
+/**
+ * The ONE permission whose grant opens this section.
+ *
+ * ⚠️ It used to be three: holding fuel_approvals.view or gate_pass.view opened Fuel Management as well. And
+ * gate_pass.view is granted to nearly every role, so in practice the section reached almost the whole company.
+ * The owner restricted it on 2026-09-11 to EA, MD and Developer — which is also why the CEO and HR, who keep
+ * Fuel Approvals, do not get this. Anyone else needs an individual Access-Map tick on fuel_management.view.
+ */
+const GRANTING_PERMISSIONS = [FUEL_MANAGEMENT_VIEW_PERMISSION] as const
 
 const FUEL_MANAGEMENT_VIEW_ROLES: ReadonlySet<string> = new Set([
   'developer',
-  'admin',
-  'ceo',
-  'accounts',
-  'finance_head',
-  'finance_team',
   'md',
-  'ed',
   'ea',
-  'eba',
-  'hr',
-  'general_manager',
-  'service_manager',
-  'sales_manager',
 ])
 
 export async function canViewFuelManagement(appUser: AppUser | null | undefined): Promise<boolean> {
@@ -62,4 +58,44 @@ export async function canViewFuelManagement(appUser: AppUser | null | undefined)
   if (await isPermissionExplicitlyAllowed(appUser, FUEL_MANAGEMENT_VIEW_PERMISSION)) return true
 
   return FUEL_MANAGEMENT_VIEW_ROLES.has(String(appUser.role ?? '').trim().toLowerCase())
+}
+
+/**
+ * The ONE statement of who may change what the numbers are measured AGAINST.
+ *
+ * Expected mileage, tank capacity and every threshold are configuration (migration 0064) precisely so that
+ * nobody has to edit code to change them. The cost of that is real: raising an expected figure re-labels a
+ * whole fleet as underperforming, and lowering it makes a genuine problem disappear from every screen at
+ * once. So this is deliberately a much shorter list than who may LOOK.
+ *
+ * ⚠️ It does NOT inherit the view grants. canViewFuelManagement opens to anyone holding fuel_approvals.view
+ * or gate_pass.view, which is most of the company's managers — correct for reading, wrong for setting the
+ * benchmark they are read against. Owner's decision, 2026-09-11: MD, GM and admin.
+ *
+ * The permission key already exists — `fuel_management` declares an `edit` action in
+ * lib/permissions/registry.ts — so granting it needs no migration and no PERMISSION_CACHE_VERSION bump.
+ *
+ * Every change made through this permission is recorded in fuel_config_events, which is append-only by
+ * trigger: the previous value survives even if someone edits a benchmark back.
+ */
+export const FUEL_MANAGEMENT_EDIT_PERMISSION = 'fuel_management.edit' as const
+
+const FUEL_MANAGEMENT_EDIT_ROLES: ReadonlySet<string> = new Set([
+  'developer',
+  'admin',
+  'md',
+  'general_manager',
+])
+
+export async function canEditFuelManagement(appUser: AppUser | null | undefined): Promise<boolean> {
+  if (!appUser) return false
+
+  if (await isPermissionDenied(appUser, FUEL_MANAGEMENT_EDIT_PERMISSION)) return false
+
+  const snapshot = await getUserPermissionSnapshot(appUser.id)
+  if (snapshot.effective[FUEL_MANAGEMENT_EDIT_PERMISSION] === true) return true
+
+  if (await isPermissionExplicitlyAllowed(appUser, FUEL_MANAGEMENT_EDIT_PERMISSION)) return true
+
+  return FUEL_MANAGEMENT_EDIT_ROLES.has(String(appUser.role ?? '').trim().toLowerCase())
 }

@@ -71,7 +71,12 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // v38: registers showroom_images (Showroom Images) in PERMISSION_GROUPS and SECTION_ROUTES.
 // v39: grants gate_pass view & create to all roles and employees with zero role restrictions.
 // v40: registers fuel_management (PERMISSION_GROUPS, SECTION_ROUTES, DEFAULT_VISIBLE_SECTIONS)
-const PERMISSION_CACHE_VERSION = 'v40'
+// v41: RESTRICTS both fuel sections (owner, 2026-09-11): off DEFAULT_VISIBLE_SECTIONS, fuel_approvals taken out
+//      of eight role templates, and FUEL_SECTION_DEFAULT_GRANTS stating the default audience — Fuel Management
+//      → EA; Fuel Approvals → EA, CEO, HR; MD and Developer always. ⚠️ A NARROWING needs the bump as much as a
+//      widening: every v40 snapshot still says `true` for the managers, accounts and finance roles that just
+//      lost the section, so without it they keep the sidebar link for 75 minutes and hit forbidden() on click.
+const PERMISSION_CACHE_VERSION = 'v41'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -273,6 +278,46 @@ function applySensitiveReportDefaults(values: Record<string, boolean>, role: Per
   if (isSuperAdminRole(role) || SENSITIVE_REPORT_DEFAULT_ROLES.has(role)) return
   for (const key of SENSITIVE_REPORT_PERMISSION_KEYS) {
     if (key in values) values[key] = false
+  }
+}
+
+/*
+ * ── The two fuel sections: an explicit default audience (owner's decision, 2026-09-11) ─────────────
+ *
+ * Both are off DEFAULT_VISIBLE_SECTIONS, but restricted-by-default alone does NOT produce the audience
+ * the owner chose. Measured against this resolver:
+ *   - the global-access blanket ASSIGNS false to restricted keys, so EA, the CEO and HR would LOSE Fuel
+ *     Approvals — and the CEO is its only approver, with requests waiting;
+ *   - the tier resolver gives a tracked role its whole track's templates, so VP (not a global-access
+ *     role, so never clamped) would inherit Fuel Approvals from the CEO's template;
+ *   - HR's template filters out every restricted key, while `hr` and `admin` are family 'super' in
+ *     lib/permissions/tiers.ts, whose tier bundle is EVERY key — so templates cannot express this.
+ * So the default is stated here, per key, and applied after every other default layer and BEFORE the
+ * overrides merge. An individual Access-Map tick still wins, exactly as the owner asked.
+ *
+ * md / developer are left alone: the super-admin guardrail at the end of resolution grants them all.
+ */
+const FUEL_SECTION_DEFAULT_GRANTS: Record<'fuel_management' | 'fuel_approvals', Partial<Record<PermissionRole, readonly string[]>>> = {
+  fuel_management: {
+    ea: ['view'],
+  },
+  fuel_approvals: {
+    // The final approver. What lets them act is canUserApproveStage in lib/fuel-approvals/access.ts.
+    ceo: ['view', 'approve', 'audit'],
+    ea: ['view', 'create'],
+    // Raised 18 of the first 20 fuel requests.
+    hr: ['view', 'create'],
+  },
+}
+
+export function applyFuelSectionDefaults(values: Record<string, boolean>, role: PermissionRole) {
+  if (isSuperAdminRole(role)) return
+  for (const [group, byRole] of Object.entries(FUEL_SECTION_DEFAULT_GRANTS)) {
+    const actions = new Set(byRole[role] ?? [])
+    for (const key of Object.keys(values)) {
+      if (!key.startsWith(`${group}.`)) continue
+      values[key] = actions.has(key.slice(group.length + 1))
+    }
   }
 }
 
@@ -663,6 +708,10 @@ export function resolveEffectiveSnapshot(
   }
   // Sensitive reports: deny by default to roles outside the top-management allowlist (still grantable).
   applySensitiveReportDefaults(roleDefaults, role)
+  // Fuel sections: the owner's explicit default audience. It must run AFTER the global-access blanket
+  // above, which would otherwise take Fuel Approvals from the CEO — its only approver — and BEFORE the
+  // overrides merge, so an individual Access-Map tick still wins.
+  applyFuelSectionDefaults(roleDefaults, role)
   constrainSnapshotToBranch(roleDefaults, role, branchAccess)
 
   // Overrides merge LAST, so an explicit Deny wins over the role / brand / global default.

@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { optimizeImage } from '@/lib/images/optimize'
+import { canViewFuelApprovals } from '@/lib/fuel-approvals/view-access'
 
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthenticatedAppUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // A fuel slip is only ever attached to a Fuel Approvals request, so only someone who can open that
+    // section may upload one. A login alone used to be enough to write files into storage.
+    if (!(await canViewFuelApprovals(user))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
     const formData = await request.formData()

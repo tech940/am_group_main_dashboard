@@ -1010,7 +1010,13 @@ export const DEFAULT_VISIBLE_SECTIONS = new Set<string>([
   // Broadly visible on purpose: every user gets a personal task inbox. Who may DELEGATE is role-gated
   // (lib/delegation/access.ts), and the list only shows tasks a user created or was assigned.
   'delegation_tasks',
-  'purchase_orders', 'finance_orders', 'petty_cash', 'fuel_management', 'fuel_approvals', 'am_finance', 'user_management', 'scrap_erp', 'showroom_images',
+  'purchase_orders', 'finance_orders', 'petty_cash', 'am_finance', 'user_management', 'scrap_erp', 'showroom_images',
+  // ⚠️ fuel_management and fuel_approvals were on this list until 2026-09-11 and are deliberately GONE —
+  // the owner restricted both. Taking them off only makes them restricted-by-default; WHO still gets
+  // them by default is FUEL_SECTION_DEFAULT_GRANTS in lib/permissions/service.ts (the same split
+  // SENSITIVE_REPORT_SECTIONS uses): Fuel Management → EA; Fuel Approvals → EA, the CEO (its final
+  // approver) and HR (who raises the requests); MD and Developer always. An individual Access-Map tick
+  // still wins.
   'kia.business_excellence', 'kia.service_appointment', 'kia.demo_job_cards', 'kia.demo_cars_list',
   'kia.sales_report', 'kia.stock_report', 'kia.bookings', 'kia.proforma',
   'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.demo_job_cards',
@@ -1302,9 +1308,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.bookings'], ['view', 'edit', 'audit']),
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
     ...keysForGroups(['bank_sanctions'], ['view']),
-    ...keysForGroups(['kia.approvals'], ['view']),
-    ...keysForGroups(['fuel_approvals'], ['view', 'create', 'audit']),
-    ...keysForGroups(['gate_pass'], ['view', 'create']),
+    ...keysForGroups(['kia.approvals'], ['view']),    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit', 'approve']),
@@ -1312,9 +1316,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
-    ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
-    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
-    // Raises and tracks gate passes for their branch. Approval stays with the Sales Manager.
+    ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),    // Raises and tracks gate passes for their branch. Approval stays with the Sales Manager.
     ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   technician: [
@@ -1329,9 +1331,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ],
   service_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
-    ...keysForGroups(['am_finance'], ['view']),
-    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
-    ...keysForGroups(['gate_pass'], ['view', 'create']),
+    ...keysForGroups(['am_finance'], ['view']),    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   general_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1340,9 +1340,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
-    ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
-    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
-    // Fallback gate pass approver, so a demo car is never stuck behind one Sales Manager on leave.
+    ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),    // Fallback gate pass approver, so a demo car is never stuck behind one Sales Manager on leave.
     ...keysForGroups(['gate_pass'], ['view', 'create', 'edit', 'approve', 'audit']),
   ],
   // General Service Manager: service-side oversight. Views KIA service modules; the
@@ -1358,9 +1356,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['platinum', 'platinum.service', 'platinum.business_excellence', 'platinum.service_appointment'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
-    ...keysForGroups(['petty_cash'], ['view', 'create']),
-    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
-    ...keysForGroups(['gate_pass'], ['view', 'create']),
+    ...keysForGroups(['petty_cash'], ['view', 'create']),    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   sales_head: [
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1369,9 +1365,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
-    ...keysForGroups(['am_finance'], ['view']),
-    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
-    ...keysForGroups(['gate_pass'], ['view', 'create']),
+    ...keysForGroups(['am_finance'], ['view']),    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   dgm: [
     ...keysForGroups(['kia.approvals'], ['view', 'approve']),
@@ -1395,9 +1389,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.allocation_history'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
-    ...keysForGroups(['petty_cash'], ['view', 'create', 'edit']),
-    ...keysForGroups(['fuel_approvals'], ['view', 'create']),
-    ...keysForGroups(['gate_pass'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['petty_cash'], ['view', 'create', 'edit']),    ...keysForGroups(['gate_pass'], ['view', 'create', 'edit', 'approve', 'audit']),
   ],
   assistant_manager: [
     ...keysForGroups([
@@ -1419,9 +1411,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.approvals'], ['view', 'approve', 'audit']),
     ...keysForGroups(['purchase_orders'], ['view', 'approve', 'audit']),
     ...keysForGroups(['am_finance'], ['view']),
-    ...keysForGroups(['petty_cash'], ['view', 'approve', 'audit']),
-    ...keysForGroups(['fuel_approvals'], ['view', 'create', 'edit', 'approve', 'audit']),
-    ...keysForGroups(['gate_pass'], ['view', 'create']),
+    ...keysForGroups(['petty_cash'], ['view', 'approve', 'audit']),    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // KIA Proforma workflow: final approver alongside the Finance Head — reviews & approves/declines
   // proformas (stage 2), and confirms payment received at the booking finance stage.

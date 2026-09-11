@@ -372,6 +372,18 @@ const DEFAULT_LOCATIONS_BY_BRAND: Record<string, Array<{ location: string; deale
     { location: 'Jammu', dealerCode: 'MG-JM', dealerName: 'AM MG Jammu' },
     { location: 'Kathua', dealerCode: 'MG-KT', dealerName: 'AM MG Kathua' },
   ],
+  diamond: [
+    { location: 'Jammu', dealerCode: 'DIA-JM', dealerName: 'AM Diamond Jammu' },
+    { location: 'Digiana', dealerCode: 'DIA-DG', dealerName: 'AM Diamond Digiana' },
+    { location: 'Channi', dealerCode: 'DIA-CN', dealerName: 'AM Diamond Channi' },
+    { location: 'Gangyal', dealerCode: 'DIA-GY', dealerName: 'AM Diamond Gangyal' },
+  ],
+  honda: [
+    { location: 'Jammu', dealerCode: 'HND-JM', dealerName: 'AM Diamond Honda Jammu' },
+    { location: 'Digiana', dealerCode: 'HND-DG', dealerName: 'AM Diamond Honda Digiana' },
+    { location: 'Channi', dealerCode: 'HND-CN', dealerName: 'AM Diamond Honda Channi' },
+    { location: 'Gangyal', dealerCode: 'HND-GY', dealerName: 'AM Diamond Honda Gangyal' },
+  ],
   tata: [
     { location: 'Jammu', dealerCode: 'TAT-JM', dealerName: 'AM Tata Jammu' },
   ],
@@ -932,12 +944,26 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
   useEffect(() => {
     const root = document.documentElement
     const previous = root.getAttribute('data-dashboard-accent')
-    root.setAttribute('data-dashboard-accent', 'tropical-teal')
+    const isDiamond = brand.toLowerCase() === 'diamond'
+    if (isDiamond) {
+      root.style.setProperty('--dashboard-primary', '#AB03A9')
+      root.style.setProperty('--dashboard-action-bg', '#AB03A9')
+      root.style.setProperty('--dashboard-action-hover', '#90028e')
+      root.style.setProperty('--dashboard-primary-rgb', '171, 3, 169')
+    } else {
+      root.setAttribute('data-dashboard-accent', 'tropical-teal')
+    }
     return () => {
+      if (isDiamond) {
+        root.style.removeProperty('--dashboard-primary')
+        root.style.removeProperty('--dashboard-action-bg')
+        root.style.removeProperty('--dashboard-action-hover')
+        root.style.removeProperty('--dashboard-primary-rgb')
+      }
       if (previous === null) root.removeAttribute('data-dashboard-accent')
       else root.setAttribute('data-dashboard-accent', previous)
     }
-  }, [])
+  }, [brand])
 
   // Declared above the re-submit effect below, which hydrates it from the send-back link.
   const [bills, setBills] = useState<BillItem[]>([])
@@ -1076,7 +1102,15 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
       .then((data) => {
         if (data && data.success) {
           setBrandDisplayName(data.brandDisplayName || brand.toUpperCase())
-          setLocations(data.locations || [])
+          const fetchedLocs = data.locations || []
+          if (fetchedLocs.length > 0) {
+            setLocations(fetchedLocs)
+          } else {
+            const fallbackLocs = DEFAULT_LOCATIONS_BY_BRAND[brand.toLowerCase()] || []
+            if (fallbackLocs.length > 0) {
+              setLocations(fallbackLocs)
+            }
+          }
           const fetchedTypes = (data.approvalTypes || []).filter((t: string) => t.toLowerCase() !== 'petty cash')
           const requiredTypes = ['Crane Charges', 'Key Cutting', 'Tyre fitting / Puncture']
           const combined = Array.from(new Set([...fetchedTypes, ...requiredTypes])).sort()
@@ -1235,13 +1269,15 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
           next.dealerName = ''
         }
       } else if (key === 'dealerName') {
-        const found = locations.find(l => l.dealerName === value)
+        const allLocs = locations.length > 0 ? locations : (DEFAULT_LOCATIONS_BY_BRAND[brand.toLowerCase()] || [])
+        const found = allLocs.find(l => l.dealerName === value) || allLocs.find(l => l.location === value)
         if (found) {
           next.location = found.location
           next.dealerCode = found.dealerCode
         } else {
-          next.location = ''
-          next.dealerCode = ''
+          const cleanLoc = value.replace(/^AM\s+[a-zA-Z]+\s+/i, '').trim() || value
+          next.location = cleanLoc
+          next.dealerCode = cleanLoc.toUpperCase().slice(0, 6)
         }
       } else if (key === 'approvalType') {
         const glCode = APPROVAL_TYPE_TO_GL_CODE[value]

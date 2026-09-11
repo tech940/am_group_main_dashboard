@@ -215,7 +215,11 @@ function holdsBrandStrictly(appUser: AppUser, rowBrand: string): boolean {
   const assigned = String(appUser.brand || '').trim().toLowerCase()
   if (!assigned) return false
   const target = String(rowBrand || '').trim().toLowerCase()
-  return assigned.split(',').map((b) => b.trim().toLowerCase()).filter(Boolean).includes(target)
+  const list = assigned.split(',').map((b) => b.trim().toLowerCase()).filter(Boolean)
+  if (list.includes(target)) return true
+  if (target === 'diamond' && list.includes('honda')) return true
+  if (target === 'honda' && list.includes('diamond')) return true
+  return false
 }
 
 export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeRow): boolean {
@@ -279,8 +283,7 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
    */
   const isVpOrGsm = role === 'vp' || role === 'vice_president' || role === 'group_service_manager'
   if (isVpOrGsm) {
-    // For MG: VP handles both Sales and Service requests across all branches
-    if (rowBrand === 'mg') return true
+    if (rowBrand === 'diamond' || rowBrand === 'honda') return true
     if ((usesVpService(rowBrand) || rowBrand === 'kia') && isServiceApproval(row.department, row.approvalType)) {
       return true
     }

@@ -568,7 +568,10 @@ export function Sidebar() {
         active: pathname.startsWith('/brands/kia/vendors'),
       })
     }
-    if (hasPermission('fuel_management.view') || hasPermission('fuel_approvals.view')) {
+    // ⚠️ Its own key only. Holding fuel_approvals.view used to show this link as well. Since 2026-09-11 the
+    // CEO and HR keep Fuel Approvals but not Fuel Management, and canViewFuelManagement on the page would
+    // bounce them — the sidebar/guard desync this codebase has had four outages from.
+    if (hasPermission('fuel_management.view')) {
       commonNodes.push({
         key: '/fuel-management',
         label: 'Fuel Management',
@@ -663,7 +666,10 @@ export function Sidebar() {
       external: true,
       active: Boolean(pathname?.startsWith('/data-health')),
     })
-    if (canAccessAdmin) {
+    // ⚠️ The same test app/admin/page.tsx applies: isSuperAdminRole — MD and Developer. This used to be
+    // canAccessAdmin (isAdminRole), which also admits `admin` and `hr`, so both HR users saw an Admin Panel link
+    // that answered forbidden() on click — the sidebar/guard desync this codebase keeps producing.
+    if (isSuperAdminRole(userRole)) {
       // Single link — the Admin page exposes all sections (Users, Access, Branch Admins, System,
       // Settings) as in-page tabs, so no sidebar dropdown is needed.
       commonNodes.push({

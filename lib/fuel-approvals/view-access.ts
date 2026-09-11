@@ -13,12 +13,19 @@ import { getUserPermissionSnapshot } from '@/lib/permissions/service'
  * history of any vehicle through the route. That is the guard/API desync this codebase keeps
  * producing; the fix is one predicate, not two careful copies.
  *
- * The rule is moved here VERBATIM from the page. It neither widens nor narrows who gets in:
+ * The rule:
  *   1. an explicit Access-Map Deny on fuel_approvals.view wins over everything below (super admins
  *      are never denied — see isPermissionDenied);
  *   2. otherwise the effective snapshot granting fuel_approvals.view;
  *   3. otherwise an explicit Access-Map Allow for this user;
  *   4. otherwise one of FUEL_APPROVALS_VIEW_ROLES.
+ *
+ * ⚠️ NARROWED by the owner on 2026-09-11. The role list was eleven roles (admin, accounts, finance,
+ * ED, EBA…) and role templates carried the section to most of the company. It now opens by default to
+ * EA, MD and Developer, plus the CEO — its final approver — and HR, who raises the requests. Step 2
+ * resolves the same audience (FUEL_SECTION_DEFAULT_GRANTS in lib/permissions/service.ts), so the
+ * sidebar, search, this page and its routes all agree. People individually ticked in the Access Map
+ * keep access through steps 2 and 3 — the owner chose to keep those ticks.
  *
  * ⚠️ This is about VIEWING. Who may approve which stage is canUserApproveStage in
  * lib/fuel-approvals/access.ts — the workflow's own rule, deliberately not touched here.
@@ -28,15 +35,9 @@ import { getUserPermissionSnapshot } from '@/lib/permissions/service'
  */
 export const FUEL_APPROVALS_VIEW_ROLES = [
   'developer',
-  'admin',
-  'ceo',
-  'accounts',
-  'finance_head',
-  'finance_team',
   'md',
-  'ed',
   'ea',
-  'eba',
+  'ceo',
   'hr',
 ] as const
 

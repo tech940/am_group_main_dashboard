@@ -367,6 +367,87 @@ console.log('\n8) Gate tokens cannot be forged, re-purposed, extended or replaye
       (f) => (GATE_HIDDEN_FIELDS as readonly string[]).includes(f)))
 }
 
+console.log('\n9) The Add vehicle form cannot rewrite a car that is already on record:')
+{
+  /*
+   * ⚠️ Owner decision 2026-09-11. The form needs only gate_pass.create — every employee — and it used to rewrite a
+   * recorded car's branch (to JK402 by default), model, colour, plate and odometer, and flip a sold car back to active,
+   * which also defeated the Trackers screen's branch check. The rule is run, not grepped.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ts = require('typescript') as typeof import('typescript')
+  const vehiclesSrc = read('lib/gate-pass/vehicles.ts')
+  type Plan = { ok: boolean; status?: number; feed?: string; details?: string; dealerCode?: string | null; overwritePlate?: boolean; writeKms?: boolean; plateKept?: boolean }
+  let plan: ((car: unknown, ask: unknown, scope: unknown) => Plan) | null = null
+  {
+    // Lifted out and compiled alone: vehicles.ts opens the analytics database on import. It uses nothing from its module.
+    const at = vehiclesSrc.search(/\bfunction\s+planManualDemoVehicle\s*\(/)
+    const bodyAt = at < 0 ? -1 : vehiclesSrc.indexOf('{', vehiclesSrc.indexOf('): ManualVehiclePlan', at))
+    let end = -1
+    for (let i = bodyAt, depth = 0; bodyAt >= 0 && i < vehiclesSrc.length; i++) {
+      if (vehiclesSrc[i] === '{') depth++
+      else if (vehiclesSrc[i] === '}' && --depth === 0) { end = i + 1; break }
+    }
+    if (end > 0) {
+      try {
+        const js = ts.transpileModule(vehiclesSrc.slice(at, end), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText
+        plan = new Function(`${js}\nreturn planManualDemoVehicle`)() as typeof plan
+      } catch {
+        plan = null
+      }
+    }
+  }
+  assert('the rule is lifted from lib/gate-pass/vehicles.ts and runs', plan !== null)
+  const run = (car: unknown, ask: unknown, scope: unknown): Plan => (plan ? plan(car, ask, scope) : { ok: false, status: -1 })
+  const scope = (codes: string[], everyBranch = false, canOverwritePlate = false) =>
+    ({ inScope: (c: string) => codes.includes(c), seesEveryBranch: everyBranch, visibleDealerCodes: codes, canOverwritePlate })
+  const car = (over: Record<string, unknown> = {}) => ({
+    inFeed: true, dealerCode: 'JK402', branch: 'Jammu', testDriveCar: true, hasDetails: true,
+    vehicleStatus: 'active', registrationNumber: 'JK02DU0770', ...over,
+  })
+  const newVin = car({ inFeed: false, hasDetails: false, dealerCode: null, branch: null, registrationNumber: null })
+  const ask = (over: Record<string, unknown> = {}) => ({ dealerCode: null, branch: null, registrationNumber: 'JK02DU0770', kms: null, ...over })
+
+  assert('a car recorded at another branch is refused (403)', run(car(), ask(), scope(['JK501'])).status === 403)
+  assert('a car marked sold is never brought back (409)', run(car({ vehicleStatus: 'sold' }), ask(), scope(['JK402'])).status === 409)
+  assert('a request cannot move a recorded car to another branch (409), even from someone who covers both',
+    run(car(), ask({ dealerCode: 'JK501', branch: 'Udhampur' }), scope(['JK402', 'JK501'], true)).status === 409)
+  {
+    const kept = run(car(), ask({ registrationNumber: 'JK02ZZ9999' }), scope(['JK402']))
+    const replaced = run(car(), ask({ registrationNumber: 'JK02ZZ9999' }), scope(['JK402'], false, true))
+    assert('a recorded plate survives a request from a non-approver, and is replaced only by an approver',
+      kept.ok && kept.overwritePlate === false && kept.plateKept === true && replaced.ok && replaced.overwritePlate === true)
+  }
+  {
+    const p = run(car(), ask(), scope(['JK402']))
+    assert('a recorded car gets no new feed row, and its odometer is left alone when the request sent none',
+      p.ok && p.feed === 'none' && p.writeKms === false)
+  }
+  assert('a new VIN must name its branch (400)', run(newVin, ask(), scope(['JK402'])).status === 400)
+  assert("a new VIN at a branch outside the caller's is refused (403) — no silent JK402",
+    run(newVin, ask({ dealerCode: 'JK501', branch: 'Udhampur' }), scope(['JK402'])).status === 403)
+  {
+    const p = run(newVin, ask({ dealerCode: 'JK501', branch: 'Udhampur' }), scope(['JK501']))
+    assert("a new VIN at the caller's own branch is added there", p.ok && p.feed === 'insert' && p.dealerCode === 'JK501')
+  }
+
+  const code = stripComments(vehiclesSrc)
+  const registerAt = code.search(/export\s+async\s+function\s+registerManualDemoVehicle\b/)
+  const register = registerAt < 0 ? '' : code.slice(registerAt)
+  const planAt = register.search(/planManualDemoVehicle\(/)
+  const firstWrite = register.search(/INSERT\s+INTO|UPDATE\s+(?:kia_demo_car_list|demo_vehicle_details)\b/)
+  assert('the rule is decided before the first write', planAt >= 0 && firstWrite > planAt)
+  const feedSet = /UPDATE\s+kia_demo_car_list\s+SET\s+([\s\S]*?)\s+WHERE\b/.exec(register)?.[1] ?? ''
+  assert("an existing car's feed row gets only the test-drive flag — the DMS owns its branch, model, colour and upload time",
+    /test_drive_vin/.test(feedSet) &&
+      !/billing_dealer_code|main_dealer|\bdealer\b|order_dealer|\bmodel\b|variant|colou?r|uploaded_at|stock_status/.test(feedSet))
+  assert('the details update skips a car marked sold',
+    /UPDATE\s+demo_vehicle_details[\s\S]*?\bWHERE\b[\s\S]*?<>\s*'sold'/.test(register))
+  const apiSrc = stripComments(read('lib/gate-pass/api.ts'))
+  assert("a refusal reaches the person as its own sentence and status, not 'Something went wrong'",
+    /instanceof\s+DemoVehicleRegistrationError/.test(apiSrc))
+}
+
 console.log('\n8) Live database (read-only):')
 async function liveChecks() {
   const url = process.env.DATABASE_URL

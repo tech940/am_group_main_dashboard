@@ -101,6 +101,34 @@ export interface FuelApprovalRecord {
 
   sendBackReason?: string | null
 
+  // ── Fuel intelligence (migration 0063) ──────────────────────────────────────
+  // Everything lib/fuel-management/engine.ts needs to state a mileage or a cost per km. All optional:
+  // the 20 records that predate the rework carry none of it, and an absent value must read as
+  // "not recorded" rather than as a zero that quietly enters an average.
+  // ⚠️ fuelFilledLtrs above IS the quantity; quantityUnit only says whether it means L, kg or kWh.
+  // There is deliberately no unitPrice field — it is totalCost ÷ quantity, derived by the engine.
+  energyType?: 'petrol' | 'diesel' | 'cng' | 'ev' | 'hybrid' | null
+  quantityUnit?: 'L' | 'kg' | 'kWh' | string | null
+  /** The receipt total, as typed by the person who paid it. */
+  totalCost?: string | number | null
+  /** The parsed odometer. currentKmReading above stays as the raw text that was typed. */
+  odometerKm?: string | number | null
+  /** null means "not recorded" — never read as either answer. */
+  isFullTank?: boolean | null
+  /** An authorised person accepted an abnormal reading; the engine refuses to measure across it. */
+  odometerOverride?: boolean | null
+  odometerOverrideBy?: string | null
+  odometerOverrideAt?: string | null
+  odometerOverrideReason?: string | null
+  /** The resolved 17-character VIN. ⚠️ vinNo above is NOT a VIN in any historical row. */
+  vehicleVin?: string | null
+  /** For fuel that never enters a vehicle: GENSET, STOCKYARD. Never set with vehicleVin. */
+  assetCode?: string | null
+  driverUserId?: string | null
+  driverName?: string | null
+  stationName?: string | null
+  stationLocation?: string | null
+
   submittedById?: string | null
   submittedByName: string
   submittedByEmail: string

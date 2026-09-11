@@ -3,6 +3,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { fuelApprovals } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { canViewFuelApprovals } from '@/lib/fuel-approvals/view-access'
 
 export async function POST(
   request: NextRequest,
@@ -14,8 +15,17 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Only someone who can open Fuel Approvals may re-submit into it. This route used to check a login
+    // alone, so once the section was restricted any employee could still rewrite a request by its id.
+    if (!(await canViewFuelApprovals(user))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
     const { id } = await context.params
-    const body = await request.json()
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
     const {
       location,
       fuelRequiredFor,

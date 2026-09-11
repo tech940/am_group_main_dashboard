@@ -726,12 +726,65 @@ console.log('\n3e. The Trackers screen — links a person confirms, audited in t
   ok('unlink removes the link and writes its audit row on ONE transaction',
     onTx(unlinkTx, /delete\(\s*demoVehicleTrackers\s*\)/) && onTx(unlinkTx, /insert\(\s*demoVehicleTrackerEvents\s*\)/) &&
     !writesOutsideTx(unlink))
+  const move = exportedFunction(code, 'moveTracker')
   {
-    // ⚠️ The filter is IN the DELETE, so a row that became a chassis link after the read is still not removed.
+    /*
+     * ⚠️ The filter is IN the DELETE, so a row that became a chassis link after the read is still not removed. Unlink and
+     * Move are the only code that removes a link, and neither may take away a chassis link — that is LocoNav's claim.
+     * (This used to also require every delete to sit inside unlinkTracker, which Move's own guarded delete broke.)
+     */
     const deletes = [...code.matchAll(/\.delete\(\s*demoVehicleTrackers\s*\)([\s\S]*?)(?=\n\s*(?:await|return|if|const|let|throw)\b|$)/g)]
-    ok("unlink deletes only matched_by = 'manual' rows — a chassis link is LocoNav's claim, not ours to remove",
-      deletes.length > 0 && deletes.every((m) => /matchedBy\s*,\s*'manual'\s*\)/.test(m[1]) && unlink.includes(m[0])) &&
+    ok("a link is only ever removed with matched_by = 'manual' in the DELETE itself, and only by unlink or move",
+      deletes.length >= 2 && deletes.every((m) => /matchedBy\s*,\s*'manual'\s*\)/.test(m[1]) &&
+        (unlink.includes(m[0]) || move.includes(m[0]))) &&
       !/DELETE\s+FROM\s+(?:public\.)?demo_vehicle_trackers\b/i.test(code))
+  }
+  {
+    /*
+     * Owner decision 2026-09-11: trackers are physically moved from a sold car to another demo car. The move must be all
+     * or nothing — a half-done move leaves a tracker on no car, or on two — and each car's history must say what happened.
+     */
+    const moveTx = transactionOf(move)
+    const body = moveTx?.body ?? ''
+    ok('moving a tracker is ONE transaction: old link out, both cars cleared, a new manual link in, unlink AND link audit rows',
+      move.length > 0 && onTx(moveTx, /delete\(\s*demoVehicleTrackers\s*\)/) &&
+      onTx(moveTx, /delete\(\s*demoVehiclePositions\s*\)\s*\.where\(\s*or\(\s*positionVinIs\(\s*fromVin\s*\)\s*,\s*positionVinIs\(\s*toVin\s*\)\s*\)/) &&
+      onTx(moveTx, /insert\(\s*demoVehicleTrackers\s*\)\s*\.values\(\{[^}]*matchedBy:\s*'manual'/) &&
+      onTx(moveTx, /insert\(\s*demoVehicleTrackerEvents\s*\)/) &&
+      /action:\s*'unlink'\s*,\s*vin:\s*fromVin/.test(body) && /action:\s*'link'\s*,\s*vin:\s*toVin/.test(body) &&
+      !writesOutsideTx(move))
+    const guardAt = code.search(/function\s+assertMovableFrom\b/)
+    const guard = guardAt < 0 ? '' : enclosed(code, code.indexOf('{', code.indexOf(')', guardAt)))
+    ok('a move starts only from a manual link to the car the person saw, and refuses a chassis link (409)',
+      /matchedBy/.test(guard) && /TrackerMappingError\([\s\S]*?,\s*409\s*\)/.test(guard) &&
+      body.indexOf('assertMovableFrom(') >= 0 && body.indexOf('assertMovableFrom(') < body.search(/\.delete\(\s*demoVehicleTrackers\s*\)/))
+    const txAt = move.indexOf('db.transaction(')
+    const scopeChecks = (move.slice(0, txAt < 0 ? 0 : txAt).match(/if\s*\(\s*!carInScope\(\s*input\.actor\s*,/g) || []).length
+    ok("a move checks the actor's branch for BOTH cars before its transaction", txAt > 0 && scopeChecks >= 2)
+    ok("unlink and move find a sold car's branch from the demo feed, ignoring the sold flag",
+      /lookupDemoCarBranchesByVin\(/.test(code) && [unlink, move].every((fn) => /outOfFleetBranches\(/.test(fn)))
+    ok("the route's POST reaches moveTracker only after the approve guard",
+      (() => {
+        const post = /export\s+async\s+function\s+POST\b[\s\S]*$/.exec(routeCode)?.[0] ?? ''
+        const g = post.search(/if \(access\.denied\) return access\.denied/)
+        return g >= 0 && post.search(/\bmoveTracker\(/) > g
+      })())
+  }
+  {
+    /*
+     * Owner decision 2026-09-11: a drive from before its tracker was linked is still checked, but MARKED — a later or
+     * wrong link must never silently brand an old drive as a mismatch.
+     */
+    const readerAt = tripsCode.search(/async\s+function\s+readLinkedAfterDrive\b/)
+    const reader = readerAt < 0 ? '' : enclosed(tripsCode, tripsCode.indexOf('{', tripsCode.indexOf(')', tripsCode.indexOf('(', readerAt))))
+    ok('a drive checked with a tracker linked after it is marked, from the link time, never failing the read',
+      /linkedAfterDrive:\s*\{\s*linkedAt:\s*string\s*\}\s*\|\s*null/.test(tripsCode) &&
+      /linkedAfterDrive:\s*row\.providerVehicleUuid\s*\?\s*linkedAfterDrive\s*:\s*null/.test(tripsCode) &&
+      /action\s*=\s*'link'/.test(reader) && /COALESCE\(\s*\w+\.reconciled_at\s*,\s*\w+\.updated_at\s*\)/.test(reader) &&
+      /demo_vehicle_trackers/.test(reader) && /window_start/.test(reader) && /\bcatch\b[\s\S]*return null/.test(reader))
+    ok('the pass detail says the drive was checked with a later link, and never calls the gap a proven mismatch',
+      /linkedAfterDrive/.test(detailPanel) && /after this drive/.test(detailPanel) &&
+      /may be because the tracker was not on this car at the time/.test(detailPanel))
   }
   {
     // ⚠️ A silent move takes a position away from a car somebody may be looking for right now.

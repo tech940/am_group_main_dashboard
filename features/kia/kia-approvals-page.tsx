@@ -376,6 +376,7 @@ const BRAND_CHIP_STYLES: Record<string, string> = {
   platinum: 'bg-violet-50 border-violet-300 text-violet-900 font-extrabold',
   mg: 'bg-[#D96868]/15 border-[#D96868]/40 text-[#8C2C2C] font-extrabold',
   tata: 'bg-cyan-50 border-cyan-300 text-cyan-900 font-extrabold',
+  diamond: 'bg-[#AB03A9]/10 border-[#AB03A9]/30 text-[#AB03A9] font-extrabold',
   honda: 'bg-red-50 border-red-300 text-red-900 font-extrabold',
   ktm: 'bg-orange-50 border-orange-300 text-orange-900 font-extrabold',
   triumph: 'bg-zinc-100 border-zinc-300 text-zinc-900 font-extrabold',
@@ -390,6 +391,7 @@ const BRAND_BADGE_STYLES: Record<string, string> = {
   platinum: 'bg-violet-100 text-violet-800 border-violet-300 font-black',
   mg: 'bg-[#D96868]/20 text-[#8C2C2C] border-[#D96868]/40 font-black',
   tata: 'bg-cyan-100 text-cyan-800 border-cyan-300 font-black',
+  diamond: 'bg-[#AB03A9]/15 text-[#AB03A9] border-[#AB03A9]/40 font-black',
   honda: 'bg-red-100 text-red-800 border-red-300 font-black',
   ktm: 'bg-orange-100 text-orange-800 border-orange-300 font-black',
   triumph: 'bg-zinc-100 text-zinc-800 border-zinc-300 font-black',
@@ -409,6 +411,7 @@ const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dea
   if (reqNo.startsWith('PLATINUM')) return 'platinum'
   if (reqNo.startsWith('MG')) return 'mg'
   if (reqNo.startsWith('TATA')) return 'tata'
+  if (reqNo.startsWith('DIAMOND') || reqNo.startsWith('DIA')) return 'diamond'
   if (reqNo.startsWith('HONDA')) return 'honda'
   if (reqNo.startsWith('KTM')) return 'ktm'
   if (reqNo.startsWith('TRIUMPH')) return 'triumph'
@@ -420,6 +423,7 @@ const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dea
   if (dealer.includes('hyundai')) return 'hyundai'
   if (dealer.includes('mg')) return 'mg'
   if (dealer.includes('tata')) return 'tata'
+  if (dealer.includes('diamond')) return 'diamond'
   if (dealer.includes('honda')) return 'honda'
   if (dealer.includes('ktm')) return 'ktm'
   if (dealer.includes('triumph')) return 'triumph'
@@ -428,6 +432,7 @@ const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dea
   const code = (row.dealerCode || '').toUpperCase()
   if (code.startsWith('JK') || code.includes('KIA')) return 'kia'
   if (code.startsWith('N5211') || code.startsWith('N6250')) return 'platinum'
+  if (code.includes('DIAMOND') || code.startsWith('DIA')) return 'diamond'
 
   return 'kia'
 }
@@ -444,20 +449,21 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     queryKey: ['kia-discount-requests-summary'],
     queryFn: async () => {
       const res = await fetch('/api/brands/kia/bookings/discounts')
-      if (!res.ok) return { rows: [] }
+      if (!res.ok) return { discounts: [], rows: [] }
       return res.json()
     },
     staleTime: 30000,
   })
 
   const discountPendingCount = useMemo(() => {
-    const rows = (discountSummaryQuery.data?.rows || []) as any[]
-    return rows.filter((r) => r.canAct).length
-  }, [discountSummaryQuery.data?.rows])
+    const list = (discountSummaryQuery.data?.discounts || discountSummaryQuery.data?.rows || []) as any[]
+    return list.filter((r) => r.canAct || r.status === 'PENDING').length
+  }, [discountSummaryQuery.data?.discounts, discountSummaryQuery.data?.rows])
 
   const discountTotalCount = useMemo(() => {
-    return (discountSummaryQuery.data?.rows || []).length
-  }, [discountSummaryQuery.data?.rows])
+    const list = (discountSummaryQuery.data?.discounts || discountSummaryQuery.data?.rows || []) as any[]
+    return list.length
+  }, [discountSummaryQuery.data?.discounts, discountSummaryQuery.data?.rows])
 
   // Fast count query for fuel approvals badge
   const fuelSummaryQuery = useQuery({
@@ -1406,7 +1412,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const firstStageDisplayLabel = (req?: ApprovalRequest | null): string => {
     if (!req) return 'GSM (Sales)'
     const brand = String(req.brand || '').trim().toLowerCase()
-    if (brand === 'mg') return 'VP'
+    if (brand === 'diamond' || brand === 'honda') return 'VP'
     if (isDgmBrand(brand)) return 'DGM'
     const isService = isServiceCategory(req.department, req.approvalType)
     return isService ? 'VP' : 'GSM (Sales)'
@@ -4631,7 +4637,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               const isService = isServiceCategory(req.department, req.approvalType)
               const brand = String(req.brand || 'kia').toLowerCase()
               const isKia = brand === 'kia'
-              const firstStageLabel = brand === 'mg' ? 'VP Approval' : (isDgmBrand(brand) ? 'DGM Approval' : (isService ? 'VP Approval' : 'GSM (Sales)'))
+              const firstStageLabel = (brand === 'diamond' || brand === 'honda') ? 'VP Approval' : (isDgmBrand(brand) ? 'DGM Approval' : (isService ? 'VP Approval' : 'GSM (Sales)'))
               const requiresHrStage = isHrApprovalRequired(req.approvalType, req.brand)
               const hasFirstStage = brandHasFirstStage(req.brand, req.department, req.approvalType)
               const stages = [

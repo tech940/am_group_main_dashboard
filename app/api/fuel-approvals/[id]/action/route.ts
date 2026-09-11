@@ -58,6 +58,18 @@ export async function POST(
       )
     }
 
+    // ⚠️ RESET erases an entire approval chain, so passing the stage check is not enough — the CEO can
+    // approve, but must not be able to un-approve. Previously a RESET by anyone other than
+    // developer/admin matched no branch below: the status stayed put, yet the record was still UPDATEd
+    // and a RESET entry appended to its history, leaving an audit trail of an action that never happened.
+    const isDeveloperOrAdmin = user.role === 'developer' || user.role === 'admin'
+    if (action === 'RESET' && !isDeveloperOrAdmin) {
+      return NextResponse.json(
+        { error: 'Only a developer or administrator can reset an approval chain' },
+        { status: 403 }
+      )
+    }
+
     const nowIso = new Date().toISOString()
     const nowTimestamp = new Date()
 
@@ -164,7 +176,8 @@ export async function POST(
   } catch (error) {
     console.error('Error executing fuel approval action:', error)
     return NextResponse.json(
-      { error: 'Failed to execute action', details: error instanceof Error ? error.message : 'Unknown' },
+      // ⚠️ No `details`: a raw driver message names columns and constraints to any caller.
+      { error: 'Failed to execute action' },
       { status: 500 }
     )
   }

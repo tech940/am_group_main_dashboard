@@ -580,10 +580,100 @@ export const ALL_SECTIONS: SearchSection[] = [
     initials: 'PBE',
     category: 'platinum',
   },
+
+  // ── Added 2026-09-11: sections in the sidebar that search could not find ──
+  // Each is gated in canUserAccessSection by the rule its sidebar link uses: an explicit branch above for
+  // Data Health and the CA Portal, the generated permission key for the rest.
+  {
+    id: 'hyundai_sales_report',
+    name: 'Hyundai Sales Report',
+    description: 'Hyundai sales performance and retail figures.',
+    href: '/brands/hyundai/sales-report',
+    department: 'sales',
+    brand: 'hyundai',
+    iconName: 'BarChart3',
+    initials: 'HSR',
+    category: 'hyundai',
+  },
+  {
+    id: 'hyundai_discount_approvals',
+    name: 'Hyundai Discount Approvals',
+    description: 'Review and approve discount requests on Hyundai vehicle sales.',
+    href: '/brands/hyundai/sales/discount-approvals',
+    department: 'sales',
+    brand: 'hyundai',
+    iconName: 'BadgePercent',
+    initials: 'HDA',
+    category: 'hyundai',
+  },
+  {
+    id: 'platinum_sales_report',
+    name: 'Platinum Sales Report',
+    description: 'Platinum sales performance and retail figures.',
+    href: '/brands/platinum/sales-report',
+    department: 'sales',
+    brand: 'platinum',
+    iconName: 'BarChart3',
+    initials: 'PSR',
+    category: 'platinum',
+  },
+  {
+    id: 'platinum_discount_approvals',
+    name: 'Platinum Discount Approvals',
+    description: 'Review and approve discount requests on Platinum vehicle sales.',
+    href: '/brands/platinum/sales/discount-approvals',
+    department: 'sales',
+    brand: 'platinum',
+    iconName: 'BadgePercent',
+    initials: 'PDA',
+    category: 'platinum',
+  },
+  {
+    id: 'showroom_images',
+    name: 'Showroom Images',
+    description: 'Showroom photos captured across every dealership, with brand and location filters.',
+    href: '/showroom-images',
+    department: 'admin',
+    brand: 'common',
+    iconName: 'Camera',
+    initials: 'SI',
+    category: 'general_modules',
+  },
+  {
+    id: 'ca_portal',
+    name: 'CA Portal',
+    description: 'Read-only chartered-accountant view of approved purchase orders and petty cash, branch-wise.',
+    href: '/ca',
+    department: 'finance',
+    brand: 'common',
+    iconName: 'Calculator',
+    initials: 'CA',
+    category: 'general_modules',
+  },
+  {
+    id: 'data_health',
+    name: 'Data Health',
+    description: 'MD and Developer only: when each data feed last loaded, and how many rows it holds.',
+    href: '/data-health',
+    department: 'admin',
+    brand: 'common',
+    iconName: 'Activity',
+    initials: 'DH',
+    category: 'common_dashboards',
+  },
 ]
 
 export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/cockpit',
+  // Added 2026-09-11 so every sidebar item can be found by search. Each is gated in canUserAccessSection.
+  '/showroom-images',
+  '/ca',
+  '/data-health',
+  '/social-media-leads',
+  '/brands/hyundai/sales-report',
+  '/brands/hyundai/sales/discount-approvals',
+  '/brands/platinum/sales-report',
+  '/brands/platinum/sales/discount-approvals',
   '/targets',
   '/bank-sanctions',
   '/delegation-tasks',
@@ -651,15 +741,16 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
 ])
 
 /**
- * The view keys that open /fuel-management — the same three app/fuel-management/page.tsx and
+ * The view keys that open /fuel-management — the same ones app/fuel-management/page.tsx and
  * GET /api/fuel-management accept through lib/fuel-management/access.ts#canViewFuelManagement.
  * That predicate is server-only and cannot be imported here, so the keys are listed once for this
  * file and scripts/verify-fuel-management.ts fails if the two lists ever disagree.
+ *
+ * ⚠️ One key since 2026-09-11. fuel_approvals.view and gate_pass.view used to open it too, which put the
+ * section in front of nearly every role; the owner restricted it to EA, MD and Developer.
  */
 export const FUEL_MANAGEMENT_VIEW_KEYS = [
   'fuel_management.view',
-  'fuel_approvals.view',
-  'gate_pass.view',
 ] as const
 
 /**
@@ -772,16 +863,28 @@ export function canUserAccessSection(
   return isSuperAdminRole(userRole)
   }
 
-  // Fuel Management — its page and API admit a user through ANY of three view keys, not only the
-  // section's own. The generated fallback below would test 'fuel_management.view' alone and hide the
-  // section from, say, a Sales Manager who holds only fuel_approvals.view and opens the page without
-  // trouble. Same keys as the page; fail-closed while the map loads. /fuel-approvals needs no branch:
-  // the fallback already tests 'fuel_approvals.view', which is exactly the key its page uses.
+  // Data Health — MD + Developer ONLY, and unwidenable. Super admins already returned true above, so
+  // everyone who reaches this line is refused. ⚠️ Load-bearing: the href has no permission key, so
+  // without this return it falls through to the function's final `return true` and appears in EVERY
+  // role's search — an operations tool exposing table names and row counts across every brand.
+  if (href === '/data-health') {
+    return false
+  }
+
+  // CA Portal — mirrors the sidebar exactly: the CA role list OR an explicit ca.view. The generated
+  // fallback below tests ca.view alone, which would hide the section from the CA role it exists for.
+  if (href === '/ca') {
+    return isCaViewRole(userRole) || (permissionMap ? permissionMap['ca.view'] === true : false)
+  }
+
+  // Fuel Management — admitted by its own view key only, the one its page and API accept through
+  // canViewFuelManagement. Until 2026-09-11 fuel_approvals.view and gate_pass.view opened it too; the
+  // owner restricted it to EA, MD and Developer. Fail-closed while the map loads. /fuel-approvals needs
+  // no branch: the fallback below already tests 'fuel_approvals.view', exactly the key its page uses.
   //
-  // ⚠️ Known edge this map cannot close: an explicit Access-Map Deny on fuel_management.view alone
-  // blocks the page, but an effective map cannot tell a deny from a key never granted. A user denied
-  // that one key who still holds fuel_approvals.view or gate_pass.view sees this entry and is turned
-  // away on click. The page and the API remain the authority.
+  // ⚠️ Known edge this map cannot close: an explicit Access-Map Deny on fuel_management.view blocks the
+  // page, but an effective map cannot tell a deny from a key never granted. The page and the API remain
+  // the authority.
   if (href === '/fuel-management') {
     const map = permissionMap
     if (!map) return false

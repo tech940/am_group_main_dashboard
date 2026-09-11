@@ -59,7 +59,13 @@ export async function POST(request: NextRequest) {
         currentStage
       )
 
-      if (!canApprove && action !== 'RESET') {
+      // ⚠️ RESET used to escape this guard entirely — `!canApprove && action !== 'RESET'` let ANY
+      // signed-in user into the loop body for a RESET. The status change below was still limited to
+      // developer/admin, but everyone else reached the history append and the UPDATE, so any employee
+      // could write audit entries onto records they had no business touching and bump updated_at.
+      // RESET is now checked like every other action, and more strictly: it erases an approval chain,
+      // so approving a stage is not enough — only developer/admin may do it.
+      if (action === 'RESET' ? !isDeveloperOrAdmin : !canApprove) {
         continue
       }
 
@@ -167,7 +173,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error executing bulk fuel approval action:', error)
     return NextResponse.json(
-      { error: 'Failed to process bulk action', details: error instanceof Error ? error.message : 'Unknown' },
+      // ⚠️ No `details`: a raw driver message names columns and constraints to any caller.
+      { error: 'Failed to process bulk action' },
       { status: 500 }
     )
   }

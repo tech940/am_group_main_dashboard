@@ -41,6 +41,14 @@ export async function POST(
       vehicleNumber,
     } = body
 
+    // Auto-fill location/dealerCode from dealerName if omitted
+    if (!body.location && body.dealerName) {
+      body.location = String(body.dealerName).replace(/^AM\s+[a-zA-Z]+\s+/i, '').trim() || String(body.dealerName)
+    }
+    if (!body.dealerCode && body.dealerName) {
+      body.dealerCode = String(body.location || body.dealerName).toUpperCase().slice(0, 6)
+    }
+
     /*
      * Every field except bills/documents is mandatory, for all brands. Enforced HERE because this
      * endpoint is deliberately unauthenticated — the form's own checks are a courtesy, not a

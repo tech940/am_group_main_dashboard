@@ -61,7 +61,8 @@ export async function POST(request: NextRequest) {
   if (access.denied) return access.denied
 
   try {
-    const body = await request.json()
+    // Malformed JSON is a bad request, not a 500.
+    const body = await request.json().catch(() => ({}))
     const { registrationNumber, model, variant, vin, color, dealerCode, currentKms } = body || {}
 
     if (!registrationNumber || typeof registrationNumber !== 'string' || !registrationNumber.trim()) {

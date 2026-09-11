@@ -11,6 +11,7 @@ import {
   resolveEffectiveSnapshotForMode,
 } from '@/lib/permissions/service'
 import { SECTION_ROUTES, type PermissionRole } from '@/lib/permissions/registry'
+import { GROUPS_REPLACED_BY_LOCKED_SECTIONS, LOCKED_SIDEBAR_SECTIONS } from '@/lib/permissions/locked-sections'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,6 +43,8 @@ export async function GET() {
   }
 }
 
+type MatrixCell = { visible: boolean; override: boolean; defaultVisible: boolean }
+
 async function buildMatrix(
   actor: NonNullable<Awaited<ReturnType<typeof getAuthenticatedAppUser>>>,
   capabilities: NonNullable<ReturnType<typeof getAdminCapabilities>>,
@@ -54,15 +57,28 @@ async function buildMatrix(
     // fan-out can read their defaultVisible — the UI hides them (features/admin/access-map.tsx).
     const ADMIN_FANOUT_KEYS = new Set(['access_control', 'admin_audit', 'dashboard_settings'])
     const branch = capabilities.branch
+    const seesEverySection = capabilities.authority === 'developer'
     const sections = catalog.groups
       // The Access Map controls only TOP-LEVEL navigable pages — exactly one toggle per sidebar
       // route (SECTION_ROUTES). Sub-sections (BE sub-reports, booking sub-stages, stock management,
       // empty brands, internal grouping nodes, …) are NOT toggleable here — they're handled in code.
       .filter((group) => routeKeys.has(group.key) || ADMIN_FANOUT_KEYS.has(group.key))
-      .filter((group) => capabilities.authority === 'developer'
+      // ⚠️ A group no page honours must not be offered as a tick. `insurance_analysis` is one: the Insurance
+      // page is role-locked, so ticking it granted nothing while looking like it had. It is shown instead
+      // as a read-only locked section below.
+      .filter((group) => !GROUPS_REPLACED_BY_LOCKED_SECTIONS.has(group.key))
+      .filter((group) => seesEverySection
         || Boolean(branch && (group.key === branch || group.key.startsWith(`${branch}.`))))
       .filter((group) => isDelegablePermission(actor, `${group.key}.view`))
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name))
+
+    /*
+     * Sidebar sections fixed by role in code (Targets, Data Health, …) — listed READ-ONLY, the owner's
+     * decision of 2026-09-11. They are cross-cutting, not in any branch's namespace, so they appear exactly
+     * when the common sections do. Their cells are computed from the same role rule the sidebar uses and are
+     * never saved: the `locked.` keys are not permission keys, and the Access Map refuses to toggle them.
+     */
+    const lockedSections = seesEverySection ? LOCKED_SIDEBAR_SECTIONS : []
 
     const condition = capabilities.authority === 'branch_admin' && capabilities.branch
       ? and(isNull(users.deletedAt), eq(users.brand, capabilities.branch))
@@ -113,18 +129,23 @@ async function buildMatrix(
     }
 
     const viewKeyBySection = sections.map((section) => ({ section, viewKey: `${section.key}.view` }))
-    const access: Record<string, Record<string, { visible: boolean; override: boolean; defaultVisible: boolean }>> = {}
+    const access: Record<string, Record<string, MatrixCell>> = {}
     for (const user of userRows) {
       const base = { ...allFalse, ...(roleDefaultsByRole.get(user.role) || {}) }
       const overrides = overridesByUser.get(user.id) || {}
       const snapshot = resolveEffectiveSnapshotForMode(base, overrides, user.role as PermissionRole, user.brand)
-      const row: Record<string, { visible: boolean; override: boolean; defaultVisible: boolean }> = {}
+      const row: Record<string, MatrixCell> = {}
       for (const { section, viewKey } of viewKeyBySection) {
         row[section.key] = {
           visible: snapshot.effective[viewKey] === true,
           override: viewKey in overrides,
           defaultVisible: snapshot.roleDefaults[viewKey] === true,
         }
+      }
+      for (const locked of lockedSections) {
+        const visible = locked.canView(user.role, user.brand)
+        // No override is possible, so the default IS the answer.
+        row[locked.key] = { visible, override: false, defaultVisible: visible }
       }
       access[user.id] = row
     }
@@ -139,7 +160,10 @@ async function buildMatrix(
         branchLabel: getUserBranchLabel(user.brand),
         isActive: user.isActive,
       })),
-      sections: sections.map((group) => ({ key: group.key, name: group.name, parentKey: group.parentKey, sortOrder: group.sortOrder })),
+      sections: [
+        ...sections.map((group) => ({ key: group.key, name: group.name, parentKey: group.parentKey, sortOrder: group.sortOrder })),
+        ...lockedSections.map((locked) => ({ key: locked.key, name: locked.name, parentKey: null, locked: true, rule: locked.rule })),
+      ],
       access,
     }
 }

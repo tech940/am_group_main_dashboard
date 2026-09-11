@@ -134,8 +134,8 @@ export async function POST(
 
     if (stage === 'sales_manager') {
       const rowBrand = String(requestRow.brand || 'kia').toLowerCase()
-      if (rowBrand === 'mg') {
-        // MG: Both Sales and Service first stage goes to VP
+      if (rowBrand === 'diamond' || rowBrand === 'honda') {
+        // Diamond / Honda: Both Sales and Service first stage goes to VP
         isAuthorized = isTester || isVp || isSuperUser
       } else if (isServiceCategory) {
         // SERVICE ORDER: VP (or SuperUser / Admin/Developer)

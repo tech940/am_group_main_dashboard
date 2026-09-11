@@ -107,15 +107,14 @@ function roleArrayContaining(source: string, marker: string): string[] {
   return []
 }
 
-/** The role list app/fuel-management/page.tsx used on 2026-09-11, before the rule moved to access.ts. */
-const ORIGINAL_FUEL_MANAGEMENT_ROLES = [
-  'developer', 'admin', 'ceo', 'accounts', 'finance_head', 'finance_team', 'md', 'ed', 'ea', 'eba', 'hr',
-  'general_manager', 'service_manager', 'sales_manager',
-]
-/** The role list app/fuel-approvals/page.tsx used on 2026-09-11, before the rule moved to view-access.ts. */
-const ORIGINAL_FUEL_APPROVALS_ROLES = [
-  'developer', 'admin', 'ceo', 'accounts', 'finance_head', 'finance_team', 'md', 'ed', 'ea', 'eba', 'hr',
-]
+/**
+ * Who opens each fuel section BY DEFAULT — the owner's decision of 2026-09-11, which narrowed both.
+ * Before it, Fuel Management admitted 14 roles plus anyone holding gate_pass.view (nearly every role), and
+ * Fuel Approvals 11. The CEO and HR keep Fuel Approvals because the CEO is its final approver and HR raises
+ * the requests. Individual Access-Map ticks are kept on top of this, by the same decision.
+ */
+const FUEL_MANAGEMENT_AUDIENCE = ['developer', 'md', 'ea']
+const FUEL_APPROVALS_AUDIENCE = ['developer', 'md', 'ea', 'ceo', 'hr']
 
 console.log('\n1) Both fuel sections are registered in EVERY place a section has to be:')
 {
@@ -125,8 +124,10 @@ console.log('\n1) Both fuel sections are registered in EVERY place a section has
   assert('its sortOrder is an integer', Number.isInteger(group?.sortOrder), `got ${String(group?.sortOrder)}`)
   assert('fuel_management routes to /fuel-management', SECTION_ROUTES.fuel_management?.href === '/fuel-management')
   assert('fuel_approvals routes to /fuel-approvals', SECTION_ROUTES.fuel_approvals?.href === '/fuel-approvals')
-  assert('fuel_management is on DEFAULT_VISIBLE_SECTIONS, as the v40 cache note records',
-    DEFAULT_VISIBLE_SECTIONS.has('fuel_management'))
+  // ⚠️ Restricted-by-default since 2026-09-11. On that list every brand user and every global-access role
+  // was handed both sections, which is how Fuel Management reached almost the whole company.
+  assert('neither fuel section is on DEFAULT_VISIBLE_SECTIONS any more',
+    !DEFAULT_VISIBLE_SECTIONS.has('fuel_management') && !DEFAULT_VISIBLE_SECTIONS.has('fuel_approvals'))
 
   for (const href of ['/fuel-management', '/fuel-approvals']) {
     const entries = ALL_SECTIONS.filter((s) => s.href === href)
@@ -154,15 +155,17 @@ console.log('\n2) Search admits a user through the same keys the pages use:')
   if (!fm || !fa) {
     assert('both fuel sections exist to test', false)
   } else {
-    for (const key of ['fuel_management.view', 'fuel_approvals.view', 'gate_pass.view']) {
-      assert(`/fuel-management is found with only ${key}`, canUserAccessSection(fm, 'sales_manager', 'kia', only(key)))
+    assert('/fuel-management is found with fuel_management.view',
+      canUserAccessSection(fm, 'ea', 'all', only('fuel_management.view')))
+    // ⚠️ Until 2026-09-11 both of these opened it too. gate_pass.view is held by nearly every role, so search
+    // put Fuel Management in front of almost the whole company.
+    for (const key of ['fuel_approvals.view', 'gate_pass.view']) {
+      assert(`/fuel-management is NOT found with only ${key}`, !canUserAccessSection(fm, 'sales_manager', 'kia', only(key)))
     }
-    assert('/fuel-management is NOT found without any of the three keys',
-      !canUserAccessSection(fm, 'viewer', 'kia', { 'petty_cash.view': true }))
     assert('/fuel-management is NOT found while the permission map is still loading',
       !canUserAccessSection(fm, 'viewer', 'kia', null))
-    assert('/fuel-management is found by a Hyundai login holding a key (the section is common)',
-      canUserAccessSection(fm, 'viewer', 'hyundai', only('fuel_approvals.view')))
+    assert('/fuel-management is found by a Hyundai login holding its key (the section is common)',
+      canUserAccessSection(fm, 'viewer', 'hyundai', only('fuel_management.view')))
     assert('a super admin finds /fuel-management before the map loads', canUserAccessSection(fm, 'md', null, null))
     assert('/fuel-approvals is found with fuel_approvals.view',
       canUserAccessSection(fa, 'viewer', 'kia', only('fuel_approvals.view')))
@@ -200,9 +203,11 @@ console.log('\n4) Each section has ONE access predicate, called by its page AND 
   assert("it honours an explicit deny on 'fuel_management.view' first",
     access.includes('isPermissionDenied') && access.includes("'fuel_management.view'"))
   assert('it honours an explicit Access-Map allow', access.includes('isPermissionExplicitlyAllowed'))
-  const fmRoles = roleArrayContaining(access, 'sales_manager')
-  assert('its role list is exactly the one the page used (audience neither widened nor narrowed)',
-    sameSet(fmRoles, ORIGINAL_FUEL_MANAGEMENT_ROLES), `got [${fmRoles.join(', ')}]`)
+  // The first array literal naming 'ea' is the view role set. (The edit rule's set, later in the same file,
+  // never names EA — section 8d asserts that.)
+  const fmRoles = roleArrayContaining(access, 'ea')
+  assert("its role list is exactly the audience the owner chose on 2026-09-11 (EA, MD, Developer)",
+    sameSet(fmRoles, FUEL_MANAGEMENT_AUDIENCE), `got [${fmRoles.join(', ')}]`)
 
   const page = stripComments(read('app/fuel-management/page.tsx'))
   const api = stripComments(read('app/api/fuel-management/route.ts'))
@@ -236,8 +241,58 @@ console.log('\n4) Each section has ONE access predicate, called by its page AND 
   assert('view-access checks deny, then the snapshot, then an explicit allow, on fuel_approvals.view',
     ['isPermissionDenied', 'getUserPermissionSnapshot', 'isPermissionExplicitlyAllowed', "'fuel_approvals.view'"]
       .every((token) => viewAccess.includes(token)))
-  assert('FUEL_APPROVALS_VIEW_ROLES is exactly the list the page used',
-    sameSet([...FUEL_APPROVALS_VIEW_ROLES], ORIGINAL_FUEL_APPROVALS_ROLES), `got [${FUEL_APPROVALS_VIEW_ROLES.join(', ')}]`)
+  assert('FUEL_APPROVALS_VIEW_ROLES is exactly the audience the owner chose on 2026-09-11 (EA, MD, Developer, CEO, HR)',
+    sameSet([...FUEL_APPROVALS_VIEW_ROLES], FUEL_APPROVALS_AUDIENCE), `got [${FUEL_APPROVALS_VIEW_ROLES.join(', ')}]`)
+}
+
+console.log('\n4b) The permission resolver gives both fuel sections exactly that audience, for EVERY role:')
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const S = require('../lib/permissions/service') as typeof import('../lib/permissions/service')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const R = require('../lib/permissions/registry') as typeof import('../lib/permissions/registry')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const T = require('../lib/permissions/tiers') as typeof import('../lib/permissions/tiers')
+  type Role = import('../lib/permissions/registry').PermissionRole
+  const ALL_FALSE = Object.fromEntries(R.PERMISSIONS.map((p) => [p.key, false])) as Record<string, boolean>
+  const roles = Object.keys(T.ROLE_PROFILE) as Role[]
+  /*
+   * ⚠️ Why every role, and both resolvers. Taking fuel off DEFAULT_VISIBLE_SECTIONS was not enough by itself:
+   * the global-access blanket would have taken Fuel Approvals from the CEO (its only approver), the tier bundle
+   * would have handed it to VP through the CEO's template, and `admin` is family 'super', whose bundle is every
+   * key. A spot check of a few roles misses exactly those.
+   */
+  for (const [label, resolve] of [['live tiered resolver', S.resolveEffectiveSnapshotV2], ['legacy resolver', S.resolveEffectiveSnapshot]] as const) {
+    const wrongFm: string[] = []
+    const wrongFa: string[] = []
+    for (const role of roles) {
+      const effective = resolve(ALL_FALSE, {}, role, 'all').effective
+      if ((effective['fuel_management.view'] === true) !== FUEL_MANAGEMENT_AUDIENCE.includes(role)) {
+        wrongFm.push(`${role}=${effective['fuel_management.view']}`)
+      }
+      if ((effective['fuel_approvals.view'] === true) !== FUEL_APPROVALS_AUDIENCE.includes(role)) {
+        wrongFa.push(`${role}=${effective['fuel_approvals.view']}`)
+      }
+    }
+    assert(`${label}: Fuel Management reaches EA, MD and Developer and none of the other ${roles.length - 3} roles`,
+      wrongFm.length === 0, wrongFm.join(', '))
+    assert(`${label}: Fuel Approvals reaches EA, MD, Developer, CEO and HR and no other role`,
+      wrongFa.length === 0, wrongFa.join(', '))
+  }
+  const V2 = S.resolveEffectiveSnapshotV2
+  assert('the CEO can still APPROVE fuel — the stage it owns',
+    V2(ALL_FALSE, {}, 'ceo', 'all').effective['fuel_approvals.approve'] === true)
+  const hr = V2(ALL_FALSE, {}, 'hr', 'all').effective
+  assert('HR can raise a fuel request but cannot approve one',
+    hr['fuel_approvals.create'] === true && hr['fuel_approvals.approve'] !== true)
+  // The owner kept the four individual ticks (1 Accounts, 3 Viewers).
+  assert('an individual Access-Map tick still opens Fuel Approvals for a Viewer',
+    V2(ALL_FALSE, { 'fuel_approvals.view': true }, 'viewer', 'kia').effective['fuel_approvals.view'] === true)
+  assert('an individual Access-Map deny still closes it for the CEO',
+    V2(ALL_FALSE, { 'fuel_approvals.view': false }, 'ceo', 'all').effective['fuel_approvals.view'] === false)
+  // A leftover role grant in the database is a DEFAULT, and the clamp runs on the default layer.
+  assert('a leftover role-level grant in the database cannot reopen Fuel Approvals for a Manager',
+    V2({ ...ALL_FALSE, 'fuel_approvals.view': true }, {}, 'manager', 'kia').effective['fuel_approvals.view'] !== true)
 }
 
 console.log('\n5) The API ships only what the screen shows, read from only the columns it needs:')
@@ -259,8 +314,19 @@ console.log('\n5) The API ships only what the screen shows, read from only the c
     assert(`${rel} never SELECT *s (a bare .select())`, !/\.select\(\s*\)/.test(src))
     // The old overview bucketed gate passes with toISOString().slice(0, 10) — a UTC day, wrong before 05:30 IST.
     assert(`${rel} never takes a calendar day from UTC`, !/toISOString\(\)\s*\.(?:slice|split|substring)\(/.test(src))
-    const fabricated = src.match(/costPer|fuelCost|pricePerL|₹|High Burn|high_consumption|efficiencyStatus|Active across/i)
-    assert(`${rel} has no cost, efficiency label or hardcoded coverage text`, !fabricated, fabricated?.[0] ?? '')
+    /*
+     * ⚠️ Cost and efficiency status became REAL on 2026-09-11: staff type the receipt total, and expected mileage is
+     * configured by MD/GM/admin. What stays banned in EVERY file is an INVENTED one — a price literal (the screen this
+     * replaced used ₹98/₹88 per litre), a threshold label nobody set ("High Burn"), or hardcoded coverage text.
+     * The engine derives cost and status from its inputs, so it alone may name them; every other file must take them
+     * from the engine rather than compute its own.
+     */
+    const fabricated = src.match(/₹\s*\d|High Burn|high_consumption|Active across/i)
+    assert(`${rel} invents no price, threshold label or coverage text`, !fabricated, fabricated?.[0] ?? '')
+    if (rel !== 'lib/fuel-management/engine.ts') {
+      const derived = src.match(/costPer|fuelCost|pricePerL|efficiencyStatus/i)
+      assert(`${rel} leaves cost and efficiency status to the engine`, !derived, derived?.[0] ?? '')
+    }
   }
 
   const route = stripComments(read('app/api/fuel-management/route.ts'))
@@ -608,6 +674,394 @@ console.log('\n8) Pure maths, with the labels measured on 2026-09-11:')
     otherFuel === 'T-06,T-07,T-08,T-13,T-14,T-16', otherFuel)
   assert("other fuel labels the purpose in title case ('GENSET' → 'Genset')",
     response.otherFuel.find((row) => row.requestNumber === 'T-13')?.purposeLabel === 'Genset')
+}
+
+console.log('\n8b) The calculation engine, on the owner\'s own examples:')
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const E = require('../lib/fuel-management/engine') as typeof import('../lib/fuel-management/engine')
+  type Fill = import('../lib/fuel-management/engine').EngineFill
+  let seq = 0
+  const fill = (over: Partial<Fill> & Pick<Fill, 'date'>): Fill => ({
+    id: over.id ?? `f${++seq}`, vehicleKey: 'VIN-CRETA', sequence: seq, energyType: 'petrol', unit: 'L',
+    quantity: 40, totalCost: null, odometerKm: null, isFullTank: true, odometerOverride: false, ...over,
+  })
+  const near = (a: number | null | undefined, b: number, eps = 0.005) => typeof a === 'number' && Math.abs(a - b) <= eps
+
+  // The owner's worked example: 20,000 km full → 20,600 km full with 42 L.
+  {
+    const segs = E.buildSegments([
+      fill({ id: 'a', date: '2026-08-01', odometerKm: 20000, quantity: 40, totalCost: 3920 }),
+      fill({ id: 'b', date: '2026-08-10', odometerKm: 20600, quantity: 42, totalCost: 4116 }),
+    ])
+    const full = segs.filter((s) => s.kind === 'full_tank')
+    assert('full tank to full tank: 600 km on 42 L is 14.29 km/L', full.length === 1 && full[0].distanceKm === 600 &&
+      full[0].quantity === 42 && near(full[0].efficiency, 14.2857, 0.0001), JSON.stringify(full[0]))
+    assert('cost per km comes from the receipt total: ₹4,116 over 600 km is ₹6.86/km', near(full[0]?.costPerKm, 6.86))
+    assert('the opening fill\'s fuel is NOT counted — it was burned before the stretch began', !full[0]?.countedFillIds.includes('a'))
+  }
+  {
+    const segs = E.buildSegments([
+      fill({ id: 'a', date: '2026-08-01', odometerKm: 20000 }),
+      fill({ id: 'p', date: '2026-08-05', odometerKm: 20300, quantity: 10, isFullTank: false }),
+      fill({ id: 'b', date: '2026-08-10', odometerKm: 20600, quantity: 32 }),
+    ]).filter((s) => s.kind === 'full_tank')
+    assert('a partial fill inside the stretch adds its fuel and does not break it (10 L + 32 L over 600 km)',
+      segs.length === 1 && segs[0].quantity === 42 && near(segs[0].efficiency, 14.2857, 0.0001) && segs[0].countedFillIds.join() === 'p,b')
+  }
+  {
+    const problem = (fills: Fill[]) => E.buildSegments(fills).find((s) => s.kind === 'full_tank')?.problem
+    assert('a missing closing odometer gives no mileage', problem([
+      fill({ date: '2026-08-01', odometerKm: 20000 }), fill({ date: '2026-08-10', odometerKm: null }),
+    ]) === 'missing_odometer')
+    assert('an odometer that goes backwards inside the stretch gives no mileage', problem([
+      fill({ date: '2026-08-01', odometerKm: 20000 }), fill({ date: '2026-08-04', odometerKm: 19900, isFullTank: false }),
+      fill({ date: '2026-08-10', odometerKm: 20600 }),
+    ]) === 'odometer_decrease')
+    assert('an authorised odometer correction inside the stretch gives no mileage', problem([
+      fill({ date: '2026-08-01', odometerKm: 20000 }), fill({ date: '2026-08-10', odometerKm: 20600, odometerOverride: true }),
+    ]) === 'override_inside')
+    assert('50 km is below the minimum distance — "Mileage unavailable", not a small-sample figure', problem([
+      fill({ date: '2026-08-01', odometerKm: 20000 }), fill({ date: '2026-08-02', odometerKm: 20050 }),
+    ]) === 'too_short')
+    const afterCorrection = E.buildSegments([
+      fill({ date: '2026-08-01', odometerKm: 90000 }), fill({ id: 'fix', date: '2026-08-05', odometerKm: 100, odometerOverride: true }),
+      fill({ id: 'next', date: '2026-08-12', odometerKm: 700, quantity: 40 }),
+    ]).find((s) => s.closingFillId === 'next' && s.kind === 'full_tank')
+    assert('the stretch AFTER a correction starts cleanly from the corrected reading', afterCorrection?.usable === true && afterCorrection.distanceKm === 600)
+  }
+  {
+    const segs = E.buildSegments([
+      fill({ id: 'x', date: '2026-08-01', odometerKm: 1000, isFullTank: null }),
+      fill({ id: 'y', date: '2026-08-06', odometerKm: 1500, quantity: 30, isFullTank: null }),
+    ])
+    const s = E.summariseVehicleMileage(segs, 'VIN-CRETA', 'L', '2026-08-31')
+    assert('with no full-tank information the figure is PROVISIONAL and labelled so (500 km ÷ 30 L)',
+      segs.length === 1 && segs[0].kind === 'provisional' && s.basis === 'provisional' && near(s.current, 16.667, 0.001))
+    const partial = E.buildSegments([
+      fill({ date: '2026-08-01', odometerKm: 1000, isFullTank: null }),
+      fill({ date: '2026-08-06', odometerKm: 1500, quantity: 5, isFullTank: false }),
+    ])
+    assert('a fill known to be partial never becomes a provisional figure', partial.length === 0)
+    const none = E.summariseVehicleMileage([], 'VIN-CRETA', 'L', '2026-08-31')
+    assert('one fill is "Needs a second fill with an odometer reading"', none.basis === 'none' && /second fill/.test(none.unavailableReason ?? ''))
+  }
+  {
+    const segs = E.buildSegments([
+      fill({ vehicleKey: 'HYB', date: '2026-08-01', odometerKm: 1000, unit: 'L', energyType: 'hybrid' }),
+      fill({ vehicleKey: 'HYB', date: '2026-08-02', odometerKm: 1100, unit: 'kWh', energyType: 'hybrid', quantity: 12 }),
+      fill({ vehicleKey: 'HYB', date: '2026-08-10', odometerKm: 1600, unit: 'L', energyType: 'hybrid', quantity: 30 }),
+      fill({ vehicleKey: 'HYB', date: '2026-08-11', odometerKm: 1700, unit: 'kWh', energyType: 'hybrid', quantity: 20 }),
+    ]).filter((s) => s.kind === 'full_tank')
+    assert('a hybrid keeps km/L and km/kWh as separate streams — units are never mixed',
+      segs.length === 2 && segs.some((s) => s.unit === 'L' && s.quantity === 30) && segs.some((s) => s.unit === 'kWh' && s.quantity === 20) &&
+      E.efficiencyUnitLabel('kWh') === 'km/kWh' && E.ENERGY_UNIT.ev === 'kWh' && E.ENERGY_UNIT.cng === 'kg')
+  }
+  {
+    // 16.2 → 15.8 → 15.1 → 14.3 km/L across four full-tank stretches of 600 km.
+    const effs = [16.2, 15.8, 15.1, 14.3]
+    let odo = 10000
+    const fills: Fill[] = [fill({ date: '2026-05-01', odometerKm: odo })]
+    effs.forEach((e, i) => { odo += 600; fills.push(fill({ date: `2026-0${6 + i}-01`, odometerKm: odo, quantity: 600 / e, totalCost: (600 / e) * 100 })) })
+    const segs = E.buildSegments(fills)
+    const s = E.summariseVehicleMileage(segs, 'VIN-CRETA', 'L', '2026-09-15')
+    assert('current mileage is the latest full-tank stretch (14.3)', near(s.current, 14.3, 0.001))
+    assert('the last three refuels read 15.8 → 15.1 → 14.3', s.lastRefuels.length === 3 && near(s.lastRefuels[0], 15.8, 0.001) && near(s.lastRefuels[2], 14.3, 0.001))
+    assert('four consecutive falls are flagged as a declining trend', s.declining === true)
+    assert('best and worst come from the stretches themselves', near(s.best, 16.2, 0.001) && near(s.worst, 14.3, 0.001))
+    const expectedAvg = 2400 / effs.reduce((t, e) => t + 600 / e, 0)
+    assert('the average is total distance ÷ total fuel, not the average of the four ratios',
+      near(s.average, expectedAvg, 0.0001) && !near(s.average, effs.reduce((a, b) => a + b, 0) / 4, 0.0001))
+    assert('last 30 days holds only the stretch that closed inside it', near(s.last30Days, 14.3, 0.001))
+    assert('cost per km over the stretches uses the receipt totals (₹100/L at ~15.3 km/L is ₹6.5/km)', near(s.costPerKm, 100 / expectedAvg, 0.001))
+  }
+  {
+    const benchmarks: import('../lib/fuel-management/engine').FuelBenchmark[] = [
+      { scope: 'model', model: 'creta', energyType: 'petrol', unit: 'L', expectedEfficiency: 16, tankCapacity: 50 },
+      { scope: 'model_variant', model: 'CRETA', variant: 'SX', energyType: 'petrol', unit: 'L', expectedEfficiency: 15, tankCapacity: 50 },
+      { scope: 'vehicle', vin: 'VIN-CRETA', energyType: 'petrol', unit: 'L', expectedEfficiency: 14, tankCapacity: 50 },
+      { scope: 'model', model: 'CRETA', energyType: 'diesel', unit: 'L', expectedEfficiency: 19, tankCapacity: 50 },
+    ]
+    const subject = { vin: 'VIN-CRETA', model: 'Creta', variant: 'SX', energyType: 'petrol' as const, unit: 'L' as const }
+    assert('a benchmark set for this vehicle beats its model and variant', E.resolveBenchmark(subject, benchmarks)?.expectedEfficiency === 14)
+    assert('model + variant beats model', E.resolveBenchmark({ ...subject, vin: 'OTHER' }, benchmarks)?.expectedEfficiency === 15)
+    assert('the energy type must match — a diesel benchmark never judges a petrol car',
+      E.resolveBenchmark({ ...subject, vin: 'OTHER', variant: 'EX' }, benchmarks)?.expectedEfficiency === 16)
+    assert('no benchmark is null, never a guess', E.resolveBenchmark({ ...subject, vin: 'X', model: 'Venue', variant: null }, benchmarks) === null)
+
+    const watch = E.assessEfficiency(13.8, 16)
+    assert('13.8 against 16 km/L is 86.25% and −2.2 km/L: Watch', watch.status === 'watch' && near(watch.efficiencyPct, 86.25) && near(watch.variance, -2.2))
+    assert('15.4 against 16 is Good; 13.1 against 18 is Poor', E.assessEfficiency(15.4, 16).status === 'good' && E.assessEfficiency(13.1, 18).status === 'poor')
+    assert('the thresholds are settings, not constants', E.assessEfficiency(13.8, 16, { ...E.DEFAULT_FUEL_SETTINGS, statusWatchMinPct: 90 }).status === 'poor')
+    assert('without a benchmark the status is "No benchmark"; without a figure it is "No data"',
+      E.assessEfficiency(14, null).status === 'no_benchmark' && E.assessEfficiency(null, 16).status === 'no_data')
+  }
+  {
+    const b = E.decomposeCostChange({ distanceKm: 10000, quantity: 700, cost: 70000 }, { distanceKm: 12000, quantity: 900, cost: 94500 })
+    assert('the cost change splits into distance, price and efficiency parts that add up EXACTLY',
+      b !== null && Math.abs(b.distance + b.price + b.efficiency - b.total) < 1e-6 && b.total === 24500, JSON.stringify(b))
+    assert('more distance, a higher price and worse mileage each push the cost up', b !== null && b.distance > 0 && b.price > 0 && b.efficiency > 0)
+    const flat = E.decomposeCostChange({ distanceKm: 1000, quantity: 70, cost: 7000 }, { distanceKm: 1000, quantity: 70, cost: 7000 })
+    assert('an unchanged period decomposes to zero, not NaN', flat !== null && flat.total === 0 && Math.abs(flat.distance) < 1e-9)
+    assert('a missing factor gives no breakdown at all', E.decomposeCostChange({ distanceKm: 0, quantity: 70, cost: 7000 }, { distanceKm: 1000, quantity: 70, cost: 7000 }) === null)
+  }
+  {
+    const tank: import('../lib/fuel-management/engine').FuelBenchmark = { scope: 'model', model: 'X', energyType: 'petrol', unit: 'L', expectedEfficiency: 15, tankCapacity: 50 }
+    const run = (fills: Fill[], withBenchmark = true, settings = E.DEFAULT_FUEL_SETTINGS) =>
+      E.detectExceptions({ fills, segments: E.buildSegments(fills, settings), benchmarkFor: () => (withBenchmark ? tank : null), settings })
+    const dec = run([fill({ date: '2026-08-01', odometerKm: 45200 }), fill({ date: '2026-08-05', odometerKm: 44900, isFullTank: false, quantity: 10 })])
+    assert('an odometer 300 km lower than the previous reading is flagged with both readings',
+      dec.some((x) => x.kind === 'odometer_decrease' && x.variance === -300 && /300 km lower/.test(x.message)))
+    assert('an authorised correction is not flagged again', !run([
+      fill({ date: '2026-08-01', odometerKm: 45200 }), fill({ date: '2026-08-05', odometerKm: 44900, odometerOverride: true }),
+    ]).some((x) => x.kind === 'odometer_decrease'))
+    assert('68 L against a configured 50 L tank is flagged; 52 L (within 5%) is not',
+      run([fill({ id: 'big', date: '2026-08-01', quantity: 68 }), fill({ id: 'ok', date: '2026-08-09', quantity: 52 })])
+        .filter((x) => x.kind === 'above_tank_capacity').map((x) => x.fillId).join() === 'big')
+    assert('no configured capacity, no tank check', !run([fill({ date: '2026-08-01', quantity: 68 })], false).some((x) => x.kind === 'above_tank_capacity'))
+
+    const history = (effs: number[]) => {
+      let odo = 0
+      const fills: Fill[] = [fill({ date: '2026-01-01', odometerKm: odo })]
+      effs.forEach((e, i) => { odo += 600; fills.push(fill({ date: `2026-${String(2 + i).padStart(2, '0')}-01`, odometerKm: odo, quantity: 600 / e })) })
+      return fills
+    }
+    const drop = run(history([15.8, 16.0, 15.6, 10.9]), false)
+    assert('10.9 km/L after a usual 15.8 is a 31% mileage drop', drop.some((x) => x.kind === 'mileage_drop' && /31% below/.test(x.message)),
+      drop.map((x) => x.message).join(' | '))
+    assert('two earlier stretches are not enough history to call a drop', !run(history([15.8, 16.0, 10.9]), false).some((x) => x.kind === 'mileage_drop'))
+    const wild = run([fill({ date: '2026-08-01', odometerKm: 1000 }), fill({ date: '2026-08-10', odometerKm: 4200, quantity: 40 })])
+    assert('80 km/L against an expected 15 is a possible data-entry error — never "fraud"',
+      wild.some((x) => x.kind === 'impossible_mileage' && /data-entry error/.test(x.message)) && !wild.some((x) => /fraud|fault|tamper/i.test(x.message)))
+    assert('with no benchmark and no history there is nothing to call impossible', !run([
+      fill({ date: '2026-08-01', odometerKm: 1000 }), fill({ date: '2026-08-10', odometerKm: 4200, quantity: 40 }),
+    ], false).some((x) => x.kind === 'impossible_mileage'))
+    const sameDay = run([1, 2, 3, 4].map((i) => fill({ date: '2026-08-01', quantity: 5 + i, isFullTank: false })), false)
+    assert('four fills in one day is flagged once', sameDay.filter((x) => x.kind === 'refuel_frequency').length === 1)
+    const priced = [98, 99, 100, 101, 100, 130].map((p, i) => fill({ vehicleKey: `V${i}`, date: '2026-08-01', quantity: 10, totalCost: p * 10 }))
+    const prices = run(priced, false).filter((x) => x.kind === 'price_out_of_range')
+    assert('₹130/L among ~₹100/L fills is flagged as a price outlier', prices.length === 1 && /30% above/.test(prices[0].message), prices.map((x) => x.message).join(' | '))
+    assert('below the minimum sample, prices are not judged', run(priced.slice(0, 3), false).filter((x) => x.kind === 'price_out_of_range').length === 0)
+    assert('the same vehicle, date and quantity twice is a possible duplicate', run([
+      fill({ id: 'd1', date: '2026-08-01', quantity: 20 }), fill({ id: 'd2', date: '2026-08-01', quantity: 20 }),
+    ], false).some((x) => x.kind === 'possible_duplicate' && x.fillId === 'd2'))
+  }
+  {
+    const previous = fill({ id: 'prev', date: '2026-08-01', odometerKm: 20000 })
+    const context = { previousReading: previous, openFullTank: previous, fillsSinceFullTank: [], tankCapacity: 50, expectedEfficiency: 16, baselineEfficiency: null }
+    const draft = { vehicleKey: 'VIN-CRETA', isVehicle: true, energyType: 'petrol' as const, unit: 'L' as const, date: '2026-08-10', quantity: 42, totalCost: 3990, odometerKm: 20600, isFullTank: true }
+    const { issues, preview } = E.previewFuelEntry(draft, context)
+    assert('before saving: 600 km since the last reading, 14.29 km/L (full tank), ₹3,990, ₹6.65/km',
+      issues.length === 0 && preview.distanceSincePreviousKm === 600 && preview.efficiencyBasis === 'full_tank' &&
+      near(preview.efficiency, 14.29) && preview.cost === 3990 && near(preview.costPerKm, 6.65) && near(preview.unitPrice, 95),
+      JSON.stringify({ issues, preview }))
+    const bad = E.previewFuelEntry({ ...draft, quantity: -5, totalCost: null, isFullTank: null }, context).issues
+    assert('a negative quantity, a missing receipt total and an unanswered full-tank question block the save',
+      ['quantity', 'total_cost', 'full_tank_missing'].every((code) => bad.some((i) => i.code === code && i.level === 'error')))
+    const lower = E.previewFuelEntry({ ...draft, odometerKm: 19700 }, context).issues
+    assert('an odometer below the last reading warns and needs an authorised override — it is not silently rejected',
+      lower.some((i) => i.code === 'odometer_decrease' && i.level === 'warning' && i.requiresOverride))
+    const genset = E.previewFuelEntry({ ...draft, vehicleKey: 'GENSET', isVehicle: false, odometerKm: null, isFullTank: null, energyType: 'diesel' }, { ...context, previousReading: null, openFullTank: null })
+    assert('a genset needs no odometer or full-tank answer, and gets no mileage', genset.issues.length === 0 && genset.preview.efficiency === null)
+  }
+  {
+    const lines = E.describeFleetPeriod({
+      streams: [{ unit: 'L', quantity: 420, distanceKm: 5240, spend: 39824 }],
+      vehiclesBelowExpected: 2,
+      benchmarksConfigured: true,
+      spendBefore: 36536,
+      spendAfter: 39824,
+      breakdown: { total: 3288, distance: 2500, price: 500, efficiency: 288 },
+    })
+    assert('"420 L consumed across 5,240 km, averaging 12.5 km/L at ₹7.60/km."', lines[0] === '420 L consumed across 5,240 km, averaging 12.5 km/L at ₹7.60/km.', lines.join(' | '))
+    assert('"2 vehicles are below their expected efficiency."', lines.includes('2 vehicles are below their expected efficiency.'))
+    assert('"Fuel spend rose 9% compared with the previous period, mainly because of more distance travelled."',
+      lines.includes('Fuel spend rose 9% compared with the previous period, mainly because of more distance travelled.'), lines.join(' | '))
+    const honest = E.describeFleetPeriod({ streams: [{ unit: 'L', quantity: 260, distanceKm: 0, spend: null }], vehiclesBelowExpected: 0, benchmarksConfigured: false, spendBefore: null, spendAfter: null, breakdown: null })
+    assert('with today\'s data it says mileage and cost are unavailable instead of inventing them',
+      honest.some((l) => /mileage is unavailable/.test(l)) && honest.some((l) => /Cost is unavailable/.test(l)) && honest.some((l) => /No expected mileage is set/.test(l)))
+    assert('Indian digit grouping: 1,82,400 km', E.formatNumber(182400) === '1,82,400')
+  }
+  {
+    const engineSrc = stripComments(read('lib/fuel-management/engine.ts'))
+    assert('the engine is pure — no imports, no database, no clock',
+      engineSrc.length > 0 && !/^\s*import\s/m.test(engineSrc) && !/\bnew Date\(\s*\)|Date\.now\(\)/.test(engineSrc))
+    assert('no expected mileage is written into the engine — benchmarks arrive as input',
+      !/expectedEfficiency\s*:\s*\d/.test(engineSrc))
+  }
+}
+
+console.log('\n8c) Migrations 0063/0064 and the schema say the same thing:')
+{
+  const m63 = read('lib/db/migrations/0063_add_fuel_entry_columns.sql')
+  const r63 = read('lib/db/migrations/0063_rollback_add_fuel_entry_columns.sql')
+  const m64 = read('lib/db/migrations/0064_add_fuel_benchmarks_and_settings.sql')
+  const r64 = read('lib/db/migrations/0064_rollback_add_fuel_benchmarks_and_settings.sql')
+  // Several checks below are about what the SQL DOES, so they must not read the commentary that explains
+  // what it deliberately does NOT do (0063's header names unit_price precisely to rule it out).
+  const sqlOnly = (sql: string) => sql.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n')
+
+  // ⚠️ Comments stripped first, so these assertions read CODE, not prose. Both halves matter: the
+  // schema comment explaining there is no unitPrice contains the very string that would fail the check,
+  // and a column named only in a comment must not count as mapped in Drizzle.
+  const schema = stripComments(read('lib/db/schema.ts'))
+  const fromTable = schema.slice(schema.indexOf('export const fuelApprovals = pgTable('))
+  const fuelBlock = fromTable.slice(0, fromTable.indexOf('\n})'))
+
+  const added = [...sqlOnly(m63).matchAll(/ADD COLUMN IF NOT EXISTS\s+(\w+)/g)].map((m) => m[1])
+  assert('0063 adds the columns a mileage figure needs', added.length >= 14, `added ${added.length}`)
+  for (const column of added) {
+    // A column that exists in Postgres but not in Drizzle is invisible to the app — the whole point of
+    // this section. schema.ts names every column as a quoted string: text('total_cost') and friends.
+    assert(`schema.ts maps fuel_approvals.${column}`, new RegExp(`\\('${column}'`).test(fuelBlock))
+  }
+  const dropped = [...sqlOnly(r63).matchAll(/DROP COLUMN IF EXISTS\s+(\w+)/g)].map((m) => m[1])
+  assert('the 0063 rollback drops exactly what 0063 added', sameSet(added, dropped),
+    `added [${added.join(', ')}] vs dropped [${dropped.join(', ')}]`)
+
+  // ⚠️ The two-sources-of-truth rule. fuel_filled_ltrs already holds the quantity and total_cost already
+  // determines the price; a second column for either is the defect that made status + current_stage
+  // unmaintainable, and it is easiest to reintroduce by accident in a later migration.
+  assert('0063 adds no rival quantity column — fuel_filled_ltrs is the quantity', !added.includes('quantity'))
+  assert('0063 stores no unit price — the engine derives it from the receipt total',
+    !added.some((c) => /price/.test(c)) && !/unitPrice:/.test(fuelBlock))
+  assert('quantity_unit says what fuel_filled_ltrs is measured in', added.includes('quantity_unit'))
+  assert('every unit and energy the engine knows is allowed, and nothing else',
+    /energy_type IN \('petrol', 'diesel', 'cng', 'ev', 'hybrid'\)/.test(m63) && /unit IN \('L', 'kg', 'kWh'\)/.test(m63))
+  assert('an odometer override cannot be recorded without who accepted it and when',
+    /odometer_override = false OR \(odometer_override_by IS NOT NULL AND odometer_override_at IS NOT NULL\)/.test(m63))
+  assert('a fill belongs to a vehicle or an asset, never both', /vehicle_vin IS NULL OR asset_code IS NULL/.test(m63))
+
+  // House rule from 0050: statuses are free text against a UI list. ALTER TYPE cannot run in a
+  // transaction, and a missing enum value has taken this app down before.
+  for (const [name, sql] of [['0063', m63], ['0064', m64]] as const) {
+    assert(`${name} creates no enum type`, !/ALTER TYPE|CREATE TYPE/.test(sqlOnly(sql)))
+    assert(`${name} warns that DDL belongs on the direct port 5432, not the pooler`, /5432/.test(sql) && /6543/.test(sql))
+    assert(`${name} revokes anon, authenticated and PUBLIC`, /FROM anon, authenticated, PUBLIC/.test(sqlOnly(sql)))
+  }
+
+  for (const [name, sql] of [['0063', r63], ['0064', r64]] as const) {
+    assert(`the ${name} rollback says it destroys data and exports first`,
+      /DESTROYS DATA/.test(sql) && /\\copy/.test(sql))
+  }
+  // ⚠️ Re-granting `authenticated` full DML on fuel records would be a new security decision, not the
+  // undo of a schema change.
+  assert('no rollback quietly re-grants authenticated',
+    !/GRANT[^\n]*\bauthenticated\b/.test(sqlOnly(r63) + sqlOnly(r64)))
+
+  for (const table of ['fuel_benchmarks', 'fuel_intelligence_settings', 'fuel_config_events']) {
+    assert(`0064 creates ${table} with RLS enabled`,
+      new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}`).test(m64) &&
+      new RegExp(`ALTER TABLE public\\.${table}\\s+ENABLE ROW LEVEL SECURITY`).test(m64))
+    assert(`the 0064 rollback drops ${table}`, new RegExp(`DROP TABLE IF EXISTS public\\.${table}`).test(m64 + r64))
+  }
+  assert('benchmarks resolve uniquely at each scope, case-folded',
+    ['fuel_benchmarks_vehicle_key', 'fuel_benchmarks_model_variant_key', 'fuel_benchmarks_model_key']
+      .every((idx) => m64.includes(idx)) && /upper\(btrim\(/.test(m64))
+  assert('a benchmark must configure a mileage or a tank capacity, not nothing',
+    /expected_efficiency IS NOT NULL OR tank_capacity IS NOT NULL/.test(m64))
+  assert('the config audit is append-only by trigger, with search_path pinned',
+    /fuel_config_events_append_only/.test(m64) && /SET search_path = ''/.test(m64) && /BEFORE TRUNCATE/.test(m64))
+  // ⚠️ Seeding would put every threshold in two places. The engine's DEFAULT_FUEL_SETTINGS is the one
+  // definition of what each number means; an empty table simply means nobody has overridden it.
+  assert('0064 does not seed the settings table — the engine defaults are the single definition',
+    !/INSERT INTO public\.fuel_intelligence_settings/.test(sqlOnly(m64)))
+}
+
+console.log('\n8d) The Fuel Approvals routes stopped leaking (2026-09-11):')
+{
+  const list = stripComments(read('app/api/fuel-approvals/route.ts'))
+  const bulk = stripComments(read('app/api/fuel-approvals/bulk-action/route.ts'))
+  const single = stripComments(read('app/api/fuel-approvals/[id]/action/route.ts'))
+  const access = stripComments(read('lib/fuel-management/access.ts'))
+
+  // ⚠️ The list response carries submitter emails, slip URLs, remarks and a history array holding an
+  // email per actor. It used to check only an explicit Access-Map DENY, which almost nobody sets, so
+  // every signed-in employee could read every fuel record in the company.
+  assert('the list route gates on canViewFuelApprovals, not merely an explicit deny',
+    list.includes('canViewFuelApprovals') && !/isPermissionDenied\(/.test(list))
+  assert('the list route does not restate the view rule itself',
+    !/getUserPermissionSnapshot|FUEL_APPROVALS_VIEW_ROLES/.test(list))
+
+  for (const [name, src] of [['list', list], ['bulk-action', bulk], ['action', single]] as const) {
+    assert(`the ${name} route never returns a raw driver message`, !/details:/.test(src))
+  }
+
+  assert('a malformed body answers 400, not a 500 that reads as if the database refused the record',
+    /request\.json\(\)\.catch\(/.test(list))
+
+  // ⚠️ RESET erases an approval chain. In bulk it used to skip the permission check entirely; in the
+  // single route an approver reached the UPDATE and appended a RESET entry for an action that never
+  // happened. The CEO can approve — the CEO must not be able to un-approve.
+  assert('RESET is refused to anyone but developer/admin, in BOTH routes',
+    /action === 'RESET' \? !isDeveloperOrAdmin : !canApprove/.test(bulk) &&
+    /action === 'RESET' && !isDeveloperOrAdmin/.test(single))
+
+  // An override tells the engine to stop measuring across a stretch. A submitter who could set it could
+  // silence the check that protects their own numbers.
+  assert('the submit form cannot set an odometer override', /odometerOverride === true/.test(list))
+
+  for (const field of ['energyType', 'quantityUnit', 'totalCost', 'odometerKm', 'isFullTank',
+    'vehicleVin', 'assetCode', 'driverUserId', 'stationName', 'stationLocation']) {
+    assert(`POST stores ${field}`, new RegExp(`${field}:`).test(list))
+  }
+  // ⚠️ A missing receipt total or odometer must stay NULL. A 0 would enter an average and drag a
+  // vehicle's cost per km toward zero while looking like a real measurement.
+  assert('nothing defaults a missing receipt total or odometer to zero',
+    /cost === null \? null/.test(list) && /odometer === null \? null/.test(list))
+  assert('only a real boolean counts as a full-tank answer',
+    /typeof isFullTank === 'boolean' \? isFullTank : null/.test(list))
+  assert('energy and unit are whitelisted to exactly what 0063 allows',
+    /'petrol', 'diesel', 'cng', 'ev', 'hybrid'/.test(list) && /'L', 'kg', 'kWh'/.test(list))
+
+  assert('fuel_management.edit has one statement', /export async function canEditFuelManagement/.test(access))
+  const editBody = access.slice(access.indexOf('export async function canEditFuelManagement'))
+  // Editing must not inherit the view grants: canViewFuelManagement opens to anyone holding
+  // fuel_approvals.view or gate_pass.view, which is most managers.
+  assert('editing benchmarks does not inherit the view grants', !/GRANTING_PERMISSIONS/.test(editBody))
+  const rolesFrom = access.slice(access.indexOf('FUEL_MANAGEMENT_EDIT_ROLES'))
+  const editRoles = rolesFrom.slice(0, rolesFrom.indexOf('])'))
+  assert('MD, GM and admin may set expected mileage',
+    ["'md'", "'general_manager'", "'admin'"].every((r) => editRoles.includes(r)), editRoles.replace(/\s+/g, ' '))
+  assert('editing is narrower than viewing — not accounts, EA, HR or branch managers',
+    ['accounts', 'finance_team', 'finance_head', 'ea', 'eba', 'hr', 'sales_manager', 'service_manager']
+      .every((r) => !editRoles.includes(`'${r}'`)), editRoles.replace(/\s+/g, ' '))
+}
+
+console.log('\n8e) The backfill can only ever do what it says:')
+{
+  const backfill = stripComments(read('scripts/backfill-fuel-entry-columns.ts'))
+
+  assert('it is a dry run unless --apply is passed', /process\.argv\.includes\('--apply'\)/.test(backfill))
+  // The early return must come BEFORE the only UPDATE, or a dry run would write.
+  assert('the dry run returns before any write is reached',
+    backfill.indexOf('if (!APPLY)') > 0 && backfill.indexOf('if (!APPLY)') < backfill.indexOf('db.update('))
+
+  // ⚠️ The four columns it may set, and nothing else.
+  const writes = [...backfill.matchAll(/payload\.(\w+)/g)].map((m) => m[1])
+  assert('it writes only odometerKm, energyType, vehicleVin and assetCode',
+    sameSet([...new Set(writes)], ['odometerKm', 'energyType', 'vehicleVin', 'assetCode']), writes.join(', '))
+
+  // ⚠️ Nobody was ever asked the full-tank question and no price was ever recorded. Filling either in
+  // would invent the basis every mileage and cost figure rests on, and it would look authoritative.
+  assert('it never writes a full-tank answer or a receipt total',
+    !/payload\.isFullTank|payload\.totalCost/.test(backfill))
+  // A backfill that can re-stage a request is an approval tool wearing a data-repair disguise.
+  assert('it never touches status, stage, approvers or history',
+    !/fuelApprovals\.(?:status|currentStage|history|\w*ApprovedBy\w*|rejectedBy\w*)\b/.test(backfill))
+
+  // Every write is guarded on the column currently being NULL, so a real value is never overwritten.
+  for (const column of ['odometerKm', 'energyType', 'vehicleVin', 'assetCode']) {
+    assert(`it only fills ${column} when it is empty`, new RegExp(`row\\.${column} === null`).test(backfill))
+  }
+
+  // ⚠️ The PURPOSE decides whether fuel went into an asset — never the free-text vehicle label. Matching
+  // the label classified three 'STOCK TRANSFER' rows as the stockyard and left four others unclassified.
+  assert('asset classification reads the purpose only', /function assetCodeFor\(purpose: string\)/.test(backfill))
+
+  // A fill is tied to a car only by the shared matcher, never by a second rule written here.
+  assert('it reuses matchDemoFill rather than matching vehicles its own way',
+    /matchDemoFill/.test(backfill) && !/extractPlateTokens|normalisePlate/.test(backfill))
 }
 
 console.log('\n9) Live database (read-only):')

@@ -2153,6 +2153,40 @@ export const fuelApprovals = pgTable('fuel_approvals', {
   status: text('status').default('ceo_pending').notNull(),
   currentStage: text('current_stage').default('ceo').notNull(),
 
+  // ── Fuel intelligence (migration 0063) ──────────────────────────────────────
+  // What lib/fuel-management/engine.ts needs before it can state a mileage or a cost per km.
+  // ⚠️ fuelFilledLtrs above IS the quantity — quantityUnit only says what it is measured in. There is
+  // deliberately no second quantity column and no unitPrice: the engine derives price from totalCost,
+  // and two columns holding one fact is what made status + currentStage unmaintainable.
+  energyType: text('energy_type'),
+  quantityUnit: text('quantity_unit').default('L').notNull(),
+  // The RECEIPT TOTAL, per the owner's decision — staff type what they paid, never a rate.
+  totalCost: decimal('total_cost', { precision: 12, scale: 2 }),
+
+  // ⚠️ The resolved 17-character VIN. vinNo above is NOT a VIN in any of the 20 live rows — it holds a
+  // VIN's last 6 digits, a plate, or free text. NULL here means the vehicle was never established, and
+  // the entry simply produces no mileage rather than being attributed to the wrong car.
+  vehicleVin: text('vehicle_vin'),
+  // Fuel that never enters a vehicle: GENSET, STOCKYARD. Never set together with vehicleVin.
+  assetCode: text('asset_code'),
+
+  // currentKmReading above stays as the raw text someone typed; this is the figure parsed from it.
+  odometerKm: decimal('odometer_km', { precision: 10, scale: 1 }),
+  // An abnormal reading is warned about, never silently rejected — someone authorised may accept it.
+  // The engine refuses to measure distance across an accepted one.
+  odometerOverride: boolean('odometer_override').default(false).notNull(),
+  odometerOverrideBy: uuid('odometer_override_by').references(() => users.id),
+  odometerOverrideAt: timestamp('odometer_override_at', { withTimezone: true }),
+  odometerOverrideReason: text('odometer_override_reason'),
+  // Required on every vehicle fill from now on. NULL means "not recorded" and is never read as either
+  // answer — the 20 historical rows are exactly that.
+  isFullTank: boolean('is_full_tank'),
+
+  driverUserId: uuid('driver_user_id').references(() => users.id),
+  driverName: text('driver_name'),
+  stationName: text('station_name'),
+  stationLocation: text('station_location'),
+
   ceoApprovedBy: uuid('ceo_approved_by').references(() => users.id),
   ceoApprovedByName: text('ceo_approved_by_name'),
   ceoApprovedAt: timestamp('ceo_approved_at', { withTimezone: true }),

@@ -3,6 +3,7 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { GatePassError } from './server'
+import { DemoVehicleRegistrationError } from './vehicles'
 
 /**
  * One error translator for every gate pass route.
@@ -14,6 +15,14 @@ import { GatePassError } from './server'
  */
 export function gatePassErrorResponse(error: unknown): NextResponse {
   if (error instanceof GatePassError) {
+    return NextResponse.json({ error: error.message }, { status: error.status })
+  }
+  /*
+   * The Add vehicle form's refusals — a car at another branch, a car marked sold, a branch the caller does not cover —
+   * carry their own status and a sentence meant for the person. Without this branch every one of them read "Something
+   * went wrong", which hides exactly the rule the person needs to see.
+   */
+  if (error instanceof DemoVehicleRegistrationError) {
     return NextResponse.json({ error: error.message }, { status: error.status })
   }
   if (error instanceof z.ZodError) {

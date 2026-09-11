@@ -37,15 +37,18 @@ import {
 } from '@/components/ui/select'
 import { toast } from '@/hooks/use-toast'
 import { GATE_PASS_PURPOSES } from '@/lib/gate-pass/status'
+import { KIA_BRANCH_DEALERS } from '@/lib/kia/dealer-branch'
 import { VehicleTrackerCamera } from '@/features/kia/vehicle-tracker-camera'
 import type { GatePassCurrentUser } from './gate-pass-client'
 
 const KIA_QUICK_MODELS = ['SONET', 'SELTOS', 'CARENS', 'CARNIVAL', 'SYROS', 'EV6', 'EV9']
-const KIA_BRANCH_OPTIONS = [
-  { code: 'JK402', label: 'Jammu (JK402)' },
-  { code: 'PB402', label: 'Pathankot (PB402)' },
-  { code: 'JK403', label: 'Udhampur (JK403)' },
-]
+/*
+ * ⚠️ From the KIA dealer registry — the only codes every server rule knows (normalizeKiaDealerCode, visibleDealerCodes).
+ * This list used to offer PB402 "Pathankot" and JK403 "Udhampur": no demo car, gate pass or user carries either (live
+ * 2026-09-11: demo cars JK402 ×27, JK501 ×4). A car added under them fell outside every branch's scope, and the Add
+ * vehicle lock now refuses them outright.
+ */
+const KIA_BRANCH_OPTIONS = KIA_BRANCH_DEALERS.map((b) => ({ code: b.dealerCode, label: `${b.label} (${b.dealerCode})` }))
 
 type Vehicle = {
   vin: string
@@ -90,7 +93,12 @@ export function GatePassFormDialog({
   const [manualVariant, setManualVariant] = useState('')
   const [manualVin, setManualVin] = useState('')
   const [manualColor, setManualColor] = useState('')
-  const [manualDealerCode, setManualDealerCode] = useState('JK402')
+  // The person's own branch first: a new car at a branch they do not cover is refused by the server, so a Jammu default
+  // would greet an Udhampur-only user with a refusal. People pinned to no branch cover all of them and keep Jammu.
+  const [manualDealerCode, setManualDealerCode] = useState<string>(() => {
+    const pinned = String(currentUser?.dealers ?? '').split(',').map((code) => code.trim().toUpperCase())
+    return KIA_BRANCH_OPTIONS.find((b) => pinned.includes(b.code))?.code ?? 'JK402'
+  })
   const [manualKms, setManualKms] = useState('')
   const [creatingVehicle, setCreatingVehicle] = useState(false)
 

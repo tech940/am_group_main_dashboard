@@ -141,6 +141,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       discounts: filtered,
+      rows: filtered,
       totalCount: rows.length,
     })
   } catch (error) {

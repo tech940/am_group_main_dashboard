@@ -21,7 +21,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
-type Section = { key: string; name: string; parentKey: string | null; sortOrder?: number }
+/**
+ * `locked` sections are fixed by role in code (Targets, Data Health, Call Analysis…) and cannot be granted
+ * here. The owner chose to LIST them read-only rather than make them tickable, because a tickable key would
+ * reach any Admin-role account through the super tier. Their cells come from the role rule on the server and
+ * are never saved; `rule` says who can see them.
+ */
+type Section = { key: string; name: string; parentKey: string | null; sortOrder?: number; locked?: boolean; rule?: string }
 type MatrixUser = { id: string; fullName: string; email?: string; role: string; branchLabel?: string; isActive: boolean; canManage?: boolean }
 type Cell = { visible: boolean; override: boolean; defaultVisible: boolean }
 
@@ -39,6 +45,8 @@ type AccessMapProps = {
 }
 
 function prefixLabel(prefix: string) {
+  // The role-locked sections share the `locked.` namespace; name the group for what it means to an admin.
+  if (prefix === 'locked') return 'Fixed by role'
   return prefix.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 
@@ -145,6 +153,8 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
 
   const toggle = (user: MatrixUser, columnKey: string) => {
     if (!user.canManage) return
+    // A role-locked section is display-only: its cell comes from the rule in code, never from a save.
+    if (columnKey.startsWith('locked.')) return
     const next = !desired(user.id, columnKey)
     setEdits((current) => {
       const forUser = { ...(current[user.id] || {}) }
@@ -294,6 +304,15 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
             <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-pulse" /> 
             Override
           </span>
+          <span
+            className="inline-flex items-center gap-2"
+            title="Fixed by role in code. Shown so you can see who has it, but it can't be granted from the Access Map."
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-[6px] border border-dashed border-slate-300 text-slate-400">
+              <Lock className="h-3 w-3" aria-hidden />
+            </span>
+            Fixed by role
+          </span>
         </div>
       </div>
 
@@ -350,7 +369,7 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
                   {columns.map((s, i) => (
                     <th
                       key={s.key}
-                      title={s.name}
+                      title={s.locked ? `${s.name} — fixed by role: ${s.rule}. It can't be granted here.` : s.name}
                       className={cn(
                         'sticky z-30 bg-slate-900 border-b border-slate-800 p-0 align-bottom transition-colors hover:bg-slate-850',
                         groupStart(i) && 'border-l border-l-slate-700'
@@ -432,6 +451,36 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
                       const checked = desired(user.id, s.key)
                       const dirty = isDirty(user.id, s.key)
                       const override = checked !== columnDefault(user.id, s.key)
+
+                      // Role-locked: shown, never a control. The state comes from the rule in code, so it
+                      // reads as a fixed mark (dashed frame, lock when absent) rather than an unticked box
+                      // someone might try to tick.
+                      if (s.locked) {
+                        const state = checked ? 'Can see' : 'Cannot see'
+                        return (
+                          <td
+                            key={s.key}
+                            className={cn('border-b border-slate-100 text-center', groupStart(i) && 'border-l border-l-slate-200/80')}
+                            style={{ minWidth: COL_W, width: COL_W }}
+                          >
+                            <div
+                              className="flex h-9 items-center justify-center"
+                              title={`${state} ${s.name} — fixed by role: ${s.rule}. It can't be granted here.`}
+                            >
+                              <span
+                                aria-hidden
+                                className={cn(
+                                  'flex h-5 w-5 items-center justify-center rounded-[6px] border border-dashed',
+                                  checked ? 'border-slate-400 bg-slate-100 text-slate-600' : 'border-slate-200 text-slate-300',
+                                )}
+                              >
+                                {checked ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <Lock className="h-3 w-3" />}
+                              </span>
+                              <span className="sr-only">{`${state} ${s.name}. Fixed by role: ${s.rule}.`}</span>
+                            </div>
+                          </td>
+                        )
+                      }
                       
                       return (
                         <td

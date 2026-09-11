@@ -29,12 +29,28 @@ export async function GET(
       .where(eq(approvalsBranchesConfig.brand, normalizedBrand))
 
     if (!locations || locations.length === 0) {
-      const fallbackOptions = getPettyCashLocationOptions(normalizedBrand)
-      locations = fallbackOptions.map((loc) => ({
-        location: loc,
-        dealerCode: '',
-        dealerName: `${brandDisplayName} ${loc}`,
-      }))
+      if (normalizedBrand === 'diamond') {
+        locations = [
+          { location: 'Jammu', dealerCode: 'DIA-JM', dealerName: 'AM Diamond Jammu' },
+          { location: 'Digiana', dealerCode: 'DIA-DG', dealerName: 'AM Diamond Digiana' },
+          { location: 'Channi', dealerCode: 'DIA-CN', dealerName: 'AM Diamond Channi' },
+          { location: 'Gangyal', dealerCode: 'DIA-GY', dealerName: 'AM Diamond Gangyal' },
+        ]
+      } else if (normalizedBrand === 'honda') {
+        locations = [
+          { location: 'Jammu', dealerCode: 'HND-JM', dealerName: 'AM Diamond Honda Jammu' },
+          { location: 'Digiana', dealerCode: 'HND-DG', dealerName: 'AM Diamond Honda Digiana' },
+          { location: 'Channi', dealerCode: 'HND-CN', dealerName: 'AM Diamond Honda Channi' },
+          { location: 'Gangyal', dealerCode: 'HND-GY', dealerName: 'AM Diamond Honda Gangyal' },
+        ]
+      } else {
+        const fallbackOptions = getPettyCashLocationOptions(normalizedBrand)
+        locations = fallbackOptions.map((loc) => ({
+          location: loc,
+          dealerCode: '',
+          dealerName: `${brandDisplayName} ${loc}`,
+        }))
+      }
     }
 
     // 3. Fetch approval types (matching brand or 'all')
