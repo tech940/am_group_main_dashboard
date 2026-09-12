@@ -37,13 +37,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
      * null rather than throwing if migration 0058 has not been applied — a pass detail must not go
      * down because an optional integration is half-deployed.
      */
-    const [trip, [outPhotos, inPhotos, outSignature, inSignature]] = await Promise.all([
+    const [trip, [outPhotos, inPhotos, outSignature, inSignature, fuelSlipUrl, pumpStartUrl, pumpStopUrl]] = await Promise.all([
       getTripForPass(id),
       Promise.all([
-      signEvidenceMap(pass.gateOutPhotoPaths as Record<string, string> | null),
-      signEvidenceMap(pass.gateInPhotoPaths as Record<string, string> | null),
-      getGateEvidenceUrl(pass.gateOutSignaturePath),
-      getGateEvidenceUrl(pass.gateInSignaturePath),
+        signEvidenceMap(pass.gateOutPhotoPaths as Record<string, string> | null),
+        signEvidenceMap(pass.gateInPhotoPaths as Record<string, string> | null),
+        getGateEvidenceUrl(pass.gateOutSignaturePath),
+        getGateEvidenceUrl(pass.gateInSignaturePath),
+        getGateEvidenceUrl(pass.fuelSlipPath),
+        getGateEvidenceUrl(pass.pumpStartPath),
+        getGateEvidenceUrl(pass.pumpStopPath),
       ]),
     ])
 
@@ -53,6 +56,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       // CSV cannot disagree about what "late" or "distance" means.
       metrics: gatePassMetrics(pass),
       evidence: { outPhotos, inPhotos, outSignature, inSignature },
+      fuelDocs: {
+        fuelSlipUrl,
+        pumpStartUrl,
+        pumpStopUrl,
+        fuelAmount: pass.fuelAmount,
+        fuelLitres: pass.fuelLitres,
+        uploadedAt: pass.fuelDocsUploadedAt,
+        uploadedBy: pass.fuelDocsUploadedBy,
+        isComplete: Boolean(pass.fuelSlipPath && pass.pumpStartPath && pass.pumpStopPath),
+      },
       /*
        * ⚠️ null means "no reconciliation row", which is NOT the same as "no discrepancy" — it can
        * equally mean the sweep has not run yet or the car has no tracker. The client must say which

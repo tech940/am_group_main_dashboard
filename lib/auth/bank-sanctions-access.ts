@@ -103,7 +103,7 @@ export function bankSanctionBrandsFor(brand?: string | null): string[] | 'all-br
 
 /** The brand values a facility may legitimately carry — the same list as lib/branches.ts. */
 export const BANK_SANCTION_BRANDS = [
-  'kia', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg',
+  'kia', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'bajaj', 'mg',
 ] as const
 
 /** Client-safe mirror of the server filter — used for labels, never as the only gate. */

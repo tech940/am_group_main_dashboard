@@ -76,7 +76,10 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 //      → EA; Fuel Approvals → EA, CEO, HR; MD and Developer always. ⚠️ A NARROWING needs the bump as much as a
 //      widening: every v40 snapshot still says `true` for the managers, accounts and finance roles that just
 //      lost the section, so without it they keep the sidebar link for 75 minutes and hit forbidden() on click.
-const PERMISSION_CACHE_VERSION = 'v41'
+// v42: removes the AM Triumph brand entirely (owner, 2026-09-12) - the permission group, its grants and the
+//      brand itself. Every v41 snapshot still carries triumph.view, and two users still resolve a brand that
+//      no longer exists, so without the bump both linger for the 75-minute TTL.
+const PERMISSION_CACHE_VERSION = 'v42'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

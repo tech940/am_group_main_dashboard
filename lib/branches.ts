@@ -4,9 +4,7 @@ export const BRANCH_OPTIONS = [
   { value: 'hyundai', label: 'AM Hyundai' },
   { value: 'platinum', label: 'AM Platinum' },
   { value: 'honda', label: 'AM Diamond Honda' },
-  { value: 'diamond', label: 'AM Diamond' },
   { value: 'ktm', label: 'AM KTM' },
-  { value: 'triumph', label: 'AM Triumph' },
   { value: 'bajaj', label: 'AM Bajaj' },
   { value: 'mg', label: 'AM MG' },
 ] as const

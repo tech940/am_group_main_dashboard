@@ -203,3 +203,11 @@ export type GatePassPurpose = (typeof GATE_PASS_PURPOSES)[number]
 export function purposeRequiresNote(purpose: string | null | undefined): boolean {
   return String(purpose ?? '').trim() === 'Other'
 }
+
+/** Determines if a gate pass is intended for fuel filling and requires the 3 fuel proof documents. */
+export function isFuelFillingPurpose(purpose: string | null | undefined): boolean {
+  if (!purpose) return false
+  const p = purpose.toLowerCase().trim()
+  return p === 'fuel filling' || p.includes('fuel')
+}
+

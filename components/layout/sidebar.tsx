@@ -46,8 +46,6 @@ import { isPettyCashViewRole, isCaViewRole } from '@/lib/permissions/legacy-modu
 const VEHICLE_TRACKER_HREF = '/brands/kia/vehicle-tracker'
 const BOOKING_PAYMENT_HISTORY_HREF = '/brands/kia/booking-payment-history'
 
-const HYUNDAI_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_hyundai.svg'
-
 type SidebarSubmenu = { name: string; href: string; badge?: string }
 type SidebarSection = { name: string; key: string; href?: string; submenus: SidebarSubmenu[] }
 type SidebarBrand = {
@@ -68,8 +66,8 @@ const brandNavigation: SidebarBrand[] = [
     name: 'AM Kia',
     key: 'kia',
     href: '/brands/kia',
-    logo: 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_kia.svg',
-    logoClassName: 'p-1.5',
+    logo: '/brand-logos/kia.svg',
+    logoClassName: '',
     logoContainerClassName: '',
     color: 'text-blue-100',
     icon: Activity,
@@ -111,9 +109,9 @@ const brandNavigation: SidebarBrand[] = [
     name: 'AM Hyundai',
     key: 'hyundai',
     href: '/brands/hyundai',
-    logo: HYUNDAI_LOGO_URL,
-    logoClassName: 'p-1',
-    logoContainerClassName: 'bg-white group-hover:bg-white',
+    logo: '/brand-logos/hyundai.svg',
+    logoClassName: '',
+    logoContainerClassName: '',
     color: 'text-blue-100',
     icon: Activity,
     comingSoon: false,
@@ -150,9 +148,11 @@ const brandNavigation: SidebarBrand[] = [
     name: 'AM Platinum',
     key: 'platinum',
     href: '/brands/platinum',
-    logo: HYUNDAI_LOGO_URL,
-    logoClassName: 'p-1',
-    logoContainerClassName: 'bg-white group-hover:bg-white',
+    // AM Platinum is a Hyundai dealership, so its lockup pairs the Hyundai mark with the PLATINUM name —
+    // without that name it and AM Hyundai would be two identical rows.
+    logo: '/brand-logos/hyundai.svg',
+    logoClassName: '',
+    logoContainerClassName: '',
     color: 'text-blue-100',
     icon: Activity,
     comingSoon: false,
@@ -185,9 +185,90 @@ const brandNavigation: SidebarBrand[] = [
       },
     ],
   },
+  /*
+   * Added 2026-09-12: every AM brand is listed, including those the dashboard has no pages for yet.
+   * `sections: []` is deliberate — these rows exist so the brand is visible, and they do not link
+   * anywhere because /brands/<key> has no page. DISPLAY_ONLY_BRAND_KEYS below keeps them to
+   * Developer, MD and EA by default.
+   */
+  {
+    name: 'AM Diamond Honda',
+    key: 'honda',
+    href: '/brands/honda',
+    logo: '/brand-logos/honda.svg',
+    logoClassName: '',
+    logoContainerClassName: '',
+    color: 'text-blue-100',
+    icon: Activity,
+    comingSoon: false,
+    sections: [],
+  },
+  {
+    name: 'AM Tata',
+    key: 'tata',
+    href: '/brands/tata',
+    logo: '/brand-logos/tata.svg',
+    logoClassName: '',
+    logoContainerClassName: '',
+    color: 'text-blue-100',
+    icon: Activity,
+    comingSoon: false,
+    sections: [],
+  },
+  {
+    name: 'AM KTM',
+    key: 'ktm',
+    href: '/brands/ktm',
+    logo: '/brand-logos/ktm.svg',
+    logoClassName: '',
+    logoContainerClassName: '',
+    color: 'text-blue-100',
+    icon: Activity,
+    comingSoon: false,
+    sections: [],
+  },
+  {
+    name: 'AM Bajaj',
+    key: 'bajaj',
+    href: '/brands/bajaj',
+    logo: '/brand-logos/bajaj.svg',
+    logoClassName: '',
+    logoContainerClassName: '',
+    color: 'text-blue-100',
+    icon: Activity,
+    comingSoon: false,
+    sections: [],
+  },
+  {
+    name: 'AM MG',
+    key: 'mg',
+    href: '/brands/mg',
+    logo: '/brand-logos/mg.svg',
+    logoClassName: '',
+    logoContainerClassName: '',
+    color: 'text-blue-100',
+    icon: Activity,
+    comingSoon: false,
+    sections: [],
+  },
 ]
 
-const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
+/*
+ * Brands with NO sections of their own are kept: they are listed to show the brand exists. A brand that
+ * HAS sections still disappears when the viewer can see none of them — that gate lives in the node
+ * builder below and is what stops an empty KIA row appearing for someone with no KIA access.
+ */
+const availableBrands = brandNavigation.filter(
+  (brand) => brand.sections.length === 0 || brand.sections.some((section) => section.submenus.length > 0),
+)
+
+/*
+ * The brands added for display only. The owner's rule (2026-09-12): Developer, MD and EA see them by
+ * default. Anyone else sees one only when it is their OWN brand assignment — a pin is a decision about
+ * that person, not a default.
+ */
+const DISPLAY_ONLY_BRAND_KEYS = new Set(['honda', 'tata', 'ktm', 'bajaj', 'mg'])
+const DISPLAY_ONLY_BRAND_ROLES = new Set(['developer', 'md', 'ea'])
 
 const alwaysVisibleBrandKeys = new Set<string>()
 const DEFAULT_SIDEBAR_FAVOURITES: string[] = []
@@ -432,6 +513,12 @@ export function Sidebar() {
     const userBrandKeys = (userBrand || '').split(',').map((value) => value.trim()).filter(Boolean)
     return availableBrands
       .filter((brand) => {
+        // Display-only brands answer to their own rule and do NOT follow the global-access blanket:
+        // that blanket covers CEO, EBA, ED, EDP, PC and HR too, which is wider than the owner asked for.
+        if (DISPLAY_ONLY_BRAND_KEYS.has(brand.key)) {
+          if (DISPLAY_ONLY_BRAND_ROLES.has(String(userRole || '').trim().toLowerCase())) return true
+          return userBrandKeys.includes(brand.key)
+        }
         if (alwaysVisibleBrandKeys.has(brand.key)) return true
         if (hasGlobalAccessRole(userRole)) return true
         if (hasAllBranchAccess(userBrand)) return true
@@ -809,7 +896,9 @@ export function Sidebar() {
           })
         }
       }
-      if (sections.length === 0) continue
+      // A brand that HAS sections but shows none of them is dropped, as before. A brand with no sections
+      // at all is listed anyway — that is the whole point of the display-only rows.
+      if (sections.length === 0 && brand.sections.length > 0) continue
       brandNodes.push({
         key: brand.key,
         label: brand.name,

@@ -1,5 +1,7 @@
 export const MG_BRANCH_DEALERS = [
-  { label: 'MG Jammu', dealerCode: 'JAMMU' },
+  // The Jammu showroom is known locally as Channi. ⚠️ The CODE stays JAMMU: it is what the DMS feed and the
+  // 2 payment approvals already filed against this branch carry. Only the label people read changed.
+  { label: 'MG Channi', dealerCode: 'JAMMU' },
   { label: 'MG Kathua', dealerCode: 'KATHUA' },
 ] as const
 
@@ -10,6 +12,7 @@ export const DEFAULT_MG_DEALER_CODE: MgDealerCode = 'JAMMU'
 export function normalizeMgDealerCode(value: string | null | undefined): MgDealerCode | null {
   const normalized = String(value || '').trim().toUpperCase()
   if (normalized === 'JAMMU' || normalized === 'MG_JAMMU' || normalized === 'MG-JAMMU' || normalized === 'MG-JM') return 'JAMMU'
+  if (normalized === 'CHANNI' || normalized === 'MG_CHANNI' || normalized === 'MG-CHANNI' || normalized === 'MG-CN') return 'JAMMU'
   if (normalized === 'KATHUA' || normalized === 'MG_KATHUA' || normalized === 'MG-KATHUA' || normalized === 'MG-KT') return 'KATHUA'
   return MG_BRANCH_DEALERS.some((branch) => branch.dealerCode === normalized)
     ? (normalized as MgDealerCode)
@@ -18,7 +21,7 @@ export function normalizeMgDealerCode(value: string | null | undefined): MgDeale
 
 export function getMgBranchLabel(dealerCode: string | null | undefined) {
   const normalized = normalizeMgDealerCode(dealerCode)
-  return MG_BRANCH_DEALERS.find((branch) => branch.dealerCode === normalized)?.label || 'MG Jammu'
+  return MG_BRANCH_DEALERS.find((branch) => branch.dealerCode === normalized)?.label || 'MG Channi'
 }
 
 export function appendMgDealerCodeParam(params: URLSearchParams, dealerCode: string | null | undefined) {

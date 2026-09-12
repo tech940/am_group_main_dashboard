@@ -30,6 +30,42 @@ export type ApprovalOnlyBranch = {
 
 export const APPROVAL_ONLY_BRANCHES: Record<string, readonly ApprovalOnlyBranch[]> = {
   kia: [{ code: 'JK502', label: 'Banihal', aliases: ['BANIHAL'] }],
+  /*
+   * Diamond, Tata, KTM and Bajaj — the branch lists given by the owner on 2026-09-12.
+   *
+   * None of these brands has a DMS dealer registry, so EVERY one of their branches lives here. Without an
+   * entry the Branch scope box in Admin is empty for the whole brand and nobody can be pinned to a branch.
+   *
+   * `code` is the token stored in users.dealers; `aliases` are the other spellings a request may carry.
+   * Add a spelling the moment a form or feed introduces one: the failure is silent, and the row simply
+   * never appears for that branch's own staff.
+   */
+  tata: [
+    { code: 'NARWAL', label: 'Narwal', aliases: ['TATA-NARWAL', 'TAT-NARWAL', 'TAT-NR'] },
+    { code: 'KATHUA', label: 'Kathua', aliases: ['TATA-KATHUA', 'TAT-KATHUA', 'TAT-KT'] },
+    { code: 'UDHAMPUR', label: 'Udhampur', aliases: ['TATA-UDHAMPUR', 'TAT-UDHAMPUR', 'TAT-UD'] },
+    { code: 'SUPWAL', label: 'Supwal', aliases: ['TATA-SUPWAL', 'TAT-SUPWAL', 'TAT-SW'] },
+    { code: 'POONCH', label: 'Poonch', aliases: ['TATA-POONCH', 'TAT-POONCH', 'TAT-PN'] },
+    { code: 'RAJOURI', label: 'Rajouri', aliases: ['RAJORI', 'TATA-RAJOURI', 'TAT-RAJOURI', 'TAT-RJ'] },
+  ],
+  ktm: [
+    { code: 'SANIK_COLONY', label: 'Sanik Colony', aliases: ['SANIK COLONY', 'SANIKCOLONY', 'KTM-SC'] },
+    { code: 'GANGYAL', label: 'Gangyal', aliases: ['KTM-GANGYAL', 'KTM-GY'] },
+  ],
+  // Honda is Diamond Honda — the same dealership, so the same branches, under its own HND- spellings.
+  honda: [
+    { code: 'MIRAN_SAHIB', label: 'Miran Sahib', aliases: ['MIRAN SAHIB', 'MIRANSAHIB', 'HND-MS'] },
+    { code: 'BISHNAH', label: 'Bishnah', aliases: ['HND-BISHNAH', 'HND-BS'] },
+    { code: 'CHANNI_NARWAL', label: 'Channi Narwal', aliases: ['CHANNI NARWAL', 'CHANNINARWAL', 'CHANNI', 'HND-CHANNI', 'HND-CN'] },
+    { code: 'FLY_MANDAL', label: 'Fly Mandal', aliases: ['FLY MANDAL', 'FLYMANDAL', 'HND-FM'] },
+    { code: 'DIGIANA', label: 'Digiana', aliases: ['HND-DIGIANA', 'HND-DG'] },
+  ],
+  bajaj: [
+    { code: 'REHARI', label: 'Rehari', aliases: ['BAJ-REHARI', 'BAJ-RH'] },
+    { code: 'TALAB_TILLO', label: 'Talab Tillo', aliases: ['TALAB TILLO', 'TALABTILLO', 'BAJ-TT'] },
+    { code: 'CHANNI_NARWAL', label: 'Channi Narwal', aliases: ['CHANNI NARWAL', 'CHANNINARWAL', 'BAJ-CN'] },
+    { code: 'UDHAMPUR', label: 'Udhampur', aliases: ['BAJ-UDHAMPUR', 'BAJ-UD'] },
+  ],
 }
 
 /** Approval-only branches for a brand, or [] when it has none. */
@@ -97,20 +133,33 @@ export const APPROVAL_BRANCH_SYNONYMS: Record<string, readonly (readonly string[
     ['N6250', 'RAJOURI'],
   ],
   mg: [
-    ['JAMMU', 'MG-JAMMU', 'MG-JM', 'MG JAMMU'],
+    ['JAMMU', 'MG-JAMMU', 'MG-JM', 'MG JAMMU', 'CHANNI', 'MG-CHANNI', 'MG-CN', 'MG CHANNI'],
     ['KATHUA', 'MG-KATHUA', 'MG-KT', 'MG KATHUA'],
   ],
-  diamond: [
-    ['JAMMU', 'DIA-JAMMU', 'DIA-JM', 'DIAMOND JAMMU'],
-    ['DIGIANA', 'DIA-DIGIANA', 'DIA-DG', 'DIAMOND DIGIANA'],
-    ['CHANNI', 'DIA-CHANNI', 'DIA-CN', 'DIAMOND CHANNI'],
-    ['GANGYAL', 'DIA-GANGYAL', 'DIA-GY', 'DIAMOND GANGYAL'],
-  ],
   honda: [
-    ['JAMMU', 'HND-JAMMU', 'HND-JM', 'HONDA JAMMU', 'DIAMOND HONDA JAMMU'],
-    ['DIGIANA', 'HND-DIGIANA', 'HND-DG', 'HONDA DIGIANA', 'DIAMOND HONDA DIGIANA'],
-    ['CHANNI', 'HND-CHANNI', 'HND-CN', 'HONDA CHANNI', 'DIAMOND HONDA CHANNI'],
-    ['GANGYAL', 'HND-GANGYAL', 'HND-GY', 'HONDA GANGYAL', 'DIAMOND HONDA GANGYAL'],
+    ['MIRAN_SAHIB', 'MIRAN SAHIB', 'MIRANSAHIB', 'HND-MS'],
+    ['BISHNAH', 'HND-BISHNAH', 'HND-BS'],
+    ['CHANNI_NARWAL', 'CHANNI NARWAL', 'CHANNINARWAL', 'CHANNI', 'HND-CHANNI', 'HND-CN'],
+    ['FLY_MANDAL', 'FLY MANDAL', 'FLYMANDAL', 'HND-FM'],
+    ['DIGIANA', 'HND-DIGIANA', 'HND-DG'],
+  ],
+  tata: [
+    ['NARWAL', 'TATA-NARWAL', 'TAT-NARWAL', 'TAT-NR'],
+    ['KATHUA', 'TATA-KATHUA', 'TAT-KATHUA', 'TAT-KT'],
+    ['UDHAMPUR', 'TATA-UDHAMPUR', 'TAT-UDHAMPUR', 'TAT-UD'],
+    ['SUPWAL', 'TATA-SUPWAL', 'TAT-SUPWAL', 'TAT-SW'],
+    ['POONCH', 'TATA-POONCH', 'TAT-POONCH', 'TAT-PN'],
+    ['RAJOURI', 'RAJORI', 'TATA-RAJOURI', 'TAT-RAJOURI', 'TAT-RJ'],
+  ],
+  ktm: [
+    ['SANIK_COLONY', 'SANIK COLONY', 'SANIKCOLONY', 'KTM-SC'],
+    ['GANGYAL', 'KTM-GANGYAL', 'KTM-GY'],
+  ],
+  bajaj: [
+    ['REHARI', 'BAJ-REHARI', 'BAJ-RH'],
+    ['TALAB_TILLO', 'TALAB TILLO', 'TALABTILLO', 'BAJ-TT'],
+    ['CHANNI_NARWAL', 'CHANNI NARWAL', 'CHANNINARWAL', 'BAJ-CN'],
+    ['UDHAMPUR', 'BAJ-UDHAMPUR', 'BAJ-UD'],
   ],
 }
 

@@ -4,7 +4,7 @@ import type { AppUser } from '@/lib/auth/app-user'
 import { canAccessBrand } from '@/lib/auth/brand-access'
 import { parseUserDealers } from '@/lib/dealers/registry'
 import { approvalBranchTokens, expandBranchSynonyms } from '@/lib/kia/approval-branches'
-import { isServiceApproval, usesGroupServiceManager, usesVpService } from '@/lib/approvals/first-stage-approver'
+import { isServiceApproval, usesBranchFirstStage, usesGroupServiceManager, usesVpService } from '@/lib/approvals/first-stage-approver'
 import { isSuperAdminRole } from '@/lib/auth/roles'
 import { resolveBranchScope } from '@/lib/auth/default-branch-scope'
 import { hasAllBranchAccess, type BranchValue } from '@/lib/branches'
@@ -283,7 +283,14 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
    */
   const isVpOrGsm = role === 'vp' || role === 'vice_president' || role === 'group_service_manager'
   if (isVpOrGsm) {
-    if (rowBrand === 'diamond' || rowBrand === 'honda') return true
+    /*
+     * The branch brands (Diamond Honda, Tata, KTM, Bajaj). The VP and the Group Service Manager are named
+     * approvers of their FIRST stage, so they must be able to SEE those rows without also holding a branch
+     * pin — the pin gate below denies an empty pin outright. Honda already worked this way; the other
+     * three are brought in line so the stage is not signable by a role that cannot open the request.
+     * ⚠️ canAccessBrand still runs above, so this is those brands only, never the group.
+     */
+    if (usesBranchFirstStage(rowBrand)) return true
     if ((usesVpService(rowBrand) || rowBrand === 'kia') && isServiceApproval(row.department, row.approvalType)) {
       return true
     }

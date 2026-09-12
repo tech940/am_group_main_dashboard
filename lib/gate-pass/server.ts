@@ -21,7 +21,7 @@ import {
 import { getDriverProfile } from './drivers'
 import { lookupByVin } from './vehicles'
 import { findHoldingPass } from './fleet'
-import { GATE_PASS_PURPOSES, canTransition, purposeRequiresNote, type GatePassStatus } from './status'
+import { GATE_PASS_PURPOSES, canTransition, purposeRequiresNote, isFuelFillingPurpose, type GatePassStatus } from './status'
 import { buildGateUrl, createGateToken } from './token'
 
 /**
@@ -635,6 +635,11 @@ export type GateEventInput = {
   parkedLocation?: string | null
   keyHandoverTo?: string | null
   notes?: string | null
+  fuelSlipPath?: string | null
+  pumpStartPath?: string | null
+  pumpStopPath?: string | null
+  fuelAmount?: number | null
+  fuelLitres?: number | null
 }
 
 /**
@@ -712,24 +717,49 @@ export async function recordGateIn(passId: string, input: GateEventInput) {
   if (outOdo !== null && Number.isFinite(outOdo) && input.odometer <= outOdo) {
     throw new GatePassError(`Closing odometer (${input.odometer} km) must be greater than Gate Out reading (${outOdo} km).`)
   }
-  const odoWentBackwards = false
 
+  // ⚠️ Mandatory Fuel Verification for passes created with Purpose for Travel == 'Fuel filling'
+  const effectiveFuelSlip = input.fuelSlipPath || current.fuelSlipPath
+  const effectivePumpStart = input.pumpStartPath || current.pumpStartPath
+  const effectivePumpStop = input.pumpStopPath || current.pumpStopPath
+
+  if (isFuelFillingPurpose(current.purpose)) {
+    if (!effectiveFuelSlip || !effectivePumpStart || !effectivePumpStop) {
+      throw new GatePassError(
+        'This gate pass is for Fuel Filling. Physical Fuel Slip, Pump Start (0.00), and Pump Stop (Amount) proofs are required before Gate In can be completed.',
+        400,
+      )
+    }
+  }
+
+  const odoWentBackwards = false
   const now = new Date()
   const updated = await db.transaction(async (tx) => {
+    const updateSet: Record<string, unknown> = {
+      status: 'returned',
+      gateInAt: now,
+      gateInOdo: input.odometer === null ? null : String(input.odometer),
+      gateInGuardName: input.guardName.trim(),
+      gateInSignaturePath: input.signaturePath,
+      gateInPhotoPaths: input.photoPaths,
+      parkedLocation: input.parkedLocation ?? null,
+      keyHandoverTo: input.keyHandoverTo ?? null,
+      gateInRemarks: input.notes ?? null,
+      updatedAt: now,
+    }
+
+    if (input.fuelSlipPath) updateSet.fuelSlipPath = input.fuelSlipPath
+    if (input.pumpStartPath) updateSet.pumpStartPath = input.pumpStartPath
+    if (input.pumpStopPath) updateSet.pumpStopPath = input.pumpStopPath
+    if (input.fuelAmount !== undefined && input.fuelAmount !== null) updateSet.fuelAmount = String(input.fuelAmount)
+    if (input.fuelLitres !== undefined && input.fuelLitres !== null) updateSet.fuelLitres = String(input.fuelLitres)
+    if (input.fuelSlipPath || input.pumpStartPath || input.pumpStopPath) {
+      updateSet.fuelDocsUploadedAt = now
+    }
+
     const [row] = await tx
       .update(demoGatePasses)
-      .set({
-        status: 'returned',
-        gateInAt: now,
-        gateInOdo: input.odometer === null ? null : String(input.odometer),
-        gateInGuardName: input.guardName.trim(),
-        gateInSignaturePath: input.signaturePath,
-        gateInPhotoPaths: input.photoPaths,
-        parkedLocation: input.parkedLocation ?? null,
-        keyHandoverTo: input.keyHandoverTo ?? null,
-        gateInRemarks: input.notes ?? null,
-        updatedAt: now,
-      })
+      .set(updateSet)
       .where(and(eq(demoGatePasses.id, passId), eq(demoGatePasses.status, 'out')))
       .returning()
 
@@ -752,6 +782,44 @@ export async function recordGateIn(passId: string, input: GateEventInput) {
   })
 
   return { alreadyDone: false, pass: serializeGatePass(updated), odoWentBackwards }
+}
+
+/** Save fuel filling proofs (Physical Fuel Slip, Pump Start 0.00, Pump Stop Amount) against a gate pass. */
+export async function saveFuelProofs(
+  appUser: AppUser,
+  passId: string,
+  proofs: {
+    fuelSlipPath: string
+    pumpStartPath: string
+    pumpStopPath: string
+    fuelAmount?: number | null
+    fuelLitres?: number | null
+  },
+) {
+  const current = await readPass(passId)
+  if (!visibleDealerCodes(appUser).includes(current.dealerCode)) {
+    throw new GatePassError('This gate pass is not at one of your branches.', 403)
+  }
+
+  const now = new Date()
+  const [updated] = await db
+    .update(demoGatePasses)
+    .set({
+      fuelSlipPath: proofs.fuelSlipPath,
+      pumpStartPath: proofs.pumpStartPath,
+      pumpStopPath: proofs.pumpStopPath,
+      fuelAmount: proofs.fuelAmount !== undefined && proofs.fuelAmount !== null ? String(proofs.fuelAmount) : current.fuelAmount,
+      fuelLitres: proofs.fuelLitres !== undefined && proofs.fuelLitres !== null ? String(proofs.fuelLitres) : current.fuelLitres,
+      fuelDocsUploadedAt: now,
+      fuelDocsUploadedBy: appUser.id,
+      updatedAt: now,
+    })
+    .where(eq(demoGatePasses.id, passId))
+    .returning()
+
+  if (!updated) throw new GatePassError('Gate pass not found.', 404)
+
+  return serializeGatePass(updated)
 }
 
 // ── Overdue sweep ─────────────────────────────────────────────────────────────────────────────

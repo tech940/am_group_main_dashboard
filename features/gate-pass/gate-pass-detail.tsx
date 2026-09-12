@@ -23,6 +23,7 @@ import {
   User,
   X,
   Satellite,
+  Fuel,
 } from 'lucide-react'
 import {
   Dialog,
@@ -35,7 +36,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatIndiaDate, formatIndiaDateTime } from '@/lib/date-time'
 import { formatDuration, type GatePassMetrics } from '@/lib/gate-pass/metrics'
-import { getGatePassStatusInfo } from '@/lib/gate-pass/status'
+import { getGatePassStatusInfo, isFuelFillingPurpose } from '@/lib/gate-pass/status'
 import { groupAlerts } from '@/lib/loconav/timeline'
 
 const STATUS_TONE_STYLES: Record<string, string> = {
@@ -78,6 +79,16 @@ type Detail = {
     outSignature: string | null
     inSignature: string | null
   }
+  fuelDocs?: {
+    fuelSlipUrl: string | null
+    pumpStartUrl: string | null
+    pumpStopUrl: string | null
+    fuelAmount: number | string | null
+    fuelLitres: number | string | null
+    uploadedAt: string | null
+    uploadedBy: string | null
+    isComplete: boolean
+  } | null
   events: Array<{
     id: string
     action: string
@@ -574,6 +585,66 @@ export function GatePassDetail({
                   </div>
                 </div>
               )}
+
+              {/* ── Fuel Filling Proofs (If Purpose == Fuel filling) ── */}
+              {isFuelFillingPurpose(p.purpose as string) || data?.fuelDocs?.fuelSlipUrl || data?.fuelDocs?.pumpStartUrl || data?.fuelDocs?.pumpStopUrl ? (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-amber-200 dark:border-amber-800/80 p-4 sm:p-5 shadow-xs space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Fuel className="h-4 w-4 text-amber-600" />
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Fuel Filling Documentation</h3>
+                    </div>
+                    {data?.fuelDocs?.isComplete ? (
+                      <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300">
+                        <CheckCircle2 className="h-3 w-3 mr-1" /> All 3 Proofs Verified
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300">
+                        Proofs Pending
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <EvidenceCard
+                      label="1. Physical Fuel Slip"
+                      url={data?.fuelDocs?.fuelSlipUrl || undefined}
+                      onZoom={() =>
+                        data?.fuelDocs?.fuelSlipUrl
+                          ? setLightboxImage({ label: 'Physical Fuel Slip', url: data.fuelDocs.fuelSlipUrl })
+                          : null
+                      }
+                    />
+                    <EvidenceCard
+                      label="2. Pump Start (0.00)"
+                      url={data?.fuelDocs?.pumpStartUrl || undefined}
+                      onZoom={() =>
+                        data?.fuelDocs?.pumpStartUrl
+                          ? setLightboxImage({ label: 'Pump Start (0.00)', url: data.fuelDocs.pumpStartUrl })
+                          : null
+                      }
+                    />
+                    <EvidenceCard
+                      label="3. Pump Stop (Amount)"
+                      url={data?.fuelDocs?.pumpStopUrl || undefined}
+                      onZoom={() =>
+                        data?.fuelDocs?.pumpStopUrl
+                          ? setLightboxImage({ label: 'Pump Stop (Amount)', url: data.fuelDocs.pumpStopUrl })
+                          : null
+                      }
+                    />
+                  </div>
+
+                  {data?.fuelDocs?.uploadedAt ? (
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+                      <span>Uploaded At</span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        {formatIndiaDateTime(data.fuelDocs.uploadedAt)}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {/* ── 5. Evidence at the Gate (Photo Gallery) ── */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-3">

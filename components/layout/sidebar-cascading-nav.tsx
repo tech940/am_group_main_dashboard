@@ -29,6 +29,11 @@ export type NavNode = {
   logo?: string
   logoClassName?: string
   logoContainerClassName?: string
+  /**
+   * A brand key. The row then shows the AM | brand lockup — the same one the approval forms carry —
+   * in place of an icon badge and a text label, because that lockup already names the brand.
+   */
+  brandLockup?: string
   active?: boolean
   disabled?: boolean
   badge?: string
@@ -278,7 +283,7 @@ function AccordionRow({
 
   const inner = (
     <>
-      {/* Icon Badge */}
+      {/* Icon or Brand Logo badge */}
       {(node.logo || Icon) && (
         <span
           className={cn(
@@ -291,7 +296,11 @@ function AccordionRow({
             <img
               src={node.logo}
               alt={node.label}
-              className={cn('h-full w-full object-contain p-1', node.logoClassName)}
+              className={cn(
+                'h-full w-full object-contain p-1.5',
+                node.active && '[filter:brightness(0)_invert(1)]',
+                node.logoClassName
+              )}
             />
           ) : Icon ? (
             <Icon className="h-3.5 w-3.5" />

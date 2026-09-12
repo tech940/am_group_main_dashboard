@@ -110,7 +110,7 @@ console.log(`
   assert('brand list resolution', JSON.stringify(bankSanctionBrandsFor('kia,honda')) === '["kia","honda"]')
   assert("'all' resolves to the sentinel, not a brand list", bankSanctionBrandsFor('all') === 'all-brands')
   assert('every seeded branch code is a known brand',
-    ['kia', 'hyundai', 'honda', 'tata', 'bajaj', 'mg', 'ktm', 'triumph', 'platinum']
+    ['kia', 'hyundai', 'honda', 'tata', 'bajaj', 'mg', 'ktm', 'platinum']
       .every((b) => (BANK_SANCTION_BRANDS as readonly string[]).includes(b)))
 }
 

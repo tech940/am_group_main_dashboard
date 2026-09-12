@@ -63,7 +63,6 @@ export const SHOWROOM_BRANDS: readonly ShowroomBrandConfig[] = [
     locations: [
       'Diamond Honda (Jammu)',
       'KTM (Jammu)',
-      'Triumph (Jammu)',
       'Bajaj (Jammu)',
     ],
     accentColor: '#ea580c',

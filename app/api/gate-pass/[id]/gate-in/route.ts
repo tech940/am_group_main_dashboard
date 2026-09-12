@@ -38,9 +38,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const photoPaths: Record<string, string> = {}
 
+    const uploadTasks: Promise<void>[] = []
+
     const photoOdometerIn = form.get('photoOdometerIn')
     if (photoOdometerIn instanceof File && photoOdometerIn.size > 0) {
-      photoPaths['odometer_in'] = await uploadGateEvidence(passNo, 'odometer-in', photoOdometerIn)
+      uploadTasks.push(
+        uploadGateEvidence(passNo, 'odometer-in', photoOdometerIn).then((path) => {
+          photoPaths['odometer_in'] = path
+        }),
+      )
     }
 
     const otherPhotos = form.getAll('photos').filter((f): f is File => f instanceof File && f.size > 0)
@@ -48,9 +54,54 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     for (let i = 0; i < otherPhotos.length; i++) {
       const kind = photoKinds[i] || `extra-in-${i + 1}`
       if (!photoPaths[kind]) {
-        photoPaths[kind] = await uploadGateEvidence(passNo, kind, otherPhotos[i])
+        uploadTasks.push(
+          uploadGateEvidence(passNo, kind, otherPhotos[i]).then((path) => {
+            photoPaths[kind] = path
+          }),
+        )
       }
     }
+
+    let fuelSlipPath: string | null = pass.fuelSlipPath || null
+    let pumpStartPath: string | null = pass.pumpStartPath || null
+    let pumpStopPath: string | null = pass.pumpStopPath || null
+
+    const fuelSlipFile = form.get('fuelSlip')
+    if (fuelSlipFile instanceof File && fuelSlipFile.size > 0) {
+      uploadTasks.push(
+        uploadGateEvidence(passNo, 'fuel-slip', fuelSlipFile).then((path) => {
+          fuelSlipPath = path
+        }),
+      )
+    }
+
+    const pumpStartFile = form.get('pumpStart')
+    if (pumpStartFile instanceof File && pumpStartFile.size > 0) {
+      uploadTasks.push(
+        uploadGateEvidence(passNo, 'pump-start-0.00', pumpStartFile).then((path) => {
+          pumpStartPath = path
+        }),
+      )
+    }
+
+    const pumpStopFile = form.get('pumpStop')
+    if (pumpStopFile instanceof File && pumpStopFile.size > 0) {
+      uploadTasks.push(
+        uploadGateEvidence(passNo, 'pump-stop-amount', pumpStopFile).then((path) => {
+          pumpStopPath = path
+        }),
+      )
+    }
+
+    if (uploadTasks.length > 0) {
+      await Promise.all(uploadTasks)
+    }
+
+    const rawAmount = String(form.get('fuelAmount') ?? '').trim()
+    const fuelAmount = rawAmount !== '' && !Number.isNaN(Number(rawAmount)) ? Number(rawAmount) : null
+
+    const rawLitres = String(form.get('fuelLitres') ?? '').trim()
+    const fuelLitres = rawLitres !== '' && !Number.isNaN(Number(rawLitres)) ? Number(rawLitres) : null
 
     const notes = String(form.get('remarks') ?? form.get('notes') ?? '').trim() || null
 
@@ -62,6 +113,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       parkedLocation,
       keyHandoverTo,
       notes,
+      fuelSlipPath,
+      pumpStartPath,
+      pumpStopPath,
+      fuelAmount,
+      fuelLitres,
     })
 
     return NextResponse.json({

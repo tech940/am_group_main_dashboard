@@ -139,7 +139,7 @@ function istShortDate(value: Date | string | null | undefined): string {
 }
 
 const LOCATION_OPTIONS = ['JAMMU', 'UDHAMPUR', 'BANIHAL']
-const BRAND_OPTIONS = ['KIA', 'HYUNDAI', 'MG', 'TATA', 'PLATINUM']
+const BRAND_OPTIONS = ['KIA', 'HYUNDAI', 'MG', 'TATA', 'PLATINUM', 'DIAMOND', 'HONDA', 'KTM', 'BAJAJ', 'SKODA', 'NEXA', 'OLA']
 
 interface ApprovalHistoryEntry {
   id: string
@@ -371,31 +371,41 @@ const getMdRemarksList = (req: ApprovalRequest | null | undefined): { user: stri
 }
 
 const BRAND_CHIP_STYLES: Record<string, string> = {
+  // Kept unchanged as instructed ("dont change hyundai , kia ,platinum , mg")
   kia: 'bg-rose-50 border-rose-300 text-rose-900 font-extrabold',
   hyundai: 'bg-sky-50 border-sky-300 text-sky-900 font-extrabold',
   platinum: 'bg-violet-50 border-violet-300 text-violet-900 font-extrabold',
   mg: 'bg-[#D96868]/15 border-[#D96868]/40 text-[#8C2C2C] font-extrabold',
-  tata: 'bg-cyan-50 border-cyan-300 text-cyan-900 font-extrabold',
-  diamond: 'bg-[#AB03A9]/10 border-[#AB03A9]/30 text-[#AB03A9] font-extrabold',
-  honda: 'bg-red-50 border-red-300 text-red-900 font-extrabold',
-  ktm: 'bg-orange-50 border-orange-300 text-orange-900 font-extrabold',
-  triumph: 'bg-zinc-100 border-zinc-300 text-zinc-900 font-extrabold',
-  bajaj: 'bg-amber-50 border-amber-300 text-amber-900 font-extrabold',
+  // Specified by user: #2D0000 for diamond / honda
+  diamond: 'bg-[#2D0000]/10 border-[#2D0000]/30 text-[#2D0000] font-extrabold',
+  honda: 'bg-[#2D0000]/10 border-[#2D0000]/30 text-[#2D0000] font-extrabold',
+  // Refined palette for other brands (not too bright, not too dark)
+  tata: 'bg-[#1B365D]/10 border-[#1B365D]/30 text-[#1B365D] font-extrabold',
+  ktm: 'bg-[#A84300]/10 border-[#A84300]/30 text-[#A84300] font-extrabold',
+  bajaj: 'bg-[#0B3056]/10 border-[#0B3056]/30 text-[#0B3056] font-extrabold',
+  skoda: 'bg-[#0E4D34]/10 border-[#0E4D34]/30 text-[#0E4D34] font-extrabold',
+  nexa: 'bg-[#1C2038]/10 border-[#1C2038]/30 text-[#1C2038] font-extrabold',
+  ola: 'bg-[#0F4C5C]/10 border-[#0F4C5C]/30 text-[#0F4C5C] font-extrabold',
 }
 
 const BRAND_CHIP_FALLBACK = 'bg-slate-100 border-slate-300 text-slate-800 font-extrabold'
 
 const BRAND_BADGE_STYLES: Record<string, string> = {
+  // Kept unchanged as instructed ("dont change hyundai , kia ,platinum , mg")
   kia: 'bg-rose-100 text-rose-800 border-rose-300 font-black',
   hyundai: 'bg-sky-100 text-sky-800 border-sky-300 font-black',
   platinum: 'bg-violet-100 text-violet-800 border-violet-300 font-black',
   mg: 'bg-[#D96868]/20 text-[#8C2C2C] border-[#D96868]/40 font-black',
-  tata: 'bg-cyan-100 text-cyan-800 border-cyan-300 font-black',
-  diamond: 'bg-[#AB03A9]/15 text-[#AB03A9] border-[#AB03A9]/40 font-black',
-  honda: 'bg-red-100 text-red-800 border-red-300 font-black',
-  ktm: 'bg-orange-100 text-orange-800 border-orange-300 font-black',
-  triumph: 'bg-zinc-100 text-zinc-800 border-zinc-300 font-black',
-  bajaj: 'bg-amber-100 text-amber-800 border-amber-300 font-black',
+  // Specified by user: #2D0000 for diamond / honda
+  diamond: 'bg-[#2D0000]/15 text-[#2D0000] border-[#2D0000]/35 font-black',
+  honda: 'bg-[#2D0000]/15 text-[#2D0000] border-[#2D0000]/35 font-black',
+  // Refined palette for other brands (not too bright, not too dark)
+  tata: 'bg-[#1B365D]/15 text-[#1B365D] border-[#1B365D]/35 font-black',
+  ktm: 'bg-[#A84300]/15 text-[#A84300] border-[#A84300]/35 font-black',
+  bajaj: 'bg-[#0B3056]/15 text-[#0B3056] border-[#0B3056]/35 font-black',
+  skoda: 'bg-[#0E4D34]/15 text-[#0E4D34] border-[#0E4D34]/35 font-black',
+  nexa: 'bg-[#1C2038]/15 text-[#1C2038] border-[#1C2038]/35 font-black',
+  ola: 'bg-[#0F4C5C]/15 text-[#0F4C5C] border-[#0F4C5C]/35 font-black',
 }
 
 /**
@@ -414,7 +424,6 @@ const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dea
   if (reqNo.startsWith('DIAMOND') || reqNo.startsWith('DIA')) return 'diamond'
   if (reqNo.startsWith('HONDA')) return 'honda'
   if (reqNo.startsWith('KTM')) return 'ktm'
-  if (reqNo.startsWith('TRIUMPH')) return 'triumph'
   if (reqNo.startsWith('BAJAJ')) return 'bajaj'
 
   const dealer = (row.dealerName || '').toLowerCase()
@@ -426,7 +435,6 @@ const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dea
   if (dealer.includes('diamond')) return 'diamond'
   if (dealer.includes('honda')) return 'honda'
   if (dealer.includes('ktm')) return 'ktm'
-  if (dealer.includes('triumph')) return 'triumph'
   if (dealer.includes('bajaj')) return 'bajaj'
 
   const code = (row.dealerCode || '').toUpperCase()
@@ -3738,7 +3746,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Dealer Name</th>
                       <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Purpose / Request Type</th>
                       <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Amount (₹)</th>
-                      <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Branch</th>
                       <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Submitted On</th>
                       <th scope="col" className="py-3 px-3.5 text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Status</th>
                       <th scope="col" className="py-3 px-3.5 text-right text-white font-black text-[10px] tracking-wider uppercase whitespace-nowrap">Actions</th>
@@ -3864,18 +3871,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             <span className={`inline-flex items-center rounded-lg px-2.5 py-1 font-black text-xs sm:text-sm font-mono tracking-tight tabular-nums border shadow-2xs ${getAmountBandClass(Number(row.amount || 0))}`}>
                               ₹{Number(row.amount || 0).toLocaleString('en-IN')}
                             </span>
-                          </td>
-                          <td className="py-3 px-3.5 whitespace-nowrap">
-                            <div className="flex flex-col items-start gap-0.5">
-                              <span className="text-xs font-black leading-tight text-slate-900">
-                                {row.location || '—'}
-                              </span>
-                              {row.dealerCode ? (
-                                <span className="inline-block rounded bg-slate-100 border border-slate-200 px-1.5 py-0.2 text-[10px] font-mono font-bold text-slate-600">
-                                  {row.dealerCode}
-                                </span>
-                              ) : null}
-                            </div>
                           </td>
                           <td className="py-3 px-3.5 whitespace-nowrap">
                             <div className="flex flex-col items-start gap-0.5">

@@ -24,7 +24,7 @@ export const users = pgTable('users', {
   email: text('email').notNull(),
   fullName: text('full_name').notNull(),
   role: roleEnum('role').default('viewer').notNull(),
-  brand: text('brand'), // Brand/Branch assignment: 'kia', 'tata', 'hyundai', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'
+  brand: text('brand'), // Brand/Branch assignment: 'kia', 'tata', 'hyundai', 'honda', 'ktm', 'bajaj', 'mg'
   dealers: text('dealers'), // Optional dealer/branch scope within the brand (comma-separated codes, e.g. 'JK402'). Null = all branches of the brand.
   department: text('department'),
   phoneNumber: text('phone_number'),
@@ -2808,6 +2808,15 @@ export const demoGatePasses = pgTable('demo_gate_passes', {
   cancelledByName: text('cancelled_by_name'),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   cancelReason: text('cancel_reason'),
+
+  // Fuel filling verification documents (Purpose == 'Fuel filling')
+  fuelSlipPath: text('fuel_slip_path'),
+  pumpStartPath: text('pump_start_path'),
+  pumpStopPath: text('pump_stop_path'),
+  fuelAmount: decimal('fuel_amount', { precision: 12, scale: 2 }),
+  fuelLitres: decimal('fuel_litres', { precision: 10, scale: 2 }),
+  fuelDocsUploadedAt: timestamp('fuel_docs_uploaded_at', { withTimezone: true }),
+  fuelDocsUploadedBy: uuid('fuel_docs_uploaded_by').references(() => users.id),
 
   // Idempotency for the overdue sweep — the reminder_sent_at pattern from lib/delegation/emails.ts.
   // Without it the cron re-mails on every run.

@@ -55,6 +55,92 @@ import { validateEmailDomain } from '@/lib/email-validator'
 import { findMissingApprovalField } from '@/lib/approvals/required-fields'
 import { amountInWordsINR } from '@/lib/kia/print-payment-order'
 import { cn } from '@/lib/utils'
+import { BrandLogoLockup } from '@/components/brand-logo-lockup'
+
+export type BrandApprovalTheme = {
+  primary: string
+  primaryDark: string
+  primaryRgb: string
+  accentGradient: string
+}
+
+export const BRAND_APPROVAL_THEMES: Record<string, BrandApprovalTheme> = {
+  // Specified by user: #2D0000 for diamond / honda
+  diamond: {
+    primary: '#2D0000',
+    primaryDark: '#1F0000',
+    primaryRgb: '45, 0, 0',
+    accentGradient: 'linear-gradient(135deg, #2D0000 0%, #1A0000 100%)',
+  },
+  honda: {
+    primary: '#2D0000',
+    primaryDark: '#1F0000',
+    primaryRgb: '45, 0, 0',
+    accentGradient: 'linear-gradient(135deg, #2D0000 0%, #1A0000 100%)',
+  },
+  // Kept unchanged as instructed ("dont change hyundai , kia ,platinum , mg")
+  kia: {
+    primary: '#055B65',
+    primaryDark: '#03434B',
+    primaryRgb: '5, 91, 101',
+    accentGradient: 'linear-gradient(135deg, #055B65 0%, #03434B 100%)',
+  },
+  hyundai: {
+    primary: '#002C5E',
+    primaryDark: '#001E42',
+    primaryRgb: '0, 44, 94',
+    accentGradient: 'linear-gradient(135deg, #002C5E 0%, #001E42 100%)',
+  },
+  platinum: {
+    primary: '#002C5E',
+    primaryDark: '#001E42',
+    primaryRgb: '0, 44, 94',
+    accentGradient: 'linear-gradient(135deg, #002C5E 0%, #001E42 100%)',
+  },
+  mg: {
+    primary: '#055B65',
+    primaryDark: '#03434B',
+    primaryRgb: '5, 91, 101',
+    accentGradient: 'linear-gradient(135deg, #055B65 0%, #03434B 100%)',
+  },
+  // Refined palette for other brands (not too bright, not too dark)
+  tata: {
+    primary: '#1B365D',
+    primaryDark: '#122540',
+    primaryRgb: '27, 54, 93',
+    accentGradient: 'linear-gradient(135deg, #1B365D 0%, #122540 100%)',
+  },
+  ktm: {
+    primary: '#A84300',
+    primaryDark: '#8A3600',
+    primaryRgb: '168, 67, 0',
+    accentGradient: 'linear-gradient(135deg, #A84300 0%, #8A3600 100%)',
+  },
+  bajaj: {
+    primary: '#0B3056',
+    primaryDark: '#07203B',
+    primaryRgb: '11, 48, 86',
+    accentGradient: 'linear-gradient(135deg, #0B3056 0%, #07203B 100%)',
+  },
+  skoda: {
+    primary: '#0E4D34',
+    primaryDark: '#093624',
+    primaryRgb: '14, 77, 52',
+    accentGradient: 'linear-gradient(135deg, #0E4D34 0%, #093624 100%)',
+  },
+  nexa: {
+    primary: '#1C2038',
+    primaryDark: '#121526',
+    primaryRgb: '28, 32, 56',
+    accentGradient: 'linear-gradient(135deg, #1C2038 0%, #121526 100%)',
+  },
+  ola: {
+    primary: '#0F4C5C',
+    primaryDark: '#0A343F',
+    primaryRgb: '15, 76, 92',
+    accentGradient: 'linear-gradient(135deg, #0F4C5C 0%, #0A343F 100%)',
+  },
+}
 
 /* ---------------------------------------------------------------------------------------------
  * Shared field vocabulary. Every control on this form is built from these three strings, so a
@@ -369,23 +455,35 @@ const DEFAULT_LOCATIONS_BY_BRAND: Record<string, Array<{ location: string; deale
     { location: 'Udhampur', dealerCode: 'PLT-UD', dealerName: 'AM Platinum Udhampur' },
   ],
   mg: [
-    { location: 'Jammu', dealerCode: 'MG-JM', dealerName: 'AM MG Jammu' },
+    // The Jammu showroom is known locally as Channi. The CODE stays MG-JM, so the requests already filed
+    // against this branch keep matching a pin on it; only the name people read changed.
+    { location: 'Channi', dealerCode: 'MG-JM', dealerName: 'AM MG Channi' },
     { location: 'Kathua', dealerCode: 'MG-KT', dealerName: 'AM MG Kathua' },
   ],
-  diamond: [
-    { location: 'Jammu', dealerCode: 'DIA-JM', dealerName: 'AM Diamond Jammu' },
-    { location: 'Digiana', dealerCode: 'DIA-DG', dealerName: 'AM Diamond Digiana' },
-    { location: 'Channi', dealerCode: 'DIA-CN', dealerName: 'AM Diamond Channi' },
-    { location: 'Gangyal', dealerCode: 'DIA-GY', dealerName: 'AM Diamond Gangyal' },
-  ],
   honda: [
-    { location: 'Jammu', dealerCode: 'HND-JM', dealerName: 'AM Diamond Honda Jammu' },
+    { location: 'Miran Sahib', dealerCode: 'HND-MS', dealerName: 'AM Diamond Honda Miran Sahib' },
+    { location: 'Bishnah', dealerCode: 'HND-BS', dealerName: 'AM Diamond Honda Bishnah' },
+    { location: 'Channi Narwal', dealerCode: 'HND-CN', dealerName: 'AM Diamond Honda Channi Narwal' },
+    { location: 'Fly Mandal', dealerCode: 'HND-FM', dealerName: 'AM Diamond Honda Fly Mandal' },
     { location: 'Digiana', dealerCode: 'HND-DG', dealerName: 'AM Diamond Honda Digiana' },
-    { location: 'Channi', dealerCode: 'HND-CN', dealerName: 'AM Diamond Honda Channi' },
-    { location: 'Gangyal', dealerCode: 'HND-GY', dealerName: 'AM Diamond Honda Gangyal' },
   ],
   tata: [
-    { location: 'Jammu', dealerCode: 'TAT-JM', dealerName: 'AM Tata Jammu' },
+    { location: 'Narwal', dealerCode: 'TAT-NR', dealerName: 'AM Tata Narwal' },
+    { location: 'Kathua', dealerCode: 'TAT-KT', dealerName: 'AM Tata Kathua' },
+    { location: 'Udhampur', dealerCode: 'TAT-UD', dealerName: 'AM Tata Udhampur' },
+    { location: 'Supwal', dealerCode: 'TAT-SW', dealerName: 'AM Tata Supwal' },
+    { location: 'Poonch', dealerCode: 'TAT-PN', dealerName: 'AM Tata Poonch' },
+    { location: 'Rajouri', dealerCode: 'TAT-RJ', dealerName: 'AM Tata Rajouri' },
+  ],
+  ktm: [
+    { location: 'Sanik Colony', dealerCode: 'KTM-SC', dealerName: 'AM KTM Sanik Colony' },
+    { location: 'Gangyal', dealerCode: 'KTM-GY', dealerName: 'AM KTM Gangyal' },
+  ],
+  bajaj: [
+    { location: 'Rehari', dealerCode: 'BAJ-RH', dealerName: 'AM Bajaj Rehari' },
+    { location: 'Talab Tillo', dealerCode: 'BAJ-TT', dealerName: 'AM Bajaj Talab Tillo' },
+    { location: 'Channi Narwal', dealerCode: 'BAJ-CN', dealerName: 'AM Bajaj Channi Narwal' },
+    { location: 'Udhampur', dealerCode: 'BAJ-UD', dealerName: 'AM Bajaj Udhampur' },
   ],
 }
 
@@ -1617,9 +1715,21 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     )
   }
 
+  const brandKey = (brand || '').toLowerCase().trim()
+  const brandTheme = BRAND_APPROVAL_THEMES[brandKey] || BRAND_APPROVAL_THEMES.kia
+
   if (submittedId) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
+      <div
+        className="flex min-h-screen items-center justify-center bg-slate-100 p-4"
+        style={{
+          '--dashboard-primary': brandTheme.primary,
+          '--dashboard-primary-dark': brandTheme.primaryDark,
+          '--dashboard-primary-rgb': brandTheme.primaryRgb,
+          '--dashboard-action-bg': brandTheme.primary,
+          '--dashboard-action-hover': brandTheme.primaryDark,
+        } as React.CSSProperties}
+      >
         <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl shadow-slate-900/5 ring-1 ring-slate-900/5">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white">
             <CheckCircle className="h-6 w-6" />
@@ -1736,35 +1846,24 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
   const readyToSubmit = outstanding.length === 0
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      {/* Masthead. The paper below rises into it, so the page has an anchor instead of floating. */}
-      <header className="bg-[var(--dashboard-primary)]">
-        <div className="mx-auto max-w-6xl px-4 pb-32 pt-10 sm:px-6 lg:px-8">
-          {/*
-            Set as type, not artwork: "AM" leans right, the brand name stays upright. A skew rather
-            than italic — the UI face has no true italic here, and a synthesised one would slant the
-            letterforms unevenly at this size.
-
-            `brandDisplayName` already reads "AM Kia" / "AM Hyundai", so the leading AM is stripped
-            before the second half is set upright — otherwise the mark renders "AM AM KIA".
-          */}
-          <div className="flex items-baseline gap-2 text-2xl font-semibold tracking-tight text-white sm:text-[1.75rem]">
-            <span className="inline-block origin-bottom-left skew-x-[-12deg]">AM</span>
-            <span className="uppercase tracking-wide">
-              {brandDisplayName.replace(/^\s*AM\s+/i, '') || brand.toUpperCase()}
-            </span>
+    <div
+      className="min-h-screen bg-slate-100"
+      style={{
+        '--dashboard-primary': brandTheme.primary,
+        '--dashboard-primary-dark': brandTheme.primaryDark,
+        '--dashboard-primary-rgb': brandTheme.primaryRgb,
+        '--dashboard-action-bg': brandTheme.primary,
+        '--dashboard-action-hover': brandTheme.primaryDark,
+      } as React.CSSProperties}
+    >
+      <header style={{ background: brandTheme.accentGradient }}>
+        <div className="mx-auto max-w-6xl px-4 pb-32 pt-8 sm:px-6 lg:px-8">
+          <div className="flex flex-wrap items-center gap-4 sm:gap-5">
+            <BrandLogoLockup brand={brand} variant="card" size="md" />
+            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              Approval request
+            </h1>
           </div>
-
-          <h1 className="mt-6 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-            Approval request
-          </h1>
-          {/* Tinted from the surface, not grey: slate-400 cleared the old near-black masthead but
-              only reaches 2.97:1 on teal. White at 80% composites to a teal-tinted light. */}
-          <p className="mt-2.5 max-w-lg text-sm leading-relaxed text-white/80">
-            Tell us what needs paying and attach the bill. Your request goes straight to the
-            approvers for {brandDisplayName}, and you&rsquo;ll get an email as it moves. Everything
-            is required unless marked optional.
-          </p>
         </div>
       </header>
 

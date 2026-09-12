@@ -29,7 +29,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/hooks/use-toast'
 import { formatIndiaDateTime } from '@/lib/date-time'
+import { isFuelFillingPurpose } from '@/lib/gate-pass/status'
 import { VehicleTrackerCamera } from '@/features/kia/vehicle-tracker-camera'
+import { FileText, Fuel, IndianRupee, AlertCircle } from 'lucide-react'
 
 type GateInDialogProps = {
   open: boolean
@@ -37,6 +39,7 @@ type GateInDialogProps = {
   pass: {
     id: string
     passNo: string
+    purpose?: string | null
     driverName: string
     registrationNumber: string | null
     model: string | null
@@ -45,6 +48,11 @@ type GateInDialogProps = {
     gateOutAt: string | null
     gateOutOdo: string | null
     gateOutGuardName: string | null
+    fuelSlipPath?: string | null
+    pumpStartPath?: string | null
+    pumpStopPath?: string | null
+    fuelAmount?: string | number | null
+    fuelLitres?: string | number | null
   } | null
   onGateInSuccess: () => void
 }
@@ -56,6 +64,9 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
   const [remarks, setRemarks] = useState<string>('')
   const [guardName, setGuardName] = useState<string>('')
   const [photoOdometerIn, setPhotoOdometerIn] = useState<File | null>(null)
+  const [fuelSlip, setFuelSlip] = useState<File | null>(null)
+  const [pumpStart, setPumpStart] = useState<File | null>(null)
+  const [pumpStop, setPumpStop] = useState<File | null>(null)
   const [cameraKey, setCameraKey] = useState<number>(0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -67,6 +78,9 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
     setRemarks('')
     setGuardName('')
     setPhotoOdometerIn(null)
+    setFuelSlip(null)
+    setPumpStart(null)
+    setPumpStop(null)
     setCameraKey((k) => k + 1)
     setError('')
   }
@@ -77,7 +91,7 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
 
     const odoNum = Number(odometer)
     if (!odometer.trim() || Number.isNaN(odoNum) || odoNum < 0) {
-      setError('Please enter a valid manual Odometer IN reading.')
+      setError('Please enter a valid closing odometer reading.')
       return
     }
 
@@ -102,6 +116,16 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
       return
     }
 
+    const isFuel = isFuelFillingPurpose(pass.purpose)
+    const hasSlip = Boolean(fuelSlip || pass.fuelSlipPath)
+    const hasStart = Boolean(pumpStart || pass.pumpStartPath)
+    const hasStop = Boolean(pumpStop || pass.pumpStopPath)
+
+    if (isFuel && (!hasSlip || !hasStart || !hasStop)) {
+      setError('This trip was for Fuel Filling. Physical Fuel Slip, Pump Start (0.00), and Pump Stop (Amount) are all required before completing Gate In.')
+      return
+    }
+
     setSaving(true)
     try {
       const formData = new FormData()
@@ -111,6 +135,10 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
       if (remarks.trim()) formData.append('remarks', remarks.trim())
       if (guardName.trim()) formData.append('guardName', guardName.trim())
       if (photoOdometerIn) formData.append('photoOdometerIn', photoOdometerIn)
+
+      if (fuelSlip) formData.append('fuelSlip', fuelSlip)
+      if (pumpStart) formData.append('pumpStart', pumpStart)
+      if (pumpStop) formData.append('pumpStop', pumpStop)
 
       const res = await fetch(`/api/gate-pass/${pass.id}/gate-in`, {
         method: 'POST',
@@ -271,53 +299,91 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
             </div>
           </div>
 
-          {/* Parked Location & Key Handover */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="parkedLocation" className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                  <MapPin className="h-3.5 w-3.5 text-slate-500" />
-                  Parked Location *
+          {/* Fuel Filling Proofs (When purpose == Fuel filling) */}
+          {isFuelFillingPurpose(pass.purpose) ? (
+            <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                  <Fuel className="h-4 w-4 text-amber-600" />
+                  Mandatory Fuel Filling Proofs *
                 </Label>
-                <Input
-                  id="parkedLocation"
-                  placeholder="e.g. Bay 3 / Showroom Front"
-                  value={parkedLocation}
-                  onChange={(e) => setParkedLocation(e.target.value)}
-                  className="mt-1 bg-white"
-                />
+                {Boolean(pass.fuelSlipPath && pass.pumpStartPath && pass.pumpStopPath) ? (
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1 bg-emerald-100/70 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-300">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> All 3 Proofs on File
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-amber-800 dark:text-amber-300 font-semibold bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 rounded border border-amber-300">
+                    Required for Completion
+                  </span>
+                )}
               </div>
+              <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90">
+                This pass was issued for Fuel Filling. All 3 documents below must be attached before Gate In can be completed.
+              </p>
 
-              <div>
-                <Label htmlFor="keyHandover" className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                  <Key className="h-3.5 w-3.5 text-slate-500" />
-                  Key Handover To *
-                </Label>
-                <Input
-                  id="keyHandover"
-                  placeholder="e.g. Security Desk / Sales Manager"
-                  value={keyHandoverTo}
-                  onChange={(e) => setKeyHandoverTo(e.target.value)}
-                  className="mt-1 bg-white"
-                />
+              <div className="space-y-3 pt-1">
+                {/* 1. Slip */}
+                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 p-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-amber-600" /> 1. Physical Fuel Slip *
+                    </span>
+                    {fuelSlip || pass.fuelSlipPath ? (
+                      <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Attached
+                      </span>
+                    ) : null}
+                  </div>
+                  <VehicleTrackerCamera
+                    key={`fuel-slip-${pass.id}-${cameraKey}`}
+                    label="Fuel Slip photo"
+                    onCapture={(file) => setFuelSlip(file)}
+                    allowUpload={true}
+                  />
+                </div>
+
+                {/* 2. Pump Start 0.00 */}
+                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 p-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Gauge className="h-3.5 w-3.5 text-blue-600" /> 2. Pump Start (0.00) *
+                    </span>
+                    {pumpStart || pass.pumpStartPath ? (
+                      <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Attached
+                      </span>
+                    ) : null}
+                  </div>
+                  <VehicleTrackerCamera
+                    key={`pump-start-${pass.id}-${cameraKey}`}
+                    label="Pump Start 0.00 photo"
+                    onCapture={(file) => setPumpStart(file)}
+                    allowUpload={true}
+                  />
+                </div>
+
+                {/* 3. Pump Stop Amount */}
+                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 p-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <IndianRupee className="h-3.5 w-3.5 text-emerald-600" /> 3. Pump Stop (Amount) *
+                    </span>
+                    {pumpStop || pass.pumpStopPath ? (
+                      <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Attached
+                      </span>
+                    ) : null}
+                  </div>
+                  <VehicleTrackerCamera
+                    key={`pump-stop-${pass.id}-${cameraKey}`}
+                    label="Pump Stop Amount photo"
+                    onCapture={(file) => setPumpStop(file)}
+                    allowUpload={true}
+                  />
+                </div>
               </div>
             </div>
-
-            <div>
-              <Label htmlFor="gateInRemarks" className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                <MessageSquare className="h-3.5 w-3.5 text-slate-500" />
-                Remarks
-              </Label>
-              <Textarea
-                id="gateInRemarks"
-                rows={2}
-                placeholder="Vehicle condition on return, clean/fuel status, etc."
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                className="mt-1 bg-white"
-              />
-            </div>
-          </div>
+          ) : null}
 
           {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
         </div>

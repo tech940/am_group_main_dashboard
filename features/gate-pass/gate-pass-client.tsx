@@ -54,17 +54,19 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from '@/hooks/use-toast'
 import { formatIndiaDateTime } from '@/lib/date-time'
-import { getGatePassStatusInfo } from '@/lib/gate-pass/status'
+import { getGatePassStatusInfo, isFuelFillingPurpose } from '@/lib/gate-pass/status'
 import { isGatePassApproverRole } from '@/lib/gate-pass/access-shared'
 import { KIA_BRANCH_DEALERS } from '@/lib/kia/dealer-branch'
 import { GatePassFormDialog } from './gate-pass-form-dialog'
 import { GatePassDetail } from './gate-pass-detail'
 import { GateOutDialog } from './gate-out-dialog'
 import { GateInDialog } from './gate-in-dialog'
+import { FuelProofDialog } from './fuel-proof-dialog'
 import { FleetPanel } from './fleet-panel'
 import { TrackersPanel } from './trackers-panel'
 import { type GatePassSummary } from '@/lib/gate-pass/metrics'
 import { cn } from '@/lib/utils'
+import { Fuel } from 'lucide-react'
 
 const FILTER_PURPOSES = [
   'Customer test drive',
@@ -202,12 +204,19 @@ type PassRow = {
   gateInGuardName: string | null
   parkedLocation: string | null
   createdAt: string
+  fuelSlipPath?: string | null
+  pumpStartPath?: string | null
+  pumpStopPath?: string | null
+  fuelAmount?: string | number | null
+  fuelLitres?: string | number | null
+  fuelDocsUploadedAt?: string | null
 }
 
 const TABS = [
   { key: 'awaiting', label: 'Awaiting Approval', status: 'pending_approval' },
   { key: 'approved', label: 'Ready for Gate Out', status: 'approved' },
   { key: 'out', label: 'Out on Road', status: 'out' },
+  { key: 'fuel_filling', label: 'Fuel Filling', status: '' },
   { key: 'closed', label: 'Completed / Closed', status: 'returned,rejected,cancelled,expired' },
   { key: 'all', label: 'All Passes', status: '' },
 ] as const
@@ -321,6 +330,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
   const [cancelFor, setCancelFor] = useState<PassRow | null>(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const [fuelProofFor, setFuelProofFor] = useState<PassRow | null>(null)
 
   const canApprove = isGatePassApproverRole(currentUser.role)
   const statusFilter = TABS.find((t) => t.key === tab)?.status ?? ''
@@ -369,7 +379,11 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
       if (statusFilter) params.set('status', statusFilter)
       if (search.trim()) params.set('search', search.trim())
       if (selectedDealer && selectedDealer !== 'all') params.set('dealerCode', selectedDealer)
-      if (selectedPurpose && selectedPurpose !== 'all') params.set('purpose', selectedPurpose)
+      if (tab === 'fuel_filling') {
+        params.set('purpose', 'Fuel filling')
+      } else if (selectedPurpose && selectedPurpose !== 'all') {
+        params.set('purpose', selectedPurpose)
+      }
       if (startDate) params.set('startDate', startDate)
       if (endDate) params.set('endDate', endDate)
       if (mineOnly) params.set('mine', 'true')
@@ -416,8 +430,15 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
     return `/api/gate-pass/export?${params.toString()}`
   }, [statusFilter, selectedDealer, selectedPurpose, startDate, endDate, mineOnly, awaitingMeOnly, search])
 
-  const rawPasses = data?.rows ?? data?.passes ?? []
-  const totalCount = data?.total ?? 0
+  const rawPasses = useMemo(() => {
+    const list = data?.rows ?? data?.passes ?? []
+    if (tab === 'fuel_filling') {
+      return list.filter((p) => isFuelFillingPurpose(p.purpose))
+    }
+    return list
+  }, [data, tab])
+
+  const totalCount = tab === 'fuel_filling' ? rawPasses.length : (data?.total ?? 0)
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
 
   // Client-side search for instantaneous feedback
@@ -859,6 +880,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                     ? summary?.readyForGateOut ?? 0
                     : t.key === 'out'
                     ? summary?.outNow ?? 0
+                    : t.key === 'fuel_filling'
+                    ? (data?.rows ?? data?.passes ?? []).filter((p) => isFuelFillingPurpose(p.purpose)).length
                     : t.key === 'closed'
                     ? summary?.closedPasses ?? 0
                     : summary?.total ?? 0
@@ -1206,6 +1229,19 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                 {row.purposeNote}
                               </div>
                             )}
+                            {isFuelFillingPurpose(row.purpose) && (
+                              <div className="pt-0.5">
+                                {row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded">
+                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proofs Attached
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded">
+                                    <Fuel className="w-2.5 h-2.5 text-amber-600" /> Proofs Pending
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             {isOverdueNow && (
                               <div className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 px-1.5 py-0.2 rounded">
                                 <Clock className="w-2.5 h-2.5" /> Overdue Return
@@ -1316,6 +1352,20 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                 <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
                               </Button>
                             </>
+                          ) : null}
+
+                          {/* Fuel Proofs upload button for Fuel Filling passes */}
+                          {isFuelFillingPurpose(row.purpose) ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setFuelProofFor(row)}
+                              title="Upload/Manage 3 Fuel Proofs (Slip, Pump 0.00, Pump Stop)"
+                              className="h-7 px-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 border-amber-200 dark:border-amber-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3"
+                            >
+                              <Fuel className="h-3 w-3 text-amber-600" />
+                              {row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? 'Fuel Proofs' : 'Add Proofs'}
+                            </Button>
                           ) : null}
 
                           {/* View Detail */}
@@ -1460,10 +1510,23 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
           if (!o) setGateInFor(null)
         }}
         pass={gateInFor}
-        onGateInSuccess={async () => {
-          await queryClient.invalidateQueries({ queryKey: ['gate-passes'] })
-          await queryClient.invalidateQueries({ queryKey: ['gate-pass-summary'] })
-          await refetch()
+        onGateInSuccess={() => {
+          void queryClient.invalidateQueries({ queryKey: ['gate-passes'] })
+          void queryClient.invalidateQueries({ queryKey: ['gate-pass-summary'] })
+          void refetch()
+        }}
+      />
+
+      <FuelProofDialog
+        open={Boolean(fuelProofFor)}
+        onOpenChange={(o) => {
+          if (!o) setFuelProofFor(null)
+        }}
+        pass={fuelProofFor}
+        onSuccess={() => {
+          void queryClient.invalidateQueries({ queryKey: ['gate-passes'] })
+          void queryClient.invalidateQueries({ queryKey: ['gate-pass-summary'] })
+          void refetch()
         }}
       />
 

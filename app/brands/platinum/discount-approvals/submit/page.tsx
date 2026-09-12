@@ -13,6 +13,7 @@ import {
   Calendar,
   ShieldCheck,
 } from 'lucide-react'
+import { BrandLogoLockup } from '@/components/brand-logo-lockup'
 
 export default function PlatinumDiscountApprovalSubmitPage() {
   const branch = 'platinum'
@@ -217,11 +218,9 @@ export default function PlatinumDiscountApprovalSubmitPage() {
         
         {/* Form Header */}
         <div className="space-y-4 text-center mb-8">
-          <img
-            src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_hyundai.svg"
-            alt="AM Hyundai Logo"
-            className="h-12 sm:h-14 mx-auto object-contain"
-          />
+          <div className="flex justify-center">
+            <BrandLogoLockup brand="platinum" variant="card" size="md" />
+          </div>
           <div className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-[#002c5f]/10 border border-[#002c5f]/25 text-[#002c5f] text-xs font-black tracking-wide uppercase">
             <span>Discount Approval Portal</span>
           </div>

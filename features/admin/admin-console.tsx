@@ -492,10 +492,17 @@ function DealerSelector({ brand, value, onChange }: { brand: string; value: stri
    * registered dealer, so ticking Banihal fails CLOSED in sales and Business Excellence rather than
    * widening them. It only opens what the approvals scope explicitly honours.
    */
+  const registryDealers = getBrandDealers(brand)
   const options = isSingleBrand(brand)
     ? [
-        ...getBrandDealers(brand),
-        ...getApprovalOnlyBranches(brand).map((b) => ({ code: b.code, label: `${b.label} — approvals only` })),
+        ...registryDealers,
+        // The suffix earns its place only where the list is MIXED — KIA, where Banihal sits beside DMS
+        // branches. Diamond, Tata, KTM and Bajaj have no DMS registry at all, so every branch would carry
+        // it and it would distinguish nothing; there it is left off.
+        ...getApprovalOnlyBranches(brand).map((b) => ({
+          code: b.code,
+          label: registryDealers.length > 0 ? `${b.label} — approvals only` : b.label,
+        })),
       ]
     : []
   if (options.length === 0) return null
@@ -554,16 +561,16 @@ export function AdminConsole() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  /*
-   * The debounced copy is what actually reaches the server. `search` drives the input so typing
-   * stays instant; `searchTerm` changes 300ms after the last keystroke, so a full name costs one
-   * request rather than one per character.
-   */
   const [searchTerm, setSearchTerm] = useState('')
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSearchTerm(search.trim()), 300)
-    return () => window.clearTimeout(timer)
+
+  const handleApplySearch = useCallback(() => {
+    setSearchTerm(search.trim())
   }, [search])
+
+  const handleClearSearch = useCallback(() => {
+    setSearch('')
+    setSearchTerm('')
+  }, [])
   const [createOpen, setCreateOpen] = useState(false)
   const [createStep, setCreateStep] = useState(1)
   const [createForm, setCreateForm] = useState({
@@ -967,9 +974,51 @@ export function AdminConsole() {
                   </Button>
                 </CardHeader>
                 <CardContent>
-                  <div className="mb-4 flex max-w-md items-center gap-2 rounded-xl border bg-white px-3">
-                    <Search className="h-4 w-4 text-slate-400" />
-                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search users..." className="border-0 shadow-none focus-visible:ring-0" />
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <div className="flex max-w-md flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-0.5 shadow-2xs">
+                      <Search className="h-4 w-4 shrink-0 text-slate-400" />
+                      <Input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            handleApplySearch()
+                          }
+                        }}
+                        placeholder="Search users by name, email, role..."
+                        className="h-9 border-0 p-0 text-sm shadow-none focus-visible:ring-0"
+                      />
+                      {search && (
+                        <button
+                          type="button"
+                          onClick={handleClearSearch}
+                          className="rounded-full p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                          title="Clear input"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleApplySearch}
+                      className="rounded-xl px-4 text-xs font-semibold"
+                    >
+                      Apply
+                    </Button>
+                    {(search || searchTerm) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleClearSearch}
+                        className="rounded-xl px-3 text-xs"
+                      >
+                        Clear
+                      </Button>
+                    )}
                   </div>
                   <div className="overflow-x-auto rounded-xl border border-slate-200">
                     <table className="w-full text-sm">

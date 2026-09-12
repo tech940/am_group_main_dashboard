@@ -4,6 +4,7 @@ import { approvalsCommonData, approvalsBranchesConfig } from '@/lib/db/schema'
 import { eq, or, and } from 'drizzle-orm'
 import { getBranchLabel } from '@/lib/branches'
 import { getPettyCashLocationOptions } from '@/lib/petty-cash/constants'
+import { getApprovalOnlyBranches } from '@/lib/kia/approval-branches'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,20 +30,19 @@ export async function GET(
       .where(eq(approvalsBranchesConfig.brand, normalizedBrand))
 
     if (!locations || locations.length === 0) {
-      if (normalizedBrand === 'diamond') {
-        locations = [
-          { location: 'Jammu', dealerCode: 'DIA-JM', dealerName: 'AM Diamond Jammu' },
-          { location: 'Digiana', dealerCode: 'DIA-DG', dealerName: 'AM Diamond Digiana' },
-          { location: 'Channi', dealerCode: 'DIA-CN', dealerName: 'AM Diamond Channi' },
-          { location: 'Gangyal', dealerCode: 'DIA-GY', dealerName: 'AM Diamond Gangyal' },
-        ]
-      } else if (normalizedBrand === 'honda') {
-        locations = [
-          { location: 'Jammu', dealerCode: 'HND-JM', dealerName: 'AM Diamond Honda Jammu' },
-          { location: 'Digiana', dealerCode: 'HND-DG', dealerName: 'AM Diamond Honda Digiana' },
-          { location: 'Channi', dealerCode: 'HND-CN', dealerName: 'AM Diamond Honda Channi' },
-          { location: 'Gangyal', dealerCode: 'HND-GY', dealerName: 'AM Diamond Honda Gangyal' },
-        ]
+      /*
+       * Brands with no DMS dealer registry (Diamond, Tata, KTM, Bajaj) keep their branch list in ONE place:
+       * lib/kia/approval-branches.ts, which is also what the Admin branch-scope picker offers. Deriving the
+       * form from it means a filed request and a branch pin always carry codes that match — the alternative
+       * is a second hand-kept copy, and a pin that matches nothing shows its staff an empty page in silence.
+       */
+      const approvalOnlyBranches = getApprovalOnlyBranches(normalizedBrand)
+      if (approvalOnlyBranches.length > 0) {
+        locations = approvalOnlyBranches.map((branch) => ({
+          location: branch.label,
+          dealerCode: branch.code,
+          dealerName: brandDisplayName + ' ' + branch.label,
+        }))
       } else {
         const fallbackOptions = getPettyCashLocationOptions(normalizedBrand)
         locations = fallbackOptions.map((loc) => ({

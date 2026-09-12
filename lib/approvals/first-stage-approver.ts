@@ -40,6 +40,35 @@ export type FirstStageTrack = 'sales' | 'service' | 'unknown'
 
 const norm = (value: unknown) => String(value ?? '').trim().toLowerCase()
 
+/**
+ * Brands whose first stage is ONE branch-level approval that any of several managers may sign.
+ *
+ * The owner's rule, 2026-09-12: every brand except KIA, Hyundai, Platinum and MG runs
+ *   GSM (General Sales Manager) / SM / VP / GSM (Group Service Manager)  →  EA  →  MD  →  Accounts.
+ *
+ * ⚠️ NOT track-dependent, and that is the difference from KIA, Hyundai and Platinum. Sales and service
+ * both reach the same set, so a blank or mistyped department cannot park a request on a desk nobody
+ * holds — the failure mode section 11 of the verifier exists to catch.
+ *
+ * ⚠️ 'diamond' is listed for safety only: the brand was merged into 'honda' on 2026-09-12, and any row
+ * still carrying the old value keeps the same approvers rather than silently losing them.
+ */
+export const BRANCH_FIRST_STAGE_BRANDS = ['honda', 'diamond', 'tata', 'ktm', 'bajaj'] as const
+
+export const BRANCH_FIRST_STAGE_ROLES = [
+  'general_manager', // GSM — labelled 'General Sales Manager' in lib/permissions/registry.ts
+  // ⚠️ NOT service_general_manager (General Service Manager). The two GSMs this rule names are the
+  // General SALES Manager above and the GROUP Service Manager below; that is a third, different role.
+  'sales_manager', // SM
+  'vp',
+  'group_service_manager',
+] as const
+
+export function usesBranchFirstStage(brand: unknown): boolean {
+  const b = norm(brand)
+  return (BRANCH_FIRST_STAGE_BRANDS as readonly string[]).some((known) => b === known || b.startsWith(known))
+}
+
 /** The only brand whose first stage belongs to a Deputy General Manager, and only on service. */
 export const DGM_BRANDS = ['platinum'] as const
 
@@ -128,8 +157,8 @@ export function firstStageApproverRoles(brand: unknown, department: unknown, app
   if (!brandHasFirstStage(b, department, approvalType)) return []
   // Platinum's first stage exists only on service, and belongs to the DGM alone.
   if (isDgmBrand(b)) return ['dgm']
-  // Diamond / Honda: VP approves both Sales and Service requests
-  if (b === 'diamond' || b === 'honda') return ['vp']
+  // Diamond Honda, Tata, KTM, Bajaj: one branch stage, signed by any of its managers.
+  if (usesBranchFirstStage(b)) return [...BRANCH_FIRST_STAGE_ROLES]
   const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (trackForDepartment(department)) {
     case 'sales': return ['general_manager']
@@ -150,8 +179,8 @@ export function firstStageApproverRolesForTrack(brand: unknown, track: FirstStag
    */
   if (isDgmBrand(b)) return track === 'service' ? ['dgm'] : []
   if (!brandHasFirstStage(b)) return []
-  // Diamond / Honda: VP approves both Sales and Service requests
-  if (b === 'diamond' || b === 'honda') return ['vp']
+  // Diamond Honda, Tata, KTM, Bajaj: one branch stage, signed by any of its managers.
+  if (usesBranchFirstStage(b)) return [...BRANCH_FIRST_STAGE_ROLES]
   const serviceRole = usesVpService(b) || b === 'kia' ? 'vp' : 'service_general_manager'
   switch (track) {
     case 'sales': return ['general_manager']
@@ -173,7 +202,8 @@ export function firstStageLabel(brand: unknown, department: unknown, approvalTyp
   const b = norm(brand)
   if (!brandHasFirstStage(b, department, approvalType)) return 'EA Approval'
   if (isDgmBrand(b)) return 'DGM Approval'
-  if (b === 'diamond' || b === 'honda') return 'VP Approval'
+  // Five roles can sign this one, so it is named for the stage rather than for one of them.
+  if (usesBranchFirstStage(b)) return 'Manager Approval'
   switch (trackForDepartment(department)) {
     case 'sales': return 'GSM Approval (Sales)'
     case 'service': return (usesVpService(b) || b === 'kia') ? 'VP Approval' : 'GSM Approval (Service)'
@@ -188,7 +218,7 @@ export function firstStageShortLabel(brand: unknown, department: unknown, approv
   const b = norm(brand)
   if (!brandHasFirstStage(b, department, approvalType)) return 'EA'
   if (isDgmBrand(b)) return 'DGM'
-  if (b === 'diamond' || b === 'honda') return 'VP'
+  if (usesBranchFirstStage(b)) return 'Manager'
   if ((usesVpService(b) || b === 'kia') && isServiceApproval(department, approvalType)) {
     return 'VP'
   }

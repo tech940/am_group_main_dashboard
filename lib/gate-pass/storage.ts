@@ -24,15 +24,25 @@ export const GATE_PASS_MAX_FILES = 8
 /** Signed URLs are short: five minutes is long enough to render a page, not to pass around. */
 const SIGNED_URL_TTL_SECONDS = 300
 
-export async function ensureGatePassBucket() {
-  const { data } = await supabaseAdmin.storage.getBucket(GATE_PASS_BUCKET)
-  if (data) return
-  const { error } = await supabaseAdmin.storage.createBucket(GATE_PASS_BUCKET, {
-    public: false,
-    fileSizeLimit: GATE_PASS_MAX_FILE_BYTES,
-    allowedMimeTypes: [...GATE_PASS_ALLOWED_TYPES],
-  })
-  if (error && !error.message.toLowerCase().includes('already exists')) throw error
+let bucketEnsuredPromise: Promise<void> | null = null
+
+export async function ensureGatePassBucket(): Promise<void> {
+  if (!bucketEnsuredPromise) {
+    bucketEnsuredPromise = (async () => {
+      const { data } = await supabaseAdmin.storage.getBucket(GATE_PASS_BUCKET)
+      if (data) return
+      const { error } = await supabaseAdmin.storage.createBucket(GATE_PASS_BUCKET, {
+        public: false,
+        fileSizeLimit: GATE_PASS_MAX_FILE_BYTES,
+        allowedMimeTypes: [...GATE_PASS_ALLOWED_TYPES],
+      })
+      if (error && !error.message.toLowerCase().includes('already exists')) throw error
+    })().catch((err) => {
+      bucketEnsuredPromise = null
+      throw err
+    })
+  }
+  return bucketEnsuredPromise
 }
 
 export class GatePassUploadError extends Error {
