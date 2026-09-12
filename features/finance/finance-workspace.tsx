@@ -33,7 +33,15 @@ async function proformaApproval(id: string, body: Record<string, unknown>) {
   return data
 }
 
-export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: boolean; currentUserRole?: string }) {
+export function FinanceWorkspace({
+  canApprove,
+  currentUserRole,
+  initialQueueData,
+}: {
+  canApprove: boolean
+  currentUserRole?: string
+  initialQueueData?: QueueResponse
+}) {
   const qc = useQueryClient()
   // 'payouts' is the post-delivery ledger — a SUBSECTION of Finance, not a new sidebar item and not
   // a booking stage. It shares this section's `finance.view` gate; editing needs `finance.edit`.
@@ -50,7 +58,35 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
     return () => clearInterval(id)
   }, [])
 
-  const { data, isLoading, isError, error } = useQuery({ queryKey: ['finance', 'queue'], queryFn: fetchQueue })
+  // Prefetch payouts and bank options in the background so tab switching is instantaneous
+  useEffect(() => {
+    void qc.prefetchQuery({
+      queryKey: ['finance', 'payouts', ''],
+      queryFn: () => fetch('/api/finance/payouts').then((r) => r.json()),
+      staleTime: 60_000,
+    })
+    void qc.prefetchQuery({
+      queryKey: ['finance', 'bank-options'],
+      queryFn: () => fetch('/api/finance/bank-options').then((r) => r.json()),
+      staleTime: 60 * 60 * 1000,
+    })
+  }, [qc])
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['finance', 'queue'],
+    queryFn: fetchQueue,
+    initialData: initialQueueData,
+    staleTime: 30_000,
+  })
+
+  const prefetchDetail = (proformaId: string) => {
+    if (!proformaId) return
+    void qc.prefetchQuery({
+      queryKey: ['finance', 'detail', proformaId],
+      queryFn: () => fetch(`/api/finance/${proformaId}`).then((r) => r.json()),
+      staleTime: 60_000,
+    })
+  }
 
   const approval = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => proformaApproval(id, body),
@@ -143,7 +179,13 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
                     const proformaId = 'proformaId' in r ? r.proformaId : r.id
                     const remarks = getFinanceRowMdRemarks(r)
                     return (
-                      <tr key={'processingId' in r ? r.processingId : r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 cursor-pointer" onClick={() => setSelected(proformaId)}>
+                      <tr
+                        key={'processingId' in r ? r.processingId : r.id}
+                        className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 cursor-pointer"
+                        onClick={() => setSelected(proformaId)}
+                        onMouseEnter={() => prefetchDetail(proformaId)}
+                        onTouchStart={() => prefetchDetail(proformaId)}
+                      >
                         <td className="px-4 py-3 font-bold text-slate-800">{str(r.customerName) || '—'}</td>
                         <td className="px-4 py-3 text-slate-700">{str(r.modelName)} <span className="text-slate-400">· {str(r.trimDescription)}</span></td>
                         <td className="px-4 py-3 text-slate-600">{str('currentBankName' in r ? r.currentBankName : r.bankName) || '—'}</td>
@@ -183,7 +225,13 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
                 </thead>
                 <tbody>
                   {approvalQueue.map((r: ApprovalQueueRow) => (
-                    <tr key={r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 cursor-pointer" onClick={() => setPreviewRow(r)}>
+                    <tr
+                      key={r.id}
+                      className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 cursor-pointer"
+                      onClick={() => setPreviewRow(r)}
+                      onMouseEnter={() => prefetchDetail(r.id)}
+                      onTouchStart={() => prefetchDetail(r.id)}
+                    >
                       <td className="px-4 py-3 font-semibold text-slate-500">{formatDate(r.proformaDate)}</td>
                       <td className="px-4 py-3 font-bold text-slate-800">{str(r.customerName) || '—'}</td>
                       <td className="px-4 py-3 text-slate-700">{str(r.modelName)} <span className="text-slate-400">· {str(r.trimDescription)}</span></td>
@@ -234,7 +282,13 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
                     const done = r.financeStatus === 'completed'
                     const cd = formatCountdown(r.expectedCompletionDate, now)
                     return (
-                      <tr key={r.processingId} className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/60" onClick={() => setSelected(r.proformaId)}>
+                      <tr
+                        key={r.processingId}
+                        className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
+                        onClick={() => setSelected(r.proformaId)}
+                        onMouseEnter={() => prefetchDetail(r.proformaId)}
+                        onTouchStart={() => prefetchDetail(r.proformaId)}
+                      >
                         <td className="px-4 py-3 font-bold text-slate-800">{str(r.customerName) || '—'}</td>
                         <td className="px-4 py-3 text-slate-700">{str(r.modelName)} <span className="text-slate-400">· {str(r.trimDescription)}</span></td>
                         <td className="px-4 py-3"><span className={cn('rounded-full border px-2.5 py-0.5 text-[11px] font-bold', s.className)}>{s.label}</span></td>

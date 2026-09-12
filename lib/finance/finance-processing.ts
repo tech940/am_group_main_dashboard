@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
   kiaProformas,
@@ -45,35 +45,37 @@ function financeHoursForBooking(booking: { metadata?: unknown } | null | undefin
 export type FinanceBankRow = { bank_name: string; bank_branch: string }
 
 export async function loadFinanceBankOptions(): Promise<{ banks: FinanceBankRow[] }> {
-  const [priceRows, payoutRows] = await Promise.all([
-    db.select({ bankName: kiaPriceDetails.bankName, hyp: kiaPriceDetails.hyp, bankBranch: kiaPriceDetails.bankBranch })
-      .from(kiaPriceDetails),
-    db.select({ hyp: kiaFinancePayouts.hyp, bankBranch: kiaFinancePayouts.bankBranch })
-      .from(kiaFinancePayouts)
-      .where(sql`hyp IS NOT NULL AND bank_branch IS NOT NULL`),
-  ])
+  return getCachedData('finance:bank_options:v2', async () => {
+    const [priceRows, payoutRows] = await Promise.all([
+      db.select({ bankName: kiaPriceDetails.bankName, hyp: kiaPriceDetails.hyp, bankBranch: kiaPriceDetails.bankBranch })
+        .from(kiaPriceDetails),
+      db.select({ hyp: kiaFinancePayouts.hyp, bankBranch: kiaFinancePayouts.bankBranch })
+        .from(kiaFinancePayouts)
+        .where(sql`hyp IS NOT NULL AND bank_branch IS NOT NULL`),
+    ])
 
-  // Extra branches that should always appear in the dropdown
-  const extraBanks: FinanceBankRow[] = [
-    { bank_name: 'PNB BANK', bank_branch: 'PNB - Shastri Nagar' },
-    { bank_name: 'JK GRAMEEN', bank_branch: 'JK Grameen Bank Jagti' },
-    { bank_name: 'SBI', bank_branch: 'SBI Trikuta Nagar' },
-    { bank_name: 'SBI', bank_branch: 'SBI Trikuta Nagar Jammu' },
-    { bank_name: 'SBI', bank_branch: 'Trikuta Nagar' },
-  ]
+    // Extra branches that should always appear in the dropdown
+    const extraBanks: FinanceBankRow[] = [
+      { bank_name: 'PNB BANK', bank_branch: 'PNB - Shastri Nagar' },
+      { bank_name: 'JK GRAMEEN', bank_branch: 'JK Grameen Bank Jagti' },
+      { bank_name: 'SBI', bank_branch: 'SBI Trikuta Nagar' },
+      { bank_name: 'SBI', bank_branch: 'SBI Trikuta Nagar Jammu' },
+      { bank_name: 'SBI', bank_branch: 'Trikuta Nagar' },
+    ]
 
-  const banks: FinanceBankRow[] = [
-    ...priceRows
-      .map((r) => ({ bank_name: normalizeBankName(text(r.bankName) || text(r.hyp)), bank_branch: text(r.bankBranch) }))
-      .filter((r) => r.bank_name && r.bank_branch),
-    ...payoutRows
-      .map((r) => ({ bank_name: normalizeBankName(text(r.hyp)), bank_branch: text(r.bankBranch) }))
-      .filter((r) => r.bank_name && r.bank_branch),
-    ...extraBanks,
-  ]
-    .filter((r, i, s) => s.findIndex((c) => c.bank_name === r.bank_name && c.bank_branch === r.bank_branch) === i)
-    .sort((a, b) => a.bank_name.localeCompare(b.bank_name) || a.bank_branch.localeCompare(b.bank_branch))
-  return { banks }
+    const banks: FinanceBankRow[] = [
+      ...priceRows
+        .map((r) => ({ bank_name: normalizeBankName(text(r.bankName) || text(r.hyp)), bank_branch: text(r.bankBranch) }))
+        .filter((r) => r.bank_name && r.bank_branch),
+      ...payoutRows
+        .map((r) => ({ bank_name: normalizeBankName(text(r.hyp)), bank_branch: text(r.bankBranch) }))
+        .filter((r) => r.bank_name && r.bank_branch),
+      ...extraBanks,
+    ]
+      .filter((r, i, s) => s.findIndex((c) => c.bank_name === r.bank_name && c.bank_branch === r.bank_branch) === i)
+      .sort((a, b) => a.bank_name.localeCompare(b.bank_name) || a.bank_branch.localeCompare(b.bank_branch))
+    return { banks }
+  }, CACHE_TTL.LONG)
 }
 
 // ── Immutable activity writer (append-only; a DB trigger also blocks UPDATE/DELETE) ──────────────
@@ -237,50 +239,64 @@ export async function getKiaFinanceProcessingList() {
     consultant: kiaProformas.consultant,
     location: kiaProformas.location,
     financeRemarks: kiaProformas.financeRemarks,
-    mdRemarksCount: sql<number>`(
-      select count(*)::int from ${kiaFinanceRemarks}
-      where ${kiaFinanceRemarks.financeProcessingId} = ${kiaFinanceProcessing.id}
-      and (
-        remark ilike '%[MD%' or remark ilike '%MD remark%'
-        or (
-          (created_by_role ilike '%md%' or created_by_role ilike '%management%' or created_by_role ilike '%ceo%'
-           or created_by_name ilike '%md%' or created_by_name ilike '%management%')
-          and remark not ilike 'quick approved%'
-          and remark not ilike 'approved%'
-          and remark not ilike 'status set to%'
-          and remark not ilike 'marked as%'
-          and remark not ilike 'finance processing%'
-          and remark not ilike 'booking updated%'
-          and remark not ilike 'duplicate booking%'
-        )
-      )
-    )`.as('md_remarks_count'),
-    latestMdRemark: sql<string | null>`(
-      select remark from ${kiaFinanceRemarks}
-      where ${kiaFinanceRemarks.financeProcessingId} = ${kiaFinanceProcessing.id}
-      and (
-        remark ilike '%[MD%' or remark ilike '%MD remark%'
-        or (
-          (created_by_role ilike '%md%' or created_by_role ilike '%management%' or created_by_role ilike '%ceo%'
-           or created_by_name ilike '%md%' or created_by_name ilike '%management%')
-          and remark not ilike 'quick approved%'
-          and remark not ilike 'approved%'
-          and remark not ilike 'status set to%'
-          and remark not ilike 'marked as%'
-          and remark not ilike 'finance processing%'
-          and remark not ilike 'booking updated%'
-          and remark not ilike 'duplicate booking%'
-        )
-      )
-      order by created_at desc limit 1
-    )`.as('latest_md_remark'),
   })
     .from(kiaFinanceProcessing)
     .innerJoin(kiaProformas, eq(kiaProformas.id, kiaFinanceProcessing.proformaId))
     .where(isNull(kiaProformas.deletedAt))
     .orderBy(desc(kiaFinanceProcessing.updatedAt))
     .limit(300)
-  return rows
+
+  if (rows.length === 0) return []
+
+  const processingIds = rows.map((r) => r.processingId)
+  const allRemarks = await db.select({
+    financeProcessingId: kiaFinanceRemarks.financeProcessingId,
+    remark: kiaFinanceRemarks.remark,
+    createdByRole: kiaFinanceRemarks.createdByRole,
+    createdByName: kiaFinanceRemarks.createdByName,
+    createdAt: kiaFinanceRemarks.createdAt,
+  })
+    .from(kiaFinanceRemarks)
+    .where(inArray(kiaFinanceRemarks.financeProcessingId, processingIds))
+    .orderBy(desc(kiaFinanceRemarks.createdAt))
+
+  const remarksByProcessing = new Map<string, typeof allRemarks>()
+  for (const rem of allRemarks) {
+    const list = remarksByProcessing.get(rem.financeProcessingId) ?? []
+    list.push(rem)
+    remarksByProcessing.set(rem.financeProcessingId, list)
+  }
+
+  const isMdRemark = (r: { remark: string; createdByRole?: string | null; createdByName?: string | null }) => {
+    const rem = (r.remark || '').toLowerCase()
+    const role = (r.createdByRole || '').toLowerCase()
+    const name = (r.createdByName || '').toLowerCase()
+    if (rem.includes('[md') || rem.includes('md remark')) return true
+    if (role.includes('md') || role.includes('management') || role.includes('ceo') || name.includes('md') || name.includes('management')) {
+      if (
+        !rem.startsWith('quick approved') &&
+        !rem.startsWith('approved') &&
+        !rem.startsWith('status set to') &&
+        !rem.startsWith('marked as') &&
+        !rem.startsWith('finance processing') &&
+        !rem.startsWith('booking updated') &&
+        !rem.startsWith('duplicate booking')
+      ) {
+        return true
+      }
+    }
+    return false
+  }
+
+  return rows.map((row) => {
+    const rowRemarks = remarksByProcessing.get(row.processingId) ?? []
+    const mdRemarks = rowRemarks.filter(isMdRemark)
+    return {
+      ...row,
+      mdRemarksCount: mdRemarks.length,
+      latestMdRemark: mdRemarks[0]?.remark ?? null,
+    }
+  })
 }
 
 // "Accounts confirmed payment received" — the durable signal set by confirmKiaBookingPayment /

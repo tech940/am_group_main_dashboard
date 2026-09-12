@@ -11,6 +11,8 @@
  */
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
   Bookmark,
@@ -252,6 +254,37 @@ function AccordionRow({
   const expanded = open.has(pathKey)
   const Icon = node.icon
   const iconBadgeClass = getIconBadgeStyle(node.label, node.active)
+  const router = useRouter()
+  const queryClient = useQueryClient()
+
+  const handlePreload = useCallback((href?: string) => {
+    if (!href || href.startsWith('http') || node.external) return
+    try {
+      router.prefetch(href)
+      if (href.includes('/finance')) {
+        void queryClient.prefetchQuery({
+          queryKey: ['finance', 'queue'],
+          queryFn: async () => {
+            const res = await fetch('/api/finance/queue')
+            if (!res.ok) throw new Error('Failed to prefetch queue')
+            return res.json()
+          },
+          staleTime: 30_000,
+        })
+        void queryClient.prefetchQuery({
+          queryKey: ['finance', 'bank-options'],
+          queryFn: async () => {
+            const res = await fetch('/api/finance/bank-options')
+            if (!res.ok) throw new Error('Failed to prefetch bank options')
+            return res.json()
+          },
+          staleTime: 60_000,
+        })
+      }
+    } catch {
+      // Ignore prefetch errors in background
+    }
+  }, [node.external, queryClient, router])
 
   // min-h-11: every row is a ≥44px touch target (submenu rows without icon badges used to
   // bottom out around 31px).
@@ -384,7 +417,10 @@ function AccordionRow({
             href={node.href}
             target={node.external ? '_blank' : undefined}
             rel={node.external ? 'noreferrer' : undefined}
-            prefetch={false}
+            prefetch={true}
+            onMouseEnter={() => handlePreload(node.href)}
+            onTouchStart={() => handlePreload(node.href)}
+            onFocus={() => handlePreload(node.href)}
             onClick={onNavigate}
             className={cn(rowClass, 'w-full')}
             style={activeStyle}

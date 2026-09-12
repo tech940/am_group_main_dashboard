@@ -276,6 +276,18 @@ const DEFAULT_SIDEBAR_FAVOURITES: string[] = []
 // Generated from the registry's SECTION_ROUTES (proven identical by scripts/verify-nav-map.ts).
 const sidebarPermissionByHref = SIDEBAR_PERMISSION_BY_HREF
 
+/**
+ * Every list of sidebar rows reads alphabetically: the Common modules, the brands, a brand's
+ * sections, a section's submenus, and the starred Favourites.
+ *
+ * ⚠️ localeCompare with numeric collation, not `a.label < b.label`. A plain string compare orders by
+ * code point, which puts every capital ahead of every lower-case letter and sorts 'Phase 10' before
+ * 'Phase 2'. Sorting happens HERE, at the point of render, and never in lib/navigation/sections.ts —
+ * global search and the Access Map read that registry too, and its order is load-bearing there.
+ */
+const byLabel = (a: { label: string }, b: { label: string }) =>
+  a.label.localeCompare(b.label, 'en', { numeric: true, sensitivity: 'base' })
+
 function isSidebarHrefActive(href: string, pathname: string | null) {
   if (!pathname) return false
   if (href.includes('/business-excellence')) {
@@ -570,7 +582,7 @@ export function Sidebar() {
 
     // ── Common / global modules (shared across every branch) ──
     const commonNodes: NavNode[] = []
-    if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, external: true, active: pathname === '/cockpit' })
+    if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, active: pathname === '/cockpit' })
     /*
      * Customer 360 — top-level and multi-brand, so it sits with the common modules rather than under
      * a brand. It absorbed the KIA "Customer Profile" entry that used to live under KIA > Sales;
@@ -584,7 +596,6 @@ export function Sidebar() {
       label: 'Customer 360',
       href: '/customer-360',
       icon: UserSearch,
-      external: true,
       active: Boolean(pathname?.startsWith('/customer-360')),
     })
     // Targets — MD + Developer ONLY. Gated on the role constant, not a permission key: a key would
@@ -596,7 +607,6 @@ export function Sidebar() {
       label: 'Targets',
       href: '/targets',
       icon: Target,
-      external: true,
       active: Boolean(pathname?.startsWith('/targets')),
     })
     // Bank Sanctions — EA / MD / Accounts / Developer / PC default, or explicitly granted via Access Map.
@@ -612,14 +622,13 @@ export function Sidebar() {
       label: 'Bank Sanctions',
       href: '/bank-sanctions',
       icon: CreditCard,
-      external: true,
       active: Boolean(pathname?.startsWith('/bank-sanctions')),
     })
     // Delegation Tasks — visible to MD / EA / developer only.
-    if (canAccessDelegationTasks && hasPermission('delegation_tasks.view')) commonNodes.push({ key: '/delegation-tasks', label: 'Delegation Tasks', href: '/delegation-tasks', icon: ClipboardList, external: true, active: pathname === '/delegation-tasks' })
+    if (canAccessDelegationTasks && hasPermission('delegation_tasks.view')) commonNodes.push({ key: '/delegation-tasks', label: 'Delegation Tasks', href: '/delegation-tasks', icon: ClipboardList, active: pathname === '/delegation-tasks' })
     // Purchase Orders — CA lives as a TAB inside this page (app/purchase-orders/page.tsx) for CA/MD/
     // Developer only; it is deliberately NOT a sidebar option.
-    if (hasPermission('purchase_orders.view')) commonNodes.push({ key: '/purchase-orders', label: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart, external: true, active: pathname === '/purchase-orders' })
+    if (hasPermission('purchase_orders.view')) commonNodes.push({ key: '/purchase-orders', label: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart, active: pathname === '/purchase-orders' })
     // Petty Cash is a single section — the former "Status Tracker" sub-page is now the
     // "Status" tab inside the workspace.
     // Petty Cash & AM Finance are guarded server-side by a ROLE allowlist (canAccessX), not by the
@@ -634,7 +643,6 @@ export function Sidebar() {
       label: 'Petty Cash',
       href: '/petty-cash',
       icon: Banknote,
-      external: true,
       active: pathname.startsWith('/petty-cash'),
     })
     if (hasPermission('kia.approvals.view')) {
@@ -643,7 +651,6 @@ export function Sidebar() {
         label: 'Approvals',
         href: '/brands/kia/payment-approvals',
         icon: FileCheck,
-        external: true,
         active: pathname.startsWith('/brands/kia/payment-approvals'),
       })
       commonNodes.push({
@@ -651,7 +658,6 @@ export function Sidebar() {
         label: 'Vendor Registry',
         href: '/brands/kia/vendors',
         icon: Users,
-        external: true,
         active: pathname.startsWith('/brands/kia/vendors'),
       })
     }
@@ -664,7 +670,6 @@ export function Sidebar() {
         label: 'Fuel Management',
         href: '/fuel-management',
         icon: Fuel,
-        external: true,
         active: pathname.startsWith('/fuel-management'),
       })
     }
@@ -674,7 +679,6 @@ export function Sidebar() {
         label: 'Fuel Approvals',
         href: '/fuel-approvals',
         icon: Fuel,
-        external: true,
         active: pathname.startsWith('/fuel-approvals') || pathname.startsWith('/brands/kia/fuel-approvals'),
       })
     }
@@ -684,7 +688,6 @@ export function Sidebar() {
         label: 'Demo Car GatePass',
         href: '/gate-pass',
         icon: ScanLine,
-        external: true,
         active: pathname.startsWith('/gate-pass'),
       })
     }
@@ -694,7 +697,6 @@ export function Sidebar() {
         label: 'Showroom Images',
         href: '/showroom-images',
         icon: Camera,
-        external: true,
         active: pathname.startsWith('/showroom-images'),
       })
     }
@@ -704,7 +706,6 @@ export function Sidebar() {
         label: 'CA Portal',
         href: '/ca',
         icon: Calculator,
-        external: true,
         active: Boolean(pathname?.startsWith('/ca')),
       })
     }
@@ -717,7 +718,6 @@ export function Sidebar() {
     //   label: 'Renewal Pipeline',
     //   href: '/insurance/renewals',
     //   icon: CalendarClock,
-    //   external: true,
     //   active: Boolean(pathname?.startsWith('/insurance/renewals')),
     // })
     if (canAccessRestrictedAnalytics) commonNodes.push({
@@ -725,7 +725,6 @@ export function Sidebar() {
       label: 'Call Analysis',
       href: '/call-analysis',
       icon: PhoneCall,
-      external: true,
       active: Boolean(pathname?.startsWith('/call-analysis')),
     })
     // MD Approvals aggregates the purchase-order, petty-cash and vendor-payment queues into one
@@ -738,7 +737,6 @@ export function Sidebar() {
     //   label: 'MD Approvals',
     //   href: '/md-approvals',
     //   icon: ClipboardCheck,
-    //   external: true,
     //   active: Boolean(pathname?.startsWith('/md-approvals')),
     // })
     // Data Health is an OPERATIONS tool, not a business section: it exposes table names, row counts
@@ -750,7 +748,6 @@ export function Sidebar() {
       label: 'Data Health',
       href: '/data-health',
       icon: Activity,
-      external: true,
       active: Boolean(pathname?.startsWith('/data-health')),
     })
     // ⚠️ The same test app/admin/page.tsx applies: isSuperAdminRole — MD and Developer. This used to be
@@ -784,7 +781,6 @@ export function Sidebar() {
         label: 'Scrap',
         href: '/scrap',
         icon: Recycle,
-        external: true,
         active: Boolean(pathname?.startsWith('/scrap')),
       })
     }
@@ -794,10 +790,11 @@ export function Sidebar() {
         label: 'Insurance Analysis',
         href: '/insurance',
         icon: ShieldCheck,
-        external: true,
         active: Boolean(pathname?.startsWith('/insurance')),
       })
     }
+    commonNodes.sort(byLabel)
+
     // ── Favourites ── emitted here, not earlier, because it draws on BOTH the brand sub-pages and
     // the Common modules, and commonNodes only exists by this point.
     const commonByHref = new Map(
@@ -811,7 +808,6 @@ export function Sidebar() {
           label: brandItem.label,
           href,
           badge: brandItem.brandName,
-          external: true,
           active: isSidebarHrefActive(href, pathname),
           favourite: { active: true, onToggle: () => void toggleFavourite(href) },
         }]
@@ -828,6 +824,7 @@ export function Sidebar() {
       // Starred then lost access, or the link was removed — drop it rather than render a dead row.
       return []
     })
+    favouriteNodes.sort(byLabel)
     if (favouriteNodes.length > 0) {
       groups.push({ key: 'favourites', label: 'Favourites', nodes: favouriteNodes })
     }
@@ -876,7 +873,6 @@ export function Sidebar() {
             key: section.key,
             label: section.name,
             href: directHref,
-            external: true,
             active: isSidebarHrefActive(directHref, pathname),
             favourite: isEligibleFavouriteHref(directHref) ? { active: favouriteHrefs.includes(directHref), onToggle: () => void toggleFavourite(directHref) } : undefined,
           })
@@ -889,13 +885,13 @@ export function Sidebar() {
               label: sub.name,
               href: sub.href,
               badge: sub.badge,
-              external: true,
               active: isSidebarHrefActive(sub.href, pathname),
               favourite: isEligibleFavouriteHref(sub.href) ? { active: favouriteHrefs.includes(sub.href), onToggle: () => void toggleFavourite(sub.href) } : undefined,
-            })),
+            })).sort(byLabel),
           })
         }
       }
+      sections.sort(byLabel)
       // A brand that HAS sections but shows none of them is dropped, as before. A brand with no sections
       // at all is listed anyway — that is the whole point of the display-only rows.
       if (sections.length === 0 && brand.sections.length > 0) continue
@@ -911,6 +907,7 @@ export function Sidebar() {
         children: sections,
       })
     }
+    brandNodes.sort(byLabel)
     if (brandNodes.length > 0) groups.push({ key: 'branches', label: 'Branches', nodes: brandNodes })
 
     return groups

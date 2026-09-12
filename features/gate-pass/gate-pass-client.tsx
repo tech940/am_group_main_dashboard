@@ -339,7 +339,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
   const [fuelProofFor, setFuelProofFor] = useState<PassRow | null>(null)
-  const [showMap, setShowMap] = useState(true)
+  const [section, setSection] = useState<'passes' | 'map' | 'fleet' | 'trackers'>('passes')
   /* A car asked for from a pass row. The nonce is what lets the same car be re-opened twice. */
   const [mapFocus, setMapFocus] = useState<MapFocus | null>(null)
 
@@ -758,181 +758,234 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
           </div>
         </div>
 
-        {/* Streamlined Metrics Strip */}
-        {summary ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Section Navigation Tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div className="inline-flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80">
             <button
               type="button"
-              onClick={() => selectTab('awaiting')}
+              onClick={() => setSection('passes')}
               className={cn(
-                'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
-                tab === 'awaiting'
-                  ? 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 ring-2 ring-amber-400/20'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer',
+                section === 'passes'
+                  ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               )}
             >
-              <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                <span className="font-semibold">Awaiting Approval</span>
-                <Clock className="h-4 w-4 text-amber-500" />
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
-                  {summary.awaitingApproval}
+              <ScanLine className="h-3.5 w-3.5" />
+              <span>Gate Passes</span>
+              {summary ? (
+                <span
+                  className={cn(
+                    'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
+                    section === 'passes'
+                      ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                  )}
+                >
+                  {summary.total}
                 </span>
-                <span className="text-xs text-amber-600 dark:text-amber-400 font-bold">
-                  {summary.awaitingApproval === 1 ? '1 pending pass' : `${summary.awaitingApproval} pending`}
-                </span>
-              </div>
-              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {fleetData ? `${fleetData.available} demo cars ready on yard` : 'Pending manager decision'}
-              </p>
+              ) : null}
             </button>
 
             <button
               type="button"
-              onClick={() => selectTab('approved')}
+              onClick={() => setSection('map')}
               className={cn(
-                'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
-                tab === 'approved'
-                  ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 ring-2 ring-indigo-400/20'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer',
+                section === 'map'
+                  ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               )}
             >
-              <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                <span className="font-semibold">Ready for Gate Out</span>
-                <ShieldCheck className="h-4 w-4 text-indigo-500" />
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
-                  {summary.readyForGateOut ?? (fleetData ? fleetData.reserved : 0)}
+              <MapPin className="h-3.5 w-3.5" />
+              <span>Live Fleet Map</span>
+              {fleetData ? (
+                <span
+                  className={cn(
+                    'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
+                    fleetData.out > 0
+                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                  )}
+                >
+                  {fleetData.out} out
                 </span>
-                <span className="text-xs text-indigo-600 dark:text-indigo-400 font-bold">Approved</span>
-              </div>
-              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {fleetData ? `${fleetData.reserved} booked · awaiting checkout` : 'Ready for gate departure'}
-              </p>
+              ) : null}
             </button>
 
             <button
               type="button"
-              onClick={() => selectTab('out')}
+              onClick={() => setSection('fleet')}
               className={cn(
-                'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
-                tab === 'out'
-                  ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 ring-2 ring-blue-400/20'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer',
+                section === 'fleet'
+                  ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               )}
             >
-              <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                <span className="font-semibold">Demo Cars Out</span>
-                <Car className="h-4 w-4 text-blue-500" />
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
-                  {fleetData ? fleetData.out : summary.outNow}
+              <Car className="h-3.5 w-3.5" />
+              <span>Yard Fleet</span>
+              {fleetData ? (
+                <span
+                  className={cn(
+                    'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
+                    section === 'fleet'
+                      ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                  )}
+                >
+                  {fleetData.total}
                 </span>
-                <span className="text-xs text-blue-600 dark:text-blue-400 font-bold">
-                  On the road
-                </span>
-              </div>
-              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {fleetData ? `${fleetData.available} of ${fleetData.total} demo cars in yard` : 'Active on the road'}
-              </p>
+              ) : null}
             </button>
 
-            <button
-              type="button"
-              onClick={() => selectTab('all')}
-              className={cn(
-                'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
-                tab === 'all'
-                  ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-              )}
-            >
-              <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                <span className="font-semibold">Total Fleet &amp; Passes</span>
-                <Check className="h-4 w-4 text-emerald-500" />
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
-                  {fleetData ? fleetData.total : summary.total}
-                </span>
-                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                  {fleetData ? `${fleetData.total} demo cars` : `${summary.completedTrips} closed`}
-                </span>
-              </div>
-              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {fleetData
-                  ? `${fleetData.available} free · ${summary.completedTrips} completed passes`
-                  : 'All fleet & trip logs'}
-              </p>
-            </button>
+            {canManageTrackers ? (
+              <button
+                type="button"
+                onClick={() => setSection('trackers')}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer',
+                  section === 'trackers'
+                    ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                )}
+              >
+                <Satellite className="h-3.5 w-3.5" />
+                <span>GPS Trackers</span>
+              </button>
+            ) : null}
           </div>
-        ) : null}
 
-        {/*
-          * Where the cars are — a section of the page in its own right.
-          *
-          * ⚠️ It used to live INSIDE the Fleet Availability Panel, which is itself collapsed by
-          * default: two clicks and a scroll before anyone could answer "where is that car". A map
-          * nobody opens is a map nobody trusts, so it now sits with the metrics and opens by default.
-          */}
-        {showMap ? (
-          <FleetMapCard
-            vehicles={fleetData?.vehicles ?? []}
-            isLoading={!fleetData}
-            focus={mapFocus}
-            activeTab={tab}
-            dealerFilter={selectedDealer}
-            onFocusHandled={() => setMapFocus(null)}
-          />
-        ) : null}
-
-        {/* Fleet Details Toggle Strip */}
-        <div className="flex flex-wrap items-center gap-1 px-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowMap((v) => !v)}
-            aria-expanded={showMap}
-            className="h-8 px-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 cursor-pointer gap-1.5 [&_svg]:size-3.5"
-          >
-            <MapPin className="h-3.5 w-3.5" />
-            {showMap ? 'Hide map' : 'Show map'}
-            {showMap ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowFleet((v) => !v)}
-            className="h-8 px-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 cursor-pointer gap-1.5 [&_svg]:size-3.5"
-          >
-            <Car className="h-3.5 w-3.5" />
-            {showFleet ? 'Hide Fleet Availability Panel' : 'Show Fleet Availability Panel'}
-            {showFleet ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </Button>
-          {canManageTrackers ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowTrackers((v) => !v)}
-              aria-expanded={showTrackers}
-              className="h-8 px-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 cursor-pointer gap-1.5 [&_svg]:size-3.5"
+          {/* Quick jump to map pill when demo cars are out */}
+          {section === 'passes' && fleetData && fleetData.out > 0 ? (
+            <button
+              type="button"
+              onClick={() => setSection('map')}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-3 py-1.5 rounded-xl transition-colors cursor-pointer dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
             >
-              <Satellite className="h-3.5 w-3.5" />
-              {showTrackers ? 'Hide GPS Trackers' : 'Show GPS Trackers'}
-              {showTrackers ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </Button>
+              <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping" />
+              <span>{fleetData.out} demo cars on the road</span>
+              <span className="text-[11px] font-bold underline ml-1">View Satellite Map &rarr;</span>
+            </button>
           ) : null}
         </div>
 
-        {showFleet && <FleetPanel />}
+        {/* VIEW 1: GATE PASSES & APPROVAL WORKFLOW */}
+        {section === 'passes' && (
+          <>
+            {/* Streamlined Metrics Strip */}
+            {summary ? (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <button
+                  type="button"
+                  onClick={() => selectTab('awaiting')}
+                  className={cn(
+                    'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
+                    tab === 'awaiting'
+                      ? 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 ring-2 ring-amber-400/20'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                  )}
+                >
+                  <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+                    <span className="font-semibold">Awaiting Approval</span>
+                    <Clock className="h-4 w-4 text-amber-500" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                      {summary.awaitingApproval}
+                    </span>
+                    <span className="text-xs text-amber-600 dark:text-amber-400 font-bold">
+                      {summary.awaitingApproval === 1 ? '1 pending pass' : `${summary.awaitingApproval} pending`}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {fleetData ? `${fleetData.available} demo cars ready on yard` : 'Pending manager decision'}
+                  </p>
+                </button>
 
-        {canManageTrackers && showTrackers && <TrackersPanel />}
+                <button
+                  type="button"
+                  onClick={() => selectTab('approved')}
+                  className={cn(
+                    'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
+                    tab === 'approved'
+                      ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 ring-2 ring-indigo-400/20'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                  )}
+                >
+                  <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+                    <span className="font-semibold">Ready for Gate Out</span>
+                    <ShieldCheck className="h-4 w-4 text-indigo-500" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                      {summary.readyForGateOut ?? (fleetData ? fleetData.reserved : 0)}
+                    </span>
+                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-bold">Approved</span>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {fleetData ? `${fleetData.reserved} booked · awaiting checkout` : 'Ready for gate departure'}
+                  </p>
+                </button>
 
-        {/* Main Passes Table Card */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => selectTab('out')}
+                  className={cn(
+                    'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
+                    tab === 'out'
+                      ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 ring-2 ring-blue-400/20'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                  )}
+                >
+                  <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+                    <span className="font-semibold">Demo Cars Out</span>
+                    <Car className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                      {fleetData ? fleetData.out : summary.outNow}
+                    </span>
+                    <span className="text-xs text-blue-600 dark:text-blue-400 font-bold">On the road</span>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {fleetData ? `${fleetData.available} of ${fleetData.total} demo cars in yard` : 'Active on the road'}
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => selectTab('all')}
+                  className={cn(
+                    'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
+                    tab === 'all'
+                      ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                  )}
+                >
+                  <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+                    <span className="font-semibold">Total Fleet &amp; Passes</span>
+                    <Check className="h-4 w-4 text-emerald-500" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                      {fleetData ? fleetData.total : summary.total}
+                    </span>
+                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                      {fleetData ? `${fleetData.total} demo cars` : `${summary.completedTrips} closed`}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {fleetData
+                      ? `${fleetData.available} free · ${summary.completedTrips} completed passes`
+                      : 'All fleet & trip logs'}
+                  </p>
+                </button>
+              </div>
+            ) : null}
+
+            {/* Main Passes Table Card */}
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
           {/* Controls Bar */}
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
             {/* Filter Tabs with Stage Count Badges */}
@@ -1444,7 +1497,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                setShowMap(true)
+                                setSection('map')
                                 setMapFocus({ vin: row.vin, nonce: Date.now() })
                               }}
                               title="Show this car on the map"
@@ -1550,8 +1603,28 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                 </Button>
               </div>
             )}
+            </div>
           </div>
-        </div>
+          </>
+        )}
+
+        {/* VIEW 2: LIVE FLEET MAP */}
+        {section === 'map' && (
+          <FleetMapCard
+            vehicles={fleetData?.vehicles ?? []}
+            isLoading={!fleetData}
+            focus={mapFocus}
+            activeTab={tab}
+            dealerFilter={selectedDealer}
+            onFocusHandled={() => setMapFocus(null)}
+          />
+        )}
+
+        {/* VIEW 3: YARD FLEET AVAILABILITY */}
+        {section === 'fleet' && <FleetPanel />}
+
+        {/* VIEW 4: GPS TRACKERS CONFIGURATION */}
+        {section === 'trackers' && canManageTrackers && <TrackersPanel />}
       </div>
 
       {/* Modal Dialogs */}

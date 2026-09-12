@@ -197,7 +197,7 @@ export function FleetMapCard({
   const [filter, setFilter] = useState<FilterKey>('all')
   const [selectedVin, setSelectedVin] = useState<string | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
-  const [mapStyle, setMapStyle] = useState<MapStyleKey>('streets')
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>('satellite')
   const [showStyleMenu, setShowStyleMenu] = useState(false)
   // Flipped once Leaflet has loaded and the map object exists, so the marker effect knows to run.
   const [ready, setReady] = useState(false)
@@ -327,7 +327,7 @@ export function FleetMapCard({
         attributionControl: true,
       }).setView(DEFAULT_CENTER, DEFAULT_ZOOM)
 
-      const conf = MAP_STYLES.streets
+      const conf = MAP_STYLES.satellite
       const tileLayer = L.tileLayer(conf.url, {
         maxZoom: conf.maxZoom,
         subdomains: conf.subdomains.length > 0 ? conf.subdomains : 'abc',
