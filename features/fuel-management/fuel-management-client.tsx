@@ -22,12 +22,15 @@ import {
   CircleCheck,
   Clock,
   Download,
+  Droplet,
+  Droplets,
   ExternalLink,
   Eye,
   FileCheck,
   FileSpreadsheet,
   FileText,
   Filter,
+  Flame,
   Fuel,
   Gauge,
   HelpCircle,
@@ -35,6 +38,7 @@ import {
   IndianRupee,
   Info,
   Layers,
+  LayoutGrid,
   ListFilter,
   LoaderCircle,
   MapPin,
@@ -54,6 +58,7 @@ import {
   Truck,
   Wrench,
   X,
+  Zap,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -78,6 +83,40 @@ type CheckKind =
   | 'unmatched_demo_fill'
   | 'missing_odometer'
 
+type FuelEnergyTypeSummary = {
+  energyType: string
+  label: string
+  approvedLitres: number
+  totalLitres: number
+  approvedRequests: number
+  totalRequests: number
+  avgFillSize: number
+  percentage: number
+}
+
+type FuelBranchEnergySummary = {
+  branch: string
+  branchLabel: string
+  petrolLitres: number
+  dieselLitres: number
+  cngLitres: number
+  evKwh: number
+  totalLitres: number
+  petrolPct: number
+  dieselPct: number
+}
+
+type FuelPurposeEnergyMatrixRow = {
+  purpose: string
+  purposeLabel: string
+  petrolLitres: number
+  dieselLitres: number
+  cngLitres: number
+  evKwh: number
+  totalLitres: number
+  requestsCount: number
+}
+
 type FuelManagementResponse = {
   period: { from: string; to: string; branch: Branch }
   kpis: {
@@ -97,6 +136,9 @@ type FuelManagementResponse = {
     approvedRequests: number
     awaitingRequests: number
   }[]
+  byEnergyType?: FuelEnergyTypeSummary[]
+  byBranchEnergy?: FuelBranchEnergySummary[]
+  purposeEnergyMatrix?: FuelPurposeEnergyMatrixRow[]
   demoCars: {
     vin: string
     registrationNumber: string | null
@@ -114,6 +156,7 @@ type FuelManagementResponse = {
       requestNumber: string
       date: string
       litres: number
+      energyType?: string
       odometerKm: number | null
       status: string
       statusLabel: string
@@ -131,6 +174,7 @@ type FuelManagementResponse = {
     date: string
     purpose: string
     purposeLabel: string
+    energyType?: string
     vehicleLabel: string
     branchLabel: string
     litres: number
@@ -457,6 +501,40 @@ function BranchBadge({ branch }: { branch: string }) {
   )
 }
 
+function EnergyTypeBadge({ energyType }: { energyType?: string }) {
+  const norm = (energyType || 'PETROL').toUpperCase()
+  if (norm === 'DIESEL') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-md border border-blue-200/90 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800 whitespace-nowrap">
+        <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+        <span>Diesel</span>
+      </span>
+    )
+  }
+  if (norm === 'CNG') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-md border border-teal-200/90 bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-800 whitespace-nowrap">
+        <span className="h-1.5 w-1.5 rounded-full bg-teal-600" />
+        <span>CNG</span>
+      </span>
+    )
+  }
+  if (norm === 'EV') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200/90 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 whitespace-nowrap">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+        <span>EV</span>
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200/90 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 whitespace-nowrap">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+      <span>Petrol</span>
+    </span>
+  )
+}
+
 function MileageBadge({ value }: { value: number | null | undefined }) {
   if (value === null || value === undefined || value <= 0) {
     return (
@@ -533,6 +611,7 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
   // Additional Global Multi-Dimensional Filters
   const [globalPurpose, setGlobalPurpose] = useState<string>('ALL')
   const [globalVehicleType, setGlobalVehicleType] = useState<'ALL' | 'DEMO' | 'OTHER'>('ALL')
+  const [globalEnergyType, setGlobalEnergyType] = useState<string>('ALL')
   const [showDateModal, setShowDateModal] = useState(false)
   const [tempPreset, setTempPreset] = useState<PeriodPreset>('month')
   const [tempFrom, setTempFrom] = useState('')
@@ -647,13 +726,14 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
   }
 
   const hasActiveFilters =
-    preset !== 'month' || branch !== 'ALL' || globalPurpose !== 'ALL' || globalVehicleType !== 'ALL'
+    preset !== 'month' || branch !== 'ALL' || globalPurpose !== 'ALL' || globalVehicleType !== 'ALL' || globalEnergyType !== 'ALL'
 
   const handleResetFilters = () => {
     setPreset('month')
     setBranch('ALL')
     setGlobalPurpose('ALL')
     setGlobalVehicleType('ALL')
+    setGlobalEnergyType('ALL')
     setCustomFrom('')
     setCustomTo('')
     setShowDateModal(false)
@@ -674,6 +754,7 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
       requestNumber: string
       purpose: string
       purposeLabel: string
+      energyType?: string
       vehicleLabel: string
       branchLabel: string
       litres: number
@@ -692,6 +773,7 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
         requestNumber: r.requestNumber,
         purpose: r.purpose,
         purposeLabel: r.purposeLabel,
+        energyType: r.energyType || 'PETROL',
         vehicleLabel: r.vehicleLabel,
         branchLabel: r.branchLabel,
         litres: r.litres,
@@ -710,6 +792,7 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
           requestNumber: f.requestNumber,
           purpose: 'DEMO',
           purposeLabel: 'Demo Vehicle',
+          energyType: f.energyType || 'PETROL',
           vehicleLabel: [c.model, c.registrationNumber].filter(Boolean).join(' · ') || c.vin,
           branchLabel: c.branchLabel,
           litres: f.litres,
@@ -725,15 +808,16 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
     return list.sort((a, b) => b.date.localeCompare(a.date))
   }, [data])
 
-  // Filtered requests based on globalPurpose and globalVehicleType
+  // Filtered requests based on globalPurpose, globalVehicleType, and globalEnergyType
   const filteredAllRequests = useMemo(() => {
     return allRequests.filter((r) => {
       if (globalPurpose !== 'ALL' && r.purpose !== globalPurpose) return false
       if (globalVehicleType === 'DEMO' && !r.isDemo) return false
       if (globalVehicleType === 'OTHER' && r.isDemo) return false
+      if (globalEnergyType !== 'ALL' && (r.energyType || 'PETROL').toUpperCase() !== globalEnergyType) return false
       return true
     })
-  }, [allRequests, globalPurpose, globalVehicleType])
+  }, [allRequests, globalPurpose, globalVehicleType, globalEnergyType])
 
   // Derived Fleet Stats with multi-filter awareness
   const derivedStats = useMemo(() => {
@@ -877,9 +961,34 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
             </div>
           </div>
 
-          {/* Secondary Controls: Purpose & Vehicle Type Filters + Reset */}
+          {/* Secondary Controls: Fuel Type, Purpose & Vehicle Type Filters + Reset */}
           <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-slate-100 pt-2.5">
             <div className="flex flex-wrap items-center gap-2">
+              {/* Energy / Fuel Type Pill Selector */}
+              <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
+                {[
+                  { id: 'ALL' as const, label: 'All Fuels' },
+                  { id: 'PETROL' as const, label: 'Petrol' },
+                  { id: 'DIESEL' as const, label: 'Diesel' },
+                  { id: 'CNG' as const, label: 'CNG' },
+                  { id: 'EV' as const, label: 'EV' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setGlobalEnergyType(opt.id)}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-xs font-semibold transition-all',
+                      globalEnergyType === opt.id
+                        ? 'bg-white text-slate-900 font-bold shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
               {/* Global Vehicle Type Pill Selector */}
               <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
                 {[
@@ -940,6 +1049,12 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
                   <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200">
                     <Building2 className="h-3 w-3 text-slate-400" />
                     <span>{BRANCH_LABEL[branch]}</span>
+                  </span>
+                )}
+                {globalEnergyType !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200 font-bold">
+                    <Fuel className="h-3 w-3 text-slate-400" />
+                    <span>{globalEnergyType === 'PETROL' ? 'Petrol' : globalEnergyType === 'DIESEL' ? 'Diesel' : globalEnergyType}</span>
                   </span>
                 )}
                 {globalPurpose !== 'ALL' && (
@@ -1182,6 +1297,10 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
                 <div className="flex justify-between py-2">
                   <span className="text-slate-500">Branch:</span>
                   <span className="font-semibold text-slate-900">{selectedRequestDetails.branchLabel}</span>
+                </div>
+                <div className="flex justify-between py-2 items-center">
+                  <span className="text-slate-500">Fuel Type:</span>
+                  <EnergyTypeBadge energyType={selectedRequestDetails.energyType} />
                 </div>
                 <div className="flex justify-between py-2">
                   <span className="text-slate-500">Fuel Quantity:</span>
@@ -1567,6 +1686,279 @@ function FuelOverviewTab({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* 2. MULTI-FUEL & ENERGY INTELLIGENCE (PETROL vs DIESEL vs CNG vs EV) */}
+      <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs">
+              <Fuel className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span>Fuel & Energy Intelligence</span>
+                <Badge variant="outline" className="text-[10px] font-bold bg-amber-50 text-amber-900 border-amber-200">
+                  Petrol vs. Diesel vs. EV
+                </Badge>
+              </h2>
+              <p className="text-xs text-slate-500">Multi-energy volume, fill metrics, purpose matrix, and branch split</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500">Total Monitored:</span>
+            <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+              {formatLitres(data.kpis.approvedLitres)} L
+            </span>
+          </div>
+        </div>
+
+        {/* Petrol vs Diesel vs Others Comparison Cards */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Petrol Card */}
+          {(() => {
+            const petrol = data.byEnergyType?.find((e) => e.energyType === 'PETROL')
+            const totalL = petrol?.totalLitres || 0
+            const pct = petrol?.percentage || 0
+            return (
+              <div className="rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50/60 to-amber-50/20 p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" /> Petrol
+                  </span>
+                  <span className="rounded-md bg-amber-100/80 px-2 py-0.5 text-[11px] font-black text-amber-950 border border-amber-200">
+                    {pct.toFixed(1)}% Share
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="text-xl font-black text-slate-900 tabular-nums">
+                    {formatLitres(totalL)}
+                  </span>
+                  <span className="text-xs font-bold text-amber-800">Litres</span>
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-1.5 pt-2 border-t border-amber-200/50 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Vouchers</span>
+                    <span className="font-bold text-slate-800">{petrol?.totalRequests || 0} reqs</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Avg Fill</span>
+                    <span className="font-bold text-slate-800">{petrol?.avgFillSize || 0} L/fill</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Diesel Card */}
+          {(() => {
+            const diesel = data.byEnergyType?.find((e) => e.energyType === 'DIESEL')
+            const totalL = diesel?.totalLitres || 0
+            const pct = diesel?.percentage || 0
+            return (
+              <div className="rounded-xl border border-blue-200/80 bg-gradient-to-br from-blue-50/60 to-blue-50/20 p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-800 flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-blue-600" /> Diesel
+                  </span>
+                  <span className="rounded-md bg-blue-100/80 px-2 py-0.5 text-[11px] font-black text-blue-900 border border-blue-200">
+                    {pct.toFixed(1)}% Share
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="text-xl font-black text-slate-900 tabular-nums">
+                    {formatLitres(totalL)}
+                  </span>
+                  <span className="text-xs font-bold text-blue-700">Litres</span>
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-1.5 pt-2 border-t border-blue-200/50 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Vouchers</span>
+                    <span className="font-bold text-slate-800">{diesel?.totalRequests || 0} reqs</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Avg Fill</span>
+                    <span className="font-bold text-slate-800">{diesel?.avgFillSize || 0} L/fill</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* CNG & EV Status */}
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-3.5 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" /> CNG & EV
+              </span>
+              <span className="rounded-md bg-slate-200/60 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                Eco Fuels
+              </span>
+            </div>
+            <div className="mt-2 flex items-baseline gap-1.5">
+              <span className="text-xl font-black text-slate-900 tabular-nums">
+                0
+              </span>
+              <span className="text-xs font-bold text-slate-500">kg / kWh</span>
+            </div>
+            <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[11px] text-slate-500 flex items-center justify-between">
+              <span>Ready for EV / Hybrids</span>
+              <span className="font-semibold text-slate-700">0 requests</span>
+            </div>
+          </div>
+
+          {/* Genset / Stationary Diesel Card */}
+          {(() => {
+            const gensetRow = data.purposeEnergyMatrix?.find((m) => m.purpose === 'GENSET')
+            const gensetL = gensetRow?.totalLitres || 0
+            return (
+              <div className="rounded-xl border border-slate-300/80 bg-gradient-to-br from-slate-100/80 to-slate-50/30 p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-slate-600" /> Genset Generator
+                  </span>
+                  <span className="rounded-md bg-slate-200/80 px-2 py-0.5 text-[10px] font-bold text-slate-800 border border-slate-300">
+                    Stationary Diesel
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="text-xl font-black text-slate-900 tabular-nums">
+                    {formatLitres(gensetL)}
+                  </span>
+                  <span className="text-xs font-bold text-slate-700">Litres</span>
+                </div>
+                <div className="mt-2.5 pt-2 border-t border-slate-200/80 text-[11px] text-slate-600 flex items-center justify-between">
+                  <span>Showroom Backup Power</span>
+                  <span className="font-bold text-slate-800">{gensetRow?.requestsCount || 0} fill</span>
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+
+        {/* Proportional Fuel Mix Visual Progress Bar */}
+        {(() => {
+          const petrol = data.byEnergyType?.find((e) => e.energyType === 'PETROL')
+          const diesel = data.byEnergyType?.find((e) => e.energyType === 'DIESEL')
+          const petrolPct = petrol?.percentage || 0
+          const dieselPct = diesel?.percentage || 0
+          return (
+            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700 flex items-center gap-2">
+                  <span>Fleet Fuel Mix Ratio</span>
+                  <span className="font-normal text-slate-500">(Overall Period Volume)</span>
+                </span>
+                <div className="flex items-center gap-3 text-[11px]">
+                  <span className="flex items-center gap-1.5 font-bold text-amber-900">
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                    Petrol: {petrolPct.toFixed(1)}% ({formatLitres(petrol?.totalLitres || 0)} L)
+                  </span>
+                  <span className="flex items-center gap-1.5 font-bold text-blue-900">
+                    <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
+                    Diesel: {dieselPct.toFixed(1)}% ({formatLitres(diesel?.totalLitres || 0)} L)
+                  </span>
+                </div>
+              </div>
+              <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200/80 flex">
+                <div
+                  className="h-full bg-amber-500 transition-all duration-300"
+                  style={{ width: `${petrolPct}%` }}
+                  title={`Petrol: ${petrolPct.toFixed(1)}%`}
+                />
+                <div
+                  className="h-full bg-blue-600 transition-all duration-300"
+                  style={{ width: `${dieselPct}%` }}
+                  title={`Diesel: ${dieselPct.toFixed(1)}%`}
+                />
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Purpose vs Multi-Fuel Matrix Table */}
+        <div className="rounded-xl border border-slate-200/80 overflow-hidden">
+          <div className="bg-slate-50/90 px-3.5 py-2.5 border-b border-slate-200/80 flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-slate-500" />
+              Operational Purpose vs. Fuel Type Breakdown Matrix
+            </span>
+            <span className="text-[11px] text-slate-500 font-medium">Cross-tabulated volume analysis</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50/50 text-[11px] font-bold text-slate-600 border-b border-slate-200/60 uppercase tracking-wider">
+                <tr>
+                  <th className="py-2.5 pl-3.5">Purpose / Allocation</th>
+                  <th className="py-2.5 px-3 text-right text-amber-900">Petrol (L)</th>
+                  <th className="py-2.5 px-3 text-right text-blue-800">Diesel (L)</th>
+                  <th className="py-2.5 px-3 text-right">Total Volume</th>
+                  <th className="py-2.5 px-3 text-right">% Share</th>
+                  <th className="py-2.5 pr-3.5 text-right">Requests</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(data.purposeEnergyMatrix || []).map((row) => {
+                  const grandTotal = data.kpis.approvedLitres || 1
+                  const sharePct = (row.totalLitres / grandTotal) * 100
+                  return (
+                    <tr key={row.purpose} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-2.5 pl-3.5 font-bold text-slate-900 whitespace-nowrap">
+                        {row.purposeLabel}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-700">
+                        {row.petrolLitres > 0 ? `${formatLitres(row.petrolLitres)} L` : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-700">
+                        {row.dieselLitres > 0 ? `${formatLitres(row.dieselLitres)} L` : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">
+                        {formatLitres(row.totalLitres)} L
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-600 font-semibold">
+                        {sharePct.toFixed(1)}%
+                      </td>
+                      <td className="py-2.5 pr-3.5 text-right font-mono text-slate-700">
+                        {row.requestsCount}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Branch-wise Multi-Fuel Split (Jammu vs Udhampur) */}
+        {data.byBranchEnergy && data.byBranchEnergy.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2 pt-1">
+            {data.byBranchEnergy.map((b) => (
+              <div key={b.branch} className="rounded-xl border border-slate-200/80 bg-slate-50/40 p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-slate-500" />
+                    {b.branchLabel} Fuel Profile
+                  </span>
+                  <span className="font-mono text-xs font-black text-slate-900">
+                    {formatLitres(b.totalLitres)} L Total
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                  <div className="rounded-lg bg-amber-50/60 border border-amber-200/60 p-2">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold block">Petrol Volume</span>
+                    <span className="font-bold text-amber-900">{formatLitres(b.petrolLitres)} L</span>
+                    <span className="text-[10px] text-amber-700 ml-1 font-semibold">({b.petrolPct}%)</span>
+                  </div>
+                  <div className="rounded-lg bg-blue-50/60 border border-blue-200/60 p-2">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold block">Diesel Volume</span>
+                    <span className="font-bold text-blue-900">{formatLitres(b.dieselLitres)} L</span>
+                    <span className="text-[10px] text-blue-700 ml-1 font-semibold">({b.dieselPct}%)</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 2. ATTENTION REQUIRED COMPACT TABLE */}
@@ -1996,6 +2388,7 @@ function FuelRequestsTab({
                 <th className="px-4 py-3">Purpose</th>
                 <th className="px-4 py-3">Vehicle / Asset</th>
                 <th className="px-4 py-3">Branch</th>
+                <th className="px-4 py-3 text-center">Fuel Type</th>
                 <th className="px-4 py-3 text-right">Quantity</th>
                 <th className="px-4 py-3 text-right">Odometer</th>
                 <th className="px-4 py-3 text-center">Status</th>
@@ -2005,7 +2398,7 @@ function FuelRequestsTab({
             <tbody className="divide-y divide-slate-100">
               {filteredRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-500">
+                  <td colSpan={10} className="py-8 text-center text-slate-500">
                     No requests found matching your filters.
                   </td>
                 </tr>
@@ -2026,6 +2419,9 @@ function FuelRequestsTab({
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <BranchBadge branch={req.branchLabel} />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-center">
+                      <EnergyTypeBadge energyType={req.energyType} />
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right font-black tabular-nums text-teal-700">
                       {formatLitres(req.litres)} L
@@ -2245,11 +2641,122 @@ function FuelConsumptionTab({
 }) {
   return (
     <div className="space-y-4">
+      {/* Fuel Type Intelligence Cards */}
+      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Petrol */}
+        {(() => {
+          const petrol = data.byEnergyType?.find((e) => e.energyType === 'PETROL')
+          const totalL = petrol?.totalLitres || 0
+          const pct = petrol?.percentage || 0
+          const spend = totalL * ESTIMATED_FUEL_PRICE_INR
+          return (
+            <div className="rounded-2xl border border-amber-200/90 bg-white p-4 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" /> Petrol Ledger
+                </span>
+                <span className="rounded-md bg-amber-100/80 px-2 py-0.5 text-[11px] font-black text-amber-950 border border-amber-200">
+                  {pct.toFixed(1)}% Mix
+                </span>
+              </div>
+              <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
+                {formatLitres(totalL)} <span className="text-xs font-semibold text-slate-500">L</span>
+              </p>
+              <p className="text-xs font-bold text-amber-800">{formatCurrency(spend)} est.</p>
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px] text-slate-500">
+                <span>{petrol?.totalRequests || 0} vouchers</span>
+                <span className="font-semibold text-slate-700">{petrol?.avgFillSize || 0} L / fill</span>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Diesel */}
+        {(() => {
+          const diesel = data.byEnergyType?.find((e) => e.energyType === 'DIESEL')
+          const totalL = diesel?.totalLitres || 0
+          const pct = diesel?.percentage || 0
+          const spend = totalL * ESTIMATED_FUEL_PRICE_INR
+          return (
+            <div className="rounded-2xl border border-blue-200/90 bg-white p-4 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-800 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-blue-600" /> Diesel Ledger
+                </span>
+                <span className="rounded-md bg-blue-100/80 px-2 py-0.5 text-[11px] font-black text-blue-900 border border-blue-200">
+                  {pct.toFixed(1)}% Mix
+                </span>
+              </div>
+              <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
+                {formatLitres(totalL)} <span className="text-xs font-semibold text-slate-500">L</span>
+              </p>
+              <p className="text-xs font-bold text-blue-700">{formatCurrency(spend)} est.</p>
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px] text-slate-500">
+                <span>{diesel?.totalRequests || 0} vouchers</span>
+                <span className="font-semibold text-slate-700">{diesel?.avgFillSize || 0} L / fill</span>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Stationary Genset Diesel */}
+        {(() => {
+          const gensetRow = data.purposeEnergyMatrix?.find((m) => m.purpose === 'GENSET')
+          const gensetL = gensetRow?.totalLitres || 0
+          const spend = gensetL * ESTIMATED_FUEL_PRICE_INR
+          return (
+            <div className="rounded-2xl border border-slate-300/80 bg-slate-50/50 p-4 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-slate-600" /> Genset Generator
+                </span>
+                <span className="rounded-md bg-slate-200/80 px-2 py-0.5 text-[10px] font-bold text-slate-700 border border-slate-300">
+                  Stationary
+                </span>
+              </div>
+              <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
+                {formatLitres(gensetL)} <span className="text-xs font-semibold text-slate-500">L</span>
+              </p>
+              <p className="text-xs font-bold text-slate-700">{formatCurrency(spend)} est.</p>
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px] text-slate-500">
+                <span>Showroom Backup</span>
+                <span className="font-semibold text-slate-700">{gensetRow?.requestsCount || 0} fills</span>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Alternative Eco Fuels */}
+        <div className="rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-violet-500" /> CNG & EV
+            </span>
+            <span className="rounded-md bg-slate-200/60 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+              Clean Energy
+            </span>
+          </div>
+          <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
+            0 <span className="text-xs font-semibold text-slate-500">kg / kWh</span>
+          </p>
+          <p className="text-xs font-medium text-slate-500">Future-ready analytics</p>
+          <div className="mt-3 flex items-center justify-between border-t border-slate-200/60 pt-2 text-[11px] text-slate-500">
+            <span>EV / Hybrid Fleet</span>
+            <span className="font-semibold text-slate-700">0 vouchers</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Purpose Allocation Matrix and Branch Split */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {/* Purpose Allocation Card */}
         <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs lg:col-span-2">
-          <h2 className="text-sm font-bold text-slate-900">Purpose Allocation Ledger</h2>
-          <p className="text-xs text-slate-500">Breakdown of litres and estimated cost by purpose</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Purpose Allocation Ledger</h2>
+              <p className="text-xs text-slate-500">Breakdown of litres and estimated cost across operational workflows</p>
+            </div>
+          </div>
 
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -2288,36 +2795,93 @@ function FuelConsumptionTab({
           </div>
         </div>
 
-        {/* Branch Summary Card */}
+        {/* Branch Multi-Fuel Distribution Card */}
         <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
-          <h2 className="text-sm font-bold text-slate-900">Branch Consumption</h2>
+          <h2 className="text-sm font-bold text-slate-900">Branch Multi-Fuel Split</h2>
           <p className="text-xs text-slate-500">Distribution across active dealerships</p>
 
           <div className="mt-4 space-y-3">
-            <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-900">Jammu (JK402)</span>
-                <BranchBadge branch="JK402" />
+            {data.byBranchEnergy?.map((b) => (
+              <div key={b.branch} className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-900">{b.branchLabel}</span>
+                  <BranchBadge branch={b.branch} />
+                </div>
+                <p className="mt-1.5 text-xl font-bold text-slate-900">
+                  {formatLitres(b.totalLitres)} <span className="text-xs font-normal text-slate-500">L</span>
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-200/60 pt-2 text-[11px]">
+                  <div>
+                    <span className="text-amber-800 font-semibold flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-amber-500" /> Petrol: {formatLitres(b.petrolLitres)} L
+                    </span>
+                    <span className="text-[10px] text-slate-400">({b.petrolPct.toFixed(1)}%)</span>
+                  </div>
+                  <div>
+                    <span className="text-blue-700 font-semibold flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-blue-600" /> Diesel: {formatLitres(b.dieselLitres)} L
+                    </span>
+                    <span className="text-[10px] text-slate-400">({b.dieselPct.toFixed(1)}%)</span>
+                  </div>
+                </div>
               </div>
-              <p className="mt-1.5 text-xl font-bold text-slate-900">
-                {formatLitres(data.period.branch === 'JK501' ? 0 : data.kpis.approvedLitres)} L
-              </p>
-              <p className="text-[11px] text-slate-500 font-medium">Primary showroom & yard operations</p>
-            </div>
-
-            <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-900">Udhampur (JK501)</span>
-                <BranchBadge branch="JK501" />
-              </div>
-              <p className="mt-1.5 text-xl font-bold text-slate-900">
-                {formatLitres(data.period.branch === 'JK402' ? 0 : data.kpis.approvedLitres)} L
-              </p>
-              <p className="text-[11px] text-slate-500 font-medium">Regional sales & service facility</p>
-            </div>
+            ))}
           </div>
         </div>
       </div>
+
+      {/* Purpose vs Multi-Fuel Matrix */}
+      {data.purposeEnergyMatrix && data.purposeEnergyMatrix.length > 0 && (
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <Layers className="h-4 w-4 text-slate-600" />
+                Purpose × Fuel Type Volume Matrix
+              </h2>
+              <p className="text-xs text-slate-500">Deep-dive matrix showing exact Petrol and Diesel consumption across all operational purposes</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-bold text-slate-700">
+                <tr>
+                  <th className="px-3 py-2.5">Operational Purpose</th>
+                  <th className="px-3 py-2.5 text-right text-amber-900">Petrol (L)</th>
+                  <th className="px-3 py-2.5 text-right text-blue-800">Diesel (L)</th>
+                  <th className="px-3 py-2.5 text-right text-slate-600">Other (L)</th>
+                  <th className="px-3 py-2.5 text-right text-slate-900 font-black">Total (L)</th>
+                  <th className="px-3 py-2.5 text-right">Vouchers</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.purposeEnergyMatrix.map((row) => (
+                  <tr key={row.purpose} className="hover:bg-slate-50/50">
+                    <td className="px-3 py-2.5">
+                      <PurposeBadge purpose={row.purpose} label={row.purposeLabel} />
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-amber-800">
+                      {row.petrolLitres > 0 ? `${formatLitres(row.petrolLitres)} L` : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-blue-700">
+                      {row.dieselLitres > 0 ? `${formatLitres(row.dieselLitres)} L` : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-medium tabular-nums text-slate-400">
+                      {row.cngLitres + row.evKwh > 0 ? `${formatLitres(row.cngLitres + row.evKwh)}` : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-900">
+                      {formatLitres(row.totalLitres)} L
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-600 font-medium">
+                      {row.requestsCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

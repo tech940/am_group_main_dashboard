@@ -119,10 +119,18 @@ export function FleetPanel() {
           <h2 className="text-sm font-semibold text-slate-900">Demo fleet</h2>
           <span className="text-sm text-slate-500">{data.total} cars</span>
         </div>
+        <div className="flex items-center gap-1">
+        {/*
+          * ⚠️ No map here. It used to be nested inside this panel, which itself is behind the
+          * "Show Fleet Availability Panel" toggle — two clicks deep to answer "where is that car".
+          * The map is now its own card at the top of the page (gate-pass-client.tsx); mounting a
+          * second Leaflet instance here would also fight it for the viewer's attention.
+          */}
         <Button variant="ghost" size="sm" onClick={() => setExpanded((v) => !v)}>
           {expanded ? <>Hide cars <ChevronUp className="ml-1 h-3.5 w-3.5" /></>
             : <>Show every car <ChevronDown className="ml-1 h-3.5 w-3.5" /></>}
         </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100">

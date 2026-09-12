@@ -63,6 +63,7 @@ import { GateOutDialog } from './gate-out-dialog'
 import { GateInDialog } from './gate-in-dialog'
 import { FuelProofDialog } from './fuel-proof-dialog'
 import { FleetPanel } from './fleet-panel'
+import { FleetMapCard, type MapFocus } from './fleet-map'
 import { TrackersPanel } from './trackers-panel'
 import { type GatePassSummary } from '@/lib/gate-pass/metrics'
 import { cn } from '@/lib/utils'
@@ -183,6 +184,13 @@ type PassRow = {
   passNo: string
   status: string
   dealerCode: string
+  /*
+   * ⚠️ The VIN, not the plate, is what identifies a car here. Measured on the live feed: 29 demo
+   * VINs share 25 plates, and JK02C0059TC is a trade-certificate plate worn by FIVE cars — so
+   * "show me this pass's car on the map" matched by registration would point at the wrong vehicle.
+   * listGatePasses selects every column, so this has always been in the payload.
+   */
+  vin: string
   registrationNumber: string | null
   model: string | null
   variant: string | null
@@ -331,6 +339,9 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
   const [fuelProofFor, setFuelProofFor] = useState<PassRow | null>(null)
+  const [showMap, setShowMap] = useState(true)
+  /* A car asked for from a pass row. The nonce is what lets the same car be re-opened twice. */
+  const [mapFocus, setMapFocus] = useState<MapFocus | null>(null)
 
   const canApprove = isGatePassApproverRole(currentUser.role)
   const statusFilter = TABS.find((t) => t.key === tab)?.status ?? ''
@@ -497,12 +508,38 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
           driverName: string | null
           expectedReturnAt: string | null
           overdue: boolean
+          /*
+           * ALWAYS present — `tracking.state` says WHY there is no position, so a car with no device
+           * reads as "No tracker fitted" rather than as a blank that looks like "not moving".
+           * latitude/longitude/address are null for anyone without gate_pass.approve: the fleet route
+           * redacts them, because a demo car that is out is being driven by a named person.
+           */
+          tracking: {
+            state: 'live' | 'stale' | 'no_fix' | 'untracked' | 'not_configured'
+            latitude: number | null
+            longitude: number | null
+            speedKph: number | null
+            address: string | null
+            positionAt: string | null
+            ageMs: number | null
+            subscriptionExpired?: boolean
+          }
         }>
       }>
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
   })
+
+  const trackedVins = useMemo(() => {
+    const set = new Set<string>()
+    for (const v of fleetData?.vehicles ?? []) {
+      if (typeof v.tracking?.latitude === 'number' && typeof v.tracking?.longitude === 'number') {
+        set.add(v.vin)
+      }
+    }
+    return set
+  }, [fleetData])
 
   // Prefetch detail on hover or touchstart for 0ms instant modal display
   const prefetchPassDetail = useCallback(
@@ -834,8 +871,37 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
           </div>
         ) : null}
 
+        {/*
+          * Where the cars are — a section of the page in its own right.
+          *
+          * ⚠️ It used to live INSIDE the Fleet Availability Panel, which is itself collapsed by
+          * default: two clicks and a scroll before anyone could answer "where is that car". A map
+          * nobody opens is a map nobody trusts, so it now sits with the metrics and opens by default.
+          */}
+        {showMap ? (
+          <FleetMapCard
+            vehicles={fleetData?.vehicles ?? []}
+            isLoading={!fleetData}
+            focus={mapFocus}
+            activeTab={tab}
+            dealerFilter={selectedDealer}
+            onFocusHandled={() => setMapFocus(null)}
+          />
+        ) : null}
+
         {/* Fleet Details Toggle Strip */}
         <div className="flex flex-wrap items-center gap-1 px-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowMap((v) => !v)}
+            aria-expanded={showMap}
+            className="h-8 px-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 cursor-pointer gap-1.5 [&_svg]:size-3.5"
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            {showMap ? 'Hide map' : 'Show map'}
+            {showMap ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -1365,6 +1431,27 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                             >
                               <Fuel className="h-3 w-3 text-amber-600" />
                               {row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? 'Fuel Proofs' : 'Add Proofs'}
+                            </Button>
+                          ) : null}
+
+                          {/*
+                            * Show THIS car on the map. Offered only when the car has a position:
+                            * a button that opens a map and shows nothing teaches people the map is
+                            * broken. Keyed on the VIN — see the note on PassRow.
+                            */}
+                          {trackedVins.has(row.vin) ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setShowMap(true)
+                                setMapFocus({ vin: row.vin, nonce: Date.now() })
+                              }}
+                              title="Show this car on the map"
+                              aria-label={`Show ${row.registrationNumber || 'this car'} on the map`}
+                              className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
+                            >
+                              <MapPin className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
                             </Button>
                           ) : null}
 

@@ -299,6 +299,91 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
             </div>
           </div>
 
+          {/* Vehicle Return Custody & Parking Bay */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+            <Label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <MapPin className="h-4 w-4 text-indigo-600" />
+              Parking Bay & Key Custody *
+            </Label>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="parkedLocation" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 text-slate-500" />
+                  Parked Location / Bay *
+                </Label>
+                <Input
+                  id="parkedLocation"
+                  placeholder="e.g. Front Bay 3, Showroom Yard, Basement"
+                  value={parkedLocation}
+                  onChange={(e) => setParkedLocation(e.target.value)}
+                  className="mt-1 bg-white"
+                />
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {['Showroom Front', 'Bay 1', 'Bay 2', 'Bay 3', 'Basement', 'Service Yard'].map((bay) => (
+                    <button
+                      key={bay}
+                      type="button"
+                      onClick={() => setParkedLocation(bay)}
+                      className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                        parkedLocation === bay
+                          ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-semibold'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {bay}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="keyHandoverTo" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <Key className="h-3.5 w-3.5 text-amber-600" />
+                  Key Handed Over To *
+                </Label>
+                <Input
+                  id="keyHandoverTo"
+                  placeholder="e.g. Key Locker, Guard Desk, Manager Name"
+                  value={keyHandoverTo}
+                  onChange={(e) => setKeyHandoverTo(e.target.value)}
+                  className="mt-1 bg-white"
+                />
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {['Key Locker', 'Security Desk', 'Demo Incharge', 'Sales Manager'].map((holder) => (
+                    <button
+                      key={holder}
+                      type="button"
+                      onClick={() => setKeyHandoverTo(holder)}
+                      className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                        keyHandoverTo === holder
+                          ? 'bg-amber-50 border-amber-300 text-amber-800 font-semibold'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {holder}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <Label htmlFor="remarks" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5 mb-1">
+                <MessageSquare className="h-3.5 w-3.5 text-slate-500" />
+                Return Remarks & Vehicle Condition (Optional)
+              </Label>
+              <Textarea
+                id="remarks"
+                placeholder="Note vehicle condition upon return (e.g. Clean return, no new scratches, fuel level at 50%)"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                className="bg-white resize-none text-xs min-h-[60px]"
+                rows={2}
+              />
+            </div>
+          </div>
+
           {/* Fuel Filling Proofs (When purpose == Fuel filling) */}
           {isFuelFillingPurpose(pass.purpose) ? (
             <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 p-4 space-y-3">

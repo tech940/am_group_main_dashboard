@@ -52,11 +52,46 @@ export type FuelPurposeSummary = {
   awaitingRequests: number
 }
 
+export type FuelEnergyTypeSummary = {
+  energyType: 'PETROL' | 'DIESEL' | 'CNG' | 'EV' | 'OTHER'
+  label: string
+  approvedLitres: number
+  totalLitres: number
+  approvedRequests: number
+  totalRequests: number
+  avgFillSize: number
+  percentage: number
+}
+
+export type FuelBranchEnergySummary = {
+  branch: string
+  branchLabel: string
+  petrolLitres: number
+  dieselLitres: number
+  cngLitres: number
+  evKwh: number
+  totalLitres: number
+  petrolPct: number
+  dieselPct: number
+}
+
+export type FuelPurposeEnergyMatrixRow = {
+  purpose: string
+  purposeLabel: string
+  petrolLitres: number
+  dieselLitres: number
+  cngLitres: number
+  evKwh: number
+  totalLitres: number
+  requestsCount: number
+}
+
 export type DemoCarFill = {
   requestNumber: string
   /** fuel_filled_date, 'YYYY-MM-DD'. */
   date: string
   litres: number
+  energyType?: string
   /** Parsed from the odometer reading typed on the request; null when missing or not a number. */
   odometerKm: number | null
   status: string
@@ -113,6 +148,7 @@ export type OtherFuelRow = {
   date: string
   purpose: string
   purposeLabel: string
+  energyType?: string
   /** The vehicle text as the requester entered it — these are not demo cars and are not matched to one. */
   vehicleLabel: string
   branchLabel: string
@@ -145,6 +181,9 @@ export type FuelManagementResponse = {
   period: FuelManagementPeriod
   kpis: FuelManagementKpis
   byPurpose: FuelPurposeSummary[]
+  byEnergyType: FuelEnergyTypeSummary[]
+  byBranchEnergy: FuelBranchEnergySummary[]
+  purposeEnergyMatrix: FuelPurposeEnergyMatrixRow[]
   demoCars: DemoCarFuelSummary[]
   otherFuel: OtherFuelRow[]
   /** Warnings first, then info; newest fill first within each. */
@@ -174,6 +213,7 @@ export type FuelRowInput = {
   /** 'YYYY-MM-DD'. */
   date: string
   litres: number
+  energyType?: string
   /** Lower-cased. */
   status: string
   statusLabel: string

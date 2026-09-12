@@ -29,13 +29,16 @@ import type {
   DemoFleetCarInput,
   DrivePassInput,
   FuelAwaitingStage,
+  FuelBranchEnergySummary,
   FuelCheck,
   FuelCheckKind,
   FuelCheckSeverity,
+  FuelEnergyTypeSummary,
   FuelManagementBranch,
   FuelManagementInput,
   FuelManagementPeriod,
   FuelManagementResponse,
+  FuelPurposeEnergyMatrixRow,
   FuelPurposeSummary,
   FuelRowInput,
   GateReadingInput,
@@ -784,12 +787,109 @@ export function buildFuelManagementResponse(input: FuelManagementInput): FuelMan
       date: row.date,
       purpose: row.purposeKey,
       purposeLabel: purposeLabel(row.purposeKey),
+      energyType: row.energyType,
       vehicleLabel: fuelVehicleLabel(row.vehRegNo, row.vinNo),
       branchLabel: row.branchLabel,
       litres: round2(row.litres),
       status: row.status,
       statusLabel: row.statusLabel,
     }))
+
+  // ── Multi-Energy & Fuel Type Intelligence (Petrol, Diesel, CNG, EV) ──
+  const energyMap = new Map<string, { approvedHundredths: number; totalHundredths: number; approvedRequests: number; totalRequests: number }>()
+  for (const row of scoped) {
+    const energy = (row.energyType || 'PETROL').trim().toUpperCase()
+    const e = energyMap.get(energy) ?? { approvedHundredths: 0, totalHundredths: 0, approvedRequests: 0, totalRequests: 0 }
+    e.totalHundredths += toHundredths(row.litres)
+    e.totalRequests += 1
+    if (row.approved) {
+      e.approvedHundredths += toHundredths(row.litres)
+      e.approvedRequests += 1
+    }
+    energyMap.set(energy, e)
+  }
+
+  const grandTotalHundredths = [...energyMap.values()].reduce((sum, e) => sum + e.totalHundredths, 0)
+  const byEnergyType: FuelEnergyTypeSummary[] = [...energyMap.entries()].map(([energy, data]) => {
+    const totalLitres = data.totalHundredths / 100
+    const approvedLitres = data.approvedHundredths / 100
+    const avgFillSize = data.totalRequests > 0 ? round1(totalLitres / data.totalRequests) : 0
+    const percentage = grandTotalHundredths > 0 ? round1((data.totalHundredths / grandTotalHundredths) * 100) : 0
+    const label = energy === 'PETROL' ? 'Petrol' : energy === 'DIESEL' ? 'Diesel' : energy === 'CNG' ? 'CNG' : energy === 'EV' ? 'Electric (EV)' : titleCase(energy)
+    return {
+      energyType: energy as any,
+      label,
+      approvedLitres,
+      totalLitres,
+      approvedRequests: data.approvedRequests,
+      totalRequests: data.totalRequests,
+      avgFillSize,
+      percentage,
+    }
+  }).sort((a, b) => b.totalLitres - a.totalLitres)
+
+  // ── Branch Multi-Energy Distribution ──
+  const branchEnergyMap = new Map<string, { branchLabel: string; petrolHundredths: number; dieselHundredths: number; cngHundredths: number; evKwh: number; totalHundredths: number }>()
+  for (const row of scoped) {
+    const branchKey = row.location || 'Unknown'
+    const branchLabel = row.branchLabel || branchKey
+    const be = branchEnergyMap.get(branchKey) ?? { branchLabel, petrolHundredths: 0, dieselHundredths: 0, cngHundredths: 0, evKwh: 0, totalHundredths: 0 }
+    const energy = (row.energyType || 'PETROL').trim().toUpperCase()
+    const h = toHundredths(row.litres)
+    be.totalHundredths += h
+    if (energy === 'PETROL') be.petrolHundredths += h
+    else if (energy === 'DIESEL') be.dieselHundredths += h
+    else if (energy === 'CNG') be.cngHundredths += h
+    else if (energy === 'EV') be.evKwh += row.litres
+    branchEnergyMap.set(branchKey, be)
+  }
+
+  const byBranchEnergy: FuelBranchEnergySummary[] = [...branchEnergyMap.entries()].map(([branch, bData]) => {
+    const totalLitres = bData.totalHundredths / 100
+    const petrolLitres = bData.petrolHundredths / 100
+    const dieselLitres = bData.dieselHundredths / 100
+    const cngLitres = bData.cngHundredths / 100
+    const petrolPct = totalLitres > 0 ? round1((petrolLitres / totalLitres) * 100) : 0
+    const dieselPct = totalLitres > 0 ? round1((dieselLitres / totalLitres) * 100) : 0
+    return {
+      branch,
+      branchLabel: bData.branchLabel,
+      petrolLitres,
+      dieselLitres,
+      cngLitres,
+      evKwh: round1(bData.evKwh),
+      totalLitres,
+      petrolPct,
+      dieselPct,
+    }
+  }).sort((a, b) => b.totalLitres - a.totalLitres)
+
+  // ── Purpose vs Energy Matrix ──
+  const matrixMap = new Map<string, { petrolHundredths: number; dieselHundredths: number; cngHundredths: number; evKwh: number; totalHundredths: number; count: number }>()
+  for (const row of scoped) {
+    const p = row.purposeKey
+    const m = matrixMap.get(p) ?? { petrolHundredths: 0, dieselHundredths: 0, cngHundredths: 0, evKwh: 0, totalHundredths: 0, count: 0 }
+    const energy = (row.energyType || 'PETROL').trim().toUpperCase()
+    const h = toHundredths(row.litres)
+    m.totalHundredths += h
+    m.count += 1
+    if (energy === 'PETROL') m.petrolHundredths += h
+    else if (energy === 'DIESEL') m.dieselHundredths += h
+    else if (energy === 'CNG') m.cngHundredths += h
+    else if (energy === 'EV') m.evKwh += row.litres
+    matrixMap.set(p, m)
+  }
+
+  const purposeEnergyMatrix: FuelPurposeEnergyMatrixRow[] = [...matrixMap.entries()].map(([purpose, m]) => ({
+    purpose,
+    purposeLabel: purposeLabel(purpose),
+    petrolLitres: m.petrolHundredths / 100,
+    dieselLitres: m.dieselHundredths / 100,
+    cngLitres: m.cngHundredths / 100,
+    evKwh: round1(m.evKwh),
+    totalLitres: m.totalHundredths / 100,
+    requestsCount: m.count,
+  })).sort((a, b) => b.totalLitres - a.totalLitres)
 
   return {
     period,
@@ -804,6 +904,9 @@ export function buildFuelManagementResponse(input: FuelManagementInput): FuelMan
       checksNeedingAttention: checks.filter((check) => check.severity === 'warning').length,
     },
     byPurpose,
+    byEnergyType,
+    byBranchEnergy,
+    purposeEnergyMatrix,
     demoCars,
     otherFuel,
     checks,

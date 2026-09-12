@@ -57,6 +57,8 @@ const FUEL_COLUMNS = {
   kmReadingText: fuelApprovals.currentKmReading,
   date: fuelApprovals.fuelFilledDate,
   litres: fuelApprovals.fuelFilledLtrs,
+  fuelType: fuelApprovals.fuelType,
+  energyType: fuelApprovals.energyType,
   status: fuelApprovals.status,
   currentStage: fuelApprovals.currentStage,
   createdAt: fuelApprovals.createdAt,
@@ -71,6 +73,8 @@ type FuelSelectRow = {
   kmReadingText: string | null
   date: string
   litres: string
+  fuelType?: string | null
+  energyType?: string | null
   status: string
   currentStage: string
   createdAt: Date
@@ -101,6 +105,7 @@ function branchLabelOfLocation(location: string): string {
 
 function toFuelRow(row: FuelSelectRow): FuelRowInput {
   const status = row.status.trim().toLowerCase()
+  const energy = (row.energyType || row.fuelType || 'PETROL').trim().toUpperCase()
   return {
     requestNumber: row.requestNumber,
     location: row.location,
@@ -110,6 +115,7 @@ function toFuelRow(row: FuelSelectRow): FuelRowInput {
     kmReadingText: row.kmReadingText,
     date: ymdOf(row.date),
     litres: toNumber(row.litres) ?? 0,
+    energyType: energy,
     status,
     statusLabel: statusLabelOf(status),
     currentStage: row.currentStage,
