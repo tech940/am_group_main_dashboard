@@ -70,6 +70,7 @@ import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { brandHasHrStage, isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
 import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, isServiceApproval, usesGroupServiceManager, isDgmBrand, firstStageShortLabel, firstStageLabel } from '@/lib/approvals/first-stage-approver'
+import { canonicalBranchLabel } from '@/lib/kia/approval-branches'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
 /*
@@ -670,12 +671,18 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return Array.from(depts).sort()
   }, [data?.rows])
 
+  /*
+   * ⚠️ Canonicalised per ROW BRAND, never globally. 'CHANNI' is a real branch of Diamond Honda, Bajaj
+   * AND MG; folding the spellings without the brand would merge three different showrooms into one
+   * filter entry. A renamed branch (Fly Mandal → Phallian Mandal) otherwise appears twice here, and
+   * picking either name hides half of that branch's own requests.
+   */
   const uniqueLocations = useMemo(() => {
     const locs = new Set<string>(['JAMMU', 'UDHAMPUR', 'BANIHAL'])
     if (data?.rows) {
       data.rows.forEach(r => {
         if (r.location) {
-          locs.add(r.location.trim().toUpperCase())
+          locs.add(canonicalBranchLabel(brandKeyOf(r), r.location).trim().toUpperCase())
         }
       })
     }
@@ -1781,7 +1788,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       if (!matchesSearch) return false
 
       // 3. Location filter
-      const matchesLocation = selectedLocation === 'All' || row.location === selectedLocation
+      const matchesLocation =
+        selectedLocation === 'All' ||
+        canonicalBranchLabel(brandKeyOf(row), row.location).trim().toUpperCase() === selectedLocation.trim().toUpperCase() ||
+        (row.location && row.location.trim().toUpperCase() === selectedLocation.trim().toUpperCase())
       if (!matchesLocation) return false
 
       // 4. Department filter
@@ -2261,7 +2271,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         return false
       }
 
-      if (completedLocationFilter !== 'All' && (req.location || '').trim().toUpperCase() !== completedLocationFilter.trim().toUpperCase()) {
+      // Matched on the CURRENT name of the branch, so a row filed under its old one still answers.
+      if (completedLocationFilter !== 'All' && canonicalBranchLabel(brandKeyOf(req), req.location).trim().toUpperCase() !== completedLocationFilter.trim().toUpperCase()) {
         return false
       }
 
@@ -3125,7 +3136,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           <td className="py-3 px-3.5 whitespace-nowrap">
                             <div className="flex flex-col items-start gap-0.5">
                               <span className="text-xs font-black leading-tight text-slate-900">
-                                {row.location || '—'}
+                                {canonicalBranchLabel(brandKeyOf(row), row.location) || '—'}
                               </span>
                               {row.dealerCode ? (
                                 <span className="inline-block rounded bg-slate-100 border border-slate-200 px-1.5 py-0.2 text-[10px] font-sans font-bold text-slate-600">
@@ -4823,7 +4834,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pr-10 sm:pr-12">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge className="bg-slate-900 text-white hover:bg-slate-900 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{detailRow.location}</Badge>
+                      <Badge className="bg-slate-900 text-white hover:bg-slate-900 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{canonicalBranchLabel(brandKeyOf(detailRow), detailRow.location)}</Badge>
                       <Badge className="bg-slate-100 hover:bg-slate-100 border border-slate-200 text-slate-800 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{detailRow.department}</Badge>
                       <Badge className="bg-blue-50 hover:bg-blue-50 border border-blue-100 text-blue-700 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
                       

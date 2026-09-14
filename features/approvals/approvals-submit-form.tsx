@@ -464,8 +464,20 @@ const DEFAULT_LOCATIONS_BY_BRAND: Record<string, Array<{ location: string; deale
     { location: 'Miran Sahib', dealerCode: 'HND-MS', dealerName: 'AM Diamond Honda Miran Sahib' },
     { location: 'Bishnah', dealerCode: 'HND-BS', dealerName: 'AM Diamond Honda Bishnah' },
     { location: 'Channi Narwal', dealerCode: 'HND-CN', dealerName: 'AM Diamond Honda Channi Narwal' },
-    { location: 'Fly Mandal', dealerCode: 'HND-FM', dealerName: 'AM Diamond Honda Fly Mandal' },
+    // Renamed from Fly Mandal on 2026-09-14. The CODE stays HND-FM, so the requests already filed
+    // against this branch keep matching a pin on it; only the name people read changed — same call as
+    // MG Channi above. HND-PM, the group's other code for it, resolves through the synonym group.
+    { location: 'Phallian Mandal', dealerCode: 'HND-FM', dealerName: 'AM Diamond Honda Phallian Mandal' },
     { location: 'Digiana', dealerCode: 'HND-DG', dealerName: 'AM Diamond Honda Digiana' },
+    { location: 'Gangyal', dealerCode: 'HND-GY', dealerName: 'AM Diamond Honda Gangyal' },
+  ],
+  diamond: [
+    { location: 'Miran Sahib', dealerCode: 'HND-MS', dealerName: 'AM Diamond Honda Miran Sahib' },
+    { location: 'Bishnah', dealerCode: 'HND-BS', dealerName: 'AM Diamond Honda Bishnah' },
+    { location: 'Channi Narwal', dealerCode: 'HND-CN', dealerName: 'AM Diamond Honda Channi Narwal' },
+    { location: 'Phallian Mandal', dealerCode: 'HND-FM', dealerName: 'AM Diamond Honda Phallian Mandal' },
+    { location: 'Digiana', dealerCode: 'HND-DG', dealerName: 'AM Diamond Honda Digiana' },
+    { location: 'Gangyal', dealerCode: 'HND-GY', dealerName: 'AM Diamond Honda Gangyal' },
   ],
   tata: [
     { location: 'Narwal', dealerCode: 'TAT-NR', dealerName: 'AM Tata Narwal' },

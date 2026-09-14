@@ -52,13 +52,31 @@ export const APPROVAL_ONLY_BRANCHES: Record<string, readonly ApprovalOnlyBranch[
     { code: 'SANIK_COLONY', label: 'Sanik Colony', aliases: ['SANIK COLONY', 'SANIKCOLONY', 'KTM-SC'] },
     { code: 'GANGYAL', label: 'Gangyal', aliases: ['KTM-GANGYAL', 'KTM-GY'] },
   ],
-  // Honda is Diamond Honda — the same dealership, so the same branches, under its own HND- spellings.
+  /*
+   * Honda is Diamond Honda — the same dealership, so the same branches, under its own HND- spellings.
+   *
+   * The HND- codes are the group's own: lib/scrap-erp/mock-data.ts carries the same six branches with
+   * the same codes (HND-MS, HND-BS, HND-CN, HND-DG, HND-GY, HND-PM), which is where Gangyal and the
+   * Phallian Mandal name were confirmed from rather than invented here.
+   */
   honda: [
     { code: 'MIRAN_SAHIB', label: 'Miran Sahib', aliases: ['MIRAN SAHIB', 'MIRANSAHIB', 'HND-MS'] },
     { code: 'BISHNAH', label: 'Bishnah', aliases: ['HND-BISHNAH', 'HND-BS'] },
     { code: 'CHANNI_NARWAL', label: 'Channi Narwal', aliases: ['CHANNI NARWAL', 'CHANNINARWAL', 'CHANNI', 'HND-CHANNI', 'HND-CN'] },
-    { code: 'FLY_MANDAL', label: 'Fly Mandal', aliases: ['FLY MANDAL', 'FLYMANDAL', 'HND-FM'] },
+    /*
+     * Renamed Fly Mandal → Phallian Mandal, 2026-09-14.
+     *
+     * ⚠️ The CODE stays FLY_MANDAL and the form keeps filing HND-FM, exactly as the MG Jammu → Channi
+     * rename did. `code` is what sits in users.dealers and on every request already filed against this
+     * branch; changing it would strand both in silence. Only the name people read changed.
+     *
+     * The group elsewhere spells it PHALLAN (scrap ERP) and the owner spells it PHALLIAN, so BOTH are
+     * admitted — a row arriving under either still resolves to this branch.
+     */
+    { code: 'FLY_MANDAL', label: 'Phallian Mandal', aliases: ['FLY MANDAL', 'FLYMANDAL', 'HND-FM', 'PHALLIAN_MANDAL', 'PHALLIAN MANDAL', 'PHALLIANMANDAL', 'PHALLIAN', 'PHALLAN_MANDAL', 'PHALLAN MANDAL', 'PHALLANMANDAL', 'HND-PM'] },
     { code: 'DIGIANA', label: 'Digiana', aliases: ['HND-DIGIANA', 'HND-DG'] },
+    // Added 2026-09-14. HND-GY is the code the scrap ERP already uses for this branch.
+    { code: 'GANGYAL', label: 'Gangyal', aliases: ['HND-GANGYAL', 'HND-GY'] },
   ],
   bajaj: [
     { code: 'REHARI', label: 'Rehari', aliases: ['BAJ-REHARI', 'BAJ-RH'] },
@@ -68,9 +86,43 @@ export const APPROVAL_ONLY_BRANCHES: Record<string, readonly ApprovalOnlyBranch[
   ],
 }
 
+/**
+ * The key these tables are stored under.
+ *
+ * ⚠️ 'diamond' folds onto 'honda'. The brand was merged on 2026-09-12 but rows filed before it — and
+ * any row whose number starts DIA — still carry the old value, and those rows were resolving to an
+ * EMPTY branch list: no branch token, no synonym group, so a correctly-pinned Diamond branch manager
+ * saw none of their own older requests and nobody could tell that from "no requests". Access already
+ * treats the two as one brand (lib/kia/approval-scope.ts:220), so this only makes the branch tables
+ * agree with that.
+ */
+function branchKeyOf(brand: string): string {
+  const key = String(brand || '').trim().toLowerCase()
+  return key === 'diamond' ? 'honda' : key
+}
+
 /** Approval-only branches for a brand, or [] when it has none. */
 export function getApprovalOnlyBranches(brand: string): readonly ApprovalOnlyBranch[] {
-  return APPROVAL_ONLY_BRANCHES[String(brand || '').trim().toLowerCase()] || []
+  return APPROVAL_ONLY_BRANCHES[branchKeyOf(brand)] || []
+}
+
+/**
+ * The name a branch goes by TODAY, given any spelling of it that a row might carry.
+ *
+ * A renamed branch otherwise splits in two everywhere it is read: the Approvals list showed both
+ * 'FLY MANDAL' and 'PHALLIAN MANDAL' in its location filter, as if Diamond Honda had six branches
+ * and two of them were the same building. Returns the token unchanged when nothing matches, so a
+ * branch this file has never heard of still displays rather than vanishing.
+ */
+export function canonicalBranchLabel(brand: string, token: string | null | undefined): string {
+  const raw = String(token || '').trim()
+  if (!raw) return ''
+  const needle = raw.toUpperCase()
+  for (const branch of getApprovalOnlyBranches(brand)) {
+    if (branch.code.toUpperCase() === needle) return branch.label
+    if (branch.aliases.some((a) => a.toUpperCase() === needle)) return branch.label
+  }
+  return raw
 }
 
 /** Every token (code + aliases) that a pin on this branch should open, upper-cased. */
@@ -140,8 +192,11 @@ export const APPROVAL_BRANCH_SYNONYMS: Record<string, readonly (readonly string[
     ['MIRAN_SAHIB', 'MIRAN SAHIB', 'MIRANSAHIB', 'HND-MS'],
     ['BISHNAH', 'HND-BISHNAH', 'HND-BS'],
     ['CHANNI_NARWAL', 'CHANNI NARWAL', 'CHANNINARWAL', 'CHANNI', 'HND-CHANNI', 'HND-CN'],
-    ['FLY_MANDAL', 'FLY MANDAL', 'FLYMANDAL', 'HND-FM'],
+    // One branch, three names: the old Fly Mandal, the scrap ERP's PHALLAN and the owner's PHALLIAN.
+    // A request filed under any of them has to reach the same people, which is what this group does.
+    ['FLY_MANDAL', 'FLY MANDAL', 'FLYMANDAL', 'HND-FM', 'PHALLIAN_MANDAL', 'PHALLIAN MANDAL', 'PHALLIANMANDAL', 'PHALLIAN', 'PHALLAN_MANDAL', 'PHALLAN MANDAL', 'PHALLANMANDAL', 'HND-PM'],
     ['DIGIANA', 'HND-DIGIANA', 'HND-DG'],
+    ['GANGYAL', 'HND-GANGYAL', 'HND-GY'],
   ],
   tata: [
     ['NARWAL', 'TATA-NARWAL', 'TAT-NARWAL', 'TAT-NR'],
@@ -172,7 +227,7 @@ export const APPROVAL_BRANCH_SYNONYMS: Record<string, readonly (readonly string[
 export function expandBranchSynonyms(brand: string, tokens: Iterable<string>): Set<string> {
   const out = new Set<string>()
   for (const t of tokens) out.add(String(t).trim().toUpperCase())
-  const groups = APPROVAL_BRANCH_SYNONYMS[String(brand || '').trim().toLowerCase()] || []
+  const groups = APPROVAL_BRANCH_SYNONYMS[branchKeyOf(brand)] || []
   for (const group of groups) {
     // A pin on ANY member opens the whole group — they are one branch under different names.
     if (group.some((member) => out.has(member.toUpperCase()))) {
