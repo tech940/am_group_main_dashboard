@@ -75,7 +75,8 @@ async function resolveActiveUser(runner: DbOrTx, id: string) {
  * delegator may assign to anyone. Enforced server-side so the client picker can't be bypassed.
  */
 function assertCanAssign(actor: AppUser, assigneeBrand: string | null | undefined) {
-  if (isGroupWideDelegation(actor)) return
+  const role = String(actor.role || '').trim().toLowerCase()
+  if (role === 'developer' || role === 'admin' || role === 'md' || role === 'ceo' || role === 'ea' || role === 'eba') return
   const brands = concreteBrands(actor.brand)
   if (!isAssignableUnderBrands(assigneeBrand, brands)) {
     throw new Error('You can only assign tasks to employees of your own brand.')
@@ -101,64 +102,46 @@ async function addActivity(
 
 /**
  * The row-visibility predicate:
- *  - GROUP-WIDE (brand 'all' / developer) → all tasks, every brand.
- *  - a brand DELEGATOR → every task in their brand(s) (oversight) OR created-by/assigned-to them.
- *  - a pure assignee → only created-by/assigned-to them.
- * Fail closed: an unidentifiable viewer sees nothing (mirrors lib/kia/bookings.ts).
- */
-/**
- * The row-visibility predicate:
- *  - GROUP-WIDE (brand 'all' / developer / admin) → all tasks, every brand.
- *  - STRICT USER/BRANCH EA SCOPING → MD/EA sees tasks created by or assigned to themselves OR their branch EA/MD.
+ *  - MD, CEO, Developer, Admin → can see all tasks across every brand and every delegator.
+ *  - EA / EBA → STRICTLY isolated: only tasks they delegated (created) or tasks assigned to them.
+ *  - Other users → only tasks created by or assigned to them.
  *  - Fail closed: an unidentifiable viewer sees nothing.
  */
 export async function getScopeFilter(viewer: Viewer) {
-  if (isGroupWideDelegation(viewer)) return undefined
   if (!viewer.id) return sql`false`
 
   const role = String(viewer.role || '').trim().toLowerCase()
-  const own = or(eq(delegationTasks.createdBy, viewer.id), eq(delegationTasks.assignedTo, viewer.id))
 
-  if (role === 'md') {
+  // Developer, Admin, MD, and CEO can see all tasks across the company
+  if (role === 'developer' || role === 'admin' || role === 'md' || role === 'ceo') {
+    return undefined
+  }
+
+  // Each EA will only see what task they have delegated (or assigned to them).
+  // EAs cannot see each other's tasks.
+  if (role === 'ea' || role === 'eba') {
     return or(
-      eq(delegationTasks.mdUserId, viewer.id),
-      own,
-      and(isNull(delegationTasks.mdUserId), eq(delegationTasks.createdBy, viewer.id))
+      eq(delegationTasks.createdBy, viewer.id),
+      eq(delegationTasks.assignedTo, viewer.id)
     )
   }
 
-  if (role === 'ea' || role === 'eba') {
-    const mdUsersInBrand = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(
-        eq(users.isActive, true),
-        isNull(users.deletedAt),
-        or(eq(users.role, 'md'), eq(users.role, 'ceo'))
-      ))
-
-    const mdIds = mdUsersInBrand.map((u) => u.id)
-    if (mdIds.length > 0) {
-      return or(
-        own,
-        inArray(delegationTasks.mdUserId, mdIds),
-        and(isNull(delegationTasks.mdUserId), inArray(delegationTasks.createdBy, mdIds))
-      )
-    }
-    return own
-  }
-
-  return own
+  return or(
+    eq(delegationTasks.createdBy, viewer.id),
+    eq(delegationTasks.assignedTo, viewer.id)
+  )
 }
 
 function decorate(row: typeof delegationTasks.$inferSelect & { assignedPhone?: string | null; mdUserName?: string | null }, viewer: Viewer) {
+  const role = String(viewer.role || '').trim().toLowerCase()
   const isCreator = row.createdBy === viewer.id
   const isAssignee = row.assignedTo === viewer.id
-  const canManage = isCreator || isGroupWideDelegation(viewer)
+  const isSuper = role === 'developer' || role === 'admin' || role === 'md' || role === 'ceo'
+  const canManage = isCreator || isSuper
   const isOverdue = Boolean(
     row.dueAt && row.status === 'assigned' && new Date(row.dueAt) < new Date(),
   )
-  const isEa = ['ea', 'eba', 'admin', 'developer'].includes(String(viewer.role || '').trim().toLowerCase())
+  const isEa = ['ea', 'eba', 'admin', 'developer'].includes(role)
   return { ...row, mdUserName: row.mdUserName || null, viewerIsCreator: isCreator, viewerIsAssignee: isAssignee, viewerCanManage: canManage, viewerIsEa: isEa, isOverdue }
 }
 

@@ -31,10 +31,11 @@ export function concreteBrands(brand?: string | null): string[] {
   return parseBrands(brand).filter((b) => b !== 'all')
 }
 
-/** Group-wide = sees/assigns across ALL brands: developer/admin roles, or the 'all' brand marker. */
+/** Group-wide = sees/assigns across ALL brands: developer/admin/md/ceo roles. EAs are scoped to their own tasks. */
 export function isGroupWideDelegation(user: { role?: string | null; brand?: string | null }): boolean {
   const role = norm(user.role)
-  if (role === 'developer' || role === 'admin') return true
+  if (role === 'developer' || role === 'admin' || role === 'md' || role === 'ceo') return true
+  if (role === 'ea' || role === 'eba') return false
   return parseBrands(user.brand).includes('all')
 }
 
@@ -60,7 +61,7 @@ export function resolveTaskBrand(delegatorBrand?: string | null, assigneeBrand?:
 
 // Leadership allowed to create, manage, and delegate tasks (MD, EA, Developer, Admin).
 const DELEGATOR_ROLES = new Set([
-  'admin', 'developer', 'md', 'ea', 'eba',
+  'admin', 'developer', 'md', 'ea', 'eba', 'ceo',
 ])
 
 /** May create/assign a task, and act on it as the delegator (reassign / reopen / cancel / edit). */
@@ -69,10 +70,10 @@ export function canDelegateTasks(role?: string | null): boolean {
 }
 
 /**
- * May see EVERY task across EVERY brand — group-wide viewers only (see isGroupWideDelegation). A
- * brand-scoped delegator sees their brand's tasks (enforced in lib/delegation/tasks.ts scopeFilter);
- * a pure assignee sees only their own. Kept as a named alias so call sites read intentionally.
+ * May see EVERY task across EVERY brand — group-wide viewers only (MD, CEO, Developer, Admin).
+ * Each EA only sees tasks they have delegated or that are assigned to them (cannot see other EAs' tasks).
  */
 export function canViewAllDelegationTasks(user: { role?: string | null; brand?: string | null }): boolean {
-  return isGroupWideDelegation(user)
+  const role = norm(user.role)
+  return role === 'developer' || role === 'admin' || role === 'md' || role === 'ceo'
 }

@@ -143,7 +143,7 @@ export async function sendTaskAssignedEmail(input: {
       ...(cc.length ? { cc } : {}),
       ...(assignerEmail ? { replyTo: assignerEmail } : {}),
       subject,
-      html: emailLayout({ heading, eyebrow: 'AM Group · Tasks', preheader: input.title, bodyHtml }),
+      html: emailLayout({ heading, eyebrow: 'AM Group · Tasks', preheader: input.title, bodyHtml, brand: 'AM Group' }),
     })
     return true
   } catch (error) {
@@ -229,5 +229,6 @@ function digestHtml(items: DueTask[]): string {
     eyebrow: 'AM Group · Delegation Tasks (9:30 AM Digest)',
     preheader: `${items.length} pending task(s) require your attention`,
     bodyHtml,
+    brand: 'AM Group',
   })
 }
