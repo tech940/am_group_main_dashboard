@@ -347,6 +347,8 @@ export function RecordTable<T>({
   empty,
   rowKey,
   onRowClick,
+  onRowMouseEnter,
+  onRowTouchStart,
   pageSizeOptions = [20, 40, 100],
   defaultPageSize = 20,
 }: {
@@ -356,6 +358,8 @@ export function RecordTable<T>({
   empty: ReactNode
   rowKey: (row: T) => string
   onRowClick?: (row: T) => void
+  onRowMouseEnter?: (row: T) => void
+  onRowTouchStart?: (row: T) => void
   pageSizeOptions?: number[]
   defaultPageSize?: number
 }) {
@@ -402,6 +406,8 @@ export function RecordTable<T>({
               <tr
                 key={rowKey(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onMouseEnter={onRowMouseEnter ? () => onRowMouseEnter(row) : undefined}
+                onTouchStart={onRowTouchStart ? () => onRowTouchStart(row) : undefined}
                 tabIndex={onRowClick ? 0 : undefined}
                 onKeyDown={onRowClick ? (event) => {
                   if (event.key === 'Enter' || event.key === ' ') {

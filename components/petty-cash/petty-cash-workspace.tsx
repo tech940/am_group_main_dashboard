@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect -- mount fetch sets loading state; standard data-loading pattern. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { MotionConfig } from 'motion/react'
 import {
   Banknote,
@@ -260,14 +261,44 @@ export function PettyCashWorkspace() {
     brandViewRef.current = next
     setBrandView(next)
   }, [])
+  const queryClient = useQueryClient()
   const [allocations, setAllocations] = useState<PettyCashAllocationRow[]>([])
   const [allocationsLoading, setAllocationsLoading] = useState(false)
   const [allocationLocationFilter, setAllocationLocationFilter] = useState('all')
-  const [allocationStatusFilter, setAllocationStatusFilter] = useState('active')
+  const [allocationStatusFilter, setAllocationStatusFilter] = useState('all')
   const [spendAllocationId, setSpendAllocationId] = useState<string | null>(null)
   const [allocationDepartmentFilter, setAllocationDepartmentFilter] = useState('all')
   const [ledgerLocationFilter, setLedgerLocationFilter] = useState('all')
   const [tableSearch, setTableSearch] = useState('')
+
+  const prefetchAllocationSpend = useCallback((allocationId?: string | null) => {
+    if (!allocationId || allocationId.startsWith('default-')) return
+    void queryClient.prefetchQuery({
+      queryKey: ['petty-cash-allocation-spend', allocationId],
+      queryFn: async () => {
+        const res = await fetch(`/api/petty-cash/allocations/${allocationId}/spend`, { cache: 'no-store' })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json?.error || 'Failed to load spend history')
+        return json
+      },
+      staleTime: 60_000,
+    })
+  }, [queryClient])
+
+  useEffect(() => {
+    if (allocations.length > 0) {
+      // Pre-warm spend history in background for top visible rows so click is 0ms
+      const topRows = allocations.slice(0, 15)
+      const timer = setTimeout(() => {
+        topRows.forEach((row) => {
+          if (row.id && !row.id.startsWith('default-')) {
+            prefetchAllocationSpend(row.id)
+          }
+        })
+      }, 200)
+      return () => clearTimeout(timer)
+    }
+  }, [allocations, prefetchAllocationSpend])
 
   // Branch Selection State: User selects one branch (AM Hyundai, AM Platinum, or AM Kia)
   // '' until the first payload names a brand this viewer may actually see (see the effect below).
@@ -294,7 +325,7 @@ export function PettyCashWorkspace() {
     }
   }, [])
 
-  const loadAllocations = useCallback(async (status: string = 'active') => {
+  const loadAllocations = useCallback(async (status: string = 'all') => {
     setAllocationsLoading(true)
     try {
       const params = new URLSearchParams({ status })
@@ -438,8 +469,10 @@ export function PettyCashWorkspace() {
   const currentBranchId = payload?.user.brand || ''
   const isSuperAdmin = userRole === 'developer' || userRole === 'admin' || userRole === 'manager'
   const isOwnSubmissionsOnly = isPettyCashOwnSubmissionsOnlyRole(userRole)
+  const isExecutiveCashViewer = userRole === 'md' || userRole === 'developer' || userRole === 'ea' || userRole === 'eba' || userRole === 'admin'
   const canCreate = isCreatorRole(userRole) || isSuperAdmin || userRole === 'md' || userRole === 'accounts'
   const canReviewQueue = !isOwnSubmissionsOnly && (isApproverRole(userRole) || isSuperAdmin)
+  const canSeeAllocations = isExecutiveCashViewer || canReviewQueue
   const canRequestTopUp = summary?.canRequestTopUp ?? true
   const canSubmitExpense = summary?.canSubmitExpense ?? true
   const topUpReason = summary?.topUpReason || ''
@@ -538,13 +571,30 @@ export function PettyCashWorkspace() {
     return allocations.filter((allocation) => {
       const matchLoc = allocationLocationFilter === 'all' || (allocation.location || '').trim() === allocationLocationFilter
       const matchDept = allocationDepartmentFilter === 'all' || (allocation.department || '').trim() === allocationDepartmentFilter
+      const bLabel = getBranchLabel(normalizeBranchId(allocation)).toLowerCase()
       const matchQ = !q ||
         (allocation.allocationNumber || allocation.allocation_number || '').toLowerCase().includes(q) ||
         (allocation.allocatedToName || '').toLowerCase().includes(q) ||
-        (allocation.location || '').toLowerCase().includes(q)
+        (allocation.allocatedByName || '').toLowerCase().includes(q) ||
+        (allocation.location || '').toLowerCase().includes(q) ||
+        bLabel.includes(q)
       return matchLoc && matchDept && matchQ
     })
   }, [allocations, allocationLocationFilter, allocationDepartmentFilter, tableSearch])
+
+  const issuanceMetrics = useMemo(() => {
+    return visibleAllocations.reduce((acc, row) => {
+      const allocated = Number(row.allocatedAmount || row.allocated_amount || 0)
+      const spent = Number(row.spentAmount || row.spent_amount || 0)
+      const remaining = Number(row.remainingAmount ?? (allocated - spent))
+      return {
+        totalIssued: acc.totalIssued + allocated,
+        totalSpent: acc.totalSpent + spent,
+        totalRemaining: acc.totalRemaining + remaining,
+        count: acc.count + 1,
+      }
+    }, { totalIssued: 0, totalSpent: 0, totalRemaining: 0, count: 0 })
+  }, [visibleAllocations])
 
   // ═══════════════════════════════════════════════════════════════════════════
   // MULTI-DEALERSHIP CANONICAL TOPOLOGY (Hyundai 6 locs, Platinum 3 locs, KIA 3 locs)
@@ -963,7 +1013,14 @@ export function PettyCashWorkspace() {
       icon: ClipboardList,
       count: canReviewQueue ? pendingQueue.length : myOpenRequests.length,
     },
-    ...(canReviewQueue ? [{ key: 'allocations' as const, label: 'Branch Floats', icon: Banknote, count: activeFloatCount }] : []),
+    ...(canSeeAllocations
+      ? [{
+          key: 'allocations' as const,
+          label: isExecutiveCashViewer ? 'Cash Issued' : 'Branch Floats',
+          icon: Banknote,
+          count: isExecutiveCashViewer && allocationStatusFilter === 'all' ? allocations.length : activeFloatCount,
+        }]
+      : []),
     { key: 'breakdown', label: 'Monthly Summary', icon: Calendar },
     { key: 'history', label: 'History', icon: ReceiptText },
   ]
@@ -1904,102 +1961,188 @@ export function PettyCashWorkspace() {
         )}
 
         {activeTab === 'allocations' && (
-          <SectionCard
-            title="Allocations"
-            subtitle={allocationStatusFilter === 'all'
-              ? 'Every allocation ever made — newest first. Click a row for its day-by-day spend.'
-              : 'Currently open allocations. Switch to All to see past allocations and when they were made.'}
-            icon={Banknote}
-            iconTone="blue"
-            toolbar={(
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-1">
-                  {([['active', 'Open only'], ['all', 'All (incl. past)']] as const).map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setAllocationStatusFilter(key)}
-                      className={cn(
-                        'rounded-lg px-3 py-1 text-xs font-semibold transition-colors cursor-pointer',
-                        allocationStatusFilter === key ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-700',
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
+          <div className="space-y-4">
+            {/* Executive Quick Metrics Strip for Cash Issued */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Funds Issued</span>
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+                    <Banknote className="h-4 w-4" />
+                  </div>
                 </div>
-                <PillFilter label="Location" allLabel="All Locations" value={allocationLocationFilter} options={allocationLocationOptions} onChange={setAllocationLocationFilter} />
-                <PillFilter label="Department" allLabel="All Departments" value={allocationDepartmentFilter} options={allocationDepartmentOptions} onChange={setAllocationDepartmentFilter} />
+                <p className="mt-2 text-xl font-black tracking-tight text-slate-900 dark:text-slate-50 tabular-nums">
+                  {formatCurrency(issuanceMetrics.totalIssued)}
+                </p>
+                <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                  {issuanceMetrics.count} {issuanceMetrics.count === 1 ? 'disbursal transaction' : 'disbursal transactions'}
+                </p>
               </div>
-            )}
-          >
-            <RecordTable
-              rows={visibleAllocations}
-              loading={allocationsLoading}
-              rowKey={(allocation) => allocation.id}
-              onRowClick={(allocation) => setSpendAllocationId(allocation.id)}
-              empty={<EmptyState icon={Banknote} title="No allocations" description="Allocations across branches and dealerships will appear here." />}
-              columns={[
-                { header: 'Allocated To', cell: (allocation) => <span className="font-semibold text-xs text-slate-900 dark:text-slate-100">{toTitleCase(allocation.allocatedToName) || '—'}</span> },
-                { header: 'Allocated On', cell: (allocation) => (
-                  <span className="whitespace-nowrap text-xs font-medium text-slate-600 dark:text-slate-400">
-                    {formatDateTime(allocation.allocatedAt || allocation.allocated_at || allocation.createdAt || allocation.created_at)}
-                  </span>
-                ) },
-                { header: 'Allocated By', cell: (allocation) => <span className="text-xs text-slate-600 dark:text-slate-400">{allocation.allocatedByName || '—'}</span> },
-                {
-                  header: 'Branch',
-                  cell: (allocation) => {
-                    const bLabel = getBranchLabel(normalizeBranchId(allocation))
-                    const bBadge = getLocationBadge(bLabel)
-                    return (
-                      <span className={cn('inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold border', bBadge.bg, bBadge.text, bBadge.border)}>
-                        {bLabel}
-                      </span>
-                    )
-                  },
-                },
-                {
-                  header: 'Location',
-                  cell: (allocation) => {
-                    const locBadge = getLocationBadge(allocation.location || '')
-                    return (
-                      <span className={cn('inline-block px-2 py-0.5 rounded-md text-xs font-semibold border', locBadge.bg, locBadge.text, locBadge.border)}>
-                        {allocation.location || '—'}
-                      </span>
-                    )
-                  },
-                },
-                { header: 'Department', cell: (allocation) => <DepartmentBadge department={allocation.department} /> },
-                { header: 'Allocation #', cell: (allocation) => <span className="text-xs font-semibold text-slate-500">{allocation.allocationNumber || allocation.allocation_number || '—'}</span> },
-                { header: 'Allocated', align: 'right', cell: (allocation) => <span className="font-semibold text-xs tabular-nums text-slate-900 dark:text-slate-50">{formatCurrency(allocation.allocatedAmount || allocation.allocated_amount)}</span> },
-                { header: 'Spent', align: 'right', cell: (allocation) => <span className="font-semibold text-xs tabular-nums text-rose-600 dark:text-rose-400">{formatCurrency(allocation.spentAmount || allocation.spent_amount)}</span> },
-                { header: 'Remaining', align: 'right', cell: (allocation) => {
-                  const rem = Number(allocation.remainingAmount ?? (Number(allocation.allocatedAmount || allocation.allocated_amount || 0) - Number(allocation.spentAmount || allocation.spent_amount || 0)))
-                  return (
-                    <span className={cn('font-semibold text-xs tabular-nums', rem < 0 ? 'text-rose-600 font-bold' : 'text-emerald-600 dark:text-emerald-400')}>
-                      {formatCurrency(rem)}
-                    </span>
-                  )
-                }},
-                { header: 'Spending', cell: (allocation) => {
-                  const count = Number(allocation.spendCount || 0)
-                  if (!count) return <span className="text-xs font-medium text-slate-400">not spent yet</span>
-                  const first = formatSpendDate(allocation.firstSpendDate)
-                  const last = formatSpendDate(allocation.lastSpendDate)
-                  return (
+
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Utilized / Spent</span>
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+                    <TrendingDown className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="mt-2 text-xl font-black tracking-tight text-rose-600 dark:text-rose-400 tabular-nums">
+                  {formatCurrency(issuanceMetrics.totalSpent)}
+                </p>
+                <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                  Documented receipt expenses
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Float Balance in Hand</span>
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                    <Wallet className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="mt-2 text-xl font-black tracking-tight text-emerald-600 dark:text-emerald-400 tabular-nums">
+                  {formatCurrency(issuanceMetrics.totalRemaining)}
+                </p>
+                <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                  Remaining across custodians
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Issuance Scope</span>
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                    <Building2 className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="mt-2 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                  {allocationLocationFilter === 'all' ? 'All Locations' : allocationLocationFilter}
+                </p>
+                <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                  {allocationStatusFilter === 'all' ? 'All past & active issuances' : 'Active open floats'}
+                </p>
+              </div>
+            </div>
+
+            <SectionCard
+              title={isExecutiveCashViewer ? "Cash Issued & Allocations" : "Branch Floats"}
+              subtitle={allocationStatusFilter === 'all'
+                ? 'Every petty cash issuance and float allocation ever disbursed — newest first. Click any transaction to audit day-by-day spend.'
+                : 'Currently open petty cash allocations. Switch to "All (incl. past)" to audit every issuance transaction.'}
+              icon={Banknote}
+              iconTone="blue"
+              toolbar={(
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search recipient, allocator, #..."
+                      value={tableSearch}
+                      onChange={(e) => setTableSearch(e.target.value)}
+                      className="h-8 pl-8 pr-7 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 w-44 sm:w-56"
+                    />
+                    {tableSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setTableSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-1">
+                    {([['all', 'All (incl. past)'], ['active', 'Open only']] as const).map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setAllocationStatusFilter(key)}
+                        className={cn(
+                          'rounded-lg px-3 py-1 text-xs font-semibold transition-colors cursor-pointer',
+                          allocationStatusFilter === key ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-700',
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <PillFilter label="Location" allLabel="All Locations" value={allocationLocationFilter} options={allocationLocationOptions} onChange={setAllocationLocationFilter} />
+                  <PillFilter label="Department" allLabel="All Departments" value={allocationDepartmentFilter} options={allocationDepartmentOptions} onChange={setAllocationDepartmentFilter} />
+                </div>
+              )}
+            >
+              <RecordTable
+                rows={visibleAllocations}
+                loading={allocationsLoading}
+                rowKey={(allocation) => allocation.id}
+                onRowClick={(allocation) => setSpendAllocationId(allocation.id)}
+                onRowMouseEnter={(allocation) => prefetchAllocationSpend(allocation.id)}
+                onRowTouchStart={(allocation) => prefetchAllocationSpend(allocation.id)}
+                empty={<EmptyState icon={Banknote} title="No cash issuances found" description="Petty cash allocation and issuance records will appear here." />}
+                columns={[
+                  { header: 'Allocated To', cell: (allocation) => <span className="font-semibold text-xs text-slate-900 dark:text-slate-100">{toTitleCase(allocation.allocatedToName) || '—'}</span> },
+                  { header: 'Allocated On', cell: (allocation) => (
                     <span className="whitespace-nowrap text-xs font-medium text-slate-600 dark:text-slate-400">
-                      {count} {count === 1 ? 'entry' : 'entries'}
-                      <span className="block text-[10px] text-slate-400">
-                        {first === last ? last : first + ' → ' + last}
-                      </span>
+                      {formatDateTime(allocation.allocatedAt || allocation.allocated_at || allocation.createdAt || allocation.created_at)}
                     </span>
-                  )
-                } },
-                { header: 'Status', cell: (allocation) => <StatusPill status={allocation.status} /> },
-              ]}
-            />
-          </SectionCard>
+                  ) },
+                  { header: 'Allocated By', cell: (allocation) => <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{allocation.allocatedByName || '—'}</span> },
+                  {
+                    header: 'Branch',
+                    cell: (allocation) => {
+                      const bLabel = getBranchLabel(normalizeBranchId(allocation))
+                      const bBadge = getLocationBadge(bLabel)
+                      return (
+                        <span className={cn('inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold border', bBadge.bg, bBadge.text, bBadge.border)}>
+                          {bLabel}
+                        </span>
+                      )
+                    },
+                  },
+                  {
+                    header: 'Location',
+                    cell: (allocation) => {
+                      const locBadge = getLocationBadge(allocation.location || '')
+                      return (
+                        <span className={cn('inline-block px-2 py-0.5 rounded-md text-xs font-semibold border', locBadge.bg, locBadge.text, locBadge.border)}>
+                          {allocation.location || '—'}
+                        </span>
+                      )
+                    },
+                  },
+                  { header: 'Department', cell: (allocation) => <DepartmentBadge department={allocation.department} /> },
+                  { header: 'Allocation #', cell: (allocation) => <span className="text-xs font-mono font-semibold text-slate-500">{allocation.allocationNumber || allocation.allocation_number || '—'}</span> },
+                  { header: 'Allocated', align: 'right', cell: (allocation) => <span className="font-bold text-xs tabular-nums text-slate-900 dark:text-slate-50">{formatCurrency(allocation.allocatedAmount || allocation.allocated_amount)}</span> },
+                  { header: 'Spent', align: 'right', cell: (allocation) => <span className="font-semibold text-xs tabular-nums text-rose-600 dark:text-rose-400">{formatCurrency(allocation.spentAmount || allocation.spent_amount)}</span> },
+                  { header: 'Remaining', align: 'right', cell: (allocation) => {
+                    const rem = Number(allocation.remainingAmount ?? (Number(allocation.allocatedAmount || allocation.allocated_amount || 0) - Number(allocation.spentAmount || allocation.spent_amount || 0)))
+                    return (
+                      <span className={cn('font-semibold text-xs tabular-nums', rem < 0 ? 'text-rose-600 font-bold' : 'text-emerald-600 dark:text-emerald-400')}>
+                        {formatCurrency(rem)}
+                      </span>
+                    )
+                  }},
+                  { header: 'Spending', cell: (allocation) => {
+                    const count = Number(allocation.spendCount || 0)
+                    if (!count) return <span className="text-xs font-medium text-slate-400">not spent yet</span>
+                    const first = formatSpendDate(allocation.firstSpendDate)
+                    const last = formatSpendDate(allocation.lastSpendDate)
+                    return (
+                      <span className="whitespace-nowrap text-xs font-medium text-slate-600 dark:text-slate-400">
+                        {count} {count === 1 ? 'entry' : 'entries'}
+                        <span className="block text-[10px] text-slate-400">
+                          {first === last ? last : first + ' → ' + last}
+                        </span>
+                      </span>
+                    )
+                  } },
+                  { header: 'Status', cell: (allocation) => <StatusPill status={allocation.status} /> },
+                ]}
+              />
+            </SectionCard>
+          </div>
         )}
 
         {activeTab === 'breakdown' && (

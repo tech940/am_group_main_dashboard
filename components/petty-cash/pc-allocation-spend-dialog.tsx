@@ -68,7 +68,7 @@ export function AllocationSpendDialog({
   const query = useQuery({
     queryKey: ['petty-cash-allocation-spend', allocationId],
     enabled: Boolean(allocationId),
-    staleTime: 30_000,
+    staleTime: 60_000,
     queryFn: async (): Promise<SpendPayload> => {
       const res = await fetch(`/api/petty-cash/allocations/${allocationId}/spend`, { cache: 'no-store' })
       const json = await res.json()
@@ -88,7 +88,7 @@ export function AllocationSpendDialog({
         <DialogHeader className="border-b border-slate-100 px-6 py-5 text-left">
           <DialogTitle className="flex items-center gap-2 text-base font-black text-slate-900">
             <Wallet className="h-4 w-4 text-blue-600" />
-            {String(a?.allocationNumber ?? a?.allocation_number ?? 'Allocation')}
+            {String(a?.allocationNumber ?? a?.allocation_number ?? 'Allocation Spend Breakdown')}
           </DialogTitle>
           <DialogDescription className="text-xs font-medium text-slate-500">
             Spend against this allocation, day by day. Dated on when the money went out, not when the entry was typed.
@@ -120,10 +120,17 @@ export function AllocationSpendBody({
   const allocatedOn = (a?.allocatedAt ?? a?.allocated_at) as string | undefined
 
   return (
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          {loading ? (
-            <div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 animate-spin text-slate-300" /></div>
-          ) : error ? (
+    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+      {loading ? (
+        <div className="space-y-4 animate-pulse">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 h-28" />
+          <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
+            <div className="h-4 bg-slate-200 rounded w-1/3" />
+            <div className="h-10 bg-slate-100 rounded" />
+            <div className="h-10 bg-slate-100 rounded" />
+          </div>
+        </div>
+      ) : error ? (
             <p className="py-16 text-center text-sm font-semibold text-rose-700">{error}</p>
           ) : !data ? null : (
             <div className="space-y-5">

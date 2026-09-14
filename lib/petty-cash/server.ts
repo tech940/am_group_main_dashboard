@@ -17,6 +17,8 @@ import {
   users,
 } from '@/lib/db/schema'
 import { getIndiaDatePart, serializeUtcTimestampFields } from '@/lib/date-time'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 import {
   canAccessPettyCash,
   canApprovePettyCashStage,
@@ -770,80 +772,83 @@ export async function listPettyCashAllocations(
 export async function getPettyCashAllocationSpend(appUser: AppUser, allocationId: string) {
   uuidSchema.parse(allocationId)
 
-  // Authorise via the SAME visibility filter as the list (history included), so this cannot be used
-  // to read an allocation the caller could not already see.
-  const [allocation] = await db
-    .select({
-      allocation: pettyCashAllocations,
-      allocatedToName: users.fullName,
-    })
-    .from(pettyCashAllocations)
-    .leftJoin(users, eq(users.id, pettyCashAllocations.allocatedTo))
-    .where(and(
-      getPettyCashAllocationVisibilityFilter(appUser, { includeInactive: true }),
-      eq(pettyCashAllocations.id, allocationId),
-    ))
-    .limit(1)
-
-  if (!allocation) throw new Error('Forbidden')
-
   const spenderUser = alias(users, 'spender_user')
-  const rows = await db
-    .select({
-      expenseNumber: pettyCashExpenses.expenseNumber,
-      expenseDate: pettyCashExpenses.expenseDate,
-      amount: pettyCashExpenses.amount,
-      particulars: pettyCashExpenses.particulars,
-      purpose: pettyCashExpenses.purpose,
-      vendorName: pettyCashExpenses.vendorName,
-      createdAt: pettyCashExpenses.createdAt,
-      spentByName: spenderUser.fullName,
-    })
-    .from(pettyCashExpenses)
-    .leftJoin(spenderUser, eq(spenderUser.id, pettyCashExpenses.createdBy))
-    .where(and(
-      eq(pettyCashExpenses.allocationId, allocationId),
-      eq(pettyCashExpenses.status, 'approved'),
-      isNull(pettyCashExpenses.deletedAt),
-    ))
-    .orderBy(desc(pettyCashExpenses.expenseDate), desc(pettyCashExpenses.createdAt))
-    .limit(500)
 
-  // Group into days in JS rather than SQL: the same query then serves both the per-day totals and
-  // the individual lines under each day, in one round trip (the pooler charges ~225ms per query).
-  const byDate = new Map<string, { date: string; total: number; items: typeof entries }>()
-  const entries = rows.map((r) => ({
-    expenseNumber: r.expenseNumber,
-    expenseDate: String(r.expenseDate),
-    amount: toMoney(r.amount),
-    description: r.particulars || r.purpose || '',
-    vendorName: r.vendorName || '',
-    spentByName: r.spentByName || null,
-    // Flags a back-dated entry: the spend date precedes the day it was recorded.
-    recordedAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
-  }))
+  return getCachedData(`petty_cash:allocation_spend:${allocationId}`, async () => {
+    // Parallelize allocation verification and spend items lookup concurrently
+    const [[allocation], rows] = await Promise.all([
+      db
+        .select({
+          allocation: pettyCashAllocations,
+          allocatedToName: users.fullName,
+        })
+        .from(pettyCashAllocations)
+        .leftJoin(users, eq(users.id, pettyCashAllocations.allocatedTo))
+        .where(and(
+          getPettyCashAllocationVisibilityFilter(appUser, { includeInactive: true }),
+          eq(pettyCashAllocations.id, allocationId),
+        ))
+        .limit(1),
+      db
+        .select({
+          expenseNumber: pettyCashExpenses.expenseNumber,
+          expenseDate: pettyCashExpenses.expenseDate,
+          amount: pettyCashExpenses.amount,
+          particulars: pettyCashExpenses.particulars,
+          purpose: pettyCashExpenses.purpose,
+          vendorName: pettyCashExpenses.vendorName,
+          createdAt: pettyCashExpenses.createdAt,
+          spentByName: spenderUser.fullName,
+        })
+        .from(pettyCashExpenses)
+        .leftJoin(spenderUser, eq(spenderUser.id, pettyCashExpenses.createdBy))
+        .where(and(
+          eq(pettyCashExpenses.allocationId, allocationId),
+          eq(pettyCashExpenses.status, 'approved'),
+          isNull(pettyCashExpenses.deletedAt),
+        ))
+        .orderBy(desc(pettyCashExpenses.expenseDate), desc(pettyCashExpenses.createdAt))
+        .limit(500),
+    ])
 
-  for (const item of entries) {
-    const bucket = byDate.get(item.expenseDate) || { date: item.expenseDate, total: 0, items: [] }
-    bucket.total += Number(item.amount) || 0
-    bucket.items.push(item)
-    byDate.set(item.expenseDate, bucket)
-  }
+    if (!allocation) throw new Error('Forbidden')
 
-  const days = [...byDate.values()]
-    .sort((a, b) => (a.date < b.date ? 1 : -1))
-    .map((d) => ({ ...d, total: toMoney(d.total) }))
+    // Group into days in JS rather than SQL: the same query then serves both the per-day totals and
+    // the individual lines under each day, in one round trip (the pooler charges ~225ms per query).
+    const byDate = new Map<string, { date: string; total: number; items: typeof entries }>()
+    const entries = rows.map((r) => ({
+      expenseNumber: r.expenseNumber,
+      expenseDate: String(r.expenseDate),
+      amount: toMoney(r.amount),
+      description: r.particulars || r.purpose || '',
+      vendorName: r.vendorName || '',
+      spentByName: r.spentByName || null,
+      // Flags a back-dated entry: the spend date precedes the day it was recorded.
+      recordedAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+    }))
 
-  return {
-    allocation: {
-      ...serializeAllocation(allocation.allocation as Record<string, unknown>),
-      allocatedToName: allocation.allocatedToName || null,
-      remainingAmount: toMoney(getRemainingBalance(allocation.allocation)),
-    },
-    days,
-    totalSpent: toMoney(entries.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)),
-    expenseCount: entries.length,
-  }
+    for (const item of entries) {
+      const bucket = byDate.get(item.expenseDate) || { date: item.expenseDate, total: 0, items: [] }
+      bucket.total += Number(item.amount) || 0
+      bucket.items.push(item)
+      byDate.set(item.expenseDate, bucket)
+    }
+
+    const days = [...byDate.values()]
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .map((d) => ({ ...d, total: toMoney(d.total) }))
+
+    return {
+      allocation: {
+        ...serializeAllocation(allocation.allocation as Record<string, unknown>),
+        allocatedToName: allocation.allocatedToName || null,
+        remainingAmount: toMoney(getRemainingBalance(allocation.allocation)),
+      },
+      days,
+      totalSpent: toMoney(entries.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)),
+      expenseCount: entries.length,
+    }
+  }, CACHE_TTL.SHORT)
 }
 
 export async function getPettyCashDashboard(appUser: AppUser, branchId?: string | null) {
