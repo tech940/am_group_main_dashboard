@@ -420,11 +420,31 @@ export function applyBranchScope<Q extends AnyQuery>(query: Q, branchIds: string
   return query.or(clauses.join(',')) as Q
 }
 
+export function applyViewBranchScope<Q extends AnyQuery>(
+  query: Q,
+  branchIds: string[],
+  dir: CreDirectory
+): Q {
+  if (branchIds.length === 0) {
+    return query.eq('cre_id', '00000000-0000-0000-0000-000000000000') as Q
+  }
+  const creIds = creIdsForBranches(branchIds, dir)
+  if (creIds.length > 0) {
+    return query.in('cre_id', creIds) as Q
+  }
+  return query as Q
+}
+
 /**
- * Apply the free-text search box. Matches the phone or saved contact name directly, and resolves
- * CRE-name / branch-name matches to the cre ids they cover so the whole thing stays in SQL.
+ * Apply the free-text search box. Matches customer numbers, contact names, from/to numbers,
+ * CRE lines, and resolves CRE-name / branch-name matches to the cre ids they cover.
  */
-export function applySearch<Q extends AnyQuery>(query: Q, search: string, dir: CreDirectory): Q {
+export function applySearch<Q extends AnyQuery>(
+  query: Q,
+  search: string,
+  dir: CreDirectory,
+  target: 'view' | 'recordings' | 'log' = 'view'
+): Q {
   const term = search.trim()
   if (!term) return query
 
@@ -450,9 +470,24 @@ export function applySearch<Q extends AnyQuery>(query: Q, search: string, dir: C
 
   // PostgREST `or` values cannot contain bare commas or parentheses.
   const safe = term.replace(/[,()*]/g, ' ').trim()
-  const clauses = [`phone.ilike.*${safe}*`, `contact_name.ilike.*${safe}*`]
+  const clauses: string[] = []
+
+  if (target === 'recordings') {
+    clauses.push(`phone.ilike.*${safe}*`, `contact_name.ilike.*${safe}*`, `file_name.ilike.*${safe}*`)
+  } else {
+    clauses.push(
+      `customer_number.ilike.*${safe}*`,
+      `customer_name.ilike.*${safe}*`,
+      `from_number.ilike.*${safe}*`,
+      `to_number.ilike.*${safe}*`,
+      `cre_number.ilike.*${safe}*`
+    )
+  }
+
   if (matchedCreIds.length > 0) clauses.push(`cre_id.in.(${matchedCreIds.join(',')})`)
-  if (matchedBranchIds.size > 0) clauses.push(`branch_id.in.(${[...matchedBranchIds].join(',')})`)
+  if (target !== 'view' && matchedBranchIds.size > 0) {
+    clauses.push(`branch_id.in.(${[...matchedBranchIds].join(',')})`)
+  }
 
   return query.or(clauses.join(',')) as Q
 }

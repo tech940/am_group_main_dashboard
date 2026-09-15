@@ -46,6 +46,7 @@ import {
   Calculator,
   Copy,
   Check,
+  ChevronDown,
 } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -1187,7 +1188,7 @@ const MANAGERS = ['SANJEEV KOUL', 'MUZAFFAR IQBALL', 'Irshad Ahmed', 'Rahul Bhas
 const TLS = [
   'MICHAEL DEEP SINGH',
   'NAVAL PREET SINGH',
-  'UDHAMPUR',
+  'SHUBHAM',
   'OTHER DEALER',
   'SHIV DEV SINGH',
   'AKASH BHAT',
@@ -3341,6 +3342,78 @@ export function KiaBookingsClient({
                   Active Filter Applied
                 </span>
               )}
+              {dealer !== ALL_VALUE && dealer.split(',').filter(Boolean).map((d) => (
+                <span key={d} className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200/80 px-2 py-0.5 text-[11px] font-bold text-sky-800">
+                  Dealer: {d}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = dealer.split(',').filter((x) => x !== d)
+                      const val = next.length === 0 ? ALL_VALUE : next.join(',')
+                      setDealer(val)
+                      setPendingDealer(val)
+                    }}
+                    className="hover:text-sky-950 ml-0.5 p-0.5 cursor-pointer"
+                    title="Remove dealer filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              {model !== ALL_VALUE && model.split(',').filter(Boolean).map((m) => (
+                <span key={m} className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
+                  Model: {m}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = model.split(',').filter((x) => x !== m)
+                      const val = next.length === 0 ? ALL_VALUE : next.join(',')
+                      setModel(val)
+                      setPendingModel(val)
+                    }}
+                    className="hover:text-emerald-950 ml-0.5 p-0.5 cursor-pointer"
+                    title="Remove model filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              {status !== ALL_VALUE && status.split(',').filter(Boolean).map((st) => (
+                <span key={st} className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-200/80 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                  Status: {statusLabel(st)}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = status.split(',').filter((x) => x !== st)
+                      const val = next.length === 0 ? ALL_VALUE : next.join(',')
+                      setStatus(val)
+                      setPendingStatus(val)
+                    }}
+                    className="hover:text-amber-950 ml-0.5 p-0.5 cursor-pointer"
+                    title="Remove status filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              {consultant !== ALL_VALUE && consultant.split(',').filter(Boolean).map((c) => (
+                <span key={c} className="inline-flex items-center gap-1 rounded-lg bg-purple-50 border border-purple-200/80 px-2 py-0.5 text-[11px] font-bold text-purple-800">
+                  Consultant: {c}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = consultant.split(',').filter((x) => x !== c)
+                      const val = next.length === 0 ? ALL_VALUE : next.join(',')
+                      setConsultant(val)
+                      setPendingConsultant(val)
+                    }}
+                    className="hover:text-purple-950 ml-0.5 p-0.5 cursor-pointer"
+                    title="Remove consultant filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
               {variant && (
                 <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
                   Variant: {variant}
@@ -3350,7 +3423,7 @@ export function KiaBookingsClient({
                       setVariant('')
                       setPendingVariant('')
                     }}
-                    className="hover:text-indigo-900 ml-0.5 p-0.5"
+                    className="hover:text-indigo-900 ml-0.5 p-0.5 cursor-pointer"
                     title="Remove variant filter"
                   >
                     <X className="h-3 w-3" />
@@ -3366,7 +3439,7 @@ export function KiaBookingsClient({
                       setColor('')
                       setPendingColor('')
                     }}
-                    className="hover:text-pink-900 ml-0.5 p-0.5"
+                    className="hover:text-pink-900 ml-0.5 p-0.5 cursor-pointer"
                     title="Remove colour filter"
                   >
                     <X className="h-3 w-3" />
@@ -5056,6 +5129,161 @@ export function KiaBookingsClient({
   )
 }
 
+function FilterMultiSelect({
+  value,
+  placeholder,
+  values,
+  onChange,
+  labeler = (item: string) => item,
+}: {
+  value: string
+  placeholder: string
+  values: string[]
+  onChange: (value: string) => void
+  labeler?: (value: string) => string
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  const uniqueValues = useMemo(() => {
+    return Array.from(new Set(values.filter((v) => Boolean(v) && v !== ALL_VALUE)))
+  }, [values])
+
+  const selectedItems = useMemo(() => {
+    if (!value || value === ALL_VALUE) return []
+    return value.split(',').map((s) => s.trim()).filter(Boolean)
+  }, [value])
+
+  const filteredValues = useMemo(() => {
+    if (!search.trim()) return uniqueValues
+    const q = search.toLowerCase()
+    return uniqueValues.filter((v) => (labeler(v) || v).toLowerCase().includes(q))
+  }, [uniqueValues, search, labeler])
+
+  const toggleItem = (item: string) => {
+    let next: string[]
+    if (selectedItems.includes(item)) {
+      next = selectedItems.filter((s) => s !== item)
+    } else {
+      next = [...selectedItems, item]
+    }
+    onChange(next.length === 0 ? ALL_VALUE : next.join(','))
+  }
+
+  const selectAll = () => {
+    onChange(uniqueValues.join(','))
+  }
+
+  const clearAll = () => {
+    onChange(ALL_VALUE)
+  }
+
+  const triggerLabel = useMemo(() => {
+    if (selectedItems.length === 0) return `All ${placeholder.toLowerCase()}`
+    if (selectedItems.length === 1) return labeler(selectedItems[0]) || selectedItems[0]
+    if (selectedItems.length === uniqueValues.length && uniqueValues.length > 0) return `All ${placeholder.toLowerCase()} (${selectedItems.length})`
+    return `${placeholder} (${selectedItems.length})`
+  }, [selectedItems, placeholder, labeler, uniqueValues])
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={cn(
+          INPUT_STYLE,
+          'flex items-center justify-between text-left cursor-pointer select-none text-xs font-semibold',
+          selectedItems.length > 0 && 'border-slate-400 font-bold bg-white text-slate-900 shadow-2xs'
+        )}
+      >
+        <span className="truncate pr-1.5">{triggerLabel}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          {selectedItems.length > 0 && (
+            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[9px] font-black text-white">
+              {selectedItems.length}
+            </span>
+          )}
+          <ChevronDown className={cn("h-3.5 w-3.5 text-slate-400 transition-transform duration-200", open && "rotate-180")} />
+        </div>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-[calc(100%+6px)] z-50 min-w-[220px] w-full max-w-[280px] rounded-2xl border border-slate-200 bg-white p-2 shadow-xl animate-in fade-in-50 zoom-in-95 duration-100">
+          {uniqueValues.length > 5 && (
+            <div className="relative mb-2">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder={`Search ${placeholder.toLowerCase()}...`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-2 text-xs font-medium text-slate-800 outline-none focus:border-slate-400 focus:bg-white"
+                autoFocus
+              />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 mb-1 px-1 text-[11px] font-bold">
+            <button
+              type="button"
+              onClick={selectAll}
+              className="text-indigo-600 hover:text-indigo-800 cursor-pointer"
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              onClick={clearAll}
+              className="text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto space-y-0.5 scrollbar-thin">
+            {filteredValues.length === 0 ? (
+              <div className="py-3 text-center text-xs text-slate-400 font-medium">No matches found</div>
+            ) : (
+              filteredValues.map((item) => {
+                const isChecked = selectedItems.includes(item)
+                return (
+                  <label
+                    key={item}
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold cursor-pointer transition-colors select-none",
+                      isChecked ? "bg-slate-100/80 text-slate-900 font-bold" : "text-slate-700 hover:bg-slate-50"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleItem(item)}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer accent-slate-900"
+                    />
+                    <span className="truncate flex-1">{labeler(item) || item}</span>
+                  </label>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FilterSelect({
   value,
   placeholder,
@@ -5069,21 +5297,14 @@ function FilterSelect({
   onChange: (value: string) => void
   labeler?: (value: string) => string
 }) {
-  const uniqueValues = Array.from(new Set(values.filter((v) => Boolean(v) && v !== ALL_VALUE)))
   return (
-    <Select value={value || ALL_VALUE} onValueChange={onChange}>
-      <SelectTrigger className={INPUT_STYLE}>
-        <SelectValue placeholder={`All ${placeholder.toLowerCase()}`} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={ALL_VALUE}>All {placeholder.toLowerCase()}</SelectItem>
-        {uniqueValues.map((item) => (
-          <SelectItem key={item} value={item}>
-            {labeler(item) || item}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <FilterMultiSelect
+      value={value}
+      placeholder={placeholder}
+      values={values}
+      onChange={onChange}
+      labeler={labeler}
+    />
   )
 }
 

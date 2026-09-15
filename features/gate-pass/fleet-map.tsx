@@ -109,6 +109,25 @@ const DEFAULT_CENTER: [number, number] = [32.74, 74.83] // Jammu — where the f
 const DEFAULT_ZOOM = 12
 const SELECTED_STROKE = '#4338ca'
 
+/**
+ * Street and place names drawn OVER the satellite basemap.
+ *
+ * ⚠️ Satellite imagery carries NO LABELS. Without this the map answers "what is that building" and
+ * not "which road is that" — you get rooftops and fields, and no way to tell a viewer where a car is
+ * except by recognising the terrain. Esri publishes the labels as a separate transparent layer on the
+ * host the imagery already comes from, so it costs no new origin and no key.
+ *
+ * Only the satellite style needs it; the other three draw their own labels.
+ */
+export const SATELLITE_LABELS_URL =
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'
+
+/**
+ * How fresh a fix must be to shape the OPENING VIEW. A day: long enough that a fleet parked
+ * overnight still frames itself, short enough that last week's trip to another city does not.
+ */
+const FIT_WINDOW_MS = 24 * 60 * 60 * 1000
+
 /** How old a fix is, in the plainest words that still carry the number. */
 function agePhrase(ageMs: number | null): string {
   if (ageMs === null) return 'age unknown'
@@ -220,6 +239,7 @@ export function FleetMapCard({
   const leafletRef = useRef<LeafletApi | null>(null)
   const layerRef = useRef<LayerGroup | null>(null)
   const tileLayerRef = useRef<TileLayer | null>(null)
+  const labelLayerRef = useRef<TileLayer | null>(null)
   const markersRef = useRef(new Map<string, { marker: CircleMarker; look: Look }>())
   const boundsRef = useRef<LatLngBounds | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
@@ -263,6 +283,20 @@ export function FleetMapCard({
 
   /* Only the filtered cars are plotted, so narrowing the list narrows the map with it. */
   const plotted = useMemo(() => visible.filter(hasPosition), [visible])
+
+  /*
+   * Pins drawn but left out of the opening frame because their fix is old. Surfaced, because a
+   * marker you cannot see is indistinguishable from a car the map forgot — and "Show all" is the
+   * answer, so the note names it.
+   */
+  const framedOut = useMemo(() => {
+    const recent = plotted.filter((v) => v.tracking.ageMs !== null && v.tracking.ageMs <= FIT_WINDOW_MS)
+    return recent.length > 0 ? plotted.length - recent.length : 0
+  }, [plotted])
+  const presentBands = useMemo(
+    () => new Set(plotted.map((v) => freshness(v.tracking.ageMs).fill)),
+    [plotted],
+  )
   const trackedTotal = useMemo(() => vehicles.filter(hasPosition).length, [vehicles])
   const liveTotal = useMemo(
     () => vehicles.filter((v) => hasPosition(v) && (v.tracking.ageMs ?? Infinity) <= 10 * 60_000).length,
@@ -373,6 +407,10 @@ export function FleetMapCard({
     if (tileLayerRef.current) {
       map.removeLayer(tileLayerRef.current)
     }
+    if (labelLayerRef.current) {
+      map.removeLayer(labelLayerRef.current)
+      labelLayerRef.current = null
+    }
 
     const conf = MAP_STYLES[mapStyle]
     const tileLayer = L.tileLayer(conf.url, {
@@ -385,6 +423,19 @@ export function FleetMapCard({
 
     // Ensure tile layer sits at the back beneath vehicle markers
     tileLayer.bringToBack()
+
+    /*
+     * Place and street names over the imagery. Added AFTER the basemap and sent to the back before
+     * the basemap is, so the order ends up imagery -> labels -> markers. Satellite only: the other
+     * styles already carry their own labels and would double up.
+     */
+    if (mapStyle === 'satellite') {
+      const labels = L.tileLayer(SATELLITE_LABELS_URL, { maxZoom: conf.maxZoom, subdomains: [] })
+      labels.addTo(map)
+      labels.bringToBack()
+      tileLayer.bringToBack()
+      labelLayerRef.current = labels
+    }
     for (const [, entry] of markersRef.current) {
       entry.marker.bringToFront()
     }
@@ -482,7 +533,22 @@ export function FleetMapCard({
       plottedKeyRef.current = ''
       return
     }
-    boundsRef.current = L.latLngBounds(points)
+    /*
+     * ⚠️ THE OPENING VIEW IS FITTED TO RECENT FIXES ONLY — every pin is still DRAWN.
+     *
+     * Measured 2026-09-15: nine of the ten stored fixes sit within ~8 km of Jammu and the tenth is in
+     * DELHI, 5.3 days old. Fitting to all ten produced a box 466 km tall by 224 km wide, so the map
+     * opened on half of northern India and the nine cars anyone cares about were one smudge. The
+     * three fixes under a day old span 7.7 km by 3.5 km — a view you can actually use.
+     *
+     * The stale outliers keep their markers, and "Show all" still zooms to everything. The fallback
+     * to all points matters: a fleet whose every fix is old must not open on an empty ocean.
+     */
+    const recentPoints = plotted
+      .filter((v) => v.tracking.ageMs !== null && v.tracking.ageMs <= FIT_WINDOW_MS)
+      .map((v) => [v.tracking.latitude as number, v.tracking.longitude as number] as [number, number])
+
+    boundsRef.current = L.latLngBounds(recentPoints.length > 0 ? recentPoints : points)
     /*
      * ⚠️ Re-fit only when the SET of plotted cars changed — never on every data arrival. The fleet
      * refetches every 60 seconds with the same cars in it, and re-fitting there yanked the view back
@@ -882,13 +948,24 @@ export function FleetMapCard({
             <div className="pointer-events-none absolute bottom-3 left-3 z-[650] rounded-xl border border-slate-200 bg-white/92 px-2.5 py-2 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/92">
               <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Last reported</p>
               <ul className="space-y-0.5">
-                {LEGEND.map(([colour, label]) => (
+                {/*
+                  * ⚠️ Only the bands PRESENT on the map. A "Live · last 10 min" row sitting in the
+                  * legend while the header says "0 live now" reads as a claim that some car is live
+                  * and cannot be found — a key for an empty band is worse than no key.
+                  */}
+                {LEGEND.filter(([colour]) => presentBands.has(colour)).map(([colour, label]) => (
                   <li key={label} className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colour }} />
                     {label}
                   </li>
                 ))}
               </ul>
+              {framedOut > 0 ? (
+                <p className="mt-1.5 max-w-[190px] border-t border-slate-200 pt-1.5 text-[10px] leading-snug text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  {framedOut} {framedOut === 1 ? 'car is' : 'cars are'} off screen with a fix older than a day.
+                  Use <strong>Show all</strong> to include {framedOut === 1 ? 'it' : 'them'}.
+                </p>
+              ) : null}
             </div>
           )}
         </div>

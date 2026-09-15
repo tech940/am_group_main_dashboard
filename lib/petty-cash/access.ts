@@ -176,6 +176,9 @@ export function pettyCashRequestedBranchScope<T extends PgColumn>(
   // Explicit 'all' means the user deliberately widened — no narrowing.
   if (asked === 'all') return undefined
 
+  // All-branch roles (MD, Developer) and users granted all-branch access see all branches by default.
+  if (hasPettyCashAllBranchAccess(appUser)) return undefined
+
   // Nothing asked: fall back to this login's own branches.
   const scope = defaultBranchScopeFor(appUser.brand)
   if (scope === 'all') return undefined

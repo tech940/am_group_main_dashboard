@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getShowroomGallerySessions } from '@/lib/showroom-images/server'
+import { getShowroomGallerySessions, deleteShowroomSession } from '@/lib/showroom-images/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,3 +33,24 @@ export async function GET(req: NextRequest) {
     )
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = req.nextUrl
+    const sessionId = searchParams.get('sessionId')
+
+    if (!sessionId) {
+      return NextResponse.json({ error: 'sessionId is required' }, { status: 400 })
+    }
+
+    const result = await deleteShowroomSession(sessionId)
+    return NextResponse.json(result)
+  } catch (error) {
+    console.error('Error deleting showroom session:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to delete showroom session.' },
+      { status: 500 }
+    )
+  }
+}
+

@@ -27,8 +27,20 @@ import {
   Undo2,
   Calendar,
   Eye,
+  Maximize2,
+  ZoomIn,
+  ExternalLink,
+  Receipt,
+  Download,
 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { FuelFormDialog } from './fuel-form-dialog'
+import { FuelFinalizeDialog } from './fuel-finalize-dialog'
 import { FUEL_LOCATIONS, FUEL_REQUIRED_FOR_OPTIONS, parseFuelSlipUrls } from '@/lib/fuel-approvals/constants'
 import type { FuelApprovalRecord, FuelApprovalStatus } from '@/lib/fuel-approvals/types'
 import { canUserApproveStage } from '@/lib/fuel-approvals/access'
@@ -70,11 +82,13 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
   const [selectedFuelType, setSelectedFuelType] = useState<string>('ALL')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedRecord, setSelectedRecord] = useState<FuelApprovalRecord | null>(null)
+  const [finalizeRecord, setFinalizeRecord] = useState<FuelApprovalRecord | null>(null)
   const [formDialogOpen, setFormDialogOpen] = useState(false)
   const [editRecord, setEditRecord] = useState<FuelApprovalRecord | null>(null)
   const [actionRemarks, setActionRemarks] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [inlineActionId, setInlineActionId] = useState<string | null>(null)
+  const [lightboxImage, setLightboxImage] = useState<{ title: string; url: string } | null>(null)
 
   // Multiple selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -934,6 +948,22 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                       </>
                     )}
 
+                    {record.status === 'approved' && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setFinalizeRecord(record)
+                        }}
+                        style={{ backgroundColor: '#055B65', color: '#ffffff' }}
+                        className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                        title="Finalise fuel cost and slips"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{record.totalCost ? 'Finalised' : 'Finalise'}</span>
+                      </button>
+                    )}
+
                     {(() => {
                       const slipUrls = parseFuelSlipUrls(record.fuelSlipUrl)
                       return (
@@ -1168,6 +1198,55 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                   )
                                 })()}
                               </>
+                            ) : record.status === 'approved' ? (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setFinalizeRecord(record)
+                                  }}
+                                  style={{ backgroundColor: '#055B65', color: '#ffffff' }}
+                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                                  title="Finalise fuel cost and slips"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>{record.totalCost ? 'Finalised' : 'Finalise'}</span>
+                                </button>
+                                {(() => {
+                                  const slipUrls = parseFuelSlipUrls(record.fuelSlipUrl)
+                                  if (slipUrls.length === 0) return null
+                                  return (
+                                    <button
+                                      type="button"
+                                      title="View Fuel Slip(s)"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (slipUrls.length === 1) window.open(slipUrls[0], '_blank')
+                                        else setSelectedRecord(record)
+                                      }}
+                                      style={{ backgroundColor: '#ffffff', color: '#334155' }}
+                                      className="h-7 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                                    >
+                                      <Paperclip className="w-3 h-3 text-slate-500" />
+                                      <span>Slip{slipUrls.length > 1 ? ` (${slipUrls.length})` : ''}</span>
+                                    </button>
+                                  )
+                                })()}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setSelectedRecord(record)
+                                  }}
+                                  style={{ backgroundColor: '#ffffff', color: '#334155' }}
+                                  className="h-7 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                                  title="View Details"
+                                >
+                                  <Eye className="w-3 h-3 text-slate-500" />
+                                  <span>View</span>
+                                </button>
+                              </div>
                             ) : (
                               <button
                                 type="button"
@@ -1431,6 +1510,15 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                       </div>
                     </div>
 
+                    {selectedRecord.totalCost !== undefined && selectedRecord.totalCost !== null && (
+                      <div className="py-2 flex justify-between items-center">
+                        <span className="text-slate-500">Fuel Cost</span>
+                        <span className="font-bold text-slate-900">
+                          ₹{Number(selectedRecord.totalCost).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-slate-500">Location</span>
                       {getLocationBadge(selectedRecord.location)}
@@ -1486,87 +1574,140 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                   if (slipUrls.length === 0) return null
 
                   return (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
                         <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                           Fuel Receipt Attachment{slipUrls.length > 1 ? `s (${slipUrls.length})` : ''}
                         </span>
                         {slipUrls.length === 1 && (
-                          <a
-                            href={slipUrls[0]}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-lg hover:bg-teal-100 flex items-center gap-1.5 cursor-pointer"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLightboxImage({
+                                title: `Fuel Receipt - VIN ${selectedRecord.vinNo || ''}`,
+                                url: slipUrls[0],
+                              })
+                            }
+                            className="text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
                           >
-                            <Eye className="w-3.5 h-3.5 text-teal-700" />
-                            <span>View Original</span>
-                          </a>
+                            <Maximize2 className="w-3.5 h-3.5 text-teal-700" />
+                            <span>Preview Fullscreen</span>
+                          </button>
                         )}
                       </div>
 
                       {slipUrls.length === 1 ? (
-                        <div className="rounded-xl border border-slate-200 p-2 bg-slate-50 flex items-center justify-center">
+                        <div className="group relative rounded-2xl border border-slate-200 bg-white p-3 shadow-2xs hover:border-teal-300 transition-all">
                           {slipUrls[0].toLowerCase().includes('.pdf') ? (
-                            <div className="py-6 text-center space-y-2">
-                              <FileText className="w-8 h-8 text-teal-700 mx-auto" />
-                              <p className="text-xs font-bold text-slate-700">PDF Receipt Document</p>
-                              <a
-                                href={slipUrls[0]}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-block text-xs text-teal-700 underline font-semibold"
+                            <div className="py-8 text-center space-y-3">
+                              <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-700 mx-auto flex items-center justify-center border border-teal-200 shadow-2xs">
+                                <FileText className="w-6 h-6" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-slate-800">PDF Receipt Document</p>
+                                <p className="text-[11px] text-slate-400">Official fuel invoice attachment</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setLightboxImage({
+                                    title: `Fuel Receipt - VIN ${selectedRecord.vinNo || ''}`,
+                                    url: slipUrls[0],
+                                  })
+                                }
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-[#055B65] hover:brightness-110 rounded-xl shadow-2xs cursor-pointer transition-all"
                               >
-                                Open PDF ↗
-                              </a>
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Preview Document</span>
+                              </button>
                             </div>
                           ) : (
-                            <a href={slipUrls[0]} target="_blank" rel="noreferrer" className="cursor-zoom-in">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLightboxImage({
+                                  title: `Fuel Receipt - VIN ${selectedRecord.vinNo || ''}`,
+                                  url: slipUrls[0],
+                                })
+                              }
+                              className="relative w-full rounded-xl overflow-hidden bg-slate-50 border border-slate-100 flex items-center justify-center p-2 cursor-pointer group"
+                            >
                               <img
                                 src={slipUrls[0]}
                                 alt="Fuel Receipt"
-                                className="max-h-56 object-contain rounded-lg hover:opacity-95 transition-opacity"
+                                className="max-h-56 object-contain rounded-lg group-hover:scale-102 transition-transform duration-200"
                               />
-                            </a>
+                              <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/20 transition-colors flex items-center justify-center">
+                                <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/85 text-white text-xs font-bold px-3 py-1.5 rounded-full backdrop-blur-xs flex items-center gap-1.5 shadow-md">
+                                  <ZoomIn className="w-3.5 h-3.5" /> Click to Zoom
+                                </span>
+                              </div>
+                            </button>
                           )}
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-2.5">
                           {slipUrls.map((url, i) => {
                             const isPdf = url.toLowerCase().includes('.pdf')
                             return (
                               <div
                                 key={`${url}-${i}`}
-                                className="rounded-xl border border-slate-200 p-2.5 bg-slate-50 flex flex-col justify-between gap-2"
+                                className="group relative rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs hover:border-teal-300 hover:shadow-xs transition-all flex flex-col justify-between"
                               >
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-bold text-slate-700">
-                                    Slip #{i + 1}
-                                  </span>
-                                  <a
-                                    href={url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[11px] font-semibold text-teal-700 hover:underline inline-flex items-center gap-1"
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-5 h-5 rounded-md bg-teal-50 text-teal-800 flex items-center justify-center font-bold text-[10px] border border-teal-200/80">
+                                      #{i + 1}
+                                    </div>
+                                    <span className="text-xs font-bold text-slate-800">
+                                      Slip {i + 1}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setLightboxImage({
+                                        title: `Fuel Slip #${i + 1} - VIN ${selectedRecord.vinNo || ''}`,
+                                        url,
+                                      })
+                                    }
+                                    className="h-6 px-2 text-[11px] font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md border border-teal-200/80 transition-colors inline-flex items-center gap-1 cursor-pointer"
                                   >
-                                    View ↗
-                                  </a>
+                                    <Maximize2 className="w-3 h-3" />
+                                    <span>Preview</span>
+                                  </button>
                                 </div>
-                                <div className="flex items-center justify-center min-h-[100px] bg-white rounded-lg border border-slate-200/60 p-1">
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setLightboxImage({
+                                      title: `Fuel Slip #${i + 1} - VIN ${selectedRecord.vinNo || ''}`,
+                                      url,
+                                    })
+                                  }
+                                  className="relative w-full h-28 bg-slate-50 rounded-lg border border-slate-100 overflow-hidden flex items-center justify-center cursor-pointer group-hover:border-slate-200 transition-colors"
+                                >
                                   {isPdf ? (
                                     <div className="text-center py-2">
-                                      <FileText className="w-6 h-6 text-teal-700 mx-auto mb-1" />
-                                      <span className="text-[10px] text-slate-500 font-medium">PDF File</span>
+                                      <FileText className="w-7 h-7 text-teal-700 mx-auto mb-1" />
+                                      <span className="text-[11px] text-slate-600 font-semibold">PDF Document</span>
                                     </div>
                                   ) : (
-                                    <a href={url} target="_blank" rel="noreferrer" className="w-full h-full flex items-center justify-center cursor-zoom-in">
+                                    <>
                                       <img
                                         src={url}
                                         alt={`Fuel Slip ${i + 1}`}
-                                        className="max-h-24 max-w-full object-contain rounded"
+                                        className="w-full h-full object-contain p-1 group-hover:scale-105 transition-transform duration-200"
                                       />
-                                    </a>
+                                      <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/20 transition-colors flex items-center justify-center">
+                                        <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/85 text-white text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-xs flex items-center gap-1 shadow-xs">
+                                          <ZoomIn className="w-3 h-3" /> Click to Zoom
+                                        </span>
+                                      </div>
+                                    </>
                                   )}
-                                </div>
+                                </button>
                               </div>
                             )
                           })}
@@ -1640,6 +1781,34 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                   </div>
                 </div>
               )}
+              {/* Finalize Action Box for Approved Requests */}
+              {selectedRecord.status === 'approved' && (
+                <div className="p-4 border-t border-slate-200 bg-emerald-50/50 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-teal-900 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-teal-700" />
+                        Order Approved by CEO
+                      </span>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {selectedRecord.totalCost
+                          ? `Fuel cost ₹${Number(selectedRecord.totalCost).toLocaleString('en-IN')} is recorded.`
+                          : 'Enter final fuel bill amount and upload receipts / fuel slips.'}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setFinalizeRecord(selectedRecord)
+                    }}
+                    style={{ backgroundColor: '#055B65', color: '#ffffff' }}
+                    className="w-full rounded-xl text-xs font-bold h-9 shadow-sm hover:brightness-110 cursor-pointer flex items-center justify-center gap-2 border-none"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{selectedRecord.totalCost ? 'Update Final Fuel Cost & Slips' : 'Finalise Fuel Order'}</span>
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1655,6 +1824,61 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
           await refetch()
         }}
       />
+
+      {/* Fuel Finalize Dialog */}
+      <FuelFinalizeDialog
+        open={Boolean(finalizeRecord)}
+        onOpenChange={(open) => {
+          if (!open) setFinalizeRecord(null)
+        }}
+        record={finalizeRecord}
+        onSuccess={async () => {
+          await queryClient.invalidateQueries({ queryKey: ['fuel-approvals'] })
+          await refetch()
+        }}
+      />
+
+      {/* Fuel Receipt Lightbox Modal */}
+      <Dialog open={Boolean(lightboxImage)} onOpenChange={(o) => !o && setLightboxImage(null)}>
+        <DialogContent className="max-w-3xl p-0 overflow-hidden bg-slate-950 border-slate-800 text-white rounded-2xl shadow-2xl">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900/90">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-teal-400" />
+              <DialogTitle className="text-xs font-bold text-slate-200">
+                {lightboxImage?.title || 'Fuel Receipt Attachment'}
+              </DialogTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              {lightboxImage?.url && (
+                <a
+                  href={lightboxImage.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors border border-slate-700"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open in Tab</span>
+                </a>
+              )}
+            </div>
+          </div>
+          <div className="p-4 flex items-center justify-center min-h-[320px] max-h-[78vh] overflow-auto bg-slate-950">
+            {lightboxImage?.url?.toLowerCase().includes('.pdf') ? (
+              <iframe
+                src={lightboxImage.url}
+                title="PDF Receipt"
+                className="w-full h-[70vh] rounded-lg border border-slate-800 bg-white"
+              />
+            ) : lightboxImage?.url ? (
+              <img
+                src={lightboxImage.url}
+                alt={lightboxImage.title || 'Fuel Receipt'}
+                className="max-h-[72vh] max-w-full object-contain rounded-lg shadow-md select-none"
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 

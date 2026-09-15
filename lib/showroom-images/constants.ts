@@ -4,6 +4,9 @@ export type ShowroomBrandKey =
   | 'tata'
   | 'mg'
   | 'platinum'
+  | 'honda'
+  | 'ktm'
+  | 'bajaj'
   | 'two_wheelers'
 
 export type ShowroomBrandConfig = {
@@ -57,22 +60,44 @@ export const SHOWROOM_BRANDS: readonly ShowroomBrandConfig[] = [
     badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
   },
   {
-    key: 'two_wheelers',
-    label: 'AM 2-Wheelers',
+    key: 'honda',
+    label: 'Diamond Honda',
     bucketId: 'showroom-two-wheelers',
-    locations: [
-      'Diamond Honda (Jammu)',
-      'KTM (Jammu)',
-      'Bajaj (Jammu)',
-    ],
+    locations: ['Jammu'],
+    accentColor: '#ea1b2d',
+    badgeClass: 'bg-red-50 text-red-700 border-red-200',
+  },
+  {
+    key: 'ktm',
+    label: 'AM KTM',
+    bucketId: 'showroom-two-wheelers',
+    locations: ['Jammu'],
     accentColor: '#ea580c',
     badgeClass: 'bg-orange-50 text-orange-700 border-orange-200',
+  },
+  {
+    key: 'bajaj',
+    label: 'AM Bajaj',
+    bucketId: 'showroom-two-wheelers',
+    locations: ['Jammu'],
+    accentColor: '#0055b8',
+    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
   },
 ] as const
 
 export function getShowroomBrandConfig(key: string | null | undefined): ShowroomBrandConfig | null {
   if (!key) return null
   const normalized = key.trim().toLowerCase()
+  if (normalized === 'two_wheelers' || normalized === 'twowheelers') {
+    return {
+      key: 'two_wheelers',
+      label: 'AM 2-Wheelers',
+      bucketId: 'showroom-two-wheelers',
+      locations: ['Jammu'],
+      accentColor: '#ea580c',
+      badgeClass: 'bg-orange-50 text-orange-700 border-orange-200',
+    }
+  }
   return SHOWROOM_BRANDS.find((b) => b.key === normalized) || null
 }
 
@@ -133,16 +158,16 @@ export const SHOWROOM_CATEGORIES: readonly ShowroomCategoryConfig[] = [
     key: 'vehicles',
     label: 'Vehicles',
     shortLabel: 'Vehicle',
-    description: 'Display & showroom floor vehicles',
-    slotCount: 2,
+    description: 'Display & showroom floor vehicles (3 angles)',
+    slotCount: 3,
     badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
   },
   {
     key: 'tv',
     label: 'TV Display',
     shortLabel: 'TV',
-    description: 'Showroom customer lounge / display TV screens',
-    slotCount: 2,
+    description: 'Showroom customer lounge / display TV screen',
+    slotCount: 1,
     badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
   },
   {

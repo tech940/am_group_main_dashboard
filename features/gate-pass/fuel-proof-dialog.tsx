@@ -46,6 +46,8 @@ type FuelProofDialogProps = {
 }
 
 export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelProofDialogProps) {
+  const [fuelAmount, setFuelAmount] = useState<string>('')
+  const [fuelLitres, setFuelLitres] = useState<string>('')
   const [fuelSlip, setFuelSlip] = useState<File | null>(null)
   const [pumpStart, setPumpStart] = useState<File | null>(null)
   const [pumpStop, setPumpStop] = useState<File | null>(null)
@@ -53,10 +55,19 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    if (pass) {
+      setFuelAmount(pass.fuelAmount !== null && pass.fuelAmount !== undefined ? String(pass.fuelAmount) : '')
+      setFuelLitres(pass.fuelLitres !== null && pass.fuelLitres !== undefined ? String(pass.fuelLitres) : '')
+    }
+  }, [pass])
+
   const reset = () => {
     setFuelSlip(null)
     setPumpStart(null)
     setPumpStop(null)
+    setFuelAmount(pass?.fuelAmount ? String(pass.fuelAmount) : '')
+    setFuelLitres(pass?.fuelLitres ? String(pass.fuelLitres) : '')
     setCameraKey((k) => k + 1)
     setError('')
   }
@@ -69,11 +80,19 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
   const isStartProvided = Boolean(pumpStart || hasExistingStart)
   const isStopProvided = Boolean(pumpStop || hasExistingStop)
 
-  const allThreeReady = isSlipProvided && isStartProvided && isStopProvided
+  const isAmountProvided = Boolean(fuelAmount.trim() && Number(fuelAmount.trim()) > 0 && !Number.isNaN(Number(fuelAmount.trim())))
+
+  const allThreeReady = isSlipProvided && isStartProvided && isStopProvided && isAmountProvided
 
   const handleSubmit = async () => {
     if (!pass) return
     setError('')
+
+    const cleanAmount = fuelAmount.trim()
+    if (!cleanAmount || Number.isNaN(Number(cleanAmount)) || Number(cleanAmount) <= 0) {
+      setError('Fuel price / total amount (₹) is mandatory and must be greater than 0.')
+      return
+    }
 
     if (!isSlipProvided) {
       setError('1. Physical Fuel Slip image is required.')
@@ -91,6 +110,10 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
     setSaving(true)
     try {
       const formData = new FormData()
+      formData.append('fuelAmount', cleanAmount)
+      if (fuelLitres.trim()) {
+        formData.append('fuelLitres', fuelLitres.trim())
+      }
       if (fuelSlip) formData.append('fuelSlip', fuelSlip)
       if (pumpStart) formData.append('pumpStart', pumpStart)
       if (pumpStop) formData.append('pumpStop', pumpStop)
@@ -130,7 +153,7 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
       }}
     >
       <DialogContent
-        className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"
+        className="max-h-[92vh] overflow-y-auto w-[95vw] sm:w-[70vw] max-w-[70vw] sm:max-w-[70vw] p-0 gap-0 overflow-hidden border-slate-200 dark:border-slate-800 shadow-2xl"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
@@ -155,6 +178,61 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
             </div>
             <div className="text-slate-600 dark:text-slate-300">
               Driver: <span className="font-semibold">{pass.driverName}</span>
+            </div>
+          </div>
+
+          {/* Fuel Price & Litres Input Strip */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3.5 space-y-3 shadow-2xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Fuel Price / Total Amount (Mandatory) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="fuel-amount-input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <IndianRupee className="h-4 w-4 text-emerald-600" />
+                    Price of Fuel (Total ₹) *
+                  </Label>
+                  <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.2 rounded border border-rose-200 dark:border-rose-900">
+                    Mandatory
+                  </span>
+                </div>
+                <Input
+                  id="fuel-amount-input"
+                  type="number"
+                  step="any"
+                  min="1"
+                  placeholder="e.g. 3500"
+                  value={fuelAmount}
+                  onChange={(e) => {
+                    setFuelAmount(e.target.value)
+                    if (error) setError('')
+                  }}
+                  className="font-mono font-bold text-sm bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700 focus:border-amber-500 focus:ring-amber-500"
+                  required
+                />
+                <p className="text-[10px] text-slate-500">Total ₹ amount billed on the physical petrol slip.</p>
+              </div>
+
+              {/* Fuel Quantity (Litres) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="fuel-litres-input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Fuel className="h-4 w-4 text-blue-600" />
+                    Fuel Quantity (Litres)
+                  </Label>
+                  <span className="text-[10px] text-slate-400">Optional</span>
+                </div>
+                <Input
+                  id="fuel-litres-input"
+                  type="number"
+                  step="any"
+                  min="0.1"
+                  placeholder="e.g. 35.50"
+                  value={fuelLitres}
+                  onChange={(e) => setFuelLitres(e.target.value)}
+                  className="font-mono text-sm bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700 focus:border-blue-500 focus:ring-blue-500"
+                />
+                <p className="text-[10px] text-slate-500">Volume in litres shown on pump dispenser.</p>
+              </div>
             </div>
           </div>
 

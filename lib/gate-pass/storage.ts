@@ -117,6 +117,36 @@ export async function getGateEvidenceUrl(path: string | null | undefined): Promi
   return data.signedUrl
 }
 
+/**
+ * Batch read back multiple objects in a single API call for preloading.
+ * Returns a map of `path -> signedUrl`.
+ */
+export async function getGateEvidenceUrls(
+  paths: (string | null | undefined)[],
+): Promise<Record<string, string>> {
+  const cleanPaths = Array.from(
+    new Set(paths.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)),
+  )
+  if (cleanPaths.length === 0) return {}
+
+  try {
+    const { data, error } = await supabaseAdmin.storage
+      .from(GATE_PASS_BUCKET)
+      .createSignedUrls(cleanPaths, SIGNED_URL_TTL_SECONDS)
+    if (error || !data) return {}
+
+    const map: Record<string, string> = {}
+    for (const item of data) {
+      if (item.signedUrl && item.path) {
+        map[item.path] = item.signedUrl
+      }
+    }
+    return map
+  } catch {
+    return {}
+  }
+}
+
 /** Sign a whole photo map at once, for the detail view. */
 export async function signEvidenceMap(
   paths: Record<string, string> | null | undefined,
@@ -130,3 +160,4 @@ export async function signEvidenceMap(
   }
   return signed
 }
+

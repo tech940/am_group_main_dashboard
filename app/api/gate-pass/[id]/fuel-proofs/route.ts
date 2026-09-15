@@ -81,6 +81,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const rawAmount = String(form.get('fuelAmount') ?? '').trim()
     const fuelAmount = rawAmount !== '' && !Number.isNaN(Number(rawAmount)) ? Number(rawAmount) : null
 
+    if (fuelAmount === null || fuelAmount <= 0) {
+      return NextResponse.json(
+        { error: 'Fuel price / total amount (₹) is mandatory and must be greater than 0.' },
+        { status: 400 },
+      )
+    }
+
     const rawLitres = String(form.get('fuelLitres') ?? '').trim()
     const fuelLitres = rawLitres !== '' && !Number.isNaN(Number(rawLitres)) ? Number(rawLitres) : null
 

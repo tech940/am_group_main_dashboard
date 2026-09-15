@@ -560,6 +560,8 @@
   .call-analysis-clean-table thead tr,
   .md-targets-grid thead tr,
   .petty-cash-clean-table thead tr,
+  .fuel-clean-table thead tr,
+  .fuel-management-clean-table thead tr,
   .c360-activity-table thead tr,
   .access-map-grid thead tr { background-color: transparent !important; }
   /* The MD Targets grid keeps its own quiet slate header: the global rule would otherwise paint it
@@ -575,6 +577,20 @@
     color: #475569 !important;
     font-weight: 700 !important;
     letter-spacing: 0.02em !important;
+    text-transform: uppercase !important;
+    font-size: 11px !important;
+  }
+  .fuel-clean-table thead tr,
+  .fuel-management-clean-table thead tr {
+    background-color: #f8fafc !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+  }
+  .fuel-clean-table th,
+  .fuel-management-clean-table th {
+    background-color: #f8fafc !important;
+    color: #475569 !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em !important;
     text-transform: uppercase !important;
     font-size: 11px !important;
   }

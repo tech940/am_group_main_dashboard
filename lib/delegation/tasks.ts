@@ -102,8 +102,9 @@ async function addActivity(
 
 /**
  * The row-visibility predicate:
- *  - MD, CEO, Developer, Admin → can see all tasks across every brand and every delegator.
- *  - EA / EBA → STRICTLY isolated: only tasks they delegated (created) or tasks assigned to them.
+ *  - Developer, Admin, CEO → can see all tasks across every brand and every delegator.
+ *  - MD → STRICTLY isolated: only tasks where mdUserId is their ID, tasks they created, or tasks assigned to them. MDs cannot see each other's tasks.
+ *  - EA / EBA → STRICTLY isolated: only tasks they delegated (created) or tasks assigned to them. EAs cannot see each other's tasks.
  *  - Other users → only tasks created by or assigned to them.
  *  - Fail closed: an unidentifiable viewer sees nothing.
  */
@@ -112,9 +113,19 @@ export async function getScopeFilter(viewer: Viewer) {
 
   const role = String(viewer.role || '').trim().toLowerCase()
 
-  // Developer, Admin, MD, and CEO can see all tasks across the company
-  if (role === 'developer' || role === 'admin' || role === 'md' || role === 'ceo') {
+  // Developer, Admin, and CEO can see all tasks across the company
+  if (role === 'developer' || role === 'admin' || role === 'ceo') {
     return undefined
+  }
+
+  // Each MD will only see tasks assigned to their MD profile (mdUserId), created by them, or assigned to them.
+  // MDs cannot see each other's tasks.
+  if (role === 'md') {
+    return or(
+      eq(delegationTasks.mdUserId, viewer.id),
+      eq(delegationTasks.createdBy, viewer.id),
+      eq(delegationTasks.assignedTo, viewer.id)
+    )
   }
 
   // Each EA will only see what task they have delegated (or assigned to them).
@@ -136,8 +147,9 @@ function decorate(row: typeof delegationTasks.$inferSelect & { assignedPhone?: s
   const role = String(viewer.role || '').trim().toLowerCase()
   const isCreator = row.createdBy === viewer.id
   const isAssignee = row.assignedTo === viewer.id
-  const isSuper = role === 'developer' || role === 'admin' || role === 'md' || role === 'ceo'
-  const canManage = isCreator || isSuper
+  const isMdOwner = role === 'md' && row.mdUserId === viewer.id
+  const isSuper = role === 'developer' || role === 'admin' || role === 'ceo'
+  const canManage = isCreator || isMdOwner || isSuper
   const isOverdue = Boolean(
     row.dueAt && row.status === 'assigned' && new Date(row.dueAt) < new Date(),
   )
@@ -458,8 +470,10 @@ export async function updateDelegationTask(id: string, action: TaskAction, input
     const [task] = await tx.select().from(delegationTasks).where(eq(delegationTasks.id, id)).limit(1)
     if (!task) throw new Error('Task not found.')
 
+    const role = String(actor.role || '').trim().toLowerCase()
     const isAssignee = task.assignedTo === actor.id
-    const isManager = task.createdBy === actor.id || isGroupWideDelegation(actor)
+    const isMdOwner = role === 'md' && task.mdUserId === actor.id
+    const isManager = task.createdBy === actor.id || isMdOwner || isGroupWideDelegation(actor)
     const isOpen = task.status === 'assigned'
 
     const updates: Partial<typeof delegationTasks.$inferInsert> = { updatedAt: new Date() }
@@ -834,18 +848,20 @@ export async function getDelegationBrandRollup(): Promise<BrandRollupRow[]> {
 export async function deleteDelegationTask(id: string, actor: AppUser): Promise<void> {
   // Load the task to verify it exists and check ownership
   const [task] = await db
-    .select({ id: delegationTasks.id, createdBy: delegationTasks.createdBy })
+    .select({ id: delegationTasks.id, createdBy: delegationTasks.createdBy, mdUserId: delegationTasks.mdUserId })
     .from(delegationTasks)
     .where(eq(delegationTasks.id, id))
     .limit(1)
 
   if (!task) throw new Error('Task not found.')
 
+  const role = String(actor.role || '').trim().toLowerCase()
   const isCreator = task.createdBy === actor.id
+  const isMdOwner = role === 'md' && task.mdUserId === actor.id
   const isGroupWide = isGroupWideDelegation(actor)
 
-  if (!isCreator && !isGroupWide) {
-    throw new Error('You do not have permission to delete this task. Only the creator or a group-wide manager may delete tasks.')
+  if (!isCreator && !isMdOwner && !isGroupWide) {
+    throw new Error('You do not have permission to delete this task. Only the creator, assigned MD, or an administrator may delete tasks.')
   }
 
   await db.transaction(async (tx) => {

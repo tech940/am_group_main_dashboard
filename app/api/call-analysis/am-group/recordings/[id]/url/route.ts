@@ -56,34 +56,51 @@ export async function GET(
 
     if (error) throw new Error(error.message)
 
-    // 2. Fallback: check if `id` is a call_log_entries ID linked to a recording
+    // 2. Fallback: check if `id` is a call ID in v_calls_with_numbers or call_log_entries
     if (!row) {
-      const { data: logEntry, error: logError } = await supabase
-        .from('call_log_entries')
-        .select('id, recording_id, deleted_at')
+      const { data: viewEntry } = await supabase
+        .from('v_calls_with_numbers')
+        .select('id, recording_id')
         .eq('id', id)
         .maybeSingle()
 
-      if (logError) throw new Error(logError.message)
-
-      if (logEntry?.recording_id) {
+      if (viewEntry?.recording_id) {
         const { data: recRow, error: recError } = await supabase
           .from('call_recordings')
           .select('id, storage_path, upload_status, deleted_at')
-          .eq('id', logEntry.recording_id)
+          .eq('id', viewEntry.recording_id)
           .maybeSingle()
 
         if (recError) throw new Error(recError.message)
         row = recRow
-      } else if (logEntry) {
-        const { data: recByCallId, error: recCallError } = await supabase
-          .from('call_recordings')
-          .select('id, storage_path, upload_status, deleted_at')
-          .eq('call_id', logEntry.id)
+      } else {
+        const { data: logEntry, error: logError } = await supabase
+          .from('call_log_entries')
+          .select('id, recording_id, deleted_at')
+          .eq('id', id)
           .maybeSingle()
 
-        if (recCallError) throw new Error(recCallError.message)
-        row = recByCallId
+        if (logError) throw new Error(logError.message)
+
+        if (logEntry?.recording_id) {
+          const { data: recRow, error: recError } = await supabase
+            .from('call_recordings')
+            .select('id, storage_path, upload_status, deleted_at')
+            .eq('id', logEntry.recording_id)
+            .maybeSingle()
+
+          if (recError) throw new Error(recError.message)
+          row = recRow
+        } else if (logEntry) {
+          const { data: recByCallId, error: recCallError } = await supabase
+            .from('call_recordings')
+            .select('id, storage_path, upload_status, deleted_at')
+            .eq('call_id', logEntry.id)
+            .maybeSingle()
+
+          if (recCallError) throw new Error(recCallError.message)
+          row = recByCallId
+        }
       }
     }
 

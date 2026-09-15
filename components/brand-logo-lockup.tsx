@@ -29,8 +29,8 @@ interface BrandLogoLockupProps {
    */
   variant?: 'card' | 'inline' | 'light'
   className?: string
-  /** Size multiplier: 'sm' | 'md' | 'lg' */
-  size?: 'sm' | 'md' | 'lg'
+  /** Size multiplier: 'xs' | 'sm' | 'md' | 'lg' */
+  size?: 'xs' | 'sm' | 'md' | 'lg'
 }
 
 /**
@@ -61,13 +61,6 @@ export function AmGlyph({ className, color = 'currentColor' }: { className?: str
 
 /**
  * The brand half of the lockup.
- *
- * ⚠️ These are FILES, deliberately. Until 2026-09-12 each mark was an SVG path written by hand and commented
- * "official" — the Honda one rendered as an unrecognisable red blob on the approval form, and Tata, Bajaj and
- * Hyundai were invented shapes too. A brand mark cannot be approximated: it is either the real artwork or it
- * is wrong. The files in public/brand-logos are the brands' own marks, each painted its official colour.
- *
- * A brand with no file below shows its NAME as text rather than a stand-in mark.
  */
 type BrandMarkSpec = {
   src: string
@@ -83,8 +76,6 @@ const BRAND_MARKS: Record<string, BrandMarkSpec> = {
   // Complete wordmarks — nothing to add beside them.
   kia: { src: '/brand-logos/kia.svg', alt: 'Kia', wide: true },
   ktm: { src: '/brand-logos/ktm.svg', alt: 'KTM', wide: true },
-  // The MG badge is a small octagon; at row size the letters inside it are unreadable, so the name sits
-  // beside it as it does for the other symbol marks.
   mg: { src: '/brand-logos/mg.svg', alt: 'MG', wordmark: 'MG', wordmarkColor: '#FF0000' },
   bajaj: { src: '/brand-logos/bajaj.svg', alt: 'Bajaj', wide: true },
 
@@ -92,12 +83,11 @@ const BRAND_MARKS: Record<string, BrandMarkSpec> = {
   hyundai: { src: '/brand-logos/hyundai.svg', alt: 'Hyundai', wordmark: 'HYUNDAI', wordmarkColor: '#002C5E' },
   tata: { src: '/brand-logos/tata.svg', alt: 'Tata', wordmark: 'TATA', wordmarkColor: '#1B365D' },
 
-  // AM Diamond Honda: the Honda mark, named in full.
-  honda: { src: '/brand-logos/honda.svg', alt: 'Diamond Honda', wordmark: 'DIAMOND HONDA', wordmarkColor: '#2D0000' },
-  diamond: { src: '/brand-logos/honda.svg', alt: 'Diamond Honda', wordmark: 'DIAMOND HONDA', wordmarkColor: '#2D0000' },
+  // AM Diamond Honda: the official Honda wing mark from sidebar, named in full.
+  honda: { src: '/brand-logos/diamond-honda.png', alt: 'Diamond Honda', wordmark: 'DIAMOND HONDA', wordmarkColor: '#2D0000' },
+  diamond: { src: '/brand-logos/diamond-honda.png', alt: 'Diamond Honda', wordmark: 'DIAMOND HONDA', wordmarkColor: '#2D0000' },
 
-  // AM Platinum is a Hyundai dealership, and carries the Hyundai mark under its own name — the same pairing
-  // components/layout/sidebar.tsx already uses for it.
+  // AM Platinum is a Hyundai dealership, and carries the Hyundai mark under its own name
   platinum: { src: '/brand-logos/hyundai.svg', alt: 'AM Platinum', wordmark: 'PLATINUM', wordmarkColor: '#002C5E' },
 }
 
@@ -108,22 +98,35 @@ function BrandMark({
 }: {
   brand: string
   isLight?: boolean
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'xs' | 'sm' | 'md' | 'lg'
 }) {
   const norm = brand.toLowerCase().trim()
   const spec = BRAND_MARKS[norm]
 
   if (spec) {
-    const height = size === 'sm' ? 'h-5' : size === 'lg' ? 'h-8' : 'h-6 sm:h-7'
+    const height =
+      size === 'xs'
+        ? 'h-3 sm:h-3.5'
+        : size === 'sm'
+        ? 'h-3.5 sm:h-4'
+        : size === 'lg'
+        ? 'h-8'
+        : 'h-6 sm:h-7'
     return (
-      <div className="flex items-center gap-2 sm:gap-2.5">
+      <div className="flex items-center gap-1 sm:gap-1.5">
         <img
           src={spec.src}
           alt={spec.alt}
           className={cn(
             height,
             'w-auto shrink-0 object-contain',
-            spec.wide ? 'max-w-[132px]' : 'max-w-[88px]',
+            spec.wide
+              ? size === 'xs'
+                ? 'max-w-[70px] sm:max-w-[85px]'
+                : 'max-w-[100px] sm:max-w-[120px]'
+              : size === 'xs'
+              ? 'max-w-[50px] sm:max-w-[65px]'
+              : 'max-w-[70px] sm:max-w-[85px]',
             // On a dark header the coloured mark is repainted white, the same treatment the AM glyph gets.
             isLight && '[filter:brightness(0)_invert(1)]',
           )}
@@ -132,9 +135,15 @@ function BrandMark({
           <span
             className={cn(
               // nowrap: a two-word name like DIAMOND HONDA otherwise wraps and makes its row taller than the rest.
-              'font-black tracking-widest whitespace-nowrap',
-              size === 'sm' ? 'text-xs sm:text-sm' : size === 'lg' ? 'text-lg' : 'text-sm sm:text-base',
-              isLight && 'text-white',
+              'font-black tracking-wider whitespace-nowrap',
+              size === 'xs'
+                ? 'text-[9.5px] sm:text-[10.5px]'
+                : size === 'sm'
+                ? 'text-[11px] sm:text-xs'
+                : size === 'lg'
+                ? 'text-lg'
+                : 'text-sm sm:text-base',
+              isLight ? 'text-white' : undefined,
             )}
             style={isLight ? undefined : { color: spec.wordmarkColor }}
           >
@@ -152,9 +161,15 @@ function BrandMark({
   return (
     <span
       className={cn(
-        'font-black uppercase tracking-[0.2em]',
+        'font-black uppercase tracking-[0.15em]',
         isLight ? 'text-white' : 'text-slate-800',
-        size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-lg' : 'text-sm sm:text-base',
+        size === 'xs'
+          ? 'text-[9.5px] sm:text-[10.5px]'
+          : size === 'sm'
+          ? 'text-[11px] sm:text-xs'
+          : size === 'lg'
+          ? 'text-lg'
+          : 'text-sm sm:text-base',
       )}
     >
       {displayName}
@@ -183,7 +198,7 @@ export function BrandLogoLockup({
       className={cn(
         'inline-flex items-center select-none',
         isCard &&
-          'rounded-lg bg-white px-3.5 py-1.5 sm:px-4 sm:py-2 shadow-xs border border-slate-200/90',
+          'rounded-lg bg-white px-3 py-1.5 sm:px-4 sm:py-2 shadow-xs border border-slate-200/90',
         className
       )}
     >
@@ -192,8 +207,10 @@ export function BrandLogoLockup({
         <AmGlyph
           color={amColor}
           className={cn(
-            size === 'sm'
-              ? 'h-5 sm:h-6'
+            size === 'xs'
+              ? 'h-3 sm:h-3.5'
+              : size === 'sm'
+              ? 'h-3.5 sm:h-4'
               : size === 'lg'
               ? 'h-8 sm:h-9'
               : 'h-6 sm:h-7'
@@ -204,7 +221,12 @@ export function BrandLogoLockup({
       {/* Center: Thin vertical dividing bar */}
       <div
         className={cn(
-          'mx-3 sm:mx-4.5 w-px self-stretch min-h-[24px] sm:min-h-[28px]',
+          size === 'xs'
+            ? 'mx-1.5 sm:mx-2 min-h-[11px] sm:min-h-[13px]'
+            : size === 'sm'
+            ? 'mx-2 sm:mx-2.5 min-h-[13px] sm:min-h-[15px]'
+            : 'mx-3 sm:mx-4.5 min-h-[24px] sm:min-h-[28px]',
+          'w-px self-stretch',
           isLight ? 'bg-white/30' : 'bg-slate-300'
         )}
       />

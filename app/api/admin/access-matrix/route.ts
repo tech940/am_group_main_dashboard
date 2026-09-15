@@ -63,9 +63,12 @@ async function buildMatrix(
       // route (SECTION_ROUTES). Sub-sections (BE sub-reports, booking sub-stages, stock management,
       // empty brands, internal grouping nodes, …) are NOT toggleable here — they're handled in code.
       .filter((group) => routeKeys.has(group.key) || ADMIN_FANOUT_KEYS.has(group.key))
-      // ⚠️ A group no page honours must not be offered as a tick. `insurance_analysis` is one: the Insurance
-      // page is role-locked, so ticking it granted nothing while looking like it had. It is shown instead
-      // as a read-only locked section below.
+      /*
+       * ⚠️ A group no page honours must not be offered as a tick — it would look like it granted
+       * something and grant nothing. The set is EMPTY today: `insurance_analysis` was its only member
+       * until 2026-09-15, when that section was removed and replaced by three brand-owned books
+       * (kia/hyundai/platinum .insurance) which ARE ordinary grantable groups and do appear here.
+       */
       .filter((group) => !GROUPS_REPLACED_BY_LOCKED_SECTIONS.has(group.key))
       .filter((group) => seesEverySection
         || Boolean(branch && (group.key === branch || group.key.startsWith(`${branch}.`))))

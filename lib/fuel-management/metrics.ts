@@ -652,8 +652,32 @@ export function buildFuelManagementResponse(input: FuelManagementInput): FuelMan
         const passGpsKm = pass.gpsKm !== null && Number.isFinite(pass.gpsKm) ? pass.gpsKm : null
         if (status === 'returned' && odometerKm !== null) driveKm += odometerKm
         if (passGpsKm !== null) gpsKm += passGpsKm
-        return { passNo: pass.passNo, gateOutAt: pass.gateOutAt, status, odometerKm, gpsKm: passGpsKm === null ? null : round1(passGpsKm) }
+        return {
+          passNo: pass.passNo,
+          gateOutAt: pass.gateOutAt,
+          status,
+          odometerKm,
+          gateOutOdo: pass.gateOutOdo,
+          gateInOdo: pass.gateInOdo,
+          gpsKm: passGpsKm === null ? null : round1(passGpsKm),
+        }
       })
+
+    // Collect all valid odometer readings from Demo Gate Passes for this car
+    const gateOdoList: number[] = []
+    for (const d of drives) {
+      if (d.gateInOdo !== null && Number.isFinite(d.gateInOdo)) gateOdoList.push(d.gateInOdo)
+      if (d.gateOutOdo !== null && Number.isFinite(d.gateOutOdo)) gateOdoList.push(d.gateOutOdo)
+    }
+    for (const r of readingsInPeriod.get(car.vin) ?? []) {
+      if (r.gateInOdo !== null && Number.isFinite(r.gateInOdo)) gateOdoList.push(r.gateInOdo)
+    }
+    for (const r of readingsBeforePeriod.get(car.vin) ?? []) {
+      if (r.gateInOdo !== null && Number.isFinite(r.gateInOdo)) gateOdoList.push(r.gateInOdo)
+    }
+
+    const lastGatePassOdometerKm = gateOdoList.length > 0 ? Math.max(...gateOdoList) : null
+    const lastOdometerKm = lastGatePassOdometerKm ?? lastApproved?.odometerKm ?? null
 
     return {
       vin: car.vin,
@@ -663,6 +687,8 @@ export function buildFuelManagementResponse(input: FuelManagementInput): FuelMan
       approvedLitres: fills.filter((fill) => fill.approved).reduce((sum, fill) => sum + toHundredths(fill.litres), 0) / 100,
       lastFillDate: lastApproved?.date ?? null,
       lastFillOdometerKm: lastApproved?.odometerKm ?? null,
+      lastGatePassOdometerKm,
+      lastOdometerKm,
       kmSinceLastFill,
       kmPerLitre,
       kmPerLitreNote: note,

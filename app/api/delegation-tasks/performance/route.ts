@@ -33,8 +33,9 @@ export async function GET() {
       .from(delegationTasks)
       .where(whereClause)
 
-    // Group by assignee name/id
+    // Group by assignee id, email, or name
     const stats: Record<string, {
+      id: string
       name: string
       email: string
       total: number
@@ -47,9 +48,10 @@ export async function GET() {
     const now = new Date()
 
     for (const t of tasks) {
-      const key = t.assignedTo || t.assignedName || 'Unassigned'
+      const key = t.assignedTo || (t.assignedEmail ? t.assignedEmail.toLowerCase().trim() : null) || (t.assignedName ? t.assignedName.toLowerCase().trim() : null) || 'unassigned'
       if (!stats[key]) {
         stats[key] = {
+          id: key,
           name: t.assignedName || 'Unassigned',
           email: t.assignedEmail || '',
           total: 0,
@@ -62,6 +64,12 @@ export async function GET() {
       
       const record = stats[key]
       record.total++
+      if (t.assignedName && (!record.name || record.name === 'Unassigned')) {
+        record.name = t.assignedName
+      }
+      if (t.assignedEmail && !record.email) {
+        record.email = t.assignedEmail
+      }
 
       if (t.status === 'done') {
         const completed = t.completedAt ? new Date(t.completedAt) : null

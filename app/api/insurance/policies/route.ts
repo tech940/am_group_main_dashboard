@@ -50,7 +50,13 @@ export async function GET(request: Request) {
     const tableName = insuranceSource(brand)
 
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
-    const pageSize = Math.min(100, Math.max(10, parseInt(searchParams.get('pageSize') || '25', 10)))
+    /*
+     * ⚠️ The ceiling must be at least the largest size the UI OFFERS, or the control lies. The picker
+     * in features/insurance/table-pager.tsx offers 50 / 100 / 500; with the old cap of 100, choosing
+     * 500 returned 100 rows under a control that said 500 and a page count computed from 500 — so the
+     * last pages were empty and no message explained why. Raise the two together or neither.
+     */
+    const pageSize = Math.min(500, Math.max(10, parseInt(searchParams.get('pageSize') || '50', 10)))
     const search = (searchParams.get('search') || '').trim()
     const format = searchParams.get('format')
     const sortField = searchParams.get('sort') || 'policy_issue_date'

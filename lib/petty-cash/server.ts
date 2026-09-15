@@ -241,12 +241,29 @@ const CREATOR_REQUEST_QUEUE_STATUSES = new Set([
 ])
 
 function filterDashboardRequests(appUser: AppUser, requests: Array<Record<string, unknown>>) {
-  if (appUser.role === 'ea') {
-    return requests.filter((request) => ['ea_pending', 'ea_on_hold', 'ed_approved'].includes(String(request.status || '')))
+  if (appUser.role === 'developer' || appUser.role === 'md' || hasPettyCashAllBranchAccess(appUser)) {
+    return requests
   }
 
-  if (appUser.role === 'md' || appUser.role === 'eba') {
-    return requests.filter((request) => ['md_pending', 'md_on_hold', 'ea_pending', 'ea_on_hold', 'ed_approved', 'submitted', 'ed_pending', 'ed_on_hold'].includes(String(request.status || '')))
+  if (appUser.role === 'ea') {
+    return requests.filter((request) => ['ea_pending', 'ea_on_hold', 'ed_approved', 'ceo_approved'].includes(String(request.status || '')))
+  }
+
+  if (appUser.role === 'eba') {
+    return requests.filter((request) => [
+      'md_pending',
+      'md_on_hold',
+      'ea_pending',
+      'ea_on_hold',
+      'ed_approved',
+      'ceo_approved',
+      'submitted',
+      'ed_pending',
+      'ed_on_hold',
+      'ceo_pending',
+      'ceo_on_hold',
+      'gsm_pending',
+    ].includes(String(request.status || '')))
   }
 
   if (appUser.role === 'accounts') {

@@ -1,12 +1,12 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Camera,
   CheckCircle2,
   Image as ImageIcon,
   Loader2,
-  RefreshCw,
   Trash2,
   Building2,
   MapPin,
@@ -19,6 +19,10 @@ import {
   Check,
   Briefcase,
   Wrench,
+  Lock,
+  X,
+  SwitchCamera,
+  Upload,
 } from 'lucide-react'
 import {
   SHOWROOM_BRANDS,
@@ -52,85 +56,128 @@ type SnappedPhoto = {
   slot: number
 }
 
-const SLOT_DEFINITIONS = [
-  {
-    key: 'vehicles_1',
-    category: 'vehicles' as ShowroomCategoryKey,
-    categoryLabel: 'Vehicles',
-    slotNumber: 1,
-    title: 'Vehicle #1',
-    subtitle: 'Display / floor vehicle (Angle 1)',
-    icon: Car,
-  },
-  {
-    key: 'vehicles_2',
-    category: 'vehicles' as ShowroomCategoryKey,
-    categoryLabel: 'Vehicles',
-    slotNumber: 2,
-    title: 'Vehicle #2',
-    subtitle: 'Display / floor vehicle (Angle 2)',
-    icon: Car,
-  },
-  {
-    key: 'tv_1',
-    category: 'tv' as ShowroomCategoryKey,
-    categoryLabel: 'TV Display',
-    slotNumber: 1,
-    title: 'TV Screen #1',
-    subtitle: 'Customer lounge / main showroom TV',
-    icon: Tv,
-  },
-  {
-    key: 'tv_2',
-    category: 'tv' as ShowroomCategoryKey,
-    categoryLabel: 'TV Display',
-    slotNumber: 2,
-    title: 'TV Screen #2',
-    subtitle: 'Secondary display / AV screen',
-    icon: Tv,
-  },
-  {
-    key: 'bathroom_1',
-    category: 'bathroom' as ShowroomCategoryKey,
-    categoryLabel: 'Washroom',
-    slotNumber: 1,
-    title: 'Washroom #1',
-    subtitle: 'Customer washroom cleanliness',
-    icon: Droplets,
-  },
-  {
-    key: 'bathroom_2',
-    category: 'bathroom' as ShowroomCategoryKey,
-    categoryLabel: 'Washroom',
-    slotNumber: 2,
-    title: 'Washroom #2',
-    subtitle: 'Staff / secondary washroom cleanliness',
-    icon: Droplets,
-  },
-] as const
+export type SlotDefinition = {
+  key: string
+  category: ShowroomCategoryKey
+  categoryLabel: string
+  slotNumber: number
+  title: string
+  subtitle: string
+  icon: typeof Car | typeof Wrench | typeof Tv | typeof Droplets
+}
 
-export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | null }) {
+export function getSlotDefinitions(dept: ShowroomDepartmentKey = 'sales'): SlotDefinition[] {
+  const isService = dept === 'service'
+  return [
+    {
+      key: 'vehicles_1',
+      category: 'vehicles',
+      categoryLabel: isService ? 'Workshop Bays' : 'Display Vehicles',
+      slotNumber: 1,
+      title: isService ? 'Service Bay #1' : 'Vehicle #1',
+      subtitle: isService ? 'Active service bay / repair area' : 'Display floor vehicle (Angle 1)',
+      icon: isService ? Wrench : Car,
+    },
+    {
+      key: 'vehicles_2',
+      category: 'vehicles',
+      categoryLabel: isService ? 'Workshop Bays' : 'Display Vehicles',
+      slotNumber: 2,
+      title: isService ? 'Service Bay #2' : 'Vehicle #2',
+      subtitle: isService ? 'Workshop floor / inspection hoist' : 'Display floor vehicle (Angle 2)',
+      icon: isService ? Wrench : Car,
+    },
+    {
+      key: 'vehicles_3',
+      category: 'vehicles',
+      categoryLabel: isService ? 'Workshop Bays' : 'Display Vehicles',
+      slotNumber: 3,
+      title: isService ? 'Service Bay #3' : 'Vehicle #3',
+      subtitle: isService ? 'Customer reception / service delivery' : 'Display floor vehicle (Angle 3)',
+      icon: isService ? Wrench : Car,
+    },
+    {
+      key: 'tv_1',
+      category: 'tv',
+      categoryLabel: 'TV Display',
+      slotNumber: 1,
+      title: 'TV Screen #1',
+      subtitle: isService ? 'Customer waiting lounge TV screen' : 'Customer lounge / display TV screen',
+      icon: Tv,
+    },
+    {
+      key: 'bathroom_1',
+      category: 'bathroom',
+      categoryLabel: 'Washroom',
+      slotNumber: 1,
+      title: 'Washroom #1',
+      subtitle: 'Customer washroom cleanliness',
+      icon: Droplets,
+    },
+    {
+      key: 'bathroom_2',
+      category: 'bathroom',
+      categoryLabel: 'Washroom',
+      slotNumber: 2,
+      title: 'Washroom #2',
+      subtitle: isService ? 'Staff / workshop washroom' : 'Staff / secondary washroom cleanliness',
+      icon: Droplets,
+    },
+  ]
+}
+
+interface ShowroomUploadFormProps {
+  initialBrand?: string | null
+  initialLocation?: string | null
+  initialDepartment?: string | null
+}
+
+export function ShowroomUploadForm({
+  initialBrand,
+  initialLocation,
+  initialDepartment,
+}: ShowroomUploadFormProps) {
+  // Check if parameters are locked from URL
+  const isBrandPreset = useMemo(() => {
+    return Boolean(initialBrand && getShowroomBrandConfig(initialBrand))
+  }, [initialBrand])
+
   const [brand, setBrand] = useState<ShowroomBrandKey>(() => {
-    const valid = SHOWROOM_BRANDS.find((b) => b.key === initialBrand?.toLowerCase())
+    const valid = getShowroomBrandConfig(initialBrand)
     return valid ? valid.key : 'kia'
   })
 
-  const locations = getLocationsForBrand(brand)
-  const [location, setLocation] = useState<string>(() => locations[0] || 'Jammu')
-  const [department, setDepartment] = useState<ShowroomDepartmentKey>('sales')
+  const locations = useMemo(() => getLocationsForBrand(brand), [brand])
+
+  const [location, setLocation] = useState<string>(() => {
+    if (initialLocation && locations.includes(initialLocation)) {
+      return initialLocation
+    }
+    return locations[0] || 'Jammu'
+  })
+
+  const [department, setDepartment] = useState<ShowroomDepartmentKey>(() => {
+    if (initialDepartment?.toLowerCase() === 'service') return 'service'
+    return 'sales'
+  })
+
+  const isLocked = isBrandPreset && Boolean(initialLocation)
+
   const [uploaderName, setUploaderName] = useState<string>('')
 
   // Slot-based captured photos: map slotKey -> SnappedPhoto
   const [slotPhotos, setSlotPhotos] = useState<Record<string, SnappedPhoto>>({})
   const [activeSlotKey, setActiveSlotKey] = useState<string>('vehicles_1')
 
-  // Camera state
-  const [cameraActive, setCameraActive] = useState<boolean>(false)
+  // Full-screen camera state
+  const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false)
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const [cameraError, setCameraError] = useState<string>('')
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [isSnapping, setIsSnapping] = useState<boolean>(false)
   const [flashEffect, setFlashEffect] = useState<boolean>(false)
   const [uploading, setUploading] = useState<boolean>(false)
+  const [mounted, setMounted] = useState<boolean>(false)
   const [uploadSuccess, setUploadSuccess] = useState<{
     brand: string
     location: string
@@ -145,12 +192,17 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
   const fileInputRef = useRef<HTMLInputElement>(null)
   const targetSlotKeyForFileRef = useRef<string>('vehicles_1')
 
-  // Keep ref synced
   slotPhotosRef.current = slotPhotos
 
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const slotDefinitions = useMemo(() => getSlotDefinitions(department), [department])
+
   const activeSlot = useMemo(() => {
-    return SLOT_DEFINITIONS.find((s) => s.key === activeSlotKey) || SLOT_DEFINITIONS[0]
-  }, [activeSlotKey])
+    return slotDefinitions.find((s) => s.key === activeSlotKey) || slotDefinitions[0]
+  }, [slotDefinitions, activeSlotKey])
 
   const totalCaptured = Object.keys(slotPhotos).length
 
@@ -164,70 +216,85 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
   }
 
   // Camera stream management
-  const stopCamera = useCallback(() => {
+  const stopStream = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop())
       streamRef.current = null
     }
     setStream(null)
-    setCameraActive(false)
   }, [])
 
-  const startCamera = useCallback(async () => {
-    setCameraError('')
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Live browser camera requires HTTPS or is disabled in your browser. You can still take photos directly with your phone camera below!')
-      setCameraActive(false)
-      return
-    }
-
-    try {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop())
+  const startCamera = useCallback(
+    async (facing: 'environment' | 'user' = facingMode) => {
+      setCameraError('')
+      stopStream()
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        setCameraError(
+          'Live camera requires HTTPS or is unsupported by your browser. Please tap Gallery below to choose or take a photo.'
+        )
+        return
       }
 
-      const media = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      })
-
-      streamRef.current = media
-      setStream(media)
-      setCameraActive(true)
-    } catch (err: unknown) {
-      console.warn('Camera access error:', err)
-      const errorObj = err as { name?: string; message?: string }
-      if (errorObj?.name === 'NotAllowedError' || errorObj?.name === 'PermissionDeniedError') {
-        setCameraError('Camera access was blocked in browser settings. You can tap "Take Photo with Phone Camera" below, or allow camera in Chrome site settings.')
-      } else if (errorObj?.name === 'NotFoundError' || errorObj?.name === 'DevicesNotFoundError') {
-        setCameraError('No video camera detected. Tap "Take Photo with Phone Camera" below.')
-      } else {
-        setCameraError('Live camera stream unavailable. You can tap "Take Photo with Phone Camera" below.')
+      try {
+        const media = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 },
+          },
+          audio: false,
+        })
+        streamRef.current = media
+        setStream(media)
+      } catch {
+        try {
+          const mediaFallback = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: facing } },
+            audio: false,
+          })
+          streamRef.current = mediaFallback
+          setStream(mediaFallback)
+        } catch (err) {
+          console.warn('Camera access denied:', err)
+          setCameraError(
+            'Camera permission was blocked. Allow camera access in browser settings, or use the file upload option.'
+          )
+        }
       }
-      setCameraActive(false)
+    },
+    [facingMode, stopStream]
+  )
+
+  const openFullscreenCamera = (slotKey?: string) => {
+    if (slotKey) {
+      setActiveSlotKey(slotKey)
     }
-  }, [])
+    setIsCameraOpen(true)
+    startCamera(facingMode)
+  }
 
-  // Auto-start camera on mount (gracefully handles blocked/insecure contexts)
-  useEffect(() => {
-    startCamera()
-  }, [startCamera])
+  const closeFullscreenCamera = () => {
+    stopStream()
+    setIsCameraOpen(false)
+  }
 
-  // Attach stream to video tag
+  const toggleFacingMode = () => {
+    const next = facingMode === 'environment' ? 'user' : 'environment'
+    setFacingMode(next)
+    startCamera(next)
+  }
+
+  // Attach stream to video tag whenever active
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !stream) return
+    if (!video || !stream || !isCameraOpen) return
     video.srcObject = stream
     const play = () => video.play().catch(() => null)
     if (video.readyState >= 1) play()
     else video.onloadedmetadata = play
-  }, [stream])
+  }, [stream, isCameraOpen])
 
-  // Cleanup on unmount only
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (streamRef.current) {
@@ -237,9 +304,9 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     }
   }, [])
 
-  // Burn IST Watermark & Save Snapped Photo (Universal JPEG compression: ~180KB/photo)
+  // Process & Watermark Photo into Slot
   const saveProcessedPhoto = useCallback(
-    (canvas: HTMLCanvasElement, targetSlot: typeof SLOT_DEFINITIONS[number]) => {
+    (canvas: HTMLCanvasElement, targetSlot: SlotDefinition) => {
       canvas.toBlob(
         (blob) => {
           setIsSnapping(false)
@@ -259,7 +326,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
             hour12: true,
           })
 
-          // If existing photo in this slot, revoke its URL
+          // Revoke old blob URL if existing in slot
           const existing = slotPhotos[targetSlot.key]
           if (existing) URL.revokeObjectURL(existing.previewUrl)
 
@@ -277,51 +344,69 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
             [targetSlot.key]: newPhoto,
           }))
 
-          // Auto-advance to next empty slot
-          const currentIdx = SLOT_DEFINITIONS.findIndex((s) => s.key === targetSlot.key)
+          // Find next empty slot
+          const currentIdx = slotDefinitions.findIndex((s) => s.key === targetSlot.key)
           const nextEmpty =
-            SLOT_DEFINITIONS.find((s, idx) => idx > currentIdx && !slotPhotos[s.key]) ||
-            SLOT_DEFINITIONS.find((s) => !slotPhotos[s.key] && s.key !== targetSlot.key)
+            slotDefinitions.find((s, idx) => idx > currentIdx && !slotPhotos[s.key]) ||
+            slotDefinitions.find((s) => !slotPhotos[s.key] && s.key !== targetSlot.key)
 
           if (nextEmpty) {
             setActiveSlotKey(nextEmpty.key)
+            toast({
+              title: `${targetSlot.title} Saved`,
+              description: `Now capturing ${nextEmpty.title} (${nextEmpty.categoryLabel})`,
+            })
           } else {
-            const nextSequential = SLOT_DEFINITIONS[(currentIdx + 1) % SLOT_DEFINITIONS.length]
-            setActiveSlotKey(nextSequential.key)
+            // All 6 captured!
+            closeFullscreenCamera()
+            toast({
+              title: 'All 6 Photos Captured!',
+              description: 'You can now review your inspection photos and tap Upload.',
+            })
           }
         },
         'image/jpeg',
-        0.80
+        0.82
       )
     },
-    [slotPhotos]
+    [slotDefinitions, slotPhotos]
   )
 
-  // Rapid snap photo from live video stream
-  const snapPhoto = () => {
+  // Snap photo from full-screen live video
+  const snapLivePhoto = () => {
     const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas || !activeSlot) return
+    const canvas = canvasRef.current || document.createElement('canvas')
+    if (!video || !activeSlot) return
 
     setIsSnapping(true)
     setFlashEffect(true)
-    setTimeout(() => setFlashEffect(false), 120)
+    setTimeout(() => setFlashEffect(false), 140)
 
-    const w = video.videoWidth || 1280
-    const h = video.videoHeight || 960
+    let rawW = video.videoWidth || 1280
+    let rawH = video.videoHeight || 960
+    const maxDim = 1600
 
-    canvas.width = w
-    canvas.height = h
+    if (rawW > maxDim || rawH > maxDim) {
+      if (rawW > rawH) {
+        rawH = Math.round((rawH * maxDim) / rawW)
+        rawW = maxDim
+      } else {
+        rawW = Math.round((rawW * maxDim) / rawH)
+        rawH = maxDim
+      }
+    }
+
+    canvas.width = rawW
+    canvas.height = rawH
     const ctx = canvas.getContext('2d')
     if (!ctx) {
       setIsSnapping(false)
       return
     }
 
-    // Draw frame
-    ctx.drawImage(video, 0, 0, w, h)
+    ctx.drawImage(video, 0, 0, rawW, rawH)
 
-    // IST Timestamp Watermark
+    // Burn Official Watermark
     const stamp = new Date().toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata',
       day: '2-digit',
@@ -339,24 +424,26 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     const catLabel = activeSlot.categoryLabel.toUpperCase()
     const watermarkText = `${brandLabel.toUpperCase()} · ${location.toUpperCase()} · ${deptLabel} · ${catLabel} #${activeSlot.slotNumber} · ${stamp} IST`
 
-    const barHeight = Math.max(38, Math.round(h * 0.058))
-    const fontSize = Math.round(barHeight * 0.42)
+    const barHeight = Math.max(34, Math.round(rawH * 0.052))
+    const fontSize = Math.round(barHeight * 0.44)
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.90)'
-    ctx.fillRect(0, h - barHeight, w, barHeight)
+    // Dark bar background
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
+    ctx.fillRect(0, rawH - barHeight, rawW, barHeight)
 
-    ctx.fillStyle = brandCfg?.accentColor || '#0284c7'
-    ctx.fillRect(0, h - barHeight, Math.max(8, Math.round(w * 0.012)), barHeight)
+    // Accent strip
+    ctx.fillStyle = '#055B65'
+    ctx.fillRect(0, rawH - barHeight, Math.max(6, Math.round(rawW * 0.01)), barHeight)
 
     ctx.font = `700 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
     ctx.textBaseline = 'middle'
     ctx.fillStyle = '#ffffff'
-    ctx.fillText(watermarkText, Math.round(barHeight * 0.45), h - Math.round(barHeight / 2))
+    ctx.fillText(watermarkText, Math.round(barHeight * 0.4), rawH - Math.round(barHeight / 2))
 
     saveProcessedPhoto(canvas, activeSlot)
   }
 
-  // Trigger universal native device camera
+  // Trigger Native File Input
   const triggerNativeCamera = (slotKey?: string) => {
     const keyToUse = slotKey || activeSlotKey
     setActiveSlotKey(keyToUse)
@@ -367,13 +454,13 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     }
   }
 
-  // Process photo captured from native phone camera app
+  // Process file/gallery capture
   const handleNativeCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
     const slotKey = targetSlotKeyForFileRef.current || activeSlotKey
-    const targetSlot = SLOT_DEFINITIONS.find((s) => s.key === slotKey) || activeSlot
+    const targetSlot = slotDefinitions.find((s) => s.key === slotKey) || activeSlot
 
     setIsSnapping(true)
 
@@ -389,7 +476,6 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
         return
       }
 
-      // Max 1600px width/height for optimal mobile memory & fast network transfer
       const maxDim = 1600
       let w = img.naturalWidth || img.width
       let h = img.naturalHeight || img.height
@@ -406,7 +492,6 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
 
       canvas.width = w
       canvas.height = h
-
       ctx.drawImage(img, 0, 0, w, h)
 
       // Burn Watermark
@@ -427,19 +512,19 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
       const catLabel = targetSlot.categoryLabel.toUpperCase()
       const watermarkText = `${brandLabel.toUpperCase()} · ${location.toUpperCase()} · ${deptLabel} · ${catLabel} #${targetSlot.slotNumber} · ${stamp} IST`
 
-      const barHeight = Math.max(38, Math.round(h * 0.058))
-      const fontSize = Math.round(barHeight * 0.42)
+      const barHeight = Math.max(34, Math.round(h * 0.052))
+      const fontSize = Math.round(barHeight * 0.44)
 
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.90)'
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
       ctx.fillRect(0, h - barHeight, w, barHeight)
 
-      ctx.fillStyle = brandCfg?.accentColor || '#0284c7'
-      ctx.fillRect(0, h - barHeight, Math.max(8, Math.round(w * 0.012)), barHeight)
+      ctx.fillStyle = '#055B65'
+      ctx.fillRect(0, h - barHeight, Math.max(6, Math.round(w * 0.01)), barHeight)
 
       ctx.font = `700 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
       ctx.textBaseline = 'middle'
       ctx.fillStyle = '#ffffff'
-      ctx.fillText(watermarkText, Math.round(barHeight * 0.45), h - Math.round(barHeight / 2))
+      ctx.fillText(watermarkText, Math.round(barHeight * 0.4), h - Math.round(barHeight / 2))
 
       saveProcessedPhoto(canvas, targetSlot)
     }
@@ -457,7 +542,6 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     img.src = objectUrl
   }
 
-  // Remove single photo from slot
   const clearSlot = (slotKey: string) => {
     setSlotPhotos((prev) => {
       const target = prev[slotKey]
@@ -468,13 +552,13 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     })
   }
 
-  // Submit all captured photos with auto-retry on temporary mobile connection drops
+  // Submit all captured photos
   const handleSubmit = async () => {
     const photosToUpload = Object.values(slotPhotos)
     if (photosToUpload.length === 0) {
       toast({
         title: 'No photos captured',
-        description: 'Please capture at least one photo before submitting.',
+        description: 'Please capture at least one showroom photo before submitting.',
         variant: 'error',
       })
       return
@@ -493,16 +577,17 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
       const manifest: Array<{ category: string; slot: number }> = []
 
       photosToUpload.forEach((p, idx) => {
-        const file = new File([p.blob], `showroom_${p.category}_${p.slot}_${Date.now()}_${idx + 1}.jpg`, {
-          type: 'image/jpeg',
-        })
+        const file = new File(
+          [p.blob],
+          `showroom_${p.category}_${p.slot}_${Date.now()}_${idx + 1}.jpg`,
+          { type: 'image/jpeg' }
+        )
         formData.append('photos', file)
         manifest.push({ category: p.category, slot: p.slot })
       })
 
       formData.append('manifest', JSON.stringify(manifest))
 
-      // Upload with retry logic (up to 2 attempts) to guarantee resilience on mobile networks
       let res: Response | null = null
       let lastErr: unknown = null
 
@@ -522,7 +607,6 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
         } catch (fetchErr) {
           lastErr = fetchErr
           if (attempt < 2) {
-            // Wait 1.2s before retry
             await new Promise((resolve) => setTimeout(resolve, 1200))
           }
         }
@@ -532,16 +616,15 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
         throw new Error(
           lastErr instanceof Error
             ? lastErr.message
-            : 'Network connection was interrupted. Please check your signal and tap Upload again.'
+            : 'Network connection was interrupted. Please tap Upload again.'
         )
       }
 
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        throw new Error(json.error || 'Upload failed. Please check your connection and try again.')
+        throw new Error(json.error || 'Upload failed. Please check connection and try again.')
       }
 
-      // Cleanup previews
       photosToUpload.forEach((p) => URL.revokeObjectURL(p.previewUrl))
 
       setUploadSuccess({
@@ -555,7 +638,8 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     } catch (err) {
       toast({
         title: 'Upload Failed',
-        description: err instanceof Error ? err.message : 'Could not upload photos. Please try again.',
+        description:
+          err instanceof Error ? err.message : 'Could not upload photos. Please try again.',
         variant: 'error',
       })
     } finally {
@@ -563,12 +647,122 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
     }
   }
 
-  // Success view (Clean executive receipt)
+  // Full-Screen Camera Portal
+  const fullScreenCameraOverlay =
+    isCameraOpen && mounted
+      ? createPortal(
+          <div
+            data-radix-portal=""
+            className="fixed inset-0 z-[999999] bg-black flex flex-col justify-between select-none overflow-hidden animate-in fade-in duration-200"
+          >
+            {/* Live Video Element */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 h-full w-full object-cover pointer-events-none"
+            />
+
+            {/* Camera Flash overlay */}
+            {flashEffect && (
+              <div className="absolute inset-0 bg-white/80 pointer-events-none transition-opacity duration-100 z-30" />
+            )}
+
+            {/* Top Bar Overlay */}
+            <div className="relative z-40 flex items-center justify-between p-4 sm:p-6 bg-gradient-to-b from-black/85 via-black/40 to-transparent">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black/60 backdrop-blur-md border border-white/20 text-white shadow-sm">
+                  <activeSlot.icon className="h-5 w-5 text-teal-300" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-white drop-shadow-sm">
+                      {activeSlot.title}
+                    </h3>
+                    <span className="text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full font-mono font-bold">
+                      {activeSlot.categoryLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+                    LIVE VIEW · {brand.toUpperCase()} · {location}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeFullscreenCamera}
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white hover:bg-black/80 active:scale-95 transition-all cursor-pointer"
+                aria-label="Close Camera"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Center Error Banner if Camera is blocked */}
+            {cameraError && (
+              <div className="relative z-40 mx-6 p-4 rounded-2xl bg-black/80 backdrop-blur-md border border-amber-500/40 text-white text-center space-y-3">
+                <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto" />
+                <p className="text-xs font-medium text-slate-200">{cameraError}</p>
+                <Button
+                  onClick={() => triggerNativeCamera(activeSlotKey)}
+                  className="bg-white text-slate-900 font-bold text-xs h-10 rounded-xl"
+                >
+                  <Upload className="w-4 h-4 mr-1.5" /> Choose from Gallery / Files
+                </Button>
+              </div>
+            )}
+
+            {/* Bottom Controls Bar */}
+            <div className="relative z-40 flex items-center justify-around p-6 sm:pb-10 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+              {/* Flip Camera */}
+              <button
+                type="button"
+                onClick={toggleFacingMode}
+                className="cursor-pointer flex flex-col items-center gap-1 text-white/80 hover:text-white active:scale-90 transition-transform"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 backdrop-blur-md border border-white/20">
+                  <SwitchCamera className="h-5 w-5 text-white" />
+                </div>
+                <span className="text-[10px] font-semibold">Flip</span>
+              </button>
+
+              {/* Big Shutter Button */}
+              <button
+                type="button"
+                onClick={snapLivePhoto}
+                disabled={isSnapping}
+                className="cursor-pointer group relative flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-transparent active:scale-90 transition-all shadow-[0_0_25px_rgba(255,255,255,0.4)]"
+                aria-label="Capture Photo"
+              >
+                <div className="h-16 w-16 rounded-full bg-white group-hover:bg-slate-100 group-active:scale-95 transition-all shadow-inner" />
+              </button>
+
+              {/* Gallery / File Picker */}
+              <button
+                type="button"
+                onClick={() => triggerNativeCamera(activeSlotKey)}
+                className="cursor-pointer flex flex-col items-center gap-1 text-white/80 hover:text-white active:scale-90 transition-transform"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 backdrop-blur-md border border-white/20">
+                  <Upload className="h-5 w-5 text-white" />
+                </div>
+                <span className="text-[10px] font-semibold">Gallery</span>
+              </button>
+            </div>
+          </div>,
+          document.body
+        )
+      : null
+
+  // Success Receipt
   if (uploadSuccess) {
     return (
-      <div className="min-h-screen bg-slate-100 text-slate-900 flex items-center justify-center p-4 sm:p-6">
-        <div className="w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-xl p-6 sm:p-8 text-center space-y-6">
-          <div className="w-16 h-16 rounded-2xl bg-slate-900 text-white flex items-center justify-center mx-auto shadow-sm">
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-md bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 sm:p-8 text-center space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-[#055B65] text-white flex items-center justify-center mx-auto shadow-md">
             <CheckCircle2 className="w-9 h-9" />
           </div>
 
@@ -577,13 +771,15 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
               Photos Uploaded Successfully
             </h2>
             <p className="text-slate-500 text-xs sm:text-sm">
-              <strong className="text-slate-800 font-semibold">{uploadSuccess.count} photos</strong> recorded under{' '}
-              <strong className="text-slate-900 font-semibold">{uploadSuccess.department}</strong> for{' '}
-              <strong className="text-slate-800 font-semibold">{uploadSuccess.brand}</strong> ({uploadSuccess.location}).
+              <strong className="text-slate-800 font-semibold">{uploadSuccess.count} photos</strong>{' '}
+              recorded under{' '}
+              <strong className="text-[#055B65] font-semibold">{uploadSuccess.department}</strong>{' '}
+              for <strong className="text-slate-900 font-semibold">{uploadSuccess.brand}</strong> (
+              {uploadSuccess.location}).
             </p>
           </div>
 
-          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 text-left space-y-2.5 text-xs text-slate-600">
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 text-left space-y-2.5 text-xs text-slate-600">
             <div className="flex justify-between items-center">
               <span className="text-slate-500 font-medium">Brand</span>
               <span className="font-semibold text-slate-900">{uploadSuccess.brand}</span>
@@ -594,18 +790,14 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-500 font-medium">Department</span>
-              <span className="font-bold text-slate-900 bg-slate-200 px-2 py-0.5 rounded-full">
+              <span className="font-bold text-[#055B65] bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
                 {uploadSuccess.department}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-500 font-medium">Photos Recorded</span>
-              <span className="font-semibold text-slate-900">{uploadSuccess.count} Live Images</span>
-            </div>
-            <div className="flex justify-between items-center pt-1 border-t border-slate-200">
-              <span className="text-slate-500 font-medium">Dashboard Feed</span>
-              <span className="inline-flex items-center gap-1 font-bold text-slate-900">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-900" /> Live & Visible
+              <span className="font-semibold text-slate-900">
+                {uploadSuccess.count} Live Images
               </span>
             </div>
           </div>
@@ -613,9 +805,8 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
           <Button
             onClick={() => {
               setUploadSuccess(null)
-              startCamera()
             }}
-            className="w-full h-12 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm shadow-md transition-all cursor-pointer"
+            className="w-full h-12 rounded-xl bg-[#055B65] hover:bg-[#044850] text-white font-semibold text-sm shadow-sm transition-all cursor-pointer"
           >
             <Camera className="w-4 h-4 mr-2" />
             Capture More Showroom Photos
@@ -628,8 +819,10 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
   const activeBrandConfig = getShowroomBrandConfig(brand)
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center justify-start pb-16">
-      {/* Universal Hidden Native HTML5 Camera Input (Works on 100% of devices regardless of browser permissions/HTTPS) */}
+    <div className="min-h-screen bg-slate-50/70 text-slate-900 flex flex-col items-center justify-start pb-20">
+      {fullScreenCameraOverlay}
+
+      {/* Hidden File Input for Native / Gallery fallback */}
       <input
         ref={fileInputRef}
         type="file"
@@ -638,22 +831,20 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
         onChange={handleNativeCameraCapture}
         className="hidden"
       />
+      <canvas ref={canvasRef} className="hidden" />
 
-      {/* Top Header */}
-      <header className="w-full bg-white border-b border-slate-200 px-4 sm:px-6 py-3.5 sticky top-0 z-30 flex items-center justify-between shadow-xs">
+      {/* Header */}
+      <header className="w-full bg-white border-b border-slate-200/90 px-4 sm:px-6 py-3.5 sticky top-0 z-30 flex items-center justify-between shadow-2xs">
         <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white text-xs shadow-sm shrink-0"
-            style={{ backgroundColor: activeBrandConfig?.accentColor || '#0f172a' }}
-          >
-            <Building2 className="w-4 h-4" />
+          <div className="w-9 h-9 rounded-xl bg-[#055B65] text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+            <Building2 className="w-4.5 h-4.5" />
           </div>
           <div>
             <h1 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">
-              Showroom Camera
+              Showroom Camera Inspection
             </h1>
             <p className="text-[11px] text-slate-500 font-medium">
-              AM Group Inspection
+              AM Group Official Cleanliness & Display Check
             </p>
           </div>
         </div>
@@ -662,141 +853,178 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
           <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-slate-100 text-slate-800 border border-slate-200">
             {department}
           </span>
-          <div className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1 rounded-full text-xs font-bold">
+          <div className="flex items-center gap-1.5 bg-[#055B65] text-white px-3 py-1 rounded-full text-xs font-bold shadow-2xs">
             <span>{totalCaptured}/6 Snapped</span>
           </div>
         </div>
       </header>
 
       <main className="w-full max-w-lg px-4 pt-4 sm:pt-6 space-y-4">
-        {/* Dealership & Department Selector Card */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
-          {/* Department Selector Toggle */}
-          <div>
-            <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
-              <Briefcase className="w-3.5 h-3.5 text-slate-700" /> Department
-            </Label>
-            <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setDepartment('sales')}
-                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  department === 'sales'
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Briefcase className="w-3.5 h-3.5" />
-                Sales Showroom
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDepartment('service')}
-                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  department === 'service'
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Wrench className="w-3.5 h-3.5" />
-                Service Center
-              </button>
+        {/* Dealership & Department Selector or Locked Banner */}
+        {isLocked ? (
+          <div className="bg-white border border-teal-200/90 rounded-2xl p-4 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#055B65] uppercase tracking-wider bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
+                <Lock className="w-3 h-3" /> Branch Preset via QR / URL
+              </span>
+              <span className="text-[11px] font-bold text-slate-700 uppercase">
+                {department} Department
+              </span>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <p className="text-base font-bold text-slate-900">
+                  {activeBrandConfig?.label || brand}
+                </p>
+                <p className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                  {location} Dealership
+                </p>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+                Locked
+              </span>
             </div>
           </div>
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xs">
+            {/* Department Selector Toggle */}
+            <div>
+              <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
+                <Briefcase className="w-3.5 h-3.5 text-slate-600" /> Department
+              </Label>
+              <div className="grid grid-cols-2 gap-2 bg-slate-100/80 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setDepartment('sales')}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    department === 'sales'
+                      ? 'bg-white text-[#055B65] shadow-xs border border-slate-200/70'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  Sales Showroom
+                </button>
 
-          <div className="grid grid-cols-2 gap-3">
-            {/* Brand Dropdown */}
+                <button
+                  type="button"
+                  onClick={() => setDepartment('service')}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    department === 'service'
+                      ? 'bg-white text-[#055B65] shadow-xs border border-slate-200/70'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  Service Center
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Brand Dropdown */}
+              <div>
+                <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
+                  <Building2 className="w-3 h-3 text-slate-600" /> Brand
+                </Label>
+                <Select
+                  value={brand}
+                  onValueChange={(val) => handleBrandChange(val as ShowroomBrandKey)}
+                >
+                  <SelectTrigger className="h-10 bg-slate-50 border-slate-200 text-slate-900 font-semibold text-xs rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-slate-200 text-slate-900 shadow-lg">
+                    {SHOWROOM_BRANDS.map((b) => (
+                      <SelectItem
+                        key={b.key}
+                        value={b.key}
+                        className="text-xs font-medium cursor-pointer"
+                      >
+                        {b.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Location Dropdown */}
+              <div>
+                <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
+                  <MapPin className="w-3 h-3 text-slate-600" /> Location
+                </Label>
+                <Select value={location} onValueChange={setLocation}>
+                  <SelectTrigger className="h-10 bg-slate-50 border-slate-200 text-slate-900 font-semibold text-xs rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-slate-200 text-slate-900 shadow-lg">
+                    {locations.map((loc) => (
+                      <SelectItem
+                        key={loc}
+                        value={loc}
+                        className="text-xs font-medium cursor-pointer"
+                      >
+                        {loc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Optional Uploader Name */}
             <div>
               <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
-                <Building2 className="w-3 h-3 text-slate-600" /> Brand
+                <User className="w-3 h-3 text-slate-400" /> Inspected By (Optional)
               </Label>
-              <Select value={brand} onValueChange={(val) => handleBrandChange(val as ShowroomBrandKey)}>
-                <SelectTrigger className="h-11 bg-slate-50 border-slate-200 text-slate-900 font-semibold text-xs rounded-xl focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-white border-slate-200 text-slate-900 shadow-lg">
-                  {SHOWROOM_BRANDS.map((b) => (
-                    <SelectItem key={b.key} value={b.key} className="text-xs font-medium cursor-pointer">
-                      {b.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Location Dropdown */}
-            <div>
-              <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
-                <MapPin className="w-3 h-3 text-slate-600" /> Location
-              </Label>
-              <Select value={location} onValueChange={setLocation}>
-                <SelectTrigger className="h-11 bg-slate-50 border-slate-200 text-slate-900 font-semibold text-xs rounded-xl focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-white border-slate-200 text-slate-900 shadow-lg">
-                  {locations.map((loc) => (
-                    <SelectItem key={loc} value={loc} className="text-xs font-medium cursor-pointer">
-                      {loc}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Input
+                value={uploaderName}
+                onChange={(e) => setUploaderName(e.target.value)}
+                placeholder="e.g. Showroom Manager / Floor Lead"
+                className="h-9.5 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 text-xs rounded-xl"
+              />
             </div>
           </div>
+        )}
 
-          {/* Optional Uploader Name */}
-          <div>
-            <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
-              <User className="w-3 h-3 text-slate-400" /> Person Uploading (Optional)
-            </Label>
-            <Input
-              value={uploaderName}
-              onChange={(e) => setUploaderName(e.target.value)}
-              placeholder="e.g. Showroom Manager / Security"
-              className="h-10 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 text-xs rounded-xl focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all"
-            />
-          </div>
-        </div>
-
-        {/* Guided Category & Slot Checklist Strip */}
+        {/* Guided Category Counts Checklist */}
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
             <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Required Photos (6 Total)
+              Required Inspection Slots (6 Photos)
             </span>
-            <span className="text-[11px] text-slate-500 font-semibold">
-              2 Vehicles · 2 TV · 2 Washrooms
+            <span className="text-[11px] text-[#055B65] font-bold">
+              {department === 'service' ? '3 Workshop Bays · 1 TV · 2 Washrooms' : '3 Vehicles · 1 TV · 2 Washrooms'}
             </span>
           </div>
 
           <div className="grid grid-cols-3 gap-2">
             {SHOWROOM_CATEGORIES.map((cat) => {
-              const catSlots = SLOT_DEFINITIONS.filter((s) => s.category === cat.key)
+              const catSlots = slotDefinitions.filter((s) => s.category === cat.key)
               const countCaptured = catSlots.filter((s) => Boolean(slotPhotos[s.key])).length
               const isComplete = countCaptured === cat.slotCount
               const isCurrentCat = activeSlot.category === cat.key
+              const catLabel = cat.key === 'vehicles' && department === 'service' ? 'Workshop Bays' : cat.label
 
               return (
                 <div
                   key={cat.key}
                   className={`p-2.5 rounded-2xl border transition-all text-left ${
                     isCurrentCat
-                      ? 'bg-slate-100 border-slate-400 shadow-xs ring-1 ring-slate-400'
+                      ? 'bg-teal-50/70 border-teal-400 shadow-2xs ring-1 ring-teal-300'
                       : isComplete
-                      ? 'bg-slate-50 border-slate-300 text-slate-800'
-                      : 'bg-white border-slate-200 text-slate-600'
+                      ? 'bg-emerald-50/60 border-emerald-300 text-emerald-900'
+                      : 'bg-white border-slate-200 text-slate-700'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 truncate">
-                      {cat.label}
-                    </span>
+                    <span className="text-xs font-bold truncate">{catLabel}</span>
                     {isComplete ? (
-                      <CheckCircle2 className="w-4 h-4 text-slate-900 shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     ) : (
                       <span className="text-[10px] font-bold text-slate-500">
-                        {countCaptured}/2
+                        {countCaptured}/{cat.slotCount}
                       </span>
                     )}
                   </div>
@@ -810,12 +1038,14 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
                         <button
                           key={slot.key}
                           type="button"
-                          onClick={() => setActiveSlotKey(slot.key)}
-                          className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                          onClick={() => {
+                            setActiveSlotKey(slot.key)
+                          }}
+                          className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center justify-center gap-0.5 ${
                             isTarget
-                              ? 'bg-slate-900 text-white shadow-xs'
+                              ? 'bg-[#055B65] text-white shadow-2xs'
                               : hasPhoto
-                              ? 'bg-slate-700 text-white'
+                              ? 'bg-emerald-600 text-white'
                               : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                           }`}
                         >
@@ -831,181 +1061,43 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
           </div>
         </div>
 
-        {/* Current Active Slot Banner */}
-        <div className="bg-slate-900 text-white rounded-2xl p-3 flex items-center justify-between shadow-md">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center text-white shrink-0">
-              <activeSlot.icon className="w-4 h-4" />
+        {/* Primary Fullscreen Camera Launcher Action Banner */}
+        <div className="bg-white border-2 border-teal-600/30 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-3 text-left w-full sm:w-auto">
+            <div className="w-11 h-11 rounded-2xl bg-teal-50 text-[#055B65] border border-teal-200 flex items-center justify-center shrink-0">
+              <activeSlot.icon className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
+              <p className="text-xs font-bold text-slate-900 leading-tight flex items-center gap-1.5">
                 <span>Capturing {activeSlot.title}</span>
-                <span className="bg-white/20 text-[10px] px-2 py-0.2 rounded-full font-mono">
-                  Slot {activeSlot.slotNumber} of 2
+                <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-0.2 rounded-full font-mono">
+                  {activeSlot.categoryLabel}
                 </span>
               </p>
-              <p className="text-[10px] text-slate-300 leading-tight">
+              <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
                 {activeSlot.subtitle}
               </p>
             </div>
           </div>
 
-          {slotPhotos[activeSlot.key] && (
-            <span className="text-[10px] font-bold bg-white text-slate-900 px-2 py-0.5 rounded-full flex items-center gap-1">
-              <Check className="w-3 h-3" /> Captured
-            </span>
-          )}
-        </div>
-
-        {/* Live Camera Viewfinder Card */}
-        <div className="relative overflow-hidden rounded-3xl border-2 border-slate-300 bg-slate-950 aspect-[4/3] shadow-md flex flex-col items-center justify-center">
-          {/* Active Video Stream */}
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className={`h-full w-full object-cover transition-opacity duration-200 ${
-              cameraActive ? 'opacity-100' : 'opacity-0 hidden'
-            }`}
-          />
-
-          {/* Camera Disabled / Error / Native Fallback State */}
-          {!cameraActive && (
-            <div className="p-5 text-center space-y-3.5 max-w-xs text-white z-10">
-              <div className="w-14 h-14 rounded-2xl bg-white/10 text-white flex items-center justify-center mx-auto border border-white/20 shadow-inner">
-                <Camera className="w-7 h-7" />
-              </div>
-
-              <div>
-                <h3 className="text-sm font-bold text-white">
-                  Snap {activeSlot.title}
-                </h3>
-                <p className="text-[11px] text-slate-300 mt-1 leading-snug">
-                  {cameraError || 'Tap below to take a live photo with your device camera.'}
-                </p>
-              </div>
-
-              {/* 100% Universal Native Phone Camera Button */}
-              <Button
-                type="button"
-                onClick={() => triggerNativeCamera(activeSlotKey)}
-                className="w-full rounded-2xl bg-white hover:bg-slate-100 text-slate-950 font-bold text-xs h-12 shadow-lg cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Camera className="w-4 h-4 text-slate-900" />
-                Take Photo with Camera
-              </Button>
-
-              <div className="flex items-center justify-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={startCamera}
-                  className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer flex items-center gap-1"
-                >
-                  <RefreshCw className="w-3 h-3" /> Try Live Browser Viewfinder
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Live Watermark Preview Banner (Bottom overlay on camera) */}
-          {cameraActive && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-3.5 py-2.5 flex items-center justify-between text-[11px] font-bold text-white z-10">
-              <span className="flex items-center gap-2 drop-shadow-sm">
-                <span className="w-2 h-2 rounded-full bg-slate-300 animate-pulse" />
-                <span>
-                  {activeBrandConfig?.label} · {location} · {department.toUpperCase()} · {activeSlot.categoryLabel.toUpperCase()} #{activeSlot.slotNumber}
-                </span>
-              </span>
-              <span className="text-[10px] text-slate-300 font-mono bg-black/40 px-2 py-0.5 rounded-full border border-white/10">
-                IST WATERMARK
-              </span>
-            </div>
-          )}
-
-          {/* Quick 120ms Shutter Flash */}
-          {flashEffect && (
-            <div className="absolute inset-0 bg-white/70 pointer-events-none transition-opacity duration-100 z-20" />
-          )}
-        </div>
-
-        {/* Browser Permission Help Card (Shows if camera error occurred) */}
-        {!cameraActive && cameraError && (
-          <div className="bg-slate-100 border border-slate-200 rounded-2xl p-3.5 text-left text-xs text-slate-700 space-y-2 shadow-xs">
-            <div className="flex items-center gap-2 font-bold text-slate-900">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>Camera not opening in Chrome?</span>
-            </div>
-            <p className="text-[11px] text-slate-600 leading-relaxed">
-              1. Tap the <strong>🔒 lock</strong> or <strong>⚙️ tune</strong> icon in Chrome&apos;s address bar.<br />
-              2. Tap <strong>Site settings / Permissions</strong> &rarr; Set <strong>Camera</strong> to <strong>Allow</strong>.<br />
-              3. Or simply tap <strong>&quot;Take Photo with Camera&quot;</strong> above to open your phone&apos;s camera directly!
-            </p>
-          </div>
-        )}
-
-        {/* Hidden Canvas for Watermark & WebP Compression */}
-        <canvas ref={canvasRef} className="hidden" />
-
-        {/* Camera Shutter & Action Bar */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-4">
-          <div className="text-left">
-            <p className="text-xs font-bold text-slate-900">
-              {activeSlot.title}
-            </p>
-            <p className="text-[11px] text-slate-500">
-              {slotPhotos[activeSlot.key] ? 'Photo captured (tap to retake)' : 'Ready to capture'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* If live camera stream active, show rapid live shutter */}
-            {cameraActive ? (
-              <>
-                <button
-                  type="button"
-                  onClick={snapPhoto}
-                  disabled={isSnapping}
-                  aria-label={`Take ${activeSlot.title} Photo`}
-                  className="relative w-14 h-14 rounded-full border-4 border-slate-300 flex items-center justify-center bg-transparent active:scale-90 transition-transform cursor-pointer shadow-sm group hover:border-slate-400"
-                >
-                  <span className="w-10 h-10 rounded-full bg-slate-900 group-hover:bg-slate-800 transition-colors shadow-inner flex items-center justify-center text-white">
-                    <Camera className="w-4 h-4" />
-                  </span>
-                </button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => triggerNativeCamera(activeSlotKey)}
-                  className="text-xs h-9 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
-                  title="Use Phone Camera App"
-                >
-                  App
-                </Button>
-              </>
-            ) : (
-              /* If live camera not active, primary big native camera button */
-              <Button
-                type="button"
-                onClick={() => triggerNativeCamera(activeSlotKey)}
-                disabled={isSnapping}
-                className="text-xs h-11 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer shadow-sm flex items-center gap-1.5"
-              >
-                <Camera className="w-4 h-4" />
-                {slotPhotos[activeSlot.key] ? 'Retake Photo' : 'Take Photo'}
-              </Button>
-            )}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Button
+              type="button"
+              onClick={() => openFullscreenCamera(activeSlotKey)}
+              className="flex-1 sm:flex-initial h-11 px-5 rounded-xl bg-[#055B65] hover:bg-[#044850] text-white font-bold text-xs shadow-sm cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Camera className="w-4 h-4" />
+              Open Full-Screen Camera
+            </Button>
           </div>
         </div>
 
-        {/* 6-Photo Structured Slot Grid */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-sm">
+        {/* 6 Structured Photo Slots Grid */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-              <ImageIcon className="w-4 h-4 text-slate-700" />
-              Showroom Photo Checklist ({totalCaptured}/6)
+              <ImageIcon className="w-4 h-4 text-slate-600" />
+              Inspection Photos ({totalCaptured}/6)
             </h3>
             {totalCaptured > 0 && (
               <button
@@ -1022,7 +1114,7 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-            {SLOT_DEFINITIONS.map((slot) => {
+            {slotDefinitions.map((slot) => {
               const photo = slotPhotos[slot.key]
               const isSelected = activeSlotKey === slot.key
 
@@ -1031,25 +1123,28 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
                   key={slot.key}
                   onClick={() => {
                     setActiveSlotKey(slot.key)
-                    if (!photo && !cameraActive) {
-                      triggerNativeCamera(slot.key)
+                    if (!photo) {
+                      openFullscreenCamera(slot.key)
                     }
                   }}
-                  className={`relative rounded-2xl border p-2.5 transition-all cursor-pointer flex flex-col justify-between min-h-[130px] ${
+                  className={`relative rounded-2xl border p-2.5 transition-all cursor-pointer flex flex-col justify-between min-h-[140px] ${
                     isSelected
-                      ? 'border-slate-900 bg-slate-100/70 shadow-xs ring-2 ring-slate-300'
+                      ? 'border-[#055B65] bg-teal-50/40 shadow-2xs ring-2 ring-teal-200'
                       : photo
-                      ? 'border-slate-300 bg-white'
-                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100/80'
+                      ? 'border-slate-200 bg-white'
+                      : 'border-slate-200 bg-slate-50/80 hover:bg-slate-100/80'
                   }`}
                 >
                   {photo ? (
-                    <div className="relative w-full h-20 rounded-xl overflow-hidden mb-2 bg-slate-900 shadow-xs">
+                    <div className="relative w-full h-22 rounded-xl overflow-hidden mb-2 bg-slate-900 shadow-2xs">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={photo.previewUrl} alt={slot.title} className="w-full h-full object-cover" />
-                      
-                      {/* Prominent Label Tag */}
-                      <span className="absolute top-1 left-1 bg-slate-900/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow">
+                      <img
+                        src={photo.previewUrl}
+                        alt={slot.title}
+                        className="w-full h-full object-cover"
+                      />
+
+                      <span className="absolute top-1 left-1 bg-black/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow">
                         {slot.title}
                       </span>
 
@@ -1066,15 +1161,15 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
                       </button>
                     </div>
                   ) : (
-                    <div className="w-full h-20 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 mb-2 bg-white">
+                    <div className="w-full h-22 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 mb-2 bg-white">
                       <slot.icon className="w-5 h-5 mb-1 text-slate-400" />
                       <span className="text-[10px] font-bold text-slate-600">Tap to Snap</span>
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between text-left">
-                    <div>
-                      <p className="text-xs font-bold text-slate-900 leading-tight">
+                  <div className="flex items-center justify-between text-left pt-0.5">
+                    <div className="truncate pr-1">
+                      <p className="text-xs font-bold text-slate-900 leading-tight truncate">
                         {slot.title}
                       </p>
                       <p className="text-[10px] text-slate-500 truncate">
@@ -1083,9 +1178,9 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
                     </div>
 
                     {photo ? (
-                      <CheckCircle2 className="w-4 h-4 text-slate-900 shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     ) : isSelected ? (
-                      <span className="w-2 h-2 rounded-full bg-slate-900 animate-ping" />
+                      <span className="w-2 h-2 rounded-full bg-[#055B65] animate-ping shrink-0" />
                     ) : null}
                   </div>
                 </div>
@@ -1093,20 +1188,22 @@ export function ShowroomUploadForm({ initialBrand }: { initialBrand?: string | n
             })}
           </div>
 
-          {/* Submit Button */}
+          {/* Submit Action */}
           <Button
             type="button"
             onClick={handleSubmit}
             disabled={uploading || totalCaptured === 0}
-            className="w-full h-13 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md cursor-pointer transition-all mt-2"
+            className="w-full h-12 rounded-xl bg-[#055B65] hover:bg-[#044850] text-white font-bold text-sm shadow-sm cursor-pointer transition-all mt-2"
           >
             {uploading ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading {totalCaptured} Photos…
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading {totalCaptured}{' '}
+                Photos…
               </>
             ) : (
               <>
-                <ShieldCheck className="w-4 h-4 mr-2" /> Upload {totalCaptured} {department === 'sales' ? 'Sales' : 'Service'} Photos
+                <ShieldCheck className="w-4 h-4 mr-2" /> Upload {totalCaptured}{' '}
+                {department === 'sales' ? 'Sales' : 'Service'} Photos
               </>
             )}
           </Button>

@@ -204,6 +204,58 @@ export function purposeRequiresNote(purpose: string | null | undefined): boolean
   return String(purpose ?? '').trim() === 'Other'
 }
 
+/**
+ * Was this gate pass a customer test drive?
+ *
+ * ⚠️ ONE definition, here, because two places count it: the gate pass register and the KIA Sales
+ * Report's Test Drives card. If they drift, the same week reports two different numbers and neither
+ * can be defended.
+ *
+ * Measured on the live register (2026-09-15) the only test-drive purposes in use are
+ * 'Test drive with customer' (13) and 'Home test drive with customer' (14). The two 'Customer …'
+ * spellings are the pre-2026 vocabulary kept in GATE_PASS_PURPOSES for backward compatibility, and
+ * old rows still carry them.
+ *
+ * ⚠️ 'Demo vehicle delivery to customer' is deliberately NOT a test drive — the car is being handed
+ * over, not tried out. Nor is 'Showroom visit': the customer never left the forecourt in it.
+ */
+const TEST_DRIVE_PURPOSES = new Set([
+  'test drive with customer',
+  'home test drive with customer',
+  'customer test drive',
+  'customer home demo',
+])
+
+export function isTestDrivePurpose(purpose: string | null | undefined): boolean {
+  const p = String(purpose ?? '').trim().toLowerCase()
+  if (!p) return false
+  if (TEST_DRIVE_PURPOSES.has(p)) return true
+  /*
+   * A substring fallback for spellings nobody has added to the list yet — the purpose field accepts
+   * free text, and 'test' alone is a real stored value that must NOT match, so the phrase is required.
+   */
+  return p.includes('test drive')
+}
+
+/**
+ * What became of a test drive, in the register's own terms.
+ *
+ * ⚠️ 'returned' is the ONLY completed state. A pass sitting at 'out' is a car still on the road: real,
+ * but not yet a finished drive, and counting it as one reports a test drive that may still be
+ * cancelled at the barrier. 'rejected' and 'expired' are not cancellations by the customer and are
+ * counted as neither.
+ */
+export type TestDriveOutcome = 'completed' | 'cancelled' | 'in_progress' | 'other'
+
+export function testDriveOutcome(status: string | null | undefined): TestDriveOutcome {
+  switch (String(status ?? '').trim().toLowerCase()) {
+    case 'returned': return 'completed'
+    case 'cancelled': return 'cancelled'
+    case 'out': return 'in_progress'
+    default: return 'other'
+  }
+}
+
 /** Determines if a gate pass is intended for fuel filling and requires the 3 fuel proof documents. */
 export function isFuelFillingPurpose(purpose: string | null | undefined): boolean {
   if (!purpose) return false

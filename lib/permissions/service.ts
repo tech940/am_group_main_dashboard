@@ -79,7 +79,13 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // v42: removes the AM Triumph brand entirely (owner, 2026-09-12) - the permission group, its grants and the
 //      brand itself. Every v41 snapshot still carries triumph.view, and two users still resolve a brand that
 //      no longer exists, so without the bump both linger for the 75-minute TTL.
-const PERMISSION_CACHE_VERSION = 'v42'
+/*
+ * v43 (2026-09-15): the cross-brand `insurance_analysis` section was removed and replaced by three
+ * brand-owned ones (kia/hyundai/platinum .insurance, each with view + edit). A snapshot cached under
+ * v42 has neither the new keys nor the removal, and the TTL is 75 minutes — without this bump every
+ * logged-in user would keep a stale set for over an hour and read the change as "it didn't work".
+ */
+const PERMISSION_CACHE_VERSION = 'v43'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

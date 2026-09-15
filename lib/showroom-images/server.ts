@@ -320,3 +320,43 @@ export async function getShowroomGallerySessions({
     totalImages: rows.length,
   }
 }
+
+export async function deleteShowroomSession(sessionId: string) {
+  if (!sessionId) {
+    throw new Error('sessionId is required to delete session')
+  }
+
+  // 1. Fetch the records for this session
+  const records = await db
+    .select()
+    .from(showroomImages)
+    .where(eq(showroomImages.sessionId, sessionId))
+
+  if (!records.length) {
+    return { success: true, count: 0 }
+  }
+
+  // 2. Delete storage files
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (supabaseUrl && serviceKey) {
+    for (const record of records) {
+      try {
+        await fetch(`${supabaseUrl}/storage/v1/object/${record.bucketId}/${record.storagePath}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${serviceKey}`,
+            apikey: serviceKey,
+          },
+        })
+      } catch (err) {
+        console.warn(`Failed to delete storage file ${record.storagePath}:`, err)
+      }
+    }
+  }
+
+  // 3. Delete database records
+  await db.delete(showroomImages).where(eq(showroomImages.sessionId, sessionId))
+
+  return { success: true, count: records.length }
+}

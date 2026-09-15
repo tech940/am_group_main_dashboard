@@ -32,6 +32,7 @@ import {
   Compass,
   UserCheck,
   Satellite,
+  Route,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -62,8 +63,10 @@ import { GatePassDetail } from './gate-pass-detail'
 import { GateOutDialog } from './gate-out-dialog'
 import { GateInDialog } from './gate-in-dialog'
 import { FuelProofDialog } from './fuel-proof-dialog'
+import { FuelProofViewerDialog } from './fuel-proof-viewer-dialog'
 import { FleetPanel } from './fleet-panel'
 import { FleetMapCard, type MapFocus } from './fleet-map'
+import { UnaccountedPanel } from './unaccounted-panel'
 import { TrackersPanel } from './trackers-panel'
 import { type GatePassSummary } from '@/lib/gate-pass/metrics'
 import { cn } from '@/lib/utils'
@@ -215,6 +218,9 @@ type PassRow = {
   fuelSlipPath?: string | null
   pumpStartPath?: string | null
   pumpStopPath?: string | null
+  fuelSlipUrl?: string | null
+  pumpStartUrl?: string | null
+  pumpStopUrl?: string | null
   fuelAmount?: string | number | null
   fuelLitres?: string | number | null
   fuelDocsUploadedAt?: string | null
@@ -227,6 +233,13 @@ const TABS = [
   { key: 'fuel_filling', label: 'Fuel Filling', status: '' },
   { key: 'closed', label: 'Completed / Closed', status: 'returned,rejected,cancelled,expired' },
   { key: 'all', label: 'All Passes', status: '' },
+  /*
+   * ⚠️ Not a pass-status filter like the others — it asks a question about CARS, not passes: which
+   * demo car is off the premises with nothing authorising it. It sits here because that is where
+   * somebody goes looking for it, and the table below branches on the key rather than pretending an
+   * empty `status` filters anything.
+   */
+  { key: 'unaccounted', label: 'Out Without Pass', status: '' },
 ] as const
 
 const STATUS_BADGE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
@@ -317,6 +330,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
   const [awaitingMeOnly, setAwaitingMeOnly] = useState<boolean>(false)
   const [search, setSearch] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [createInitialVin, setCreateInitialVin] = useState<string | null>(null)
   const [decisionFor, setDecisionFor] = useState<PassRow | null>(null)
   const [remarks, setRemarks] = useState('')
   const [acting, setActing] = useState(false)
@@ -339,6 +353,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
   const [fuelProofFor, setFuelProofFor] = useState<PassRow | null>(null)
+  const [viewFuelProofFor, setViewFuelProofFor] = useState<PassRow | null>(null)
   const [section, setSection] = useState<'passes' | 'map' | 'fleet' | 'trackers'>('passes')
   /* A car asked for from a pass row. The nonce is what lets the same car be re-opened twice. */
   const [mapFocus, setMapFocus] = useState<MapFocus | null>(null)
@@ -467,6 +482,39 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
     )
   }, [rawPasses, search])
 
+  // Pre-fetch pass details & pre-load images in background so clicking any row/order opens instantly
+  useEffect(() => {
+    if (typeof window === 'undefined' || !rawPasses.length) return
+
+    for (const p of rawPasses) {
+      // 1. Prefetch full pass detail for 0ms modal opening
+      void queryClient.prefetchQuery({
+        queryKey: ['gate-pass-detail', p.id],
+        queryFn: async () => {
+          const res = await fetch(`/api/gate-pass/${p.id}`, { cache: 'no-store' })
+          if (!res.ok) throw new Error('Could not load pass detail')
+          return res.json()
+        },
+        staleTime: 60_000,
+      })
+
+      // 2. Pre-load fuel proof images into the browser cache
+      if (p.fuelSlipUrl) {
+        const img = new Image()
+        img.src = p.fuelSlipUrl
+      }
+      if (p.pumpStartUrl) {
+        const img = new Image()
+        img.src = p.pumpStartUrl
+      }
+      if (p.pumpStopUrl) {
+        const img = new Image()
+        img.src = p.pumpStopUrl
+      }
+    }
+  }, [rawPasses, queryClient])
+
+
   const { data: summaryData } = useQuery({
     queryKey: ['gate-pass-summary', search, selectedDealer, selectedPurpose, startDate, endDate, mineOnly],
     queryFn: async () => {
@@ -525,6 +573,21 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
             subscriptionExpired?: boolean
           }
         }>
+      }>
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  })
+
+  const { data: unaccountedData } = useQuery({
+    queryKey: ['gate-pass-unaccounted'],
+    queryFn: async () => {
+      const res = await fetch('/api/gate-pass/unaccounted', { cache: 'no-store' })
+      if (!res.ok) return null
+      return res.json() as Promise<{
+        offSite: Array<unknown>
+        unknowable: Array<unknown>
+        accountedFor: number
       }>
     },
     staleTime: 60_000,
@@ -1003,6 +1066,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                     ? (data?.rows ?? data?.passes ?? []).filter((p) => isFuelFillingPurpose(p.purpose)).length
                     : t.key === 'closed'
                     ? summary?.closedPasses ?? 0
+                    : t.key === 'unaccounted'
+                    ? unaccountedData?.offSite?.length ?? 0
                     : summary?.total ?? 0
 
                 return (
@@ -1013,7 +1078,11 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                     className={cn(
                       'inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer',
                       active
-                        ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200/80 dark:border-slate-700'
+                        ? t.key === 'unaccounted'
+                          ? 'bg-rose-600 text-white shadow-xs border border-rose-600'
+                          : 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200/80 dark:border-slate-700'
+                        : t.key === 'unaccounted' && count > 0
+                        ? 'text-rose-700 dark:text-rose-400 bg-rose-50/70 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200/80 dark:border-rose-900/60'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
                     )}
                   >
@@ -1022,9 +1091,13 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                       className={cn(
                         'inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-bold rounded-full transition-colors tabular-nums',
                         active
-                          ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300'
+                          ? t.key === 'unaccounted'
+                            ? 'bg-white/20 text-white'
+                            : 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300'
                           : count > 0
-                          ? t.key === 'awaiting'
+                          ? t.key === 'unaccounted'
+                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse'
+                            : t.key === 'awaiting'
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
                             : t.key === 'approved'
                             ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
@@ -1041,199 +1114,224 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
               })}
             </div>
 
-            {/* Search Input */}
-            <div className="relative w-full lg:w-72 shrink-0">
-              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
-              <Input
-                placeholder="Search pass no, vehicle, driver..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
-                  setPage(1)
-                }}
-                className="h-9 pl-8.5 pr-8 text-xs rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-medium"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearch('')
+            {/* Search Input (passes only; unaccounted view has its own dedicated search & branch filters) */}
+            {tab !== 'unaccounted' ? (
+              <div className="relative w-full lg:w-72 shrink-0">
+                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                <Input
+                  placeholder="Search pass no, vehicle, driver..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value)
                     setPage(1)
                   }}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
+                  className="h-9 pl-8.5 pr-8 text-xs rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-medium"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('')
+                      setPage(1)
+                    }}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ) : null}
           </div>
 
-          {/* Secondary Filter Controls Strip */}
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* Branch / Dealership Filter */}
-              <div className="flex items-center gap-1.5">
-                <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" /> Branch:
-                </Label>
-                <Select
-                  value={selectedDealer}
-                  onValueChange={(v) => {
-                    setSelectedDealer(v)
-                    setPage(1)
-                  }}
-                >
-                  <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
-                    <SelectValue placeholder="All Branches" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">All Branches</SelectItem>
-                    {KIA_BRANCH_DEALERS.map((b) => (
-                      <SelectItem key={b.dealerCode} value={b.dealerCode} className="text-xs">
-                        {b.label} ({b.dealerCode})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Purpose Filter */}
-              <div className="flex items-center gap-1.5">
-                <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
-                  <Compass className="w-3.5 h-3.5 text-slate-400" /> Purpose:
-                </Label>
-                <Select
-                  value={selectedPurpose}
-                  onValueChange={(v) => {
-                    setSelectedPurpose(v)
-                    setPage(1)
-                  }}
-                >
-                  <SelectTrigger className="h-8.5 w-44 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
-                    <SelectValue placeholder="All Purposes" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">All Purposes</SelectItem>
-                    {FILTER_PURPOSES.map((p) => (
-                      <SelectItem key={p} value={p} className="text-xs">
-                        {p}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Date Filter */}
-              <div className="flex items-center gap-1.5">
-                <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" /> Date:
-                </Label>
-                <Select
-                  value={dateFilter}
-                  onValueChange={(v) => {
-                    setDateFilter(v)
-                    setPage(1)
-                  }}
-                >
-                  <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
-                    <SelectValue placeholder="All Time" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">All Time</SelectItem>
-                    <SelectItem value="today" className="text-xs">Today</SelectItem>
-                    <SelectItem value="yesterday" className="text-xs">Yesterday</SelectItem>
-                    <SelectItem value="last7days" className="text-xs">Last 7 Days</SelectItem>
-                    <SelectItem value="last30days" className="text-xs">Last 30 Days</SelectItem>
-                    <SelectItem value="custom" className="text-xs">Custom Range</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Custom Date Pickers */}
-              {dateFilter === 'custom' && (
+          {/* Secondary Filter Controls Strip (passes only) */}
+          {tab !== 'unaccounted' && (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Branch / Dealership Filter */}
                 <div className="flex items-center gap-1.5">
-                  <Input
-                    type="date"
-                    value={customStartDate}
-                    onChange={(e) => {
-                      setCustomStartDate(e.target.value)
+                  <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400" /> Branch:
+                  </Label>
+                  <Select
+                    value={selectedDealer}
+                    onValueChange={(v) => {
+                      setSelectedDealer(v)
                       setPage(1)
                     }}
-                    className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
-                  />
-                  <span className="text-xs text-slate-400">to</span>
-                  <Input
-                    type="date"
-                    value={customEndDate}
-                    onChange={(e) => {
-                      setCustomEndDate(e.target.value)
-                      setPage(1)
-                    }}
-                    className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
-                  />
+                  >
+                    <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
+                      <SelectValue placeholder="All Branches" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All Branches</SelectItem>
+                      {KIA_BRANCH_DEALERS.map((b) => (
+                        <SelectItem key={b.dealerCode} value={b.dealerCode} className="text-xs">
+                          {b.label} ({b.dealerCode})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
 
-              {/* Quick Filter: My Passes */}
-              <button
-                type="button"
-                onClick={() => {
-                  setMineOnly((v) => !v)
-                  setPage(1)
-                }}
-                className={cn(
-                  'h-8.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
-                  mineOnly
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 shadow-xs'
-                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                {/* Purpose Filter */}
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                    <Compass className="w-3.5 h-3.5 text-slate-400" /> Purpose:
+                  </Label>
+                  <Select
+                    value={selectedPurpose}
+                    onValueChange={(v) => {
+                      setSelectedPurpose(v)
+                      setPage(1)
+                    }}
+                  >
+                    <SelectTrigger className="h-8.5 w-44 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
+                      <SelectValue placeholder="All Purposes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All Purposes</SelectItem>
+                      {FILTER_PURPOSES.map((p) => (
+                        <SelectItem key={p} value={p} className="text-xs">
+                          {p}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Date Filter */}
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" /> Date:
+                  </Label>
+                  <Select
+                    value={dateFilter}
+                    onValueChange={(v) => {
+                      setDateFilter(v)
+                      setPage(1)
+                    }}
+                  >
+                    <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
+                      <SelectValue placeholder="All Time" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All Time</SelectItem>
+                      <SelectItem value="today" className="text-xs">Today</SelectItem>
+                      <SelectItem value="yesterday" className="text-xs">Yesterday</SelectItem>
+                      <SelectItem value="last7days" className="text-xs">Last 7 Days</SelectItem>
+                      <SelectItem value="last30days" className="text-xs">Last 30 Days</SelectItem>
+                      <SelectItem value="custom" className="text-xs">Custom Range</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Custom Date Pickers */}
+                {dateFilter === 'custom' && (
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => {
+                        setCustomStartDate(e.target.value)
+                        setPage(1)
+                      }}
+                      className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
+                    />
+                    <span className="text-xs text-slate-400">to</span>
+                    <Input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => {
+                        setCustomEndDate(e.target.value)
+                        setPage(1)
+                      }}
+                      className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
+                    />
+                  </div>
                 )}
-              >
-                <User className="w-3 h-3" />
-                My Passes
-              </button>
 
-              {/* Quick Filter: Awaiting Me (if approver) */}
-              {canApprove && (
+                {/* Quick Filter: My Passes */}
                 <button
                   type="button"
                   onClick={() => {
-                    setAwaitingMeOnly((v) => !v)
+                    setMineOnly((v) => !v)
                     setPage(1)
                   }}
                   className={cn(
                     'h-8.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
-                    awaitingMeOnly
-                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                      : 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-100/80'
+                    mineOnly
+                      ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 shadow-xs'
+                      : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                   )}
                 >
-                  <UserCheck className="w-3 h-3" />
-                  Needs My Approval
+                  <User className="w-3 h-3" />
+                  My Passes
                 </button>
-              )}
 
-              {/* Clear / Reset Filters button */}
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="h-8.5 px-2.5 rounded-lg text-xs font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                  title="Reset all filters"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  Reset
-                </button>
-              )}
-            </div>
+                {/* Quick Filter: Awaiting Me (if approver) */}
+                {canApprove && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAwaitingMeOnly((v) => !v)
+                      setPage(1)
+                    }}
+                    className={cn(
+                      'h-8.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
+                      awaitingMeOnly
+                        ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                        : 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-100/80'
+                    )}
+                  >
+                    <UserCheck className="w-3 h-3" />
+                    Needs My Approval
+                  </button>
+                )}
 
-            {/* Active results count indicator */}
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-              Showing <strong>{rows.length}</strong> {rows.length === 1 ? 'pass' : 'passes'}
+                {/* Clear / Reset Filters button */}
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="h-8.5 px-2.5 rounded-lg text-xs font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                    title="Reset all filters"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Reset
+                  </button>
+                )}
+              </div>
+
+              {/* Active results count indicator */}
+              <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                Showing <strong>{rows.length}</strong> {rows.length === 1 ? 'pass' : 'passes'}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/*
+            * "Out Without Pass" asks about CARS, not passes, so it replaces the table body — but it
+            * must stay INSIDE this card. The tab strip is part of this card's controls bar, and an
+            * earlier version hid the whole card: the panel rendered with no tabs above it and no way
+            * back to the other queues.
+            */}
+          {tab === 'unaccounted' ? (
+            <div className="p-4">
+              <UnaccountedPanel
+                onIssueGatePass={(vin) => {
+                  setCreateInitialVin(vin)
+                  setCreateOpen(true)
+                }}
+                onTrackOnMap={(vin) => {
+                  setSection('map')
+                  setMapFocus({ vin, nonce: Date.now() })
+                }}
+              />
+            </div>
+          ) : null}
 
           {/* Clean Modern Table */}
-          <div className="overflow-x-auto">
+          <div className={cn('overflow-x-auto', tab === 'unaccounted' && 'hidden')}>
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400">
                 <tr>
@@ -1241,6 +1339,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Vehicle</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Driver</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Purpose</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Distance</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Status</th>
                   <th className="px-4 py-3 text-right font-semibold text-[11px] uppercase tracking-wider">Action</th>
                 </tr>
@@ -1248,14 +1347,14 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-16 text-center text-slate-500">
                       <Loader2 className="mx-auto h-6 w-6 animate-spin text-indigo-600 mb-2" />
                       <p className="text-xs font-medium">Loading gate passes...</p>
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center">
+                    <td colSpan={7} className="px-4 py-16 text-center">
                       <div className="max-w-xs mx-auto space-y-2">
                         <div className="h-10 w-10 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
                           <Car className="h-5 w-5" />
@@ -1344,21 +1443,29 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                               {row.purpose}
                             </span>
                             {row.purposeNote && (
-                              <div className="text-[11px] text-slate-400 dark:text-slate-500 truncate max-w-[190px]" title={row.purposeNote}>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 break-words leading-tight" title={row.purposeNote}>
                                 {row.purposeNote}
                               </div>
                             )}
                             {isFuelFillingPurpose(row.purpose) && (
-                              <div className="pt-0.5">
-                                {row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded">
-                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proofs Attached
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded">
-                                    <Fuel className="w-2.5 h-2.5 text-amber-600" /> Proofs Pending
-                                  </span>
-                                )}
+                              <div className="pt-0.5 space-y-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded">
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proofs Attached
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded">
+                                      <Fuel className="w-2.5 h-2.5 text-amber-600" /> Proofs Pending
+                                    </span>
+                                  )}
+                                  {row.fuelAmount && (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-100/90 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.5 rounded font-mono shadow-2xs">
+                                      ₹{Number(row.fuelAmount).toLocaleString('en-IN')}
+                                      {row.fuelLitres ? ` (${row.fuelLitres}L)` : ''}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             )}
                             {isOverdueNow && (
@@ -1367,6 +1474,32 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                               </div>
                             )}
                           </div>
+                        </td>
+
+                        {/* Distance Travelled */}
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {row.gateInOdo && row.gateOutOdo && Number(row.gateInOdo) >= Number(row.gateOutOdo) ? (
+                            <div className="space-y-0.5">
+                              <span className="inline-flex items-center gap-1 font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md font-mono text-xs border border-slate-200 dark:border-slate-700 shadow-2xs">
+                                <Route className="h-3 w-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                {(Number(row.gateInOdo) - Number(row.gateOutOdo)).toLocaleString('en-IN')} km
+                              </span>
+                              <div className="text-[10px] text-slate-400 font-mono tracking-tight">
+                                {Number(row.gateOutOdo).toLocaleString('en-IN')} → {Number(row.gateInOdo).toLocaleString('en-IN')}
+                              </div>
+                            </div>
+                          ) : row.status === 'out' && row.gateOutOdo ? (
+                            <div className="space-y-0.5">
+                              <span className="inline-flex items-center gap-1 font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded text-[11px] border border-blue-200 dark:border-blue-800">
+                                <Car className="h-3 w-3 text-blue-500 animate-pulse shrink-0" /> On Road
+                              </span>
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                Out: {Number(row.gateOutOdo).toLocaleString('en-IN')} km
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-xs font-mono">—</span>
+                          )}
                         </td>
 
                         {/* Status */}
@@ -1473,18 +1606,31 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                             </>
                           ) : null}
 
-                          {/* Fuel Proofs upload button for Fuel Filling passes */}
+                          {/* Fuel Proofs view or upload button for Fuel Filling passes */}
                           {isFuelFillingPurpose(row.purpose) ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setFuelProofFor(row)}
-                              title="Upload/Manage 3 Fuel Proofs (Slip, Pump 0.00, Pump Stop)"
-                              className="h-7 px-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 border-amber-200 dark:border-amber-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3"
-                            >
-                              <Fuel className="h-3 w-3 text-amber-600" />
-                              {row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? 'Fuel Proofs' : 'Add Proofs'}
-                            </Button>
+                            row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setViewFuelProofFor(row)}
+                                title="View Verified Fuel Filling Proofs"
+                                className="h-7 px-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3 shadow-2xs"
+                              >
+                                <Fuel className="h-3 w-3 text-emerald-600" />
+                                Fuel Proofs
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setFuelProofFor(row)}
+                                title="Upload Mandatory Fuel Proofs (Slip, Pump 0.00, Pump Stop)"
+                                className="h-7 px-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 border-amber-200 dark:border-amber-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3 shadow-2xs"
+                              >
+                                <Fuel className="h-3 w-3 text-amber-600" />
+                                Add Proofs
+                              </Button>
+                            )
                           ) : null}
 
                           {/*
@@ -1513,6 +1659,9 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                             size="sm"
                             variant="ghost"
                             onClick={() => setDetailId(row.id)}
+                            onMouseEnter={() => prefetchPassDetail(row.id)}
+                            onTouchStart={() => prefetchPassDetail(row.id)}
+                            onFocus={() => prefetchPassDetail(row.id)}
                             title="View details"
                             className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer [&_svg]:size-3.5"
                           >
@@ -1528,8 +1677,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
             </table>
           </div>
 
-          {/* Table Footer with Pagination */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+          {/* Table Footer with Pagination — passes only; the vehicle panel paginates nothing. */}
+          <div hidden={tab === 'unaccounted'} className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
             <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
               {totalCount > 0 ? (
                 <span>
@@ -1643,11 +1792,17 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
 
       <GatePassFormDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o)
+          if (!o) setCreateInitialVin(null)
+        }}
         currentUser={currentUser}
+        initialVin={createInitialVin}
         onCreated={() => {
-          queryClient.invalidateQueries({ queryKey: ['gate-passes'] })
-          queryClient.invalidateQueries({ queryKey: ['gate-pass-summary'] })
+          void queryClient.invalidateQueries({ queryKey: ['gate-passes'] })
+          void queryClient.invalidateQueries({ queryKey: ['gate-pass-summary'] })
+          void queryClient.invalidateQueries({ queryKey: ['gate-pass-unaccounted'] })
+          void queryClient.invalidateQueries({ queryKey: ['gate-pass-fleet'] })
         }}
       />
 
@@ -1687,6 +1842,19 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
           void queryClient.invalidateQueries({ queryKey: ['gate-passes'] })
           void queryClient.invalidateQueries({ queryKey: ['gate-pass-summary'] })
           void refetch()
+        }}
+      />
+
+      <FuelProofViewerDialog
+        open={Boolean(viewFuelProofFor)}
+        onOpenChange={(o) => {
+          if (!o) setViewFuelProofFor(null)
+        }}
+        pass={viewFuelProofFor}
+        onEdit={() => {
+          const p = viewFuelProofFor
+          setViewFuelProofFor(null)
+          setFuelProofFor(p)
         }}
       />
 

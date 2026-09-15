@@ -171,7 +171,7 @@ export function GateOutDialog({ open, onOpenChange, pass, onGateOutSuccess }: Ga
       }}
     >
       <DialogContent
-        className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"
+        className="max-h-[92vh] overflow-y-auto w-[95vw] sm:w-[70vw] max-w-[70vw] sm:max-w-[70vw]"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >

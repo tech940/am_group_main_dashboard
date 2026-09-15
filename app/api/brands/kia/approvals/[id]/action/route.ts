@@ -1,4 +1,4 @@
-import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval, usesVpService } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, firstStageShortLabel, isServiceApproval, usesBranchFirstStage, usesVpService } from '@/lib/approvals/first-stage-approver'
 import { NextResponse } from 'next/server'
 import { VENDOR_PAYMENT_ACTIONABLE_STAGES, approvalStageHistoryLabel } from '@/lib/md-approvals/vendor-payments-stage'
 import { isApprovalVisibleTo } from '@/lib/kia/approval-scope'
@@ -121,9 +121,11 @@ export async function POST(
     const isServiceCategory = isServiceApproval(requestRow.department, requestRow.approvalType)
 
     const isGeneralSalesManager = 
-      ['gsm', 'general_sales_manager', 'sales_manager', 'sales_head', 'general_manager'].includes(userRoleLower) ||
+      ['gsm', 'general_sales_manager', 'sales_manager', 'service_manager', 'sales_head', 'general_manager', 'service_general_manager', 'group_service_manager'].includes(userRoleLower) ||
       userRoleLower.includes('sales_manager') ||
-      userRoleLower.includes('general_sales')
+      userRoleLower.includes('service_manager') ||
+      userRoleLower.includes('general_sales') ||
+      userRoleLower.includes('general_manager')
 
     const isVp = 
       ['vp', 'vice_president', 'vice_pres', 'vp_service', 'service_vp'].includes(userRoleLower) ||
@@ -134,9 +136,13 @@ export async function POST(
 
     if (stage === 'sales_manager') {
       const rowBrand = String(requestRow.brand || 'kia').toLowerCase()
-      if (rowBrand === 'diamond' || rowBrand === 'honda') {
-        // Diamond / Honda: Both Sales and Service first stage goes to VP
-        isAuthorized = isTester || isVp || isSuperUser
+      if (usesBranchFirstStage(rowBrand)) {
+        // Branch first stage (Diamond Honda, Tata, KTM, Bajaj): SM (Sales & Service), VP, GSM can sign both sales & service
+        const allowedRoles = firstStageApproverRolesForTrack(
+          requestRow.brand,
+          isServiceCategory ? 'service' : 'sales',
+        )
+        isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower) || isVp || isGeneralSalesManager
       } else if (isServiceCategory) {
         // SERVICE ORDER: VP (or SuperUser / Admin/Developer)
         isAuthorized = isTester || isVp || isSuperUser

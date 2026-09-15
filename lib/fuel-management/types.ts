@@ -106,6 +106,8 @@ export type DemoCarDrive = {
   status: string
   /** gate_in_odo − gate_out_odo when both are present and the result is not negative. */
   odometerKm: number | null
+  gateOutOdo?: number | null
+  gateInOdo?: number | null
   /** LocoNav distance, only when the trip is reconciled. */
   gpsKm: number | null
 }
@@ -124,6 +126,10 @@ export type DemoCarFuelSummary = {
    */
   lastFillDate: string | null
   lastFillOdometerKm: number | null
+  /** Latest / highest odometer reading recorded on Demo Gate Passes for this vehicle. */
+  lastGatePassOdometerKm: number | null
+  /** Most accurate odometer reading (prefers Demo Gate Pass odometer, falls back to fuel fill odometer). */
+  lastOdometerKm: number | null
   /** Highest gate-in odometer on/after the last approved fill's day, minus that fill's odometer. */
   kmSinceLastFill: number | null
   /**

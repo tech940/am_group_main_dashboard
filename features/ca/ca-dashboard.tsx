@@ -6,7 +6,6 @@ import {
   Loader2,
   ShoppingCart,
   Banknote,
-  Wallet,
   FileText,
   ChevronLeft,
   ChevronRight,
@@ -22,11 +21,9 @@ import {
   Receipt,
   RotateCcw,
   X,
-  FileSpreadsheet,
   Layers,
   ArrowUpRight,
   Clock,
-  ShieldAlert,
   ShieldCheck,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -38,7 +35,6 @@ import { cn } from '@/lib/utils'
 import { formatIndiaDate } from '@/lib/date-time'
 import type {
   CaApprovalRequestRow,
-  CaPettyCashExpenseRow,
   CaPettyCashFundingRow,
   CaPurchaseOrderRow,
   CaSummaryResponse,
@@ -81,8 +77,7 @@ function qs(params: Record<string, string | number | null | undefined>) {
 
 export function CaDashboard() {
   const [branch, setBranch] = useState('all')
-  const [decision, setDecision] = useState<'all' | 'approved' | 'rejected'>('all')
-  const [tab, setTab] = useState<'approvals' | 'petty_expenses' | 'petty_funding' | 'po' | 'summary'>('approvals')
+  const [tab, setTab] = useState<'approvals' | 'petty_funding' | 'po' | 'summary'>('approvals')
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [fromInput, setFromInput] = useState('')
@@ -93,7 +88,7 @@ export function CaDashboard() {
 
   // Drawer / Inspection state
   const [inspectItem, setInspectItem] = useState<{
-    type: 'approval' | 'expense' | 'funding' | 'po'
+    type: 'approval' | 'funding' | 'po'
     data: any
   } | null>(null)
 
@@ -106,14 +101,13 @@ export function CaDashboard() {
     queryFn: () => fetchJson(`/api/ca/summary?${qs({ from: appliedFrom, to: appliedTo })}`),
   })
 
-  // 2. Approvals Query
+  // 2. Approvals Query (MD Approved & Accounts Completed)
   const approvalsQ = useQuery<{ rows: CaApprovalRequestRow[]; pagination: CaPagination }>({
-    queryKey: ['ca', 'approvals', branch, decision, appliedFrom, appliedTo, debouncedSearch, page],
+    queryKey: ['ca', 'approvals', branch, appliedFrom, appliedTo, debouncedSearch, page],
     queryFn: () =>
       fetchJson(
         `/api/ca/approvals?${qs({
           branch,
-          decision,
           from: appliedFrom,
           to: appliedTo,
           search: debouncedSearch,
@@ -124,34 +118,14 @@ export function CaDashboard() {
     enabled: tab === 'approvals',
   })
 
-  // 3. Petty Cash Expenses Query
-  const expensesQ = useQuery<{ dataset: string; rows: CaPettyCashExpenseRow[]; pagination: CaPagination }>({
-    queryKey: ['ca', 'petty_expenses', branch, decision, appliedFrom, appliedTo, debouncedSearch, page],
-    queryFn: () =>
-      fetchJson(
-        `/api/ca/petty-cash?${qs({
-          dataset: 'expenses',
-          branch,
-          decision,
-          from: appliedFrom,
-          to: appliedTo,
-          search: debouncedSearch,
-          page,
-        })}`
-      ),
-    placeholderData: keepPreviousData,
-    enabled: tab === 'petty_expenses',
-  })
-
-  // 4. Petty Cash Funding Query
+  // 3. Petty Cash Funding Query (MD Approved & Accounts Completed)
   const fundingQ = useQuery<{ dataset: string; rows: CaPettyCashFundingRow[]; pagination: CaPagination }>({
-    queryKey: ['ca', 'petty_funding', branch, decision, appliedFrom, appliedTo, debouncedSearch, page],
+    queryKey: ['ca', 'petty_funding', branch, appliedFrom, appliedTo, debouncedSearch, page],
     queryFn: () =>
       fetchJson(
         `/api/ca/petty-cash?${qs({
           dataset: 'funding',
           branch,
-          decision,
           from: appliedFrom,
           to: appliedTo,
           search: debouncedSearch,
@@ -162,14 +136,13 @@ export function CaDashboard() {
     enabled: tab === 'petty_funding',
   })
 
-  // 5. Purchase Orders Query
+  // 4. Purchase Orders Query (MD Approved & Accounts Completed)
   const poQ = useQuery<{ rows: CaPurchaseOrderRow[]; pagination: CaPagination }>({
-    queryKey: ['ca', 'po', branch, decision, appliedFrom, appliedTo, debouncedSearch, page],
+    queryKey: ['ca', 'po', branch, appliedFrom, appliedTo, debouncedSearch, page],
     queryFn: () =>
       fetchJson(
         `/api/ca/purchase-orders?${qs({
           branch,
-          decision,
           from: appliedFrom,
           to: appliedTo,
           search: debouncedSearch,
@@ -184,11 +157,6 @@ export function CaDashboard() {
 
   function onBranch(v: string) {
     setBranch(v)
-    setPage(1)
-  }
-
-  function onDecision(d: 'all' | 'approved' | 'rejected') {
-    setDecision(d)
     setPage(1)
   }
 
@@ -244,7 +212,7 @@ export function CaDashboard() {
   function handleExportCsv() {
     let rows: any[] = []
     let headers: string[] = []
-    let filename = `ca-audit-${tab}-${decision}-${new Date().toISOString().slice(0, 10)}.csv`
+    let filename = `ca-audit-${tab}-${new Date().toISOString().slice(0, 10)}.csv`
 
     if (tab === 'approvals' && approvalsQ.data?.rows) {
       headers = [
@@ -258,7 +226,6 @@ export function CaDashboard() {
         'Type of Payment',
         'MD Decision',
         'MD Approver',
-        'Rejected By',
         'MD Remarks',
         'Payment Status',
         'UTR Number',
@@ -278,7 +245,6 @@ export function CaDashboard() {
         r.typeOfPayment || '',
         r.managementApproval || '',
         r.mdApproverName || '',
-        r.rejectedByName || '',
         r.managementRemarks || '',
         r.paymentStatus || '',
         r.utrNumber || '',
@@ -286,41 +252,6 @@ export function CaDashboard() {
         r.vehicleNumber || '',
         r.createdAt,
         r.documents.bills.length,
-      ])
-    } else if (tab === 'petty_expenses' && expensesQ.data?.rows) {
-      headers = [
-        'Expense No',
-        'Branch',
-        'Location',
-        'Vendor Name',
-        'Department',
-        'Particulars',
-        'Amount',
-        'Status',
-        'Expense Date',
-        'Approved Date',
-        'MD Approver',
-        'Rejected By',
-        'General Approver',
-        'MD Remarks',
-        'Bills Count',
-      ]
-      rows = expensesQ.data.rows.map((r) => [
-        r.expenseNumber,
-        r.branchLabel,
-        r.location || '',
-        r.vendorName || '',
-        r.department || '',
-        r.particulars,
-        r.amount,
-        r.status,
-        r.expenseDate,
-        r.approvedAt || '',
-        r.mdApproverName || '',
-        r.rejectedByName || '',
-        r.approverName || '',
-        r.mdRemarks || '',
-        r.billFiles.length,
       ])
     } else if (tab === 'petty_funding' && fundingQ.data?.rows) {
       headers = [
@@ -334,8 +265,6 @@ export function CaDashboard() {
         'Status',
         'Approved Date',
         'MD Approver',
-        'Rejected By',
-        'General Approver',
         'MD Remarks',
       ]
       rows = fundingQ.data.rows.map((r) => [
@@ -349,8 +278,6 @@ export function CaDashboard() {
         r.status,
         r.approvedAt || '',
         r.mdApproverName || '',
-        r.rejectedByName || '',
-        r.approverName || '',
         r.mdRemarks || '',
       ])
     } else if (tab === 'po' && poQ.data?.rows) {
@@ -366,7 +293,6 @@ export function CaDashboard() {
         'MD Approver',
         'MD Remarks',
         'Approved Date',
-        'Approver Name',
       ]
       rows = poQ.data.rows.map((r) => [
         r.orderNumber,
@@ -380,7 +306,6 @@ export function CaDashboard() {
         r.mdApproverName || '',
         r.mdApprovalRemarks || '',
         r.approvedAt || '',
-        r.approverName || '',
       ])
     }
 
@@ -399,24 +324,8 @@ export function CaDashboard() {
     document.body.removeChild(link)
   }
 
-  // Calculate totals across modules from summary
-  const totalApprovedAmount =
-    (summary?.totals.approvals.approvedAmount || 0) +
-    (summary?.totals.pettyCashSpend.approvedAmount || 0) +
-    (summary?.totals.po.approvedAmount || 0)
-  const totalApprovedCount =
-    (summary?.totals.approvals.approvedCount || 0) +
-    (summary?.totals.pettyCashSpend.approvedCount || 0) +
-    (summary?.totals.po.approvedCount || 0)
-
-  const totalRejectedAmount =
-    (summary?.totals.approvals.rejectedAmount || 0) +
-    (summary?.totals.pettyCashSpend.rejectedAmount || 0) +
-    (summary?.totals.po.rejectedAmount || 0)
-  const totalRejectedCount =
-    (summary?.totals.approvals.rejectedCount || 0) +
-    (summary?.totals.pettyCashSpend.rejectedCount || 0) +
-    (summary?.totals.po.rejectedCount || 0)
+  const totalCompletedAmount = summary?.totals.total.approvedAmount || 0
+  const totalCompletedCount = summary?.totals.total.approvedCount || 0
 
   return (
     <div className="space-y-6 max-w-full pb-16">
@@ -432,7 +341,7 @@ export function CaDashboard() {
                 Chartered Accountant Audit Portal
               </h1>
               <p className="text-xs text-slate-500">
-                Reconciliation & bill verification for MD Approved and Rejected requisitions across all branches
+                Audited financial records completed by Accounts and approved by MD across all branches
               </p>
             </div>
           </div>
@@ -453,33 +362,18 @@ export function CaDashboard() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs">
+        <div className="p-4 rounded-2xl bg-white border border-teal-200/80 shadow-2xs bg-gradient-to-br from-teal-50/40 to-white">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-teal-800 uppercase tracking-wider block">
-              MD Approved Total
+            <span className="text-[11px] font-bold text-teal-900 uppercase tracking-wider block">
+              Total Audited Value
             </span>
             <CheckCircle2 className="w-4 h-4 text-[#055B65]" />
           </div>
           <p className="text-2xl font-black text-slate-900 tabular-nums mt-1.5">
-            {formatCurrency(totalApprovedAmount)}
+            {formatCurrency(totalCompletedAmount)}
           </p>
           <span className="text-[11px] font-bold text-teal-700 mt-1 block">
-            {formatInt(totalApprovedCount)} approved records
-          </span>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider block">
-              Total Rejected
-            </span>
-            <XCircle className="w-4 h-4 text-rose-600" />
-          </div>
-          <p className="text-2xl font-black text-rose-950 tabular-nums mt-1.5">
-            {formatCurrency(totalRejectedAmount)}
-          </p>
-          <span className="text-[11px] font-bold text-rose-700 mt-1 block">
-            {formatInt(totalRejectedCount)} rejected records
+            {formatInt(totalCompletedCount)} completed & approved records
           </span>
         </div>
 
@@ -494,24 +388,37 @@ export function CaDashboard() {
             {formatCurrency(summary?.totals.approvals.approvedAmount || 0)}
           </p>
           <span className="text-[11px] text-slate-500 mt-1 block font-medium">
-            {formatInt(summary?.totals.approvals.approvedCount || 0)} approved ·{' '}
-            {formatInt(summary?.totals.approvals.rejectedCount || 0)} rejected
+            {formatInt(summary?.totals.approvals.approvedCount || 0)} completed payments
           </span>
         </div>
 
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              Petty Cash Spend
+              Petty Cash Funding
             </span>
-            <Wallet className="w-4 h-4 text-teal-700" />
+            <Banknote className="w-4 h-4 text-teal-700" />
           </div>
           <p className="text-2xl font-black text-slate-800 tabular-nums mt-1.5">
-            {formatCurrency(summary?.totals.pettyCashSpend.approvedAmount || 0)}
+            {formatCurrency(summary?.totals.pettyCashFunding.approvedAmount || 0)}
           </p>
           <span className="text-[11px] text-slate-500 mt-1 block font-medium">
-            {formatInt(summary?.totals.pettyCashSpend.approvedCount || 0)} approved ·{' '}
-            {formatInt(summary?.totals.pettyCashSpend.rejectedCount || 0)} rejected
+            {formatInt(summary?.totals.pettyCashFunding.approvedCount || 0)} allocated fundings
+          </span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+              Purchase Orders
+            </span>
+            <ShoppingCart className="w-4 h-4 text-teal-700" />
+          </div>
+          <p className="text-2xl font-black text-slate-800 tabular-nums mt-1.5">
+            {formatCurrency(summary?.totals.po.approvedAmount || 0)}
+          </p>
+          <span className="text-[11px] text-slate-500 mt-1 block font-medium">
+            {formatInt(summary?.totals.po.approvedCount || 0)} completed POs
           </span>
         </div>
       </div>
@@ -519,40 +426,10 @@ export function CaDashboard() {
       {/* Control Toolbar */}
       <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-3.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Decision Selector */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-            <button
-              type="button"
-              onClick={() => onDecision('all')}
-              style={decision === 'all' ? { backgroundColor: '#055B65', color: '#ffffff' } : {}}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                decision === 'all' ? 'text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 bg-transparent'
-              }`}
-            >
-              All Decisions
-            </button>
-            <button
-              type="button"
-              onClick={() => onDecision('approved')}
-              style={decision === 'approved' ? { backgroundColor: '#055B65', color: '#ffffff' } : {}}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                decision === 'approved' ? 'text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 bg-transparent'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Approved by MD
-            </button>
-            <button
-              type="button"
-              onClick={() => onDecision('rejected')}
-              style={decision === 'rejected' ? { backgroundColor: '#e11d48', color: '#ffffff' } : {}}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                decision === 'rejected' ? 'text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 bg-transparent'
-              }`}
-            >
-              <XCircle className="w-3.5 h-3.5" />
-              Rejected
-            </button>
+          {/* Audit Verification Badge */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-teal-50 border border-teal-200 text-teal-950 text-xs font-bold shadow-2xs">
+            <CheckCircle2 className="w-4 h-4 text-teal-700 shrink-0" />
+            <span>Scope: Accounts Completed & MD Approved Orders Only</span>
           </div>
 
           {/* Quick Date Presets */}
@@ -700,25 +577,6 @@ export function CaDashboard() {
 
           <button
             onClick={() => {
-              setTab('petty_expenses')
-              setPage(1)
-            }}
-            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-              tab === 'petty_expenses' ? 'text-teal-900 font-bold' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Wallet className="w-4 h-4" />
-            <span>Petty Cash Expenses</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
-              {summary?.totals.pettyCashSpend.approvedCount || 0}
-            </span>
-            {tab === 'petty_expenses' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#055B65] rounded-full" />
-            )}
-          </button>
-
-          <button
-            onClick={() => {
               setTab('petty_funding')
               setPage(1)
             }}
@@ -779,7 +637,7 @@ export function CaDashboard() {
           loading={approvalsQ.isLoading}
           error={approvalsQ.error as Error | null}
           head={['Request #', 'Branch / Location', 'Vendor / Payee', 'Dept & Type', 'Amount', 'MD Decision & Approver', 'Payment / UTR', 'Date', 'Attached Bills', 'Audit']}
-          empty="No payment approvals found for this filter combination."
+          empty="No completed payment approvals found for this filter combination."
           rows={(approvalsQ.data?.rows || []).map((r) => [
             <div key="req" className="space-y-0.5">
               <span className="font-mono font-bold text-slate-900 text-xs block">
@@ -811,18 +669,11 @@ export function CaDashboard() {
                 status={r.managementApproval}
                 remarks={r.managementRemarks}
                 approverName={r.mdApproverName}
-                rejectedByName={r.rejectedByName}
               />
             </div>,
             <div key="pay" className="space-y-0.5">
-              <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-md inline-block ${
-                  r.paymentStatus === 'COMPLETED'
-                    ? 'bg-teal-50 text-teal-800 border border-teal-200'
-                    : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                {r.paymentStatus || 'PENDING'}
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md inline-block bg-teal-50 text-teal-800 border border-teal-200">
+                {r.paymentStatus || 'COMPLETED'}
               </span>
               {r.utrNumber && (
                 <span className="text-[10px] text-slate-500 block font-mono">UTR: {r.utrNumber}</span>
@@ -857,70 +708,13 @@ export function CaDashboard() {
         />
       )}
 
-      {/* Tab 2: Petty Cash Expenses */}
-      {tab === 'petty_expenses' && (
-        <TableCard
-          loading={expensesQ.isLoading}
-          error={expensesQ.error as Error | null}
-          head={['Expense #', 'Branch / Location', 'Vendor / Payee', 'Particulars & Purpose', 'Amount', 'Status & MD Approver', 'Date', 'Attached Bills', 'Audit']}
-          empty="No petty cash expenses found for this filter combination."
-          rows={(expensesQ.data?.rows || []).map((r) => [
-            <span key="en" className="font-mono font-bold text-slate-900 text-xs">
-              {r.expenseNumber}
-            </span>,
-            <div key="br" className="space-y-0.5">
-              <span className="font-bold text-slate-800 text-xs block">{r.branchLabel}</span>
-              {r.location && <span className="text-[11px] text-slate-500 block">{r.location}</span>}
-            </div>,
-            <span key="v" className="text-xs text-slate-800 font-medium">
-              {r.vendorName || '—'}
-            </span>,
-            <div key="part" className="space-y-0.5 max-w-[220px]">
-              <span className="text-xs text-slate-900 font-semibold block truncate" title={r.particulars}>
-                {r.particulars}
-              </span>
-              <span className="text-[11px] text-slate-500 block truncate" title={r.purpose}>
-                {r.purpose}
-              </span>
-            </div>,
-            <span key="amt" className="font-black text-slate-900 text-xs">
-              {formatCurrency(r.amount)}
-            </span>,
-            <div key="status">
-              <StatusBadge
-                status={r.status}
-                remarks={r.mdRemarks}
-                approverName={r.mdApproverName || r.approverName}
-                rejectedByName={r.rejectedByName}
-              />
-            </div>,
-            <span key="dt" className="text-xs text-slate-600 whitespace-nowrap">
-              {formatDate(r.expenseDate)}
-            </span>,
-            <DocLinks key="docs" onPreview={setPreviewDoc} groups={[['Bill', r.billFiles]]} />,
-            <Button
-              key="inspect"
-              onClick={() => setInspectItem({ type: 'expense', data: r })}
-              size="sm"
-              variant="outline"
-              className="h-7 px-2.5 rounded-lg text-xs font-bold text-teal-800 border-teal-200 hover:bg-teal-50 cursor-pointer"
-            >
-              <Eye className="w-3 h-3 mr-1" /> Inspect
-            </Button>,
-          ])}
-          align={['left', 'left', 'left', 'left', 'right', 'left', 'left', 'left', 'center']}
-          pagination={expensesQ.data?.pagination}
-          onPage={setPage}
-        />
-      )}
-
-      {/* Tab 3: Petty Cash Funding */}
+      {/* Tab 2: Petty Cash Funding */}
       {tab === 'petty_funding' && (
         <TableCard
           loading={fundingQ.isLoading}
           error={fundingQ.error as Error | null}
-          head={['Request #', 'Branch / Location', 'Department & Purpose', 'Requested Amount', 'Allocated', 'Status & MD Approver', 'Approved Date', 'Supporting Files', 'Audit']}
-          empty="No petty cash funding records found for this filter combination."
+          head={['Request #', 'Branch / Location', 'Department & Purpose', 'Requested Amount', 'Allocated', 'Status & MD Approver', 'Approved Date', 'Attached Bills & Docs', 'Audit']}
+          empty="No completed petty cash funding records found for this filter combination."
           rows={(fundingQ.data?.rows || []).map((r) => [
             <span key="rn" className="font-mono font-bold text-slate-900 text-xs">
               {r.requestNumber}
@@ -939,20 +733,26 @@ export function CaDashboard() {
               {formatCurrency(r.requestedAmount)}
             </span>,
             <span key="allocAmt" className="font-black text-teal-900 text-xs">
-              {r.allocatedAmount != null ? formatCurrency(r.allocatedAmount) : '—'}
+              {r.allocatedAmount != null ? formatCurrency(r.allocatedAmount) : formatCurrency(r.requestedAmount)}
             </span>,
             <div key="st">
               <StatusBadge
                 status={r.status}
                 remarks={r.mdRemarks}
-                approverName={r.mdApproverName || r.approverName}
-                rejectedByName={r.rejectedByName}
+                approverName={r.mdApproverName}
               />
             </div>,
             <span key="dt" className="text-xs text-slate-600 whitespace-nowrap">
               {formatDate(r.approvedAt || r.createdAt)}
             </span>,
-            <DocLinks key="docs" onPreview={setPreviewDoc} groups={[['Doc', r.supportingFiles]]} />,
+            <DocLinks
+              key="docs"
+              onPreview={setPreviewDoc}
+              groups={[
+                ['Supporting Doc', r.supportingFiles || []],
+                ['Bill', r.documents?.bills || []],
+              ]}
+            />,
             <Button
               key="inspect"
               onClick={() => setInspectItem({ type: 'funding', data: r })}
@@ -969,13 +769,13 @@ export function CaDashboard() {
         />
       )}
 
-      {/* Tab 4: Purchase Orders */}
+      {/* Tab 3: Purchase Orders */}
       {tab === 'po' && (
         <TableCard
           loading={poQ.isLoading}
           error={poQ.error as Error | null}
           head={['Order #', 'Branch', 'Vendor', 'Dept & Sub-Dept', 'Amount', 'MD Status & Approver', 'Approved Date', 'Documents', 'Audit']}
-          empty="No purchase orders found for this filter combination."
+          empty="No completed purchase orders found for this filter combination."
           rows={(poQ.data?.rows || []).map((r) => [
             <span key="on" className="font-mono font-bold text-slate-900 text-xs">
               {r.orderNumber}
@@ -997,7 +797,7 @@ export function CaDashboard() {
               <StatusBadge
                 status={r.mdApprovalStatus || r.status}
                 remarks={r.mdApprovalRemarks}
-                approverName={r.mdApproverName || r.approverName}
+                approverName={r.mdApproverName}
               />
             </div>,
             <span key="dt" className="text-xs text-slate-600 whitespace-nowrap">
@@ -1028,7 +828,7 @@ export function CaDashboard() {
         />
       )}
 
-      {/* Tab 5: Branch Summary Matrix */}
+      {/* Tab 4: Branch Summary Matrix */}
       {tab === 'summary' && (
         <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xs">
           <div className="border-b border-slate-100 px-5 py-3.5 bg-slate-50/50 flex items-center justify-between">
@@ -1037,7 +837,7 @@ export function CaDashboard() {
                 Cross-Branch Reconciliation Matrix
               </h3>
               <p className="text-[11px] text-slate-500">
-                Audited totals by branch entity for the selected period
+                Audited totals completed by Accounts and approved by MD for the selected period
               </p>
             </div>
           </div>
@@ -1046,12 +846,14 @@ export function CaDashboard() {
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/80">
                   <th className="px-4 py-3 text-left">Branch Entity</th>
-                  <th className="px-4 py-3 text-right">Payment Approvals (Appr / Rej)</th>
+                  <th className="px-4 py-3 text-right">Payment Approvals</th>
                   <th className="px-4 py-3 text-right">Approvals Value</th>
-                  <th className="px-4 py-3 text-right">Petty Cash Spend (Appr / Rej)</th>
-                  <th className="px-4 py-3 text-right">PC Spend Value</th>
-                  <th className="px-4 py-3 text-right">Purchase Orders (Appr / Rej)</th>
+                  <th className="px-4 py-3 text-right">Petty Cash Funding</th>
+                  <th className="px-4 py-3 text-right">Funding Value</th>
+                  <th className="px-4 py-3 text-right">Purchase Orders</th>
                   <th className="px-4 py-3 text-right">PO Value</th>
+                  <th className="px-4 py-3 text-right bg-teal-50/60 text-teal-950 font-black">Total Completed</th>
+                  <th className="px-4 py-3 text-right bg-teal-50/60 text-teal-950 font-black">Total Value</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1059,29 +861,29 @@ export function CaDashboard() {
                   (b) => (
                     <tr key={b.branch} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-4 py-3 text-left font-bold text-slate-900">{b.branchLabel}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-700">
-                        <span className="text-teal-800 font-bold">{b.approvals.approvedCount}</span>
-                        {' / '}
-                        <span className="text-rose-600 font-bold">{b.approvals.rejectedCount}</span>
+                      <td className="px-4 py-3 text-right font-bold text-teal-800">
+                        {b.approvals.approvedCount}
                       </td>
                       <td className="px-4 py-3 text-right font-black text-slate-900">
                         {formatCurrency(b.approvals.approvedAmount)}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-700">
-                        <span className="text-teal-800 font-bold">{b.pettyCashSpend.approvedCount}</span>
-                        {' / '}
-                        <span className="text-rose-600 font-bold">{b.pettyCashSpend.rejectedCount}</span>
+                      <td className="px-4 py-3 text-right font-bold text-teal-800">
+                        {b.pettyCashFunding.approvedCount}
                       </td>
                       <td className="px-4 py-3 text-right font-black text-slate-900">
-                        {formatCurrency(b.pettyCashSpend.approvedAmount)}
+                        {formatCurrency(b.pettyCashFunding.approvedAmount)}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-700">
-                        <span className="text-teal-800 font-bold">{b.po.approvedCount}</span>
-                        {' / '}
-                        <span className="text-rose-600 font-bold">{b.po.rejectedCount}</span>
+                      <td className="px-4 py-3 text-right font-bold text-teal-800">
+                        {b.po.approvedCount}
                       </td>
                       <td className="px-4 py-3 text-right font-black text-slate-900">
                         {formatCurrency(b.po.approvedAmount)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-black text-teal-950 bg-teal-50/40">
+                        {b.total.approvedCount}
+                      </td>
+                      <td className="px-4 py-3 text-right font-black text-teal-950 bg-teal-50/40">
+                        {formatCurrency(b.total.approvedAmount)}
                       </td>
                     </tr>
                   )
@@ -1107,8 +909,6 @@ export function CaDashboard() {
                   <span className="text-[11px] text-slate-500 uppercase font-mono">
                     {inspectItem.type === 'approval'
                       ? inspectItem.data.requestNo || inspectItem.data.id
-                      : inspectItem.type === 'expense'
-                      ? inspectItem.data.expenseNumber
                       : inspectItem.type === 'funding'
                       ? inspectItem.data.requestNumber
                       : inspectItem.data.orderNumber}
@@ -1133,7 +933,7 @@ export function CaDashboard() {
                   </span>
                   <span className="text-xl font-black text-slate-900">
                     {formatCurrency(
-                      inspectItem.data.amount || inspectItem.data.requestedAmount || 0
+                      inspectItem.data.amount || inspectItem.data.allocatedAmount || inspectItem.data.requestedAmount || 0
                     )}
                   </span>
                 </div>
@@ -1153,7 +953,7 @@ export function CaDashboard() {
                   <div>
                     <span className="text-slate-400 block font-semibold">Date</span>
                     <span className="font-bold text-slate-800">
-                      {formatDate(inspectItem.data.createdAt || inspectItem.data.expenseDate)}
+                      {formatDate(inspectItem.data.approvedAt || inspectItem.data.createdAt)}
                     </span>
                   </div>
                 </div>
@@ -1168,7 +968,7 @@ export function CaDashboard() {
                   <div className="flex justify-between">
                     <span className="text-slate-500">Payee / Vendor:</span>
                     <span className="font-bold text-slate-900">
-                      {inspectItem.data.vendorName || '—'}
+                      {inspectItem.data.vendorName || inspectItem.data.purpose || '—'}
                     </span>
                   </div>
                   {inspectItem.data.gst && (
@@ -1232,7 +1032,7 @@ export function CaDashboard() {
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-teal-950 block">Managing Director (MD):</span>
                           <span className="text-[11px] font-bold text-teal-800">
-                            {inspectItem.data.managementApproval || 'Not Acted'}
+                            {inspectItem.data.managementApproval || 'Approved'}
                           </span>
                         </div>
                         {inspectItem.data.mdApproverName && (
@@ -1283,7 +1083,7 @@ export function CaDashboard() {
                     </>
                   )}
 
-                  {(inspectItem.type === 'expense' || inspectItem.type === 'funding' || inspectItem.type === 'po') && (
+                  {(inspectItem.type === 'funding' || inspectItem.type === 'po') && (
                     <div className="p-2.5 rounded-xl bg-teal-50/50 border border-teal-200 space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-teal-950 block">Status Decision:</span>
@@ -1291,20 +1091,11 @@ export function CaDashboard() {
                           {inspectItem.data.mdApprovalStatus || inspectItem.data.status}
                         </span>
                       </div>
-                      {(inspectItem.data.mdApproverName ||
-                        inspectItem.data.rejectedByName ||
-                        inspectItem.data.approverName) && (
+                      {inspectItem.data.mdApproverName && (
                         <div className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold pt-0.5">
-                          <span className="text-slate-500 text-[11px]">
-                            {inspectItem.data.status === 'rejected' ||
-                            inspectItem.data.mdApprovalStatus === 'denied'
-                              ? 'Rejected By:'
-                              : 'MD Approver:'}
-                          </span>
+                          <span className="text-slate-500 text-[11px]">Approved By (MD):</span>
                           <span className="text-teal-950 font-bold">
-                            {inspectItem.data.mdApproverName ||
-                              inspectItem.data.rejectedByName ||
-                              inspectItem.data.approverName}
+                            {inspectItem.data.mdApproverName}
                           </span>
                         </div>
                       )}
@@ -1357,29 +1148,34 @@ export function CaDashboard() {
                     </div>
                   )}
 
-                  {inspectItem.type === 'expense' && (
-                    <div className="flex flex-wrap gap-2">
-                      {inspectItem.data.billFiles.map((url: string, i: number) => (
-                        <DocumentCard
-                          key={url}
-                          label={`Expense Bill ${i + 1}`}
-                          url={url}
-                          onPreview={(url) => setPreviewDoc({ title: `Expense Bill ${i + 1}`, url })}
-                        />
-                      ))}
-                    </div>
-                  )}
-
                   {inspectItem.type === 'funding' && (
-                    <div className="flex flex-wrap gap-2">
-                      {inspectItem.data.supportingFiles.map((url: string, i: number) => (
-                        <DocumentCard
-                          key={url}
-                          label={`Supporting Doc ${i + 1}`}
-                          url={url}
-                          onPreview={(url) => setPreviewDoc({ title: `Supporting Doc ${i + 1}`, url })}
-                        />
-                      ))}
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        {Array.isArray(inspectItem.data.supportingFiles) &&
+                          inspectItem.data.supportingFiles.map((url: string, i: number) => (
+                            <DocumentCard
+                              key={url}
+                              label={`Supporting Doc ${i + 1}`}
+                              url={url}
+                              onPreview={(url) => setPreviewDoc({ title: `Supporting Doc ${i + 1}`, url })}
+                            />
+                          ))}
+                        {Array.isArray(inspectItem.data.documents?.bills) &&
+                          inspectItem.data.documents.bills.map((url: string, i: number) => (
+                            <DocumentCard
+                              key={url}
+                              label={`Bill / Receipt ${i + 1}`}
+                              url={url}
+                              onPreview={(url) => setPreviewDoc({ title: `Bill / Receipt ${i + 1}`, url })}
+                            />
+                          ))}
+                      </div>
+                      {(!inspectItem.data.supportingFiles || inspectItem.data.supportingFiles.length === 0) &&
+                        (!inspectItem.data.documents?.bills || inspectItem.data.documents.bills.length === 0) && (
+                          <p className="text-[11px] text-slate-400 italic">
+                            No attached bills or supporting files found for this funding request.
+                          </p>
+                        )}
                     </div>
                   )}
 
@@ -1413,6 +1209,63 @@ export function CaDashboard() {
                   )}
                 </div>
               </div>
+
+              {/* Itemized Expenses Breakdown for Petty Cash Funding */}
+              {inspectItem.type === 'funding' &&
+                Array.isArray(inspectItem.data.expenses) &&
+                inspectItem.data.expenses.length > 0 && (
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        Itemized Expense Receipts ({inspectItem.data.expenses.length} Records)
+                      </h4>
+                      <Receipt className="w-3.5 h-3.5 text-teal-700" />
+                    </div>
+                    <div className="space-y-2">
+                      {inspectItem.data.expenses.map((exp: any, idx: number) => (
+                        <div
+                          key={exp.id || idx}
+                          className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-slate-900 text-xs">
+                              {exp.expenseNumber || `Expense #${idx + 1}`}
+                            </span>
+                            <span className="font-black text-slate-900 text-xs">
+                              {formatCurrency(exp.amount)}
+                            </span>
+                          </div>
+                          {exp.particulars && (
+                            <p className="text-[11px] text-slate-600 font-medium">
+                              {exp.particulars}
+                            </p>
+                          )}
+                          {Array.isArray(exp.billFiles) && exp.billFiles.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {exp.billFiles.map((bUrl: string, bIdx: number) => (
+                                <button
+                                  key={bUrl}
+                                  type="button"
+                                  onClick={() =>
+                                    setPreviewDoc({
+                                      title: `${exp.expenseNumber || 'Expense'} - Bill ${bIdx + 1}`,
+                                      url: bUrl,
+                                    })
+                                  }
+                                  className="inline-flex items-center gap-1 rounded-md bg-teal-50 border border-teal-200 px-2 py-0.5 text-[10px] font-bold text-teal-800 hover:bg-teal-100 cursor-pointer transition-colors"
+                                >
+                                  <Receipt className="w-3 h-3 text-teal-700" />
+                                  Bill {bIdx + 1}
+                                  <ArrowUpRight className="w-2.5 h-2.5 opacity-60" />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
             </div>
 
             {/* Drawer Footer */}

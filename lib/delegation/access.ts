@@ -31,11 +31,11 @@ export function concreteBrands(brand?: string | null): string[] {
   return parseBrands(brand).filter((b) => b !== 'all')
 }
 
-/** Group-wide = sees/assigns across ALL brands: developer/admin/md/ceo roles. EAs are scoped to their own tasks. */
+/** Group-wide = sees/assigns across ALL brands: developer/admin/ceo roles. MDs and EAs are scoped to their own tasks. */
 export function isGroupWideDelegation(user: { role?: string | null; brand?: string | null }): boolean {
   const role = norm(user.role)
-  if (role === 'developer' || role === 'admin' || role === 'md' || role === 'ceo') return true
-  if (role === 'ea' || role === 'eba') return false
+  if (role === 'developer' || role === 'admin' || role === 'ceo') return true
+  if (role === 'md' || role === 'ea' || role === 'eba') return false
   return parseBrands(user.brand).includes('all')
 }
 
@@ -70,10 +70,11 @@ export function canDelegateTasks(role?: string | null): boolean {
 }
 
 /**
- * May see EVERY task across EVERY brand — group-wide viewers only (MD, CEO, Developer, Admin).
+ * May see EVERY task across EVERY MD and brand — super admins only (CEO, Developer, Admin).
  * Each EA only sees tasks they have delegated or that are assigned to them (cannot see other EAs' tasks).
+ * Each MD only sees tasks assigned to their MD profile (mdUserId), created by them, or assigned to them (cannot see other MDs' tasks).
  */
 export function canViewAllDelegationTasks(user: { role?: string | null; brand?: string | null }): boolean {
   const role = norm(user.role)
-  return role === 'developer' || role === 'admin' || role === 'md' || role === 'ceo'
+  return role === 'developer' || role === 'admin' || role === 'ceo'
 }

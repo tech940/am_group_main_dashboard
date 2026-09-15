@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useDeferredValue, useMemo, ComponentProps } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useState, useDeferredValue, useMemo, useEffect, useCallback, ComponentProps } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ShieldCheck,
@@ -62,6 +62,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { RenewalPipelinePanel } from '@/features/insurance/renewal-pipeline-panel'
+import {
+  TablePager,
+  pageSlice,
+  isInsurancePageSize,
+  DEFAULT_INSURANCE_PAGE_SIZE,
+  type InsurancePageSize,
+} from '@/features/insurance/table-pager'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -226,6 +233,11 @@ const WORKSPACE_TABS: { id: DashboardWorkspace; label: string; icon: any; badge?
   { id: 'register', label: 'Policy Register', icon: FileText },
 ]
 
+/** A `?tab=` value is only a workspace if this list says so — see the note on activeWorkspace. */
+function isWorkspaceId(value: unknown): value is DashboardWorkspace {
+  return typeof value === 'string' && WORKSPACE_TABS.some((tab) => tab.id === value)
+}
+
 type BrandCapabilities = {
   has64vb?: boolean
   hasNcb?: boolean
@@ -346,28 +358,95 @@ function previousMonthRangeIst(): { start: string; end: string } {
   return { start: `${year}-${mm}-01`, end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}` }
 }
 
-export function InsuranceClient({ initialSearchParams }: { initialSearchParams: SearchParamsInput }) {
+export function InsuranceClient({
+  initialSearchParams,
+  lockedBrand,
+  canEdit = false,
+  currentUserName = '',
+}: {
+  initialSearchParams: SearchParamsInput
+  /**
+   * Fixed by the ROUTE on the three brand pages. When set, the brand switcher is not rendered and
+   * the viewer cannot reach another dealership's book by clicking — which is the point of splitting
+   * the section apart. The server page resolves it; this is never derived in the browser.
+   */
+  lockedBrand?: InsuranceType
+  /** `<brand>.insurance.edit`, resolved on the server. Every write re-checks it in the API. */
+  canEdit?: boolean
+  /** Who an update is recorded as. Display only — the API attributes writes from the session. */
+  currentUserName?: string
+}) {
   const queryClient = useQueryClient()
   const router = useRouter()
   const pathname = usePathname()
 
   // Primary Brand Type: Hyundai | Platinum | Kia
   const [insuranceType, setInsuranceType] = useState<InsuranceType>(() => {
+    if (lockedBrand) return lockedBrand
     const raw = Array.isArray(initialSearchParams.type) ? initialSearchParams.type[0] : initialSearchParams.type
     return raw === 'platinum' || raw === 'kia' ? raw : 'hyundai'
   })
 
-  // Active Workspace Tab
-  const [activeWorkspace, setActiveWorkspace] = useState<DashboardWorkspace>('overview')
+  /*
+   * ── The open workspace lives in the URL (`?tab=`) ─────────────────────────────────────────────
+   *
+   * Refreshing used to drop you back on Executive Overview, and a link to what you were looking at
+   * could not be sent to anyone. The tab is now a query parameter: it survives a refresh, it is
+   * shareable, and the browser's back button steps through the tabs you opened.
+   *
+   * ⚠️ The value from the URL is VALIDATED against WORKSPACE_TABS before it reaches state. It picks a
+   * workspace and indexes styling, so an unknown string out of a hand-edited URL must fall back to
+   * the default rather than render an empty page.
+   *
+   * ⚠️ `router.replace`, and deliberately only on a CLICK. In Next 16 a URL change costs a server
+   * round-trip whichever API is used: `window.history.replaceState` is patched by the app router and
+   * refetches any route that is not fully cached — which every route here is not, because they all
+   * read cookies in their guard. That is affordable per deliberate tab click and would NOT be
+   * affordable per keystroke, which is why the filters are not in the URL yet: they need the debounce
+   * treatment first.
+   */
+  const searchParams = useSearchParams()
+  const [activeWorkspace, setActiveWorkspace] = useState<DashboardWorkspace>(() => {
+    const raw = Array.isArray(initialSearchParams.tab) ? initialSearchParams.tab[0] : initialSearchParams.tab
+    return isWorkspaceId(raw) ? raw : 'overview'
+  })
 
-  // Date Filter States (All History default)
+  /* Back and forward change the URL without going through the click handler, so follow it. The
+     equality check is what stops state -> URL -> state becoming a loop. */
+  useEffect(() => {
+    const fromUrl = searchParams.get('tab')
+    const next: DashboardWorkspace = isWorkspaceId(fromUrl) ? fromUrl : 'overview'
+    setActiveWorkspace((current) => (current === next ? current : next))
+  }, [searchParams])
+
+  const selectWorkspace = useCallback((next: DashboardWorkspace) => {
+    setActiveWorkspace(next)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('tab', next)
+    /* scroll: false — the tab strip sits mid-page, and jumping to the top on every click loses it. */
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }, [pathname, router, searchParams])
+
+  /*
+   * ── Date filter: THIS MONTH by default (owner's instruction, 2026-09-15) ───────────────────────
+   *
+   * The page used to open on all history — 26,665 Hyundai policies back to Dec 2022 — so every KPI
+   * was a four-year total and nobody could see what the month had actually done. It now opens on the
+   * current IST month; "All history" is one click away in the date menu.
+   *
+   * ⚠️ THIS FILTER PICKS POLICIES, IT DOES NOT SHORTEN HISTORY. It reaches the summary and the policy
+   * register only. Retention, cohorts and the renewal pipeline are deliberately NOT given it — they
+   * ask "did this car come back", which is a question about a vehicle's whole life. Passing a month
+   * into them would mark every returning customer as new, which is a bug this section has already
+   * had once and is why the window function lives outside the filter.
+   */
   const defaultMonthRange = useMemo(() => currentMonthRangeIst(), [])
-  const [appliedStartDate, setAppliedStartDate] = useState<string>('')
-  const [appliedEndDate, setAppliedEndDate] = useState<string>('')
+  const [appliedStartDate, setAppliedStartDate] = useState<string>(defaultMonthRange.start)
+  const [appliedEndDate, setAppliedEndDate] = useState<string>(defaultMonthRange.end)
   const [appliedYear, setAppliedYear] = useState<string>('all')
 
-  const [pendingStartDate, setPendingStartDate] = useState<string>('')
-  const [pendingEndDate, setPendingEndDate] = useState<string>('')
+  const [pendingStartDate, setPendingStartDate] = useState<string>(defaultMonthRange.start)
+  const [pendingEndDate, setPendingEndDate] = useState<string>(defaultMonthRange.end)
   const [pendingYear, setPendingYear] = useState<string>('all')
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false)
@@ -449,6 +528,34 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   // Policy Register Search & Sorting State
   const [tableSearch, setTableSearch] = useState<string>('')
   const [tablePage, setTablePage] = useState<number>(1)
+
+  /*
+   * ── Pagination: 50 a page, switchable to 100 or 500 ───────────────────────────────────────────
+   *
+   * Every queue table used to render its whole result. On the live Hyundai book that is 646 rows in
+   * Upcoming Expiries; the CRM table dodged it with a hidden `.slice(0, 50)`, which is worse — rows
+   * 51 and beyond simply did not exist as far as anyone could tell, with nothing on screen saying so.
+   *
+   * ⚠️ ONE page size, SEPARATE page numbers. Picking 500 means "more everywhere"; being on page 7 of
+   * the call queue does not mean page 7 of the register. Sharing the page number across tabs would
+   * land a tab change on an empty page.
+   */
+  const [pageSize, setPageSize] = useState<InsurancePageSize>(() => {
+    const raw = Array.isArray(initialSearchParams.perPage) ? initialSearchParams.perPage[0] : initialSearchParams.perPage
+    return isInsurancePageSize(raw) ? (Number(raw) as InsurancePageSize) : DEFAULT_INSURANCE_PAGE_SIZE
+  })
+  const [upcomingPage, setUpcomingPage] = useState<number>(1)
+  const [lostPage, setLostPage] = useState<number>(1)
+  const [crmPage, setCrmPage] = useState<number>(1)
+
+  /* A bigger page changes what page 1 means, so every table restarts rather than stranding a viewer. */
+  const changePageSize = useCallback((next: InsurancePageSize) => {
+    setPageSize(next)
+    setUpcomingPage(1)
+    setLostPage(1)
+    setCrmPage(1)
+    setTablePage(1)
+  }, [])
   const [tableSort, setTableSort] = useState<string>('policy_issue_date')
   const [tableSortDir, setTableSortDir] = useState<'asc' | 'desc'>('desc')
   const deferredSearch = useDeferredValue(tableSearch)
@@ -506,11 +613,30 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
     staleTime: 5 * 60 * 1000,
   })
 
-  // Renewal Pipeline Query (Upcoming 30d, Lost 6m & CRM)
+  /*
+   * Renewal Pipeline (Upcoming 30d, Lost 6m & CRM).
+   *
+   * ⚠️ `cache: 'no-store'` IS LOAD-BEARING — without it, saving a call disposition did not show up in
+   * the table until the page was reloaded.
+   *
+   * components/providers/query-provider.tsx patches window.fetch and caches EVERY GET to /api/** in a
+   * module-level Map for 30 minutes. A mutation evicts only entries sharing the first four path
+   * segments, so a POST to /api/insurance/crm clears `api/insurance/crm` and leaves
+   * `api/insurance/renewals` untouched — even though the renewal pipeline is what merges the CRM
+   * record onto each row (lib/insurance/renewals.ts:265). React Query invalidated and refetched
+   * correctly; the patched fetch answered from its own store, so the refetch changed nothing.
+   *
+   * That cache also silently overrides any staleTime shorter than 30 minutes. This is a live calling
+   * queue whose rows say "0d left", so the 2-minute staleTime below is the policy that should win.
+   * Opting out here restores it. Do not remove this without re-testing a disposition save.
+   */
   const renewalsPipelineQuery = useQuery<RenewalPipeline>({
     queryKey: ['insurance-pipeline', insuranceType],
     queryFn: async () => {
-      const res = await fetch(`/api/insurance/renewals?brands=${insuranceType}&lookaheadDays=90&lapsedDays=180`)
+      const res = await fetch(
+        `/api/insurance/renewals?brands=${insuranceType}&lookaheadDays=90&lapsedDays=180`,
+        { cache: 'no-store' },
+      )
       if (!res.ok) throw new Error('Failed to fetch renewal pipeline')
       return res.json()
     },
@@ -522,7 +648,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
     const params = new URLSearchParams({
       type: insuranceType,
       page: String(tablePage),
-      pageSize: '25',
+      pageSize: String(pageSize),
       sort: tableSort,
       direction: tableSortDir,
     })
@@ -543,6 +669,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
   }, [
     insuranceType,
     tablePage,
+    pageSize,
     tableSort,
     tableSortDir,
     deferredSearch,
@@ -779,6 +906,17 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
     return all.filter((r) => (r.disposition || 'PENDING') === crmDispositionFilter)
   }, [pipelineData?.rows, crmDispositionFilter])
 
+  /*
+   * The page actually shown. `pageSlice` CLAMPS the page number: narrowing a filter while on page 9
+   * would otherwise slice past the end and render an empty table that reads as "no results".
+   */
+  const upcomingPaged = useMemo(
+    () => pageSlice(upcomingFilteredRows, upcomingPage, pageSize),
+    [upcomingFilteredRows, upcomingPage, pageSize],
+  )
+  const lostPaged = useMemo(() => pageSlice(lost6mRows, lostPage, pageSize), [lost6mRows, lostPage, pageSize])
+  const crmPaged = useMemo(() => pageSlice(crmRows, crmPage, pageSize), [crmRows, crmPage, pageSize])
+
   // Open CRM Modal Helper
   const openCrmModal = (lead: RenewalDue) => {
     setSelectedCrmLead(lead)
@@ -833,8 +971,11 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
         {/* ── STICKY TOP CONTROL HEADER ── */}
         <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 p-3.5 shadow-xs backdrop-blur-md space-y-3">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            {/* 1. Brand Segmented Control */}
-            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200 dark:border-slate-700/80 overflow-x-auto">
+            {/* 1. Brand Segmented Control — absent when the route already fixed the brand. */}
+            <div className={cn(
+              'flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200 dark:border-slate-700/80 overflow-x-auto',
+              lockedBrand && 'hidden',
+            )}>
               {BRAND_TABS.map((b) => {
                 const isActive = insuranceType === b.id
                 return (
@@ -1201,7 +1342,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
 
           {/* Card 3: True Renewal Retention Rate */}
           <div
-            onClick={() => setActiveWorkspace('renewals')}
+            onClick={() => selectWorkspace('renewals')}
             className="group cursor-pointer rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-xs transition-all hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-700"
           >
             <div className="flex items-center justify-between">
@@ -1227,7 +1368,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
 
           {/* Card 4: Upcoming 30-Day Expiries */}
           <div
-            onClick={() => setActiveWorkspace('upcoming')}
+            onClick={() => selectWorkspace('upcoming')}
             className="group cursor-pointer rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-xs transition-all hover:shadow-md hover:border-amber-300 dark:hover:border-amber-700"
           >
             <div className="flex items-center justify-between">
@@ -1255,7 +1396,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
         {/* ── WORKSPACE SEGMENTED TABS (6 WORKSPACES) ── */}
         <Tabs
           value={activeWorkspace}
-          onValueChange={(v) => setActiveWorkspace(v as DashboardWorkspace)}
+          onValueChange={(v) => selectWorkspace(v as DashboardWorkspace)}
           className="space-y-4"
         >
           <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-xs">
@@ -1401,7 +1542,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      setActiveWorkspace('register')
+                      selectWorkspace('register')
                       setAppliedPolicyType('all')
                       setDraftPolicyType('all')
                       setTablePage(1)
@@ -1714,7 +1855,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {upcomingFilteredRows.map((r) => {
+                        {upcomingPaged.rows.map((r) => {
                           const dispConfig = CRM_DISPOSITIONS.find((d) => d.id === (r.disposition || 'PENDING'))
                           return (
                             <TableRow
@@ -1782,6 +1923,15 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                     </Table>
                   </div>
                 )}
+                <TablePager
+                  page={upcomingPaged.page}
+                  totalPages={upcomingPaged.totalPages}
+                  totalRows={upcomingFilteredRows.length}
+                  pageSize={pageSize}
+                  onPageChange={setUpcomingPage}
+                  onPageSizeChange={changePageSize}
+                  noun="policies expiring"
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -1819,7 +1969,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {lost6mRows.map((r) => {
+                        {lostPaged.rows.map((r) => {
                           const dispConfig = CRM_DISPOSITIONS.find((d) => d.id === (r.disposition || 'PENDING'))
                           return (
                             <TableRow
@@ -1881,6 +2031,15 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                     </Table>
                   </div>
                 )}
+                <TablePager
+                  page={lostPaged.page}
+                  totalPages={lostPaged.totalPages}
+                  totalRows={lost6mRows.length}
+                  pageSize={pageSize}
+                  onPageChange={setLostPage}
+                  onPageSizeChange={changePageSize}
+                  noun="lost customers"
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -1936,7 +2095,7 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {crmRows.slice(0, 50).map((r) => {
+                        {crmPaged.rows.map((r) => {
                           const dispConfig = CRM_DISPOSITIONS.find((d) => d.id === (r.disposition || 'PENDING'))
                           return (
                             <TableRow
@@ -1993,6 +2152,15 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                     </Table>
                   </div>
                 )}
+                <TablePager
+                  page={crmPaged.page}
+                  totalPages={crmPaged.totalPages}
+                  totalRows={crmRows.length}
+                  pageSize={pageSize}
+                  onPageChange={setCrmPage}
+                  onPageSizeChange={changePageSize}
+                  noun="calls in the queue"
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -2275,33 +2443,24 @@ export function InsuranceClient({ initialSearchParams }: { initialSearchParams: 
                 </div>
 
                 {/* Pagination Controls */}
-                {policiesQuery.data?.totalPages > 1 && (
-                  <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
-                    <span className="text-xs text-slate-500 font-bold">
-                      Page {policiesQuery.data.page} of {policiesQuery.data.totalPages} ({policiesQuery.data.totalCount} policies)
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setTablePage((prev) => Math.max(1, prev - 1))}
-                        disabled={tablePage === 1}
-                        className="h-7 text-xs font-bold cursor-pointer"
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" /> Previous
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setTablePage((prev) => Math.min(policiesQuery.data.totalPages, prev + 1))}
-                        disabled={tablePage === policiesQuery.data.totalPages}
-                        className="h-7 text-xs font-bold cursor-pointer"
-                      >
-                        Next <ChevronRight className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                {/*
+                  * ⚠️ Rendered whether or not there is more than one page — unlike the old pager,
+                  * which hid itself at `totalPages > 1`. The per-page control lives in here, so
+                  * hiding it on a short result took away the only way to ASK for more rows.
+                  *
+                  * This register is paginated on the SERVER (/api/insurance/policies takes page and
+                  * pageSize), so the counts come from the response rather than from a local slice.
+                  */}
+                <TablePager
+                  page={policiesQuery.data?.page || 1}
+                  totalPages={Math.max(1, policiesQuery.data?.totalPages || 1)}
+                  totalRows={policiesQuery.data?.totalCount || 0}
+                  pageSize={pageSize}
+                  onPageChange={setTablePage}
+                  onPageSizeChange={changePageSize}
+                  noun="policies"
+                  className="px-0"
+                />
               </>
             )}
           </CardContent>

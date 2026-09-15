@@ -111,7 +111,7 @@ console.log('\n4d) Diamond Honda, Tata, KTM and Bajaj: ONE branch stage, signed 
  * deliberately not track-dependent — that is what stops a blank department stranding a request.
  * 'diamond' is included because rows may still carry the pre-merge brand value.
  */
-const BRANCH_ROLES = ['general_manager', 'sales_manager', 'vp', 'group_service_manager']
+const BRANCH_ROLES = ['general_manager', 'service_general_manager', 'sales_manager', 'service_manager', 'vp', 'group_service_manager']
 for (const brand of ['diamond', 'honda', 'tata', 'ktm', 'bajaj']) {
   for (const dept of ['Sales', 'Service', '', 'Marketing']) {
     check(JSON.stringify(firstStageApproverRoles(brand, dept)) === JSON.stringify(BRANCH_ROLES),
@@ -163,10 +163,16 @@ check(!canApproveFirstStage('service_general_manager', 'hyundai', 'Service'),
   'the hyundai service GSM no longer holds that stage — it moved to VP')
 check(!canApproveFirstStage('service_general_manager', 'platinum', 'Service'),
   'the platinum service GSM no longer holds that stage either')
-// ⚠️ The General Service Manager is NOT one of the four. The two GSMs in the rule are the General SALES
-// Manager and the GROUP Service Manager; this is a third role and does not sign the branch stage.
-check(!canApproveFirstStage('service_general_manager', 'tata', 'Service'),
-  'the General Service Manager does not sign the branch stage')
+check(canApproveFirstStage('service_general_manager', 'tata', 'Service'),
+  'the General Service Manager can sign the branch stage')
+check(canApproveFirstStage('service_manager', 'honda', 'Service'),
+  'the Service Manager can sign the honda service stage')
+check(canApproveFirstStage('sales_manager', 'honda', 'Service'),
+  'the Sales Manager can sign the honda service stage')
+check(canApproveFirstStage('service_manager', 'honda', 'Sales'),
+  'the Service Manager can sign the honda sales stage')
+check(canApproveFirstStage('sales_manager', 'honda', 'Sales'),
+  'the Sales Manager can sign the honda sales stage')
 
 console.log('\n8) The track-aware form agrees with the department-aware one')
 for (const brand of ['kia', 'hyundai', 'platinum', 'mg', 'diamond', 'honda']) {
@@ -187,14 +193,14 @@ check(firstStageLabel('mg', 'Sales') === 'GSM Approval (Sales)', 'mg sales reads
 check(firstStageLabel('mg', 'Service') === 'VP Approval', 'mg service reads "VP Approval"')
 for (const brand of ['diamond', 'honda', 'tata', 'ktm', 'bajaj']) {
   for (const dept of ['Sales', 'Service', '']) {
-    check(firstStageLabel(brand, dept) === 'Manager Approval',
-      `${brand} + ${JSON.stringify(dept)} reads "Manager Approval" — five roles sign it, so it is named for the stage`)
+    check(firstStageLabel(brand, dept) === 'SM / VP / GSM Approval',
+      `${brand} + ${JSON.stringify(dept)} reads "SM / VP / GSM Approval" — any of SM / VP / GSM can sign it`)
   }
 }
 check(firstStageLabel('platinum', 'Service') === 'DGM Approval',
   'platinum service names the DGM Approval')
-check(firstStageShortLabel('tata', 'Service') === 'Manager',
-  'the branch stage records "Manager", not one role\'s name')
+check(firstStageShortLabel('tata', 'Service') === 'SM / VP / GSM',
+  'the branch stage records "SM / VP / GSM"')
 check(!firstStageLabel('platinum', '').includes('CEO'), 'platinum never reads "CEO"')
 
 console.log('\n10) The VP signs at the branch brands now — but only under the canonical role key')
@@ -282,8 +288,8 @@ check(firstStageShortLabel('platinum', 'SERVICE') === 'DGM',
 // role name into the permanent history would name a desk that may not be the one that signed.
 for (const brand of ['honda', 'tata', 'ktm', 'bajaj']) {
   for (const dept of ['SALES', 'SERVICE', '']) {
-    check(firstStageShortLabel(brand, dept) === 'Manager',
-      `${brand} + ${JSON.stringify(dept)} records 'Manager'`)
+    check(firstStageShortLabel(brand, dept) === 'SM / VP / GSM',
+      `${brand} + ${JSON.stringify(dept)} records 'SM / VP / GSM'`)
   }
 }
 // The approval TYPE alone can make a request service work, so the label must read it too.

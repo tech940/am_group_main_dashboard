@@ -23,6 +23,7 @@ import {
   Plus,
   Sparkles,
   ExternalLink,
+  Eye,
   Trash2,
 } from 'lucide-react'
 import {
@@ -125,6 +126,7 @@ export function FuelFormDialog({
     new Date().toISOString().slice(0, 10)
   )
   const [fuelFilledLtrs, setFuelFilledLtrs] = useState<string>('')
+  const [totalCost, setTotalCost] = useState<string>('')
   const [slips, setSlips] = useState<SlipItem[]>([])
   const [remarks, setRemarks] = useState<string>('')
 
@@ -164,6 +166,7 @@ export function FuelFormDialog({
       setCurrentKmReading(initialData.currentKmReading || '')
       setFuelFilledDate(formatDateForInput(initialData.fuelFilledDate) || new Date().toISOString().slice(0, 10))
       setFuelFilledLtrs(String(initialData.fuelFilledLtrs || ''))
+      setTotalCost(initialData.totalCost !== undefined && initialData.totalCost !== null ? String(initialData.totalCost) : '')
       setRemarks(initialData.remarks || '')
 
       const parsedUrls = parseFuelSlipUrls(initialData.fuelSlipUrl)
@@ -196,6 +199,7 @@ export function FuelFormDialog({
     setCurrentKmReading('')
     setFuelFilledDate(new Date().toISOString().slice(0, 10))
     setFuelFilledLtrs('')
+    setTotalCost('')
     setSlips([])
     setRemarks('')
     setLastFuelAutoDetected(null)
@@ -417,6 +421,8 @@ export function FuelFormDialog({
           ? JSON.stringify(slips.map((s) => s.url))
           : slips[0].url
 
+      const costNum = totalCost.trim() ? parseFloat(totalCost) : null
+
       const payload = {
         location,
         fuelRequiredFor,
@@ -427,6 +433,7 @@ export function FuelFormDialog({
         currentKmReading: currentKmReading.trim() || null,
         fuelFilledDate: formatDateForInput(fuelFilledDate),
         fuelFilledLtrs: ltrsNum,
+        totalCost: costNum !== null && !isNaN(costNum) && costNum > 0 ? costNum : null,
         fuelSlipUrl,
         remarks: remarks.trim() || null,
       }
@@ -739,8 +746,8 @@ export function FuelFormDialog({
             </div>
           </div>
 
-          {/* Row 5: Fuel Filled Date & Liters Filled */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Row 5: Fuel Filled Date, Quantity & Optional Cost */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -767,7 +774,7 @@ export function FuelFormDialog({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Fuel Filled Quantity (Liters) <span className="text-rose-500">*</span>
+                Quantity (Liters) <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <Input
@@ -781,6 +788,27 @@ export function FuelFormDialog({
                   required
                 />
                 <span className="absolute right-3 top-2.5 text-xs text-slate-500 font-bold">Ltrs</span>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Total Fuel Cost (₹)
+                </label>
+                <span className="text-[11px] text-slate-400 font-normal">optional</span>
+              </div>
+              <div className="relative">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 750"
+                  value={totalCost}
+                  onChange={(e) => setTotalCost(e.target.value)}
+                  className="h-10 text-xs rounded-xl pr-8 font-medium"
+                />
+                <span className="absolute right-3 top-2.5 text-xs text-slate-500 font-bold">₹</span>
               </div>
             </div>
           </div>
@@ -834,10 +862,10 @@ export function FuelFormDialog({
                             href={slip.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700 dark:text-teal-400 hover:underline"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-800 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 px-2 py-0.5 rounded border border-teal-200/80 dark:border-teal-800 hover:bg-teal-100 transition-colors cursor-pointer mt-0.5"
                           >
-                            <span>View</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
+                            <Eye className="w-3 h-3" />
+                            <span>Preview</span>
                           </a>
                         </div>
                       </div>

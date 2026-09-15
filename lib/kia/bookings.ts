@@ -129,12 +129,12 @@ export type KiaBookingStatus = typeof KIA_BOOKING_STATUSES[number]
 
 export type BookingListInput = {
   search?: string | null
-  dealerCode?: string | null
-  model?: string | null
-  variant?: string | null
-  color?: string | null
-  status?: string | null
-  consultant?: string | null
+  dealerCode?: string | string[] | null
+  model?: string | string[] | null
+  variant?: string | string[] | null
+  color?: string | string[] | null
+  status?: string | string[] | null
+  consultant?: string | string[] | null
   startDate?: string | null
   endDate?: string | null
   page?: number | null
@@ -831,13 +831,39 @@ export async function markKiaTransferMissing(): Promise<void> {
 // markKiaTransferMissing — now run ONLY from the scheduled job: POST /api/brands/kia/maintenance
 // (`npm run kia:maintenance:scheduler`). Reads are read-only.)
 
+function splitFilterValues(raw: string | string[] | null | undefined): string[] {
+  if (!raw) return []
+  const arr = Array.isArray(raw) ? raw : String(raw).split(',')
+  return arr
+    .map((v) => text(v))
+    .filter((v) => Boolean(v) && v.toLowerCase() !== 'all' && v.toLowerCase() !== 'all_with_delivered')
+}
+
 function listFilters(input: BookingListInput) {
   const filters = [isNull(kiaBookings.deletedAt)]
-  const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
-  if (dealerCode) filters.push(eq(kiaBookings.dealerCode, dealerCode))
+  
+  // Multi-dealer filter
+  const rawDealer = input.dealerCode
+  const dealers = splitFilterValues(rawDealer)
+    .map((d) => normalizeKiaDealerCode(d))
+    .filter((d): d is NonNullable<ReturnType<typeof normalizeKiaDealerCode>> => Boolean(d))
+  if (dealers.length === 1) {
+    filters.push(eq(kiaBookings.dealerCode, dealers[0]))
+  } else if (dealers.length > 1) {
+    filters.push(inArray(kiaBookings.dealerCode, dealers))
+  }
+
   // Branch boundary: a dealer-scoped user can never see another branch's bookings.
   if (input.allowedDealers && input.allowedDealers.length) filters.push(inArray(kiaBookings.dealerCode, input.allowedDealers))
-  if (text(input.model) && text(input.model).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.model, text(input.model)))
+  
+  // Multi-model filter
+  const models = splitFilterValues(input.model)
+  if (models.length === 1) {
+    filters.push(ilike(kiaBookings.model, models[0]))
+  } else if (models.length > 1) {
+    filters.push(or(...models.map((m) => ilike(kiaBookings.model, m)))!)
+  }
+
   if (text(input.variant) && text(input.variant).toLowerCase() !== 'all') {
     const v = text(input.variant)
     if (v === '—') {
@@ -867,137 +893,194 @@ function listFilters(input: BookingListInput) {
     `)
   }
 
-  if (text(input.status) && text(input.status).toLowerCase() === 'today') {
-    /*
-     * ⚠️ 'today' is in PSEUDO_STATUS_FILTERS, so it falls through EVERY branch of the else-if chain
-     * further down — including the final one that applies ne(status,'delivered') to the active list.
-     * The result: Booked Today was the one view in the module with no status exclusion at all, and
-     * a booking created and delivered on the same day sat in a work queue with nothing left to do.
-     *
-     * It surfaced when four August retail sales were backfilled as bookings: created today, already
-     * delivered, and every one of them landed in Booked Today.
-     *
-     * Cancelled is excluded on the same reasoning. The KPI count below carries an identical pair of
-     * exclusions — if these two ever disagree the card and the tab disagree.
-     */
-    filters.push(sql`kia_bookings.created_at >= ${istTodayStart()}`)
-    filters.push(sql`kia_bookings.status NOT IN ('delivered', 'cancelled')`)
-  }
-
-  if (text(input.status) && text(input.status).toLowerCase() === 'not_in_stock') {
-    filters.push(sql`
-      (
-        kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
-        /*
-         * Same IDT exclusion the KPI subquery applies. A booking whose inter-dealer transfer is
-         * already settled ('arranged' / 'cannot_arrange') is no longer an open stock question.
-         * Without this the card and the tab it opens disagreed by 5 bookings.
-         */
-        AND (kia_bookings.metadata->'idtArrangement'->>'status' IS NULL
-             OR kia_bookings.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
-        AND (
-          (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
-          OR
-          (
-            NOT EXISTS (
-              SELECT 1 FROM kia_vehicle_allocations va
-              WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
-            )
-            AND NOT ${kiaMatchingStockExists(
-              'kia_bookings.model',
-              'kia_bookings.variant',
-              "coalesce(kia_bookings.color, kia_bookings.metadata->>'color')",
-            )}
-          )
-        )
-      )
-    `)
-  } else if (text(input.status) && text(input.status).toLowerCase() === 'in_stock') {
-    filters.push(sql`
-      (
-        kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
-        /*
-         * Same IDT exclusion the KPI subquery applies. A booking whose inter-dealer transfer is
-         * already settled ('arranged' / 'cannot_arrange') is no longer an open stock question.
-         * Without this the card and the tab it opens disagreed by 5 bookings.
-         */
-        AND (kia_bookings.metadata->'idtArrangement'->>'status' IS NULL
-             OR kia_bookings.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
-        AND NOT (
-          (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
-          OR
-          (
-            NOT EXISTS (
-              SELECT 1 FROM kia_vehicle_allocations va
-              WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
-            )
-            AND NOT ${kiaMatchingStockExists(
-              'kia_bookings.model',
-              'kia_bookings.variant',
-              "coalesce(kia_bookings.color, kia_bookings.metadata->>'color')",
-            )}
-          )
-        )
-      )
-    `)
-  } else if (text(input.status) && text(input.status).toLowerCase() === 'md_remarks') {
-    filters.push(sql`(
-      EXISTS (
-        SELECT 1 FROM kia_booking_activity act
-        WHERE act.booking_id = kia_bookings.id
-        AND (
-          act.description ILIKE '%[MD%' OR act.description ILIKE '%MD remark%' OR act.description ILIKE '%MD:%' OR act.title ILIKE '%[MD%' OR act.title ILIKE '%MD remark%'
-          OR (
-            (act.actor_role ILIKE '%md%' OR act.actor_role ILIKE '%management%' OR act.actor_role ILIKE '%developer%' OR act.actor_role ILIKE '%ceo%')
-            AND act.title NOT ILIKE 'follow-up%'
-            AND act.title NOT ILIKE 'booking%'
-            AND act.title NOT ILIKE 'status%'
-            AND act.title NOT ILIKE 'quick approved%'
-            AND act.title NOT ILIKE 'approved%'
-            AND act.title NOT ILIKE 'marked as%'
-            AND (act.description IS NOT NULL AND length(trim(coalesce(act.description, ''))) > 3)
-          )
-        )
-      )
-      OR (kia_bookings.notes ILIKE '%[MD%' OR kia_bookings.notes ILIKE '%MD remark%' OR kia_bookings.notes ILIKE '%MD:%')
-      OR (
-        kia_bookings.metadata->'remarks' IS NOT NULL 
-        AND (
-          kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"MD"%'
-          OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"DEVELOPER"%'
-          OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"MANAGEMENT"%'
-          OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"CEO"%'
-          OR kia_bookings.metadata->>'remarks' ILIKE '%[MD%'
-          OR kia_bookings.metadata->>'remarks' ILIKE '%MD remark%'
-          OR kia_bookings.metadata->>'remarks' ILIKE '%MD:%'
-        )
-      )
-    )`)
-  } else if (text(input.status) && (text(input.status).toLowerCase() === 'vehicle_allocated' || text(input.status).toLowerCase() === 'payment_pending')) {
-    filters.push(inArray(kiaBookings.status, ['vehicle_allocated', 'transferring']))
-  } else if (
-    text(input.status) &&
-    !PSEUDO_STATUS_FILTERS.has(text(input.status).toLowerCase()) &&
-    text(input.status).toLowerCase() !== 'all' &&
-    text(input.status).toLowerCase() !== 'all_with_delivered'
-  ) {
-    filters.push(eq(kiaBookings.status, normalizeStatus(input.status)))
-  } else if (!input.status || text(input.status).toLowerCase() === 'all') {
+  // Multi-status filter
+  const statuses = splitFilterValues(input.status)
+  if (statuses.length === 0) {
     // Active CRM list view excludes delivered bookings so delivered bookings reside in the Delivered section tab
     filters.push(ne(kiaBookings.status, 'delivered'))
+  } else if (statuses.length === 1) {
+    const st = statuses[0].toLowerCase()
+    if (st === 'today') {
+      filters.push(sql`kia_bookings.created_at >= ${istTodayStart()}`)
+      filters.push(sql`kia_bookings.status NOT IN ('delivered', 'cancelled')`)
+    } else if (st === 'not_in_stock') {
+      filters.push(sql`
+        (
+          kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
+          AND (kia_bookings.metadata->'idtArrangement'->>'status' IS NULL
+               OR kia_bookings.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
+          AND (
+            (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
+            OR
+            (
+              NOT EXISTS (
+                SELECT 1 FROM kia_vehicle_allocations va
+                WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
+              )
+              AND NOT ${kiaMatchingStockExists(
+                'kia_bookings.model',
+                'kia_bookings.variant',
+                "coalesce(kia_bookings.color, kia_bookings.metadata->>'color')",
+              )}
+            )
+          )
+        )
+      `)
+    } else if (st === 'in_stock') {
+      filters.push(sql`
+        (
+          kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
+          AND (kia_bookings.metadata->'idtArrangement'->>'status' IS NULL
+               OR kia_bookings.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
+          AND NOT (
+            (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
+            OR
+            (
+              NOT EXISTS (
+                SELECT 1 FROM kia_vehicle_allocations va
+                WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
+              )
+              AND NOT ${kiaMatchingStockExists(
+                'kia_bookings.model',
+                'kia_bookings.variant',
+                "coalesce(kia_bookings.color, kia_bookings.metadata->>'color')",
+              )}
+            )
+          )
+        )
+      `)
+    } else if (st === 'md_remarks') {
+      filters.push(sql`(
+        EXISTS (
+          SELECT 1 FROM kia_booking_activity act
+          WHERE act.booking_id = kia_bookings.id
+          AND (
+            act.description ILIKE '%[MD%' OR act.description ILIKE '%MD remark%' OR act.description ILIKE '%MD:%' OR act.title ILIKE '%[MD%' OR act.title ILIKE '%MD remark%'
+            OR (
+              (act.actor_role ILIKE '%md%' OR act.actor_role ILIKE '%management%' OR act.actor_role ILIKE '%developer%' OR act.actor_role ILIKE '%ceo%')
+              AND act.title NOT ILIKE 'follow-up%'
+              AND act.title NOT ILIKE 'booking%'
+              AND act.title NOT ILIKE 'status%'
+              AND act.title NOT ILIKE 'quick approved%'
+              AND act.title NOT ILIKE 'approved%'
+              AND act.title NOT ILIKE 'marked as%'
+              AND (act.description IS NOT NULL AND length(trim(coalesce(act.description, ''))) > 3)
+            )
+          )
+        )
+        OR (kia_bookings.notes ILIKE '%[MD%' OR kia_bookings.notes ILIKE '%MD remark%' OR kia_bookings.notes ILIKE '%MD:%')
+        OR (
+          kia_bookings.metadata->'remarks' IS NOT NULL 
+          AND (
+            kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"MD"%'
+            OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"DEVELOPER"%'
+            OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"MANAGEMENT"%'
+            OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"CEO"%'
+            OR kia_bookings.metadata->>'remarks' ILIKE '%[MD%'
+            OR kia_bookings.metadata->>'remarks' ILIKE '%MD remark%'
+            OR kia_bookings.metadata->>'remarks' ILIKE '%MD:%'
+          )
+        )
+      )`)
+    } else if (st === 'vehicle_allocated' || st === 'payment_pending') {
+      filters.push(inArray(kiaBookings.status, ['vehicle_allocated', 'transferring']))
+    } else if (!PSEUDO_STATUS_FILTERS.has(st)) {
+      filters.push(eq(kiaBookings.status, normalizeStatus(st)))
+    }
+  } else {
+    const statusClauses: SQL[] = []
+    for (const rawSt of statuses) {
+      const st = rawSt.toLowerCase()
+      if (st === 'today') {
+        statusClauses.push(sql`(kia_bookings.created_at >= ${istTodayStart()} AND kia_bookings.status NOT IN ('delivered', 'cancelled'))`)
+      } else if (st === 'not_in_stock') {
+        statusClauses.push(sql`(
+          kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
+          AND (kia_bookings.metadata->'idtArrangement'->>'status' IS NULL
+               OR kia_bookings.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
+          AND (
+            (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
+            OR
+            (
+              NOT EXISTS (
+                SELECT 1 FROM kia_vehicle_allocations va
+                WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
+              )
+              AND NOT ${kiaMatchingStockExists(
+                'kia_bookings.model',
+                'kia_bookings.variant',
+                "coalesce(kia_bookings.color, kia_bookings.metadata->>'color')",
+              )}
+            )
+          )
+        )`)
+      } else if (st === 'in_stock') {
+        statusClauses.push(sql`(
+          kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
+          AND (kia_bookings.metadata->'idtArrangement'->>'status' IS NULL
+               OR kia_bookings.metadata->'idtArrangement'->>'status' NOT IN ('arranged', 'cannot_arrange'))
+          AND NOT (
+            (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
+            OR
+            (
+              NOT EXISTS (
+                SELECT 1 FROM kia_vehicle_allocations va
+                WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
+              )
+              AND NOT ${kiaMatchingStockExists(
+                'kia_bookings.model',
+                'kia_bookings.variant',
+                "coalesce(kia_bookings.color, kia_bookings.metadata->>'color')",
+              )}
+            )
+          )
+        )`)
+      } else if (st === 'md_remarks') {
+        statusClauses.push(sql`(
+          EXISTS (
+            SELECT 1 FROM kia_booking_activity act
+            WHERE act.booking_id = kia_bookings.id
+            AND (
+              act.description ILIKE '%[MD%' OR act.description ILIKE '%MD remark%' OR act.description ILIKE '%MD:%' OR act.title ILIKE '%[MD%' OR act.title ILIKE '%MD remark%'
+              OR (
+                (act.actor_role ILIKE '%md%' OR act.actor_role ILIKE '%management%' OR act.actor_role ILIKE '%developer%' OR act.actor_role ILIKE '%ceo%')
+                AND act.title NOT ILIKE 'follow-up%'
+                AND act.title NOT ILIKE 'booking%'
+                AND act.title NOT ILIKE 'status%'
+                AND act.title NOT ILIKE 'quick approved%'
+                AND act.title NOT ILIKE 'approved%'
+                AND act.title NOT ILIKE 'marked as%'
+                AND (act.description IS NOT NULL AND length(trim(coalesce(act.description, ''))) > 3)
+              )
+            )
+          )
+          OR (kia_bookings.notes ILIKE '%[MD%' OR kia_bookings.notes ILIKE '%MD remark%' OR kia_bookings.notes ILIKE '%MD:%')
+          OR (
+            kia_bookings.metadata->'remarks' IS NOT NULL 
+            AND (
+              kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"MD"%'
+              OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"DEVELOPER"%'
+              OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"MANAGEMENT"%'
+              OR kia_bookings.metadata->>'remarks' ILIKE '%"authorRole":"CEO"%'
+              OR kia_bookings.metadata->>'remarks' ILIKE '%[MD%'
+              OR kia_bookings.metadata->>'remarks' ILIKE '%MD remark%'
+              OR kia_bookings.metadata->>'remarks' ILIKE '%MD:%'
+            )
+          )
+        )`)
+      } else if (st === 'vehicle_allocated' || st === 'payment_pending') {
+        statusClauses.push(sql`kia_bookings.status IN ('vehicle_allocated', 'transferring')`)
+      } else if (!PSEUDO_STATUS_FILTERS.has(st)) {
+        statusClauses.push(sql`kia_bookings.status = ${normalizeStatus(st)}`)
+      }
+    }
+    if (statusClauses.length > 0) {
+      filters.push(or(...statusClauses)!)
+    }
   }
 
-  /*
-   * WHICH DATE the range applies to depends on what is being listed.
-   *
-   * ⚠️ For the Delivered view it is delivered_at, not created_at. "Delivered · August" means cars
-   * that went out in August, not bookings that were RAISED in August and have since been delivered.
-   * Measured: 11 vs 3 — and the Delivered CARD counts the former, so keying the list on created_at
-   * puts an 11 above a table of 3. That is the card/tab mismatch this module keeps regressing into.
-   *
-   * Everything else is a pipeline stage, where "when was this booked" is the right question.
-   */
-  const dateColumn = text(input.status).toLowerCase() === 'delivered'
+  const hasDeliveredInStatuses = statuses.some((s) => s.toLowerCase() === 'delivered')
+  const dateColumn = (statuses.length === 1 && hasDeliveredInStatuses)
     ? sql`kia_bookings.delivered_at`
     : sql`kia_bookings.created_at`
 
@@ -1005,12 +1088,16 @@ function listFilters(input: BookingListInput) {
     filters.push(sql`${dateColumn} >= ${istDayStart(text(input.startDate))}`)
   }
   if (text(input.endDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.endDate))) {
-    // Strictly-less-than the next IST midnight — the old <= form double-counted a booking sitting
-    // exactly on the boundary instant into both adjacent ranges.
     filters.push(sql`${dateColumn} < ${istDayEnd(text(input.endDate))}`)
   }
 
-  if (text(input.consultant) && text(input.consultant).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.consultantName, text(input.consultant)))
+  // Multi-consultant filter
+  const consultants = splitFilterValues(input.consultant)
+  if (consultants.length === 1) {
+    filters.push(ilike(kiaBookings.consultantName, consultants[0]))
+  } else if (consultants.length > 1) {
+    filters.push(or(...consultants.map((c) => ilike(kiaBookings.consultantName, c)))!)
+  }
 
   // Sales Executives (and any non-privileged role) only ever see their own
   // bookings — matched by creator id, consultant email, OR consultant name.

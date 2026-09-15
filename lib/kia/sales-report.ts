@@ -23,6 +23,7 @@ import type {
   SourceKey,
   TemperatureKey,
 } from '@/lib/kia/sales-report-types'
+import { countGatePassTestDrives, type GatePassTestDrives } from '@/lib/gate-pass/test-drives'
 import { KIA_BRANCH_DEALERS, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { getSalesStockSource } from '@/lib/brands/sales-stock-sources'
 
@@ -732,6 +733,9 @@ function buildKpi(
     comparisonContext?: string | null
     trendDirection?: 'higher_is_better' | 'lower_is_better'
     changeBase?: { current: number; previous: number }
+    /* Carried through untouched — see SalesReportKpi.gatePass for why it is never folded into `value`. */
+    gatePass?: GatePassTestDrives
+    previousGatePass?: GatePassTestDrives
   } = {}
 ) {
   const changeCurrent = options.changeBase?.current ?? value
@@ -753,6 +757,8 @@ function buildKpi(
     changePct: pct,
     changeLabel: formatPercent(pct),
     trendDirection: options.trendDirection ?? 'higher_is_better',
+    gatePass: options.gatePass,
+    previousGatePass: options.previousGatePass,
   } satisfies SalesReportKpi
 }
 
@@ -1058,6 +1064,31 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
       const previousLostRows = previousEnquiryRows.filter(isLostEnquiry)
       const tdRows = enquiryRows.filter(isTestDriveDone)
       const previousTdRows = previousEnquiryRows.filter(isTestDriveDone)
+
+      /*
+       * Test drives as the BARRIER recorded them, beside the ones the DMS reports.
+       *
+       * ⚠️ Deliberately NOT added to tdRows. The DMS figure counts enquiries a consultant marked
+       * "test drive done"; this counts demo cars that physically left. They overlap and neither
+       * contains the other, and there is no key to reconcile them on — see lib/gate-pass/test-drives.ts.
+       * Summing them would double-count every drive present in both.
+       *
+       * ⚠️ Sequential, not Promise.all: this route already runs a fan-out against the pooler and the
+       * concurrency cap exists for that reason. Two small reads of a 40-row table cost nothing here.
+       */
+      const dealerScope = normalizedDealerCode
+        ? [normalizedDealerCode]
+        : KIA_BRANCH_DEALERS.map((dealer) => dealer.dealerCode)
+      const gatePassTestDrives = await countGatePassTestDrives({
+        startDate: context.startDate,
+        endDateExclusive: context.endDateExclusive,
+        dealerCodes: dealerScope,
+      })
+      const previousGatePassTestDrives = await countGatePassTestDrives({
+        startDate: context.comparisonStartDate,
+        endDateExclusive: context.comparisonEndDateExclusive,
+        dealerCodes: dealerScope,
+      })
       const exchangeCount = enquiryRows.filter((row) => yesNoValue(row.interested_in_exchange_y_n)).length
       const previousExchangeCount = previousEnquiryRows.filter((row) => yesNoValue(row.interested_in_exchange_y_n)).length
       const accessoriesRevenue = accessoryRows.reduce((total, row) => total + getAccessoriesRevenue(row), 0)
@@ -1363,14 +1394,42 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
         consultantAccMap.set(consultantKey, current)
       }
 
-      const consultantAccessories = Array.from(consultantAccMap.values()).map(item => {
+      /*
+       * ── Cars each consultant RETAILED in the period ───────────────────────────────────────────
+       *
+       * The denominator for accessories-per-car. `salesRows` is the retail feed and `retails` is
+       * simply its length, so grouping it by consultant is the same population the Retails KPI counts.
+       * Keyed on the upper-cased name, exactly as the accessories map is, or the two would not join.
+       */
+      const retailsByConsultant = new Map<string, number>()
+      for (const row of salesRows) {
+        const key = upperText(row.consultant_name) || 'UNASSIGNED'
+        retailsByConsultant.set(key, (retailsByConsultant.get(key) || 0) + 1)
+      }
+
+      const consultantAccessories = Array.from(consultantAccMap.entries()).map(([key, item]) => {
         const customerCount = item.customers.size
+        const carsRetailed = retailsByConsultant.get(key) || 0
         return {
           consultant: item.consultant,
           totalSold: item.totalSold,
           totalRevenue: item.totalRevenue,
           customerCount,
-          avgRevenuePerCustomer: customerCount > 0 ? Number((item.totalRevenue / customerCount).toFixed(2)) : 0
+          carsRetailed,
+          /*
+           * ⚠️ Divided by CARS RETAILED, not by customers who bought accessories — the owner's rule
+           * of 2026-09-15. A consultant who retailed 4 cars and sold accessories on 2 of them is
+           * running a 50% attach rate, and dividing by 2 reported him as if he had sold to everyone.
+           * Dividing by 4 is what makes two consultants comparable.
+           *
+           * ⚠️ NULL, never 0, when there is no denominator. Two real cases produce it: UNASSIGNED,
+           * which is accessories no consultant could be matched to, and a consultant whose accessory
+           * sale belongs to a car retailed in an EARLIER period. Zero would read as "sold nothing per
+           * car", which is the opposite of "this cannot be computed", so the table shows a dash.
+           */
+          avgRevenuePerCar: carsRetailed > 0 ? Number((item.totalRevenue / carsRetailed).toFixed(2)) : null,
+          /* Kept: the old per-buying-customer figure is still a true statement, just a different one. */
+          avgRevenuePerCustomer: customerCount > 0 ? Number((item.totalRevenue / customerCount).toFixed(2)) : 0,
         }
       }).sort((left, right) => right.totalRevenue - left.totalRevenue)
 
@@ -1408,6 +1467,8 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
             }),
             buildKpi('Test Drives', totalTestDrives, previousTdRows.length, totalTestDrives.toLocaleString('en-IN'), previousTdRows.length.toLocaleString('en-IN'), `Vs ${context.comparisonLabel}`, {
               comparisonContext: `${testDriveEngagementPct.toFixed(1)}% engagement`,
+              gatePass: gatePassTestDrives,
+              previousGatePass: previousGatePassTestDrives,
             }),
             buildKpi('Lost', totalLost, previousLostRows.length, totalLost.toLocaleString('en-IN'), previousLostRows.length.toLocaleString('en-IN'), `Vs ${context.comparisonLabel}`, {
               trendDirection: 'lower_is_better',
@@ -1592,8 +1653,10 @@ export async function getKiaSalesReportSummary(input: {
   })
   const dealerCacheKey = normalizedDealerCode || ALL_DEALERS_CACHE_KEY
   // Bump the version segment whenever the summary SHAPE changes so stale-shaped cached entries are not
-  // served (v2 added models.testDrivesByModel, v3 added models.testDrivesByModelVariant).
-  const summaryCacheKey = `kia:sales-report:summary:v4:${context.key}:${dealerCacheKey}`
+  // served (v2 added models.testDrivesByModel, v3 added models.testDrivesByModelVariant,
+  // v5 added overview.kpis[].gatePass / previousGatePass for the Test Drives card,
+  // v6 added retail.consultantAccessories[].carsRetailed / avgRevenuePerCar).
+  const summaryCacheKey = `kia:sales-report:summary:v6:${context.key}:${dealerCacheKey}`
 
   try {
     const payload = await getCachedData(

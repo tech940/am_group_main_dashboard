@@ -56,12 +56,12 @@ const norm = (value: unknown) => String(value ?? '').trim().toLowerCase()
 export const BRANCH_FIRST_STAGE_BRANDS = ['honda', 'diamond', 'tata', 'ktm', 'bajaj'] as const
 
 export const BRANCH_FIRST_STAGE_ROLES = [
-  'general_manager', // GSM — labelled 'General Sales Manager' in lib/permissions/registry.ts
-  // ⚠️ NOT service_general_manager (General Service Manager). The two GSMs this rule names are the
-  // General SALES Manager above and the GROUP Service Manager below; that is a third, different role.
-  'sales_manager', // SM
-  'vp',
-  'group_service_manager',
+  'general_manager', // GSM (General Sales Manager)
+  'service_general_manager', // GSM (General Service Manager)
+  'sales_manager', // SM (Sales Manager)
+  'service_manager', // SM (Service Manager)
+  'vp', // VP (Vice President)
+  'group_service_manager', // GSM (Group Service Manager)
 ] as const
 
 export function usesBranchFirstStage(brand: unknown): boolean {
@@ -202,8 +202,8 @@ export function firstStageLabel(brand: unknown, department: unknown, approvalTyp
   const b = norm(brand)
   if (!brandHasFirstStage(b, department, approvalType)) return 'EA Approval'
   if (isDgmBrand(b)) return 'DGM Approval'
-  // Five roles can sign this one, so it is named for the stage rather than for one of them.
-  if (usesBranchFirstStage(b)) return 'Manager Approval'
+  // Six roles can sign this one (SM: Sales/Service, VP, GSM: GM/Service GM/Group Service GM)
+  if (usesBranchFirstStage(b)) return 'SM / VP / GSM Approval'
   switch (trackForDepartment(department)) {
     case 'sales': return 'GSM Approval (Sales)'
     case 'service': return (usesVpService(b) || b === 'kia') ? 'VP Approval' : 'GSM Approval (Service)'
@@ -218,7 +218,7 @@ export function firstStageShortLabel(brand: unknown, department: unknown, approv
   const b = norm(brand)
   if (!brandHasFirstStage(b, department, approvalType)) return 'EA'
   if (isDgmBrand(b)) return 'DGM'
-  if (usesBranchFirstStage(b)) return 'Manager'
+  if (usesBranchFirstStage(b)) return 'SM / VP / GSM'
   if ((usesVpService(b) || b === 'kia') && isServiceApproval(department, approvalType)) {
     return 'VP'
   }

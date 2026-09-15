@@ -69,7 +69,7 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { brandHasHrStage, isHrApprovalRequired } from '@/lib/kia/approval-hr-routing'
-import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, isServiceApproval, usesGroupServiceManager, isDgmBrand, firstStageShortLabel, firstStageLabel } from '@/lib/approvals/first-stage-approver'
+import { brandHasEd, brandHasFirstStage, firstStageApproverRolesForTrack, isServiceApproval, usesBranchFirstStage, usesGroupServiceManager, isDgmBrand, firstStageShortLabel, firstStageLabel } from '@/lib/approvals/first-stage-approver'
 import { canonicalBranchLabel } from '@/lib/kia/approval-branches'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 
@@ -1393,9 +1393,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (!role) return false
     const r = role.toLowerCase().trim()
     return (
-      ['gsm', 'general_sales_manager', 'sales_manager', 'sales_head', 'general_manager'].includes(r) ||
+      ['gsm', 'general_sales_manager', 'sales_manager', 'service_manager', 'sales_head', 'general_manager', 'service_general_manager', 'group_service_manager'].includes(r) ||
       r.includes('sales_manager') ||
-      r.includes('general_sales')
+      r.includes('service_manager') ||
+      r.includes('general_sales') ||
+      r.includes('general_manager')
     )
   }
 
@@ -1409,25 +1411,35 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     )
   }
 
+  const isBranchFirstStageRole = (role?: string | null) => {
+    if (!role) return false
+    const r = role.toLowerCase().trim()
+    return (
+      ['sales_manager', 'service_manager', 'general_manager', 'service_general_manager', 'group_service_manager', 'vp', 'vice_president', 'gsm'].includes(r) ||
+      r.includes('sales_manager') ||
+      r.includes('service_manager') ||
+      r.includes('general_manager') ||
+      r.includes('general_sales') ||
+      r.includes('vp') ||
+      r.includes('vice_president')
+    )
+  }
+
   /*
    * ── Who owns the FIRST approval stage, on screen ──────────────────────────────────────────────
    *
    * Only KIA has an Executive Director, and only KIA has a VP on the service side. Every other
    * brand routes this same stage to the GSM for the relevant department — General SALES Manager for
-   * sales work, General SERVICE Manager for service work.
+   * sales work, General SERVICE Manager for service work. Diamond / Honda / branch brands: any of SM / VP / GSM.
    *
    *   KIA        sales   -> ED / GSM (Sales)          KIA        service -> VP
+   *   Diamond/Honda      -> Manager (SM / VP / GSM)
    *   all others sales   -> GSM (Sales)               all others service -> GSM (Service)
-   *
-   * ⚠️ Built here rather than taken from lib/approvals/first-stage-approver's `firstStageLabel`,
-   * because that helper models KIA as a single 'ED Approval' and this screen shows KIA's two
-   * department variants separately. The ROLE rule still comes from the shared module, so the part
-   * that decides authority cannot drift from the server.
    */
   const firstStageDisplayLabel = (req?: ApprovalRequest | null): string => {
     if (!req) return 'GSM (Sales)'
     const brand = String(req.brand || '').trim().toLowerCase()
-    if (brand === 'diamond' || brand === 'honda') return 'VP'
+    if (brand === 'diamond' || brand === 'honda' || usesBranchFirstStage(brand)) return 'SM / VP / GSM'
     if (isDgmBrand(brand)) return 'DGM'
     const isService = isServiceCategory(req.department, req.approvalType)
     return isService ? 'VP' : 'GSM (Sales)'
@@ -1543,6 +1555,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
   // ── SEPARATION OF DUTIES ────────────────────────────────────────────────────────
   const canActOnFirstStage = (req?: ApprovalRequest | null) => {
+    const brand = String(req?.brand || '').trim().toLowerCase()
+    if (usesBranchFirstStage(brand) || brand === 'diamond' || brand === 'honda') {
+      return (
+        isBranchFirstStageRole(currentUser.role) ||
+        isBranchFirstStageRole(effectiveRole)
+      )
+    }
     const isService = req ? isServiceCategory(req.department, req.approvalType) : false
     if (isService) {
       return isVpRole(currentUser.role) || isVpRole(effectiveRole)
@@ -4643,7 +4662,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               const isService = isServiceCategory(req.department, req.approvalType)
               const brand = String(req.brand || 'kia').toLowerCase()
               const isKia = brand === 'kia'
-              const firstStageLabel = (brand === 'diamond' || brand === 'honda') ? 'VP Approval' : (isDgmBrand(brand) ? 'DGM Approval' : (isService ? 'VP Approval' : 'GSM (Sales)'))
+              const firstStageLabel = (brand === 'diamond' || brand === 'honda' || usesBranchFirstStage(brand)) ? 'SM / VP / GSM Approval' : (isDgmBrand(brand) ? 'DGM Approval' : (isService ? 'VP Approval' : 'GSM (Sales)'))
               const requiresHrStage = isHrApprovalRequired(req.approvalType, req.brand)
               const hasFirstStage = brandHasFirstStage(req.brand, req.department, req.approvalType)
               const stages = [

@@ -4,6 +4,7 @@ import { canViewCallAnalysis } from '@/lib/callyzer/access'
 import { getCreSupabase } from '@/lib/cre-calls/cre-supabase'
 import {
   applyBranchScope,
+  applyViewBranchScope,
   applySearch,
   branchLabel,
   creRosterForBranches,
@@ -27,41 +28,14 @@ import {
   type CreDirectory,
   type RawLogRow,
 } from '@/lib/cre-calls/directory'
+import { lookupKey } from '@/lib/customer-identity/phone-match'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * AM Group CRE Call Analysis — summary / KPI endpoint.
  *
- * SOURCE OF TRUTH is `v_call_activity`, the reporting view the backend ships. It pre-aggregates
- * `call_log_entries` into (day, cre_id, branch_id) buckets and each day is bucketed in its own
- * BRANCH'S timezone, so this route does no date arithmetic of its own on the view path.
- *
- * Why the view rather than a hand-rolled rollup:
- *  - it is the backend's definition of every metric, so the dashboard and the backend cannot drift;
- *  - it moves the GROUP BY into Postgres. The previous version paged the whole filtered call log
- *    across the wire just to bucket it in JavaScript;
- *  - it already classifies outcomes correctly. The hand-rolled version treated only `missed` and
- *    `no_answer` as unanswered and silently dropped `rejected`.
- *
- * What the view deliberately does NOT settle, and how this route handles it:
- *  - `total_attempts >= answered_calls + unanswered_calls`. The gap is `outcome = 'unknown'` and is
- *    in NEITHER bucket on purpose. It is reported as its own `unclassified` number and its own
- *    slice of the outcome mix — never folded into one of the other two.
- *  - the view has no `direction × outcome` split for ANSWERED calls, and
- *    `outgoing_attempts - outgoing_unanswered` is not a safe substitute (it absorbs unknown
- *    outgoing calls). The two headline splits that need it — connected outgoing / connected
- *    incoming — come from exact `count: 'exact', head: true` counts, which never move rows.
- *  - the view carries no `phone` / `contact_name`, so a free-text search cannot run against it.
- *    A search falls back to a paged read of `call_log_entries` folded into the SAME shape, so the
- *    two paths can never answer the same question differently.
- *
- * The roster-seeding rule survives the rewrite: `v_call_activity` only has rows for days a CRE
- * actually worked, so a CRE with zero calls would vanish from the scorecard. Active CREs from
- * `user_profiles` are seeded in with empty buckets — a real, reportable zero.
- *
- * Nothing here is estimated, scaled, or hardcoded. Anything the data cannot express is `null` and
- * the UI renders an em dash.
+ * SOURCE OF TRUTH is `v_call_activity` (and `v_calls_with_numbers` for exact directional and number metrics).
  */
 
 type Filters = {
@@ -72,7 +46,7 @@ type Filters = {
   search: string
 }
 
-/** A `call_log_entries` query with every active filter applied — used for exact counts only. */
+/** A `v_calls_with_numbers` query with every active filter applied — used for exact counts. */
 function buildLogQuery(
   filters: Filters,
   dir: CreDirectory,
@@ -81,17 +55,15 @@ function buildLogQuery(
 ) {
   const supabase = getCreSupabase()
   let query = opts
-    ? supabase.from('call_log_entries').select(select, opts)
-    : supabase.from('call_log_entries').select(select)
+    ? supabase.from('v_calls_with_numbers').select(select, opts)
+    : supabase.from('v_calls_with_numbers').select(select)
 
-  query = query.is('deleted_at', null)
-  // Row-level table: `started_at` is a timestamptz, so the user's LOCAL (IST) calendar date has to
-  // become an instant range. The view path needs none of this — see istDayStart.
+  // Row-level timestamp: instant range in IST
   if (filters.startDate) query = query.gte('started_at', istDayStart(filters.startDate))
   if (filters.endDate) query = query.lte('started_at', istDayEnd(filters.endDate))
   if (filters.agent && filters.agent !== 'all') query = query.eq('cre_id', filters.agent)
-  if (filters.branchIds) query = applyBranchScope(query, filters.branchIds, dir)
-  if (filters.search) query = applySearch(query, filters.search, dir)
+  if (filters.branchIds) query = applyViewBranchScope(query, filters.branchIds, dir)
+  if (filters.search) query = applySearch(query, filters.search, dir, 'view')
   return query
 }
 
@@ -155,27 +127,23 @@ const pct = (numerator: number, denominator: number) =>
   denominator > 0 ? Math.round((numerator / denominator) * 100) : 0
 
 /**
- * Calculates missed incoming recovery metrics:
- * Total Missed Incoming, Connected Later (callback completed), and Still Remained Missing.
+ * Calculates missed incoming recovery metrics using `v_calls_with_numbers`:
+ * Compares caller numbers on the last 10 digits.
  */
 async function fetchMissedIncomingRecovery(filters: Filters, dir: CreDirectory) {
   try {
     const supabase = getCreSupabase()
     let query = supabase
-      .from('call_log_entries')
-      .select('id, phone, started_at, outcome, cre_id, branch_id')
-      .is('deleted_at', null)
+      .from('v_calls_with_numbers')
+      .select('id, customer_number, from_number, to_number, started_at, outcome, cre_id, branch_label')
       .eq('direction', 'incoming')
-      // UNANSWERED_OUTCOMES is the single definition of "the customer did not get through"
-      // (missed / no_answer / rejected) — see lib/cre-calls/directory.ts. Listing the three
-      // constants here instead would be a second definition that could drift from it.
       .in('outcome', UNANSWERED_OUTCOMES)
 
     if (filters.startDate) query = query.gte('started_at', istDayStart(filters.startDate))
     if (filters.endDate) query = query.lte('started_at', istDayEnd(filters.endDate))
     if (filters.agent && filters.agent !== 'all') query = query.eq('cre_id', filters.agent)
-    if (filters.branchIds) query = applyBranchScope(query, filters.branchIds, dir)
-    if (filters.search) query = applySearch(query, filters.search, dir)
+    if (filters.branchIds) query = applyViewBranchScope(query, filters.branchIds, dir)
+    if (filters.search) query = applySearch(query, filters.search, dir, 'view')
 
     const { data: missedRows, error } = await query
     if (error || !missedRows || missedRows.length === 0) {
@@ -191,19 +159,18 @@ async function fetchMissedIncomingRecovery(filters: Filters, dir: CreDirectory) 
     }
 
     const validMissed = missedRows.filter(
-      (c) => c.phone && c.phone !== 'null' && c.phone !== 'Unknown Phone'
+      (c) => c.customer_number || c.from_number
     )
-    const phones = Array.from(new Set(validMissed.map((c) => c.phone)))
+    const phones = Array.from(
+      new Set(validMissed.map((c) => lookupKey(c.customer_number || c.from_number)).filter((p): p is string => Boolean(p)))
+    )
 
-    let answeredCalls: { phone: string; started_at: string }[] = []
+    let answeredCalls: { customer_number: string | null; from_number: string | null; to_number: string | null; started_at: string }[] = []
     if (phones.length > 0) {
       for (let i = 0; i < phones.length; i += 100) {
-        const batch = phones.slice(i, i + 100)
         const { data: batchAns } = await supabase
-          .from('call_log_entries')
-          .select('phone, started_at')
-          .is('deleted_at', null)
-          .in('phone', batch)
+          .from('v_calls_with_numbers')
+          .select('customer_number, from_number, to_number, started_at')
           .eq('outcome', OUTCOME_ANSWERED)
         if (batchAns) answeredCalls.push(...batchAns)
       }
@@ -214,10 +181,13 @@ async function fetchMissedIncomingRecovery(filters: Filters, dir: CreDirectory) 
     const callerMap = new Map<string, { connectedLater: boolean }>()
 
     for (const missed of validMissed) {
-      const p = missed.phone
+      const p = lookupKey(missed.customer_number || missed.from_number)
+      if (!p) continue
       const missedTime = new Date(missed.started_at).getTime()
       const isConnected = answeredCalls.some(
-        (a) => a.phone === p && new Date(a.started_at).getTime() > missedTime
+        (a) =>
+          (lookupKey(a.customer_number) === p || lookupKey(a.from_number) === p || lookupKey(a.to_number) === p) &&
+          new Date(a.started_at).getTime() > missedTime
       )
 
       if (isConnected) {
@@ -319,7 +289,7 @@ export async function GET(request: Request) {
             buildLogQuery(
               filters,
               dir,
-              'cre_id, branch_id, direction, outcome, duration_seconds, started_at, recording_id'
+              'cre_id, branch_label, direction, outcome, duration_seconds, started_at, recording_id'
             ).order('started_at', { ascending: true }) as any
           ),
           dir

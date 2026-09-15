@@ -36,6 +36,7 @@ export async function POST(
       currentKmReading,
       fuelFilledDate,
       fuelFilledLtrs,
+      totalCost,
       fuelSlipUrl,
       remarks,
     } = body
@@ -66,6 +67,16 @@ export async function POST(
       return NextResponse.json({ error: 'Please enter a valid fuel quantity in liters' }, { status: 400 })
     }
 
+    let parsedCost: string | null = existing.totalCost
+    if ('totalCost' in body) {
+      if (totalCost != null && String(totalCost).trim() !== '') {
+        const c = parseFloat(String(totalCost))
+        parsedCost = !isNaN(c) && c > 0 ? c.toFixed(2) : null
+      } else {
+        parsedCost = null
+      }
+    }
+
     const nowIso = new Date().toISOString()
     const nowTimestamp = new Date()
 
@@ -94,6 +105,7 @@ export async function POST(
         currentKmReading: currentKmReading !== undefined ? String(currentKmReading) : existing.currentKmReading,
         fuelFilledDate: fuelFilledDate ? String(fuelFilledDate).slice(0, 10) : existing.fuelFilledDate,
         fuelFilledLtrs: parsedLtrs.toFixed(2),
+        totalCost: parsedCost,
         fuelSlipUrl: fuelSlipUrl || existing.fuelSlipUrl,
         remarks: remarks || existing.remarks,
         status: 'ceo_pending',

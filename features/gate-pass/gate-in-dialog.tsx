@@ -64,6 +64,8 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
   const [remarks, setRemarks] = useState<string>('')
   const [guardName, setGuardName] = useState<string>('')
   const [photoOdometerIn, setPhotoOdometerIn] = useState<File | null>(null)
+  const [fuelAmount, setFuelAmount] = useState<string>('')
+  const [fuelLitres, setFuelLitres] = useState<string>('')
   const [fuelSlip, setFuelSlip] = useState<File | null>(null)
   const [pumpStart, setPumpStart] = useState<File | null>(null)
   const [pumpStop, setPumpStop] = useState<File | null>(null)
@@ -78,6 +80,8 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
     setRemarks('')
     setGuardName('')
     setPhotoOdometerIn(null)
+    setFuelAmount('')
+    setFuelLitres('')
     setFuelSlip(null)
     setPumpStart(null)
     setPumpStop(null)
@@ -139,6 +143,8 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
       if (fuelSlip) formData.append('fuelSlip', fuelSlip)
       if (pumpStart) formData.append('pumpStart', pumpStart)
       if (pumpStop) formData.append('pumpStop', pumpStop)
+      if (fuelAmount.trim()) formData.append('fuelAmount', fuelAmount.trim())
+      if (fuelLitres.trim()) formData.append('fuelLitres', fuelLitres.trim())
 
       const res = await fetch(`/api/gate-pass/${pass.id}/gate-in`, {
         method: 'POST',
@@ -185,7 +191,7 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
       }}
     >
       <DialogContent
-        className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"
+        className="max-h-[92vh] overflow-y-auto w-[95vw] sm:w-[70vw] max-w-[70vw] sm:max-w-[70vw]"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
@@ -405,6 +411,40 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
               <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90">
                 This pass was issued for Fuel Filling. All 3 documents below must be attached before Gate In can be completed.
               </p>
+
+              {/* Fuel Price & Litres Input */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white/80 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                <div className="space-y-1">
+                  <Label htmlFor="gatein-fuel-amount" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                    <IndianRupee className="h-3.5 w-3.5 text-emerald-600" /> Fuel Price (₹)
+                  </Label>
+                  <Input
+                    id="gatein-fuel-amount"
+                    type="number"
+                    step="any"
+                    min="1"
+                    placeholder="e.g. 3500"
+                    value={fuelAmount}
+                    onChange={(e) => setFuelAmount(e.target.value)}
+                    className="h-8 font-mono text-xs bg-slate-50 dark:bg-slate-950"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="gatein-fuel-litres" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                    <Fuel className="h-3.5 w-3.5 text-blue-600" /> Fuel Litres
+                  </Label>
+                  <Input
+                    id="gatein-fuel-litres"
+                    type="number"
+                    step="any"
+                    min="0.1"
+                    placeholder="e.g. 35.5"
+                    value={fuelLitres}
+                    onChange={(e) => setFuelLitres(e.target.value)}
+                    className="h-8 font-mono text-xs bg-slate-50 dark:bg-slate-950"
+                  />
+                </div>
+              </div>
 
               <div className="space-y-3 pt-1">
                 {/* 1. Slip */}

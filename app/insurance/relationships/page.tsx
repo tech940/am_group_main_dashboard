@@ -1,19 +1,15 @@
 import { redirect } from 'next/navigation'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
-import { RelationshipsClient } from './relationships-client'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = {
-  title: 'Insurance 360 | AM Group Dashboard',
-  description: 'The complete insurance relationship behind every insured vehicle',
-}
-
-export default async function InsuranceRelationshipsPage() {
-  const appUser = await getAuthenticatedAppUser()
-  if (!appUser) redirect('/auth/login')
-  // Identical gate to /insurance and /insurance/renewals — see the API route for why it is not widened.
-  if (!canViewRestrictedAnalytics(appUser.role)) redirect('/dashboard')
-  return <RelationshipsClient />
+/**
+ * Redirected, not deleted. This page was already unreachable — nothing in the sidebar, the search
+ * surfaces or the insurance client ever linked to it — and /insurance itself is now a redirect, so
+ * leaving it live would keep a guarded page alive that no longer belongs to any section.
+ *
+ * Its client is retained on disk: the renewal queue it renders is the same primitive the brand books
+ * are built on, and is worth folding into them rather than throwing away.
+ */
+export default async function Page() {
+  redirect('/insurance')
 }

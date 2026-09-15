@@ -241,7 +241,7 @@ export function PettyCashWorkspace() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
-  const [mdQueueScope, setMdQueueScope] = useState<'all' | 'mine'>('mine')
+  const [mdQueueScope, setMdQueueScope] = useState<'all' | 'mine'>('all')
   /*
    * The brand an ALL-BRANCH viewer (MD / Developer / assigned-'all') is currently looking at.
    * '' = not yet initialised (first payload decides), 'all' = every branch, else one brand.
@@ -505,23 +505,11 @@ export function PettyCashWorkspace() {
   }, [userAssignedBrands])
 
   useEffect(() => {
-    /*
-     * Settle the chip to match what the SERVER already returned — no refetch.
-     *
-     * The server now derives the default itself from users.brand (pettyCashRequestedBranchScope), so
-     * the very first payload is already scoped to this login's branches. The client's only job is to
-     * label it. This replaced a version that computed its own fallback and fired a SECOND request:
-     * that one both cost a round trip and got multi-brand wrong — 'kia,hyundai' is not a single
-     * petty-cash brand, so it fell through to All Branches and an MD pinned to two branches landed
-     * on group-wide numbers.
-     *
-     * MY_BRANCHES means "whatever my assignment says"; the loaders send no branchId for it, which is
-     * exactly what makes the server apply the default.
-     */
     if (!isMultiBranchViewer || brandView || !currentBranchId) return
-    brandViewRef.current = MY_BRANCHES
-    setBrandView(MY_BRANCHES)
-  }, [isMultiBranchViewer, brandView, currentBranchId])
+    const initial = isAllBranchViewer ? 'all' : MY_BRANCHES
+    brandViewRef.current = initial
+    setBrandView(initial)
+  }, [isMultiBranchViewer, isAllBranchViewer, brandView, currentBranchId])
   const canFilterExpensesByLocation = !isOwnSubmissionsOnly && ['admin', 'md', 'ea', 'eba', 'developer', 'manager'].includes(userRole)
 
   const seededLocationOptions = useMemo(
@@ -823,9 +811,13 @@ export function PettyCashWorkspace() {
     : isAllBranchViewer ? 'Recent Expenses · All Branches' : 'Recent Branch Expenses'
 
   const approvalRequests = useMemo(() => {
-    if (userRole !== 'md' || mdQueueScope === 'all' || currentBranchId === 'all') return allRequests
-    return allRequests.filter((request) => normalizeBranchId(request) === currentBranchId)
-  }, [allRequests, userRole, mdQueueScope, currentBranchId])
+    if (userRole !== 'md' || mdQueueScope === 'all' || isAllBranchViewer || currentBranchId === 'all') return allRequests
+    const userBrands = getPettyCashUserBrands(currentBranchId)
+    if (userBrands.length > 0) {
+      return allRequests.filter((request) => userBrands.includes(normalizeBranchId(request)))
+    }
+    return allRequests
+  }, [allRequests, userRole, mdQueueScope, isAllBranchViewer, currentBranchId])
 
   const myOpenRequests = useMemo(() => allRequests.filter((request) => OPEN_REQUEST_STATUSES.includes(request.status)), [allRequests])
   const pendingQueue = useMemo(() => approvalRequests.filter((request) => PENDING_STATUSES.includes(request.status)), [approvalRequests])

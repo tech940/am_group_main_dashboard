@@ -303,7 +303,7 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
       cashRows.push({
         brand: b.branch, brandLabel: b.branchLabel,
         poAmount: b.po.approvedAmount, poCount: b.po.approvedCount,
-        fundingAmount: b.pettyCashFunding.approvedAmount, spendAmount: b.pettyCashSpend.approvedAmount,
+        fundingAmount: b.pettyCashFunding.approvedAmount, spendAmount: 0,
       })
     }
     if (cash.unassigned) {
@@ -311,7 +311,7 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
       cashRows.push({
         brand: u.branch, brandLabel: u.branchLabel,
         poAmount: u.po.approvedAmount, poCount: u.po.approvedCount,
-        fundingAmount: u.pettyCashFunding.approvedAmount, spendAmount: u.pettyCashSpend.approvedAmount,
+        fundingAmount: u.pettyCashFunding.approvedAmount, spendAmount: 0,
       })
     }
   }
@@ -360,7 +360,7 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
       unassignedPresent: Boolean(cash?.unassigned),
       totals: {
         poAmount: num(cash?.totals.po.approvedAmount), poCount: num(cash?.totals.po.approvedCount),
-        fundingAmount: num(cash?.totals.pettyCashFunding.approvedAmount), spendAmount: num(cash?.totals.pettyCashSpend.approvedAmount),
+        fundingAmount: num(cash?.totals.pettyCashFunding.approvedAmount), spendAmount: 0,
       },
     },
     sales: { brands: salesBrands, totals: salesTotals },

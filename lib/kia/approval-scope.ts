@@ -281,18 +281,27 @@ export function isApprovalVisibleTo(appUser: AppUser | null, row: ApprovalScopeR
    * ⚠️ Still gated by canAccessBrand above, so this is TWO brands, not the group. A KIA service
    * request is not his.
    */
-  const isVpOrGsm = role === 'vp' || role === 'vice_president' || role === 'group_service_manager'
-  if (isVpOrGsm) {
+  const isBranchFirstStageApprover =
+    role === 'vp' ||
+    role === 'vice_president' ||
+    role === 'group_service_manager' ||
+    role === 'general_manager' ||
+    role === 'service_general_manager' ||
+    role === 'sales_manager' ||
+    role === 'service_manager'
+
+  if (isBranchFirstStageApprover) {
     /*
-     * The branch brands (Diamond Honda, Tata, KTM, Bajaj). The VP and the Group Service Manager are named
-     * approvers of their FIRST stage, so they must be able to SEE those rows without also holding a branch
-     * pin — the pin gate below denies an empty pin outright. Honda already worked this way; the other
-     * three are brought in line so the stage is not signable by a role that cannot open the request.
+     * The branch brands (Diamond Honda, Tata, KTM, Bajaj). SM (Sales & Service Managers), GSMs and VP
+     * are named approvers of their FIRST stage, so they must be able to SEE those rows without also holding
+     * a branch pin — the pin gate below denies an empty pin outright.
      * ⚠️ canAccessBrand still runs above, so this is those brands only, never the group.
      */
     if (usesBranchFirstStage(rowBrand)) return true
     if ((usesVpService(rowBrand) || rowBrand === 'kia') && isServiceApproval(row.department, row.approvalType)) {
-      return true
+      if (role === 'vp' || role === 'vice_president' || role === 'group_service_manager') {
+        return true
+      }
     }
   }
 

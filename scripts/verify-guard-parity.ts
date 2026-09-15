@@ -83,8 +83,15 @@ const EXCEPTIONS: Record<string, { reason: string; requireToken?: string }> = {
   bank_sanctions: { reason: 'custom role & permission gate (EA/MD/Accounts/Developer/PC default)', requireToken: 'canViewBankSanctions' },
   // Booking Payment History uses custom role & permission guard (MD/EA/Developer default).
   'kia.booking_payment_history': { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canViewBookingPaymentHistory' },
-  // Insurance Analysis is gated via lib/auth/restricted-analytics.ts (MD, Developer, Assistant Manager).
-  insurance_analysis: { reason: 'hardcoded MD/Developer/Assistant Manager gate, not grantable', requireToken: 'canViewRestrictedAnalytics' },
+  /*
+   * The three brand insurance books state their rule ONCE, in features/insurance/brand-insurance-page.tsx,
+   * which every /brands/<brand>/insurance page renders. It is an ordinary grantable permission —
+   * `<brand>.insurance.view` — plus the brand scope, so it is recorded here rather than repeated in
+   * three page files that would then be free to drift apart.
+   */
+  'kia.insurance': { reason: 'shared server component (brand scope + <brand>.insurance.view)', requireToken: 'BrandInsurancePage' },
+  'hyundai.insurance': { reason: 'shared server component (brand scope + <brand>.insurance.view)', requireToken: 'BrandInsurancePage' },
+  'platinum.insurance': { reason: 'shared server component (brand scope + <brand>.insurance.view)', requireToken: 'BrandInsurancePage' },
   /*
    * AM Finance states its view rule ONCE, in lib/am-finance/access.ts#canViewAmFinance, and the page
    * plus all three /api/am-finance routes call it. The key therefore no longer appears literally in

@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
+import { convertAudioBufferToMp3 } from '@/lib/audio/mp3-converter'
 
 type CrePerformance = {
   cre_id: string
@@ -115,6 +116,14 @@ type RecordingRow = {
   id: string
   phone: string
   contactName: string | null
+  fromNumber?: string | null
+  toNumber?: string | null
+  creNumber?: string | null
+  creNumberSource?: 'sim' | 'single' | 'assumed' | null
+  customerNumber?: string | null
+  customerName?: string | null
+  recordingId?: string | null
+  hasRecording?: boolean
   creId: string
   creName: string
   branchId?: string
@@ -245,8 +254,6 @@ function getTypeBadge(callType?: string, statusLabel?: string) {
 function FormattedTimeCell({ isoStr }: { isoStr: string }) {
   if (!isoStr) return <span className="text-slate-400 font-medium">—</span>
   const d = new Date(isoStr)
-  // IST on BOTH lines — this is the timestamp cell in the call table, the one people cross-check
-  // against the recording. Neither passed a timeZone, so both rendered in the viewer's zone.
   const dateStr = d.toLocaleDateString('en-IN', { timeZone: INDIA_TIME_ZONE, day: '2-digit', month: 'short', year: 'numeric' })
   const timeStr = d.toLocaleTimeString('en-IN', { timeZone: INDIA_TIME_ZONE, hour: 'numeric', minute: '2-digit', hour12: true })
 
@@ -300,6 +307,71 @@ function CustomerIdentityLine({ row }: { row: RecordingRow }) {
         {customer.bookingNumber || customer.sourceLabel}
       </span>
     </span>
+  )
+}
+
+function CreStaffCell({ row }: { row: RecordingRow }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold shrink-0">
+        {(row.creName || 'CR').slice(0, 2).toUpperCase()}
+      </div>
+      <div className="flex flex-col min-w-0">
+        <span className="font-bold text-slate-900 truncate max-w-[140px]" title={row.creName || '—'}>
+          {row.creName || '—'}
+        </span>
+        {row.creNumber ? (
+          <span className="text-[11px] font-semibold text-slate-600 tabular-nums tracking-tight mt-0.5">
+            {row.creNumber}
+          </span>
+        ) : (
+          <span className="text-[10px] font-medium text-slate-400">No line recorded</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CustomerCell({ row }: { row: RecordingRow }) {
+  const customerNumber = row.customerNumber || row.phone || 'Unknown Phone'
+  const name = row.customer?.name || row.customerName || null
+  return (
+    <div className="flex flex-col">
+      <span className="text-xs font-black text-slate-900 tracking-tight tabular-nums">
+        {customerNumber}
+      </span>
+      {name && !row.customer && (
+        <span className="text-[11px] font-bold text-slate-700 truncate max-w-[150px]" title={name}>
+          {name}
+        </span>
+      )}
+      <CustomerIdentityLine row={row} />
+    </div>
+  )
+}
+
+function CallFlowBadge({ row }: { row: RecordingRow }) {
+  const fromNum = row.fromNumber
+  const toNum = row.toNumber
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div>{getTypeBadge(row.callType, row.statusLabel)}</div>
+      {fromNum && toNum && (
+        <div
+          className="flex items-center gap-1 text-[10px] font-medium text-slate-500 tabular-nums"
+          title={`Call route: ${fromNum} ➔ ${toNum}`}
+        >
+          <span className="truncate max-w-[85px]" title={fromNum}>
+            {fromNum.length >= 10 ? fromNum.slice(-10) : fromNum}
+          </span>
+          <span className="text-slate-300 font-bold">➔</span>
+          <span className="truncate max-w-[85px]" title={toNum}>
+            {toNum.length >= 10 ? toNum.slice(-10) : toNum}
+          </span>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -560,11 +632,25 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
       const url = await ensureSignedUrl()
       const res = await fetch(url)
       if (!res.ok) throw new Error(`Storage returned HTTP ${res.status} for this recording.`)
-      const blob = await res.blob()
-      const objectUrl = URL.createObjectURL(blob)
+      const arrayBuffer = await res.arrayBuffer()
+
+      let downloadBlob: Blob
+      let fileName: string
+      const baseName = (row.customerNumber || row.phone || row.id).replace(/[^a-zA-Z0-9_-]/g, '_')
+
+      try {
+        downloadBlob = await convertAudioBufferToMp3(arrayBuffer)
+        fileName = `call-recording-${baseName}.mp3`
+      } catch (convErr) {
+        console.warn('MP3 conversion fallback:', convErr)
+        downloadBlob = new Blob([arrayBuffer], { type: 'audio/mp4' })
+        fileName = fileNameFromSignedUrl(url, `recording-${row.id}.m4a`)
+      }
+
+      const objectUrl = URL.createObjectURL(downloadBlob)
       const a = document.createElement('a')
       a.href = objectUrl
-      a.download = fileNameFromSignedUrl(url, `recording-${row.id}.m4a`)
+      a.download = fileName
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -638,7 +724,7 @@ function RecordingPlayer({ row }: { row: RecordingRow }) {
           onClick={handleDownload}
           disabled={busy !== null}
           className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-          title="Download audio recording"
+          title="Download audio as MP3"
         >
           {busy === 'download' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         </button>
@@ -711,11 +797,25 @@ function CompactAudioPlayer({ row }: { row: RecordingRow }) {
       const url = await ensureSignedUrl()
       const res = await fetch(url)
       if (!res.ok) throw new Error('Download failed')
-      const blob = await res.blob()
-      const objectUrl = URL.createObjectURL(blob)
+      const arrayBuffer = await res.arrayBuffer()
+
+      let downloadBlob: Blob
+      let fileName: string
+      const baseName = (row.customerNumber || row.phone || row.id).replace(/[^a-zA-Z0-9_-]/g, '_')
+
+      try {
+        downloadBlob = await convertAudioBufferToMp3(arrayBuffer)
+        fileName = `call-recording-${baseName}.mp3`
+      } catch (convErr) {
+        console.warn('MP3 conversion fallback:', convErr)
+        downloadBlob = new Blob([arrayBuffer], { type: 'audio/mp4' })
+        fileName = fileNameFromSignedUrl(url, `recording-${row.phone || row.id}.m4a`)
+      }
+
+      const objectUrl = URL.createObjectURL(downloadBlob)
       const a = document.createElement('a')
       a.href = objectUrl
-      a.download = fileNameFromSignedUrl(url, `recording-${row.phone || row.id}.m4a`)
+      a.download = fileName
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -2440,10 +2540,10 @@ export function AmGroupCallAnalysis() {
                   <table className="w-full text-left text-xs call-analysis-clean-table">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        <th className="py-3.5 px-4 font-bold text-slate-400">Customer Phone</th>
-                        <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent</th>
+                        <th className="py-3.5 px-4 font-bold text-slate-400">Customer &amp; Caller</th>
+                        <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent &amp; Line</th>
                         <th className="py-3.5 px-4 font-bold text-slate-400">Branch</th>
-                        <th className="py-3.5 px-4 font-bold text-slate-400">Status / Type</th>
+                        <th className="py-3.5 px-4 font-bold text-slate-400">Status &amp; Route</th>
                         <th className="py-3.5 px-4 font-bold text-slate-400">Callback Status</th>
                         <th className="py-3.5 px-4 font-bold text-slate-400">Call Time</th>
                         <th className="py-3.5 px-4 text-center font-bold text-slate-400">Duration</th>
@@ -2453,18 +2553,10 @@ export function AmGroupCallAnalysis() {
                       {displayedUnansweredRows.map((row) => (
                         <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
                           <td className="py-3.5 px-4 font-bold text-slate-900">
-                            <div className="flex flex-col">
-                              <span className="text-xs font-black text-slate-900 tracking-tight">{row.phone || 'Unknown Phone'}</span>
-                              <CustomerIdentityLine row={row} />
-                            </div>
+                            <CustomerCell row={row} />
                           </td>
                           <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold shrink-0">
-                                {(row.creName || 'CR').slice(0, 2).toUpperCase()}
-                              </div>
-                              <span className="font-bold text-slate-900 truncate max-w-[130px]">{row.creName || '—'}</span>
-                            </div>
+                            <CreStaffCell row={row} />
                           </td>
                           <td className="py-3.5 px-4">
                             <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold border', getBranchBadgeStyle(row.branchName))}>
@@ -2472,7 +2564,7 @@ export function AmGroupCallAnalysis() {
                             </span>
                           </td>
                           <td className="py-3.5 px-4">
-                            {getTypeBadge(row.callType, row.statusLabel)}
+                            <CallFlowBadge row={row} />
                           </td>
                           <td className="py-3.5 px-4">
                             {row.isMissedIncoming ? (
@@ -2568,10 +2660,10 @@ export function AmGroupCallAnalysis() {
                 <table className="w-full text-left text-xs call-analysis-clean-table">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      <th className="py-3.5 px-4 font-bold text-slate-400">Customer Phone</th>
-                      <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">Customer &amp; Caller</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent &amp; Line</th>
                       <th className="py-3.5 px-4 font-bold text-slate-400">Branch</th>
-                      <th className="py-3.5 px-4 font-bold text-slate-400">Type</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">Type &amp; Route</th>
                       <th className="py-3.5 px-4 font-bold text-slate-400">Recorded Time</th>
                       <th className="py-3.5 px-4 text-center font-bold text-slate-400">Duration</th>
                       <th className="py-3.5 px-4 text-center font-bold text-slate-400">Playback</th>
@@ -2581,18 +2673,10 @@ export function AmGroupCallAnalysis() {
                     {callsQuery.data?.rows.map((row) => (
                       <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-3.5 px-4 font-bold text-slate-900">
-                          <div className="flex flex-col">
-                            <span className="text-xs font-black text-slate-900 tracking-tight">{row.phone || 'Unknown Phone'}</span>
-                            <CustomerIdentityLine row={row} />
-                          </div>
+                          <CustomerCell row={row} />
                         </td>
                         <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold shrink-0">
-                              {(row.creName || 'CR').slice(0, 2).toUpperCase()}
-                            </div>
-                            <span className="font-bold text-slate-900 truncate max-w-[130px]">{row.creName || '—'}</span>
-                          </div>
+                          <CreStaffCell row={row} />
                         </td>
                         <td className="py-3.5 px-4">
                           <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold border', getBranchBadgeStyle(row.branchName))}>
@@ -2600,7 +2684,7 @@ export function AmGroupCallAnalysis() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4">
-                          {getTypeBadge(row.callType, row.statusLabel)}
+                          <CallFlowBadge row={row} />
                         </td>
                         <td className="py-3.5 px-4">
                           <FormattedTimeCell isoStr={row.recordedAt} />
@@ -2680,8 +2764,8 @@ export function AmGroupCallAnalysis() {
               <table className="w-full text-left text-xs call-analysis-clean-table">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    <th className="py-3.5 px-4 font-bold text-slate-400">Customer Phone</th>
-                    <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-400">Customer &amp; Caller</th>
+                    <th className="py-3.5 px-4 font-bold text-slate-400">CRE Agent &amp; Line</th>
                     <th className="py-3.5 px-4 font-bold text-slate-400">Branch</th>
                     <th className="py-3.5 px-4 font-bold text-slate-400">Device Model</th>
                     <th className="py-3.5 px-4 font-bold text-slate-400">Recorded Time</th>
@@ -2692,14 +2776,11 @@ export function AmGroupCallAnalysis() {
                 <tbody className="divide-y divide-slate-50">
                   {pendingCallsQuery.data?.rows.map((row) => (
                     <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900">{row.phone || 'Unknown Phone'}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-900">
+                        <CustomerCell row={row} />
+                      </td>
                       <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold shrink-0">
-                            {(row.creName || 'CR').slice(0, 2).toUpperCase()}
-                          </div>
-                          <span className="font-bold text-slate-900">{row.creName || '—'}</span>
-                        </div>
+                        <CreStaffCell row={row} />
                       </td>
                       <td className="py-3.5 px-4">
                         <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold border', getBranchBadgeStyle(row.branchName))}>

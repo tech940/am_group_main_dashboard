@@ -76,13 +76,6 @@ export const LOCKED_SIDEBAR_SECTIONS: readonly LockedSidebarSection[] = [
     canView: (role) => canViewRestrictedAnalytics(role),
   },
   {
-    key: 'locked.insurance',
-    name: 'Insurance Analysis',
-    href: '/insurance',
-    rule: 'MD, Developer, EA, EBA and Assistant Manager',
-    canView: (role) => canViewRestrictedAnalytics(role),
-  },
-  {
     key: 'locked.social_media_leads',
     name: 'Social Media Leads',
     href: '/social-media-leads',
@@ -104,7 +97,15 @@ export const LOCKED_SIDEBAR_SECTIONS: readonly LockedSidebarSection[] = [
  * Permission groups that exist in the registry but that no page honours, because a LOCKED section above
  * replaces them. The Access Map drops them as tickable columns so a tick can no longer pretend to grant.
  */
-export const GROUPS_REPLACED_BY_LOCKED_SECTIONS: ReadonlySet<string> = new Set(['insurance_analysis'])
+/*
+ * ⚠️ EMPTY on purpose, and it must stay a real set rather than be deleted.
+ *
+ * It held 'insurance_analysis' until 2026-09-15. That section was replaced by three brand-owned ones
+ * (kia.insurance / hyundai.insurance / platinum.insurance) which are ordinary grantable groups, so
+ * nothing is locked-but-tickable any more. The mechanism stays because the next role-locked section
+ * will need it, and because an empty set is what tells a reader the question was asked.
+ */
+export const GROUPS_REPLACED_BY_LOCKED_SECTIONS: ReadonlySet<string> = new Set([])
 
 export function isLockedSectionKey(key: string): boolean {
   return key.startsWith(LOCKED_SECTION_KEY_PREFIX)

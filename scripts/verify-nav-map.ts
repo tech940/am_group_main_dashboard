@@ -101,7 +101,6 @@ const expected: Record<string, (role: string) => boolean> = {
   '/data-health': (role) => isSuperAdminRole(role),
   '/admin': (role) => isSuperAdminRole(role),
   '/call-analysis': (role) => canViewRestrictedAnalytics(role),
-  '/insurance': (role) => canViewRestrictedAnalytics(role),
   '/social-media-leads': (role) => (SOCIAL_MEDIA_LEADS_ROLES as readonly string[]).includes(role),
   '/brands/kia/vehicle-tracker': (role) => canViewVehicleTracker(role),
 }

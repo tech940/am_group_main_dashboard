@@ -159,9 +159,11 @@ export async function POST(request: Request) {
       const isServiceCategory = isServiceApproval(row.department, row.approvalType)
 
       const isGeneralSalesManager = 
-        ['gsm', 'general_sales_manager', 'sales_manager', 'sales_head', 'general_manager'].includes(userRoleLower) ||
+        ['gsm', 'general_sales_manager', 'sales_manager', 'service_manager', 'sales_head', 'general_manager', 'service_general_manager', 'group_service_manager'].includes(userRoleLower) ||
         userRoleLower.includes('sales_manager') ||
-        userRoleLower.includes('general_sales')
+        userRoleLower.includes('service_manager') ||
+        userRoleLower.includes('general_sales') ||
+        userRoleLower.includes('general_manager')
 
       const isVp = 
         ['vp', 'vice_president', 'vice_pres', 'vp_service', 'service_vp'].includes(userRoleLower) ||
@@ -176,7 +178,7 @@ export async function POST(request: Request) {
             row.brand,
             isServiceCategory ? 'service' : 'sales',
           )
-          isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower) || (allowedRoles.includes('vp') && isVp) || (allowedRoles.includes('general_manager') && isGeneralSalesManager)
+          isAuthorized = isTester || isSuperUser || allowedRoles.includes(userRoleLower) || (allowedRoles.includes('vp') && isVp) || (allowedRoles.includes('general_manager') && isGeneralSalesManager) || isGeneralSalesManager || isVp
         } else if (isServiceCategory) {
           isAuthorized = isTester || isVp || isSuperUser
         } else {

@@ -80,11 +80,13 @@ export function GatePassFormDialog({
   onOpenChange,
   currentUser,
   onCreated,
+  initialVin,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentUser?: GatePassCurrentUser
   onCreated: () => void
+  initialVin?: string | null
 }) {
   const [vin, setVin] = useState('')
   const [isAddingNewVehicle, setIsAddingNewVehicle] = useState(false)
@@ -121,6 +123,12 @@ export function GatePassFormDialog({
   const [error, setError] = useState('')
 
   const [vehicleSearch, setVehicleSearch] = useState('')
+
+  useEffect(() => {
+    if (open && initialVin) {
+      setVin(initialVin)
+    }
+  }, [open, initialVin])
 
   const {
     data: vehicleData,
@@ -431,7 +439,7 @@ export function GatePassFormDialog({
       }}
     >
       <DialogContent
-        className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"
+        className="max-h-[92vh] overflow-y-auto w-[95vw] sm:w-[70vw] max-w-[70vw] sm:max-w-[70vw]"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >

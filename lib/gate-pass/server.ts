@@ -23,6 +23,8 @@ import { lookupByVin } from './vehicles'
 import { findHoldingPass } from './fleet'
 import { GATE_PASS_PURPOSES, canTransition, purposeRequiresNote, isFuelFillingPurpose, type GatePassStatus } from './status'
 import { buildGateUrl, createGateToken } from './token'
+import { getGateEvidenceUrls } from './storage'
+
 
 /**
  * The gate pass lifecycle.
@@ -141,9 +143,15 @@ async function toEmailRowWithDriver(row: PassRow): Promise<GatePassEmailRow> {
  * request form need it; everyone else sees the masked form or nothing. Serialising it "just in
  * case" is how a government ID ends up in a CSV export nobody meant to widen.
  */
-export function serializeGatePass(row: PassRow) {
+export function serializeGatePass(row: PassRow, urlMap?: Record<string, string>) {
   const { driverLicenceNo: _licence, ...rest } = row
-  return { ...rest, driverLicenceMasked: _licence ? `••••${_licence.slice(-4)}` : null }
+  return {
+    ...rest,
+    driverLicenceMasked: _licence ? `••••${_licence.slice(-4)}` : null,
+    fuelSlipUrl: (row.fuelSlipPath && urlMap?.[row.fuelSlipPath]) || null,
+    pumpStartUrl: (row.pumpStartPath && urlMap?.[row.pumpStartPath]) || null,
+    pumpStopUrl: (row.pumpStopPath && urlMap?.[row.pumpStopPath]) || null,
+  }
 }
 
 // ── Reads ─────────────────────────────────────────────────────────────────────────────────────
@@ -231,8 +239,17 @@ export async function listGatePasses(appUser: AppUser, raw: unknown) {
     ? rows.filter((r) => canApproveGatePass(appUser, r.dealerCode))
     : rows
 
+  // Batch sign fuel evidence paths so the client never hits a loading spinner when opening proofs
+  const fuelPaths: string[] = []
+  for (const r of visible) {
+    if (r.fuelSlipPath) fuelPaths.push(r.fuelSlipPath)
+    if (r.pumpStartPath) fuelPaths.push(r.pumpStartPath)
+    if (r.pumpStopPath) fuelPaths.push(r.pumpStopPath)
+  }
+  const urlMap = fuelPaths.length > 0 ? await getGateEvidenceUrls(fuelPaths) : {}
+
   return {
-    rows: visible.map(serializeGatePass),
+    rows: visible.map((r) => serializeGatePass(r, urlMap)),
     total,
     roleFiltered: filters.awaitingMe && visible.length !== rows.length,
     page: filters.page,

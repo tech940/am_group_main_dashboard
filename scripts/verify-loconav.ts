@@ -35,6 +35,7 @@ import {
   summariseSegments,
 } from '../lib/loconav/timeline'
 import { extractPlateTokens, modelWordIn, suggestTrackerLinks } from '../lib/loconav/matching'
+import { decodePolyline, parseCoordinatePair, segmentPoints } from '../lib/loconav/polyline'
 /*
  * client.ts imports only 'server-only', which tsconfig.verify.json maps to scripts/_shims/empty.ts — so
  * the real request code can be exercised here. Nothing else server-only is imported: mappings.ts, sync.ts
@@ -1036,6 +1037,69 @@ console.log('\n3f. Pure helpers, on the real sequences and labels of 2026-09-11'
     }).size === 0)
   ok('a model word that contradicts the car blocks the suggestion',
     suggestTrackerLinks({ trackers: [T('x', 'SONET JK02DQ0770')], demoCars, linkedVins: none, linkedTrackerUuids: none }).size === 0)
+}
+
+/* ------------------------------------------------- 3g. the route a drive is drawn from */
+
+console.log('\n3g. The route — decoding it, and refusing to invent one')
+{
+  /*
+   * ⚠️ The plausibility box is load-bearing, not decoration. A decoder bug, a precision-6 path or a
+   * lat/lng transposition all produce points that decode CLEANLY and land in the wrong hemisphere;
+   * drawn on a map that reads as a demo car in California. The spec's own worked example is exactly
+   * that case, which is why it must be REFUSED here rather than pass as proof the decoder works.
+   */
+  ok('the format spec example is refused — it decodes to California, outside the box',
+    decodePolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@').length === 0)
+  ok('an empty path is [], not a throw', decodePolyline('').length === 0)
+  ok('a null path is []', decodePolyline(null).length === 0)
+  ok('junk is [], not a throw', decodePolyline('!!!not a polyline!!!').length === 0)
+
+  /* A real J&K track, encoded here and decoded back, to prove the algorithm round-trips. */
+  const encodeOne = (v: number) => {
+    let x = v < 0 ? ~(v << 1) : v << 1
+    let out = ''
+    while (x >= 0x20) { out += String.fromCharCode((0x20 | (x & 0x1f)) + 63); x >>= 5 }
+    return out + String.fromCharCode(x + 63)
+  }
+  const encode = (pts: [number, number][]) => {
+    let lat = 0, lng = 0, out = ''
+    for (const [a, b] of pts) {
+      const la = Math.round(a * 1e5), ln = Math.round(b * 1e5)
+      out += encodeOne(la - lat) + encodeOne(ln - lng)
+      lat = la; lng = ln
+    }
+    return out
+  }
+  const track: [number, number][] = [[32.6942, 74.8583], [32.7101, 74.8622], [32.7266, 74.857]]
+  const back = decodePolyline(encode(track))
+  ok('a Jammu track round-trips through the decoder', back.length === 3
+    && Math.abs(back[2][0] - 32.7266) < 1e-5 && Math.abs(back[2][1] - 74.857) < 1e-5,
+    JSON.stringify(back))
+
+  /*
+   * ⚠️ "NA" is a value the live rows really carry, not a hypothetical. So is a stop with no start
+   * coordinate at all: measured 2026-09-15 across 116 stored segments, all 43 Stopped and all 14
+   * Idling segments carry ONLY `endCoordinates` and no address. Reading a stop's place from
+   * `startCoordinates` drops every stop off the map.
+   */
+  ok('"NA" parses to null', parseCoordinatePair('NA') === null)
+  ok('an empty coordinate parses to null', parseCoordinatePair('') === null)
+  ok('a transposed lat/lng is refused', parseCoordinatePair('74.8570,32.7266') === null)
+  ok('a stop carrying only an END coordinate is still placed',
+    segmentPoints({ movementStatus: 'Stopped', endCoordinates: '32.73,74.85' }).kind === 'point')
+
+  /*
+   * ⚠️ THE ONE THAT MATTERS. An Offline stretch has two known endpoints and no recorded road between
+   * them, and it must come back as 'straight' so the UI can dash it and say so. Returning 'route'
+   * here would draw a confident line down a road nobody recorded — and that invented line is what
+   * somebody would use to argue a driver did or did not go somewhere.
+   */
+  ok('an offline stretch is STRAIGHT, never a route',
+    segmentPoints({ movementStatus: 'Offline', startCoordinates: '32.73,74.85', endCoordinates: '32.93,75.13' }).kind === 'straight')
+  ok('a segment with nothing plottable is none', segmentPoints({ movementStatus: 'Stopped' }).kind === 'none')
+  ok('a real route beats the endpoints',
+    segmentPoints({ movementStatus: 'Moving', path: encode(track), startCoordinates: '32.73,74.85', endCoordinates: '32.93,75.13' }).kind === 'route')
 }
 
 /* ------------------------------------------------------------------ 4. the module tripwire */

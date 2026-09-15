@@ -52,13 +52,46 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     sortOrder: 7,
     actions: ['view'],
   },
+  /*
+   * Insurance, 2026-09-15: ONE cross-brand section became THREE brand-owned ones.
+   *
+   * ⚠️ `parentKey` is the BRAND, not its Service or Sales child — the owner's instruction is that
+   * insurance sits beside them, not inside either. It belongs to neither: a policy is sold with the
+   * car and renewed against the workshop's customer base.
+   *
+   * ⚠️ `edit` is a SEPARATE action from `view`, and it is the whole point of the split. The person
+   * who telephones a customer about a lapsing policy needs to record what they said; they have no
+   * business reading the group's whole premium book to do it. Granting `<brand>.insurance.edit`
+   * from the Access Map is what makes an insurance desk possible without a new role. `edit` rather
+   * than a new `update` verb because the action vocabulary is a closed union — see PermissionAction.
+   *
+   * The former `insurance_analysis` group and its /insurance route are GONE. Nothing inherits its
+   * grants: the key no longer exists, so a stored override against it resolves to nothing rather
+   * than silently carrying over to a brand.
+   */
   {
-    key: 'insurance_analysis',
-    name: 'Insurance Analysis',
-    parentKey: null,
-    description: 'Hyundai and Platinum insurance policy analytics, executive KPIs, revenue, company performance, and dealer-wise breakdowns.',
-    sortOrder: 8,
-    actions: ['view'],
+    key: 'kia.insurance',
+    name: 'Insurance',
+    parentKey: 'kia',
+    description: 'AM Kia insurance policy book — renewals due, lapsed customers, retention and the calling desk.',
+    sortOrder: 168,
+    actions: ['view', 'edit'],
+  },
+  {
+    key: 'hyundai.insurance',
+    name: 'Insurance',
+    parentKey: 'hyundai',
+    description: 'AM Hyundai insurance policy book — renewals due, lapsed customers, retention and the calling desk.',
+    sortOrder: 169,
+    actions: ['view', 'edit'],
+  },
+  {
+    key: 'platinum.insurance',
+    name: 'Insurance',
+    parentKey: 'platinum',
+    description: 'AM Platinum insurance policy book — renewals due, lapsed customers, retention and the calling desk.',
+    sortOrder: 170,
+    actions: ['view', 'edit'],
   },
   {
     key: 'kia',
@@ -930,7 +963,11 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   gate_pass: { href: '/gate-pass' },
   showroom_images: { href: '/showroom-images' },
   scrap_erp: { href: '/scrap-erp' },
-  insurance_analysis: { href: '/insurance' },
+  // The old '/insurance' is deliberately absent: it now redirects and is registered nowhere, so it
+  // cannot appear in the sidebar, in either search surface or in the Access Map.
+  'kia.insurance': { href: '/brands/kia/insurance' },
+  'hyundai.insurance': { href: '/brands/hyundai/insurance' },
+  'platinum.insurance': { href: '/brands/platinum/insurance' },
   'kia.booking_payment_history': { href: '/brands/kia/booking-payment-history' },
   customer_360: { href: '/customer-360' },
   'kia.business_excellence': { href: '/brands/kia/business-excellence', aliases: ['/brands/kia/business-excellence/executive-dashboard', '/brands/kia/business-excellence/overview'] },
@@ -1385,7 +1422,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ],
   assistant_manager: [
     ...keysForGroups([
-      'insurance_analysis',
+      'kia.insurance', 'hyundai.insurance', 'platinum.insurance',
       'kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment',
       'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma',
       'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'bajaj', 'mg',

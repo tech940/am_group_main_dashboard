@@ -73,6 +73,13 @@ const brandNavigation: SidebarBrand[] = [
     icon: Activity,
     comingSoon: false,
     sections: [
+      /*
+       * A section with an `href` and no submenus renders as a direct link — the nav builder below
+       * takes the `'href' in section` branch. Insurance is deliberately NOT nested under Service or
+       * Sales: a policy is sold with the car and renewed against the workshop's customer base, so it
+       * belongs to neither.
+       */
+      { name: 'Insurance', key: 'insurance', href: '/brands/kia/insurance', submenus: [] },
       {
         name: 'Service',
         key: 'service',
@@ -116,6 +123,7 @@ const brandNavigation: SidebarBrand[] = [
     icon: Activity,
     comingSoon: false,
     sections: [
+      { name: 'Insurance', key: 'insurance', href: '/brands/hyundai/insurance', submenus: [] },
       {
         name: 'Service',
         key: 'service',
@@ -157,6 +165,7 @@ const brandNavigation: SidebarBrand[] = [
     icon: Activity,
     comingSoon: false,
     sections: [
+      { name: 'Insurance', key: 'insurance', href: '/brands/platinum/insurance', submenus: [] },
       {
         name: 'Service',
         key: 'service',
@@ -195,7 +204,7 @@ const brandNavigation: SidebarBrand[] = [
     name: 'AM Diamond Honda',
     key: 'honda',
     href: '/brands/honda',
-    logo: '/brand-logos/honda.svg',
+    logo: '/brand-logos/diamond-honda.png',
     logoClassName: '',
     logoContainerClassName: '',
     color: 'text-blue-100',
@@ -580,9 +589,9 @@ export function Sidebar() {
   const navGroups = useMemo<NavGroup[]>(() => {
     const groups: NavGroup[] = []
 
-    // ── Common / global modules (shared across every branch) ──
+    // ── Common / global modules (shared across every brand) ──
     const commonNodes: NavNode[] = []
-    if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, active: pathname === '/cockpit' })
+    if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, active: isSidebarHrefActive('/cockpit', pathname) })
     /*
      * Customer 360 — top-level and multi-brand, so it sits with the common modules rather than under
      * a brand. It absorbed the KIA "Customer Profile" entry that used to live under KIA > Sales;
@@ -596,7 +605,7 @@ export function Sidebar() {
       label: 'Customer 360',
       href: '/customer-360',
       icon: UserSearch,
-      active: Boolean(pathname?.startsWith('/customer-360')),
+      active: isSidebarHrefActive('/customer-360', pathname),
     })
     // Targets — MD + Developer ONLY. Gated on the role constant, not a permission key: a key would
     // still reach `admin` and `hr`, because both are family:'super' in lib/permissions/tiers.ts and
@@ -607,7 +616,7 @@ export function Sidebar() {
       label: 'Targets',
       href: '/targets',
       icon: Target,
-      active: Boolean(pathname?.startsWith('/targets')),
+      active: isSidebarHrefActive('/targets', pathname),
     })
     // Bank Sanctions — EA / MD / Accounts / Developer / PC default, or explicitly granted via Access Map.
     /*
@@ -622,13 +631,13 @@ export function Sidebar() {
       label: 'Bank Sanctions',
       href: '/bank-sanctions',
       icon: CreditCard,
-      active: Boolean(pathname?.startsWith('/bank-sanctions')),
+      active: isSidebarHrefActive('/bank-sanctions', pathname),
     })
     // Delegation Tasks — visible to MD / EA / developer only.
-    if (canAccessDelegationTasks && hasPermission('delegation_tasks.view')) commonNodes.push({ key: '/delegation-tasks', label: 'Delegation Tasks', href: '/delegation-tasks', icon: ClipboardList, active: pathname === '/delegation-tasks' })
+    if (canAccessDelegationTasks && hasPermission('delegation_tasks.view')) commonNodes.push({ key: '/delegation-tasks', label: 'Delegation Tasks', href: '/delegation-tasks', icon: ClipboardList, active: isSidebarHrefActive('/delegation-tasks', pathname) })
     // Purchase Orders — CA lives as a TAB inside this page (app/purchase-orders/page.tsx) for CA/MD/
     // Developer only; it is deliberately NOT a sidebar option.
-    if (hasPermission('purchase_orders.view')) commonNodes.push({ key: '/purchase-orders', label: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart, active: pathname === '/purchase-orders' })
+    if (hasPermission('purchase_orders.view')) commonNodes.push({ key: '/purchase-orders', label: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart, active: isSidebarHrefActive('/purchase-orders', pathname) })
     // Petty Cash is a single section — the former "Status Tracker" sub-page is now the
     // "Status" tab inside the workspace.
     // Petty Cash & AM Finance are guarded server-side by a ROLE allowlist (canAccessX), not by the
@@ -643,7 +652,7 @@ export function Sidebar() {
       label: 'Petty Cash',
       href: '/petty-cash',
       icon: Banknote,
-      active: pathname.startsWith('/petty-cash'),
+      active: isSidebarHrefActive('/petty-cash', pathname),
     })
     if (hasPermission('kia.approvals.view')) {
       commonNodes.push({
@@ -651,14 +660,14 @@ export function Sidebar() {
         label: 'Approvals',
         href: '/brands/kia/payment-approvals',
         icon: FileCheck,
-        active: pathname.startsWith('/brands/kia/payment-approvals'),
+        active: isSidebarHrefActive('/brands/kia/payment-approvals', pathname),
       })
       commonNodes.push({
         key: '/brands/kia/vendors',
         label: 'Vendor Registry',
         href: '/brands/kia/vendors',
         icon: Users,
-        active: pathname.startsWith('/brands/kia/vendors'),
+        active: isSidebarHrefActive('/brands/kia/vendors', pathname),
       })
     }
     // ⚠️ Its own key only. Holding fuel_approvals.view used to show this link as well. Since 2026-09-11 the
@@ -670,7 +679,7 @@ export function Sidebar() {
         label: 'Fuel Management',
         href: '/fuel-management',
         icon: Fuel,
-        active: pathname.startsWith('/fuel-management'),
+        active: isSidebarHrefActive('/fuel-management', pathname),
       })
     }
     if (hasPermission('fuel_approvals.view')) {
@@ -679,7 +688,7 @@ export function Sidebar() {
         label: 'Fuel Approvals',
         href: '/fuel-approvals',
         icon: Fuel,
-        active: pathname.startsWith('/fuel-approvals') || pathname.startsWith('/brands/kia/fuel-approvals'),
+        active: isSidebarHrefActive('/fuel-approvals', pathname) || isSidebarHrefActive('/brands/kia/fuel-approvals', pathname),
       })
     }
     if (hasPermission('gate_pass.view')) {
@@ -688,7 +697,7 @@ export function Sidebar() {
         label: 'Demo Car GatePass',
         href: '/gate-pass',
         icon: ScanLine,
-        active: pathname.startsWith('/gate-pass'),
+        active: isSidebarHrefActive('/gate-pass', pathname),
       })
     }
     if (hasPermission('showroom_images.view')) {
@@ -697,7 +706,7 @@ export function Sidebar() {
         label: 'Showroom Images',
         href: '/showroom-images',
         icon: Camera,
-        active: pathname.startsWith('/showroom-images'),
+        active: isSidebarHrefActive('/showroom-images', pathname),
       })
     }
     if (isCaViewRole(userRole) || hasPermission('ca.view')) {
@@ -706,7 +715,7 @@ export function Sidebar() {
         label: 'CA Portal',
         href: '/ca',
         icon: Calculator,
-        active: Boolean(pathname?.startsWith('/ca')),
+        active: isSidebarHrefActive('/ca', pathname),
       })
     }
     // Call Analysis — MD + Developer only, role-gated (see lib/callyzer/access.ts).
@@ -718,14 +727,14 @@ export function Sidebar() {
     //   label: 'Renewal Pipeline',
     //   href: '/insurance/renewals',
     //   icon: CalendarClock,
-    //   active: Boolean(pathname?.startsWith('/insurance/renewals')),
+    //   active: isSidebarHrefActive('/insurance/renewals', pathname),
     // })
     if (canAccessRestrictedAnalytics) commonNodes.push({
       key: '/call-analysis',
       label: 'Call Analysis',
       href: '/call-analysis',
       icon: PhoneCall,
-      active: Boolean(pathname?.startsWith('/call-analysis')),
+      active: isSidebarHrefActive('/call-analysis', pathname),
     })
     // MD Approvals aggregates the purchase-order, petty-cash and vendor-payment queues into one
     // screen. Role-gated on isSuperAdminRole DELIBERATELY rather than on a permission key, so it can
@@ -737,7 +746,7 @@ export function Sidebar() {
     //   label: 'MD Approvals',
     //   href: '/md-approvals',
     //   icon: ClipboardCheck,
-    //   active: Boolean(pathname?.startsWith('/md-approvals')),
+    //   active: isSidebarHrefActive('/md-approvals', pathname),
     // })
     // Data Health is an OPERATIONS tool, not a business section: it exposes table names, row counts
     // and load timestamps across every brand. Gated on the super-admin role directly rather than a
@@ -748,7 +757,7 @@ export function Sidebar() {
       label: 'Data Health',
       href: '/data-health',
       icon: Activity,
-      active: Boolean(pathname?.startsWith('/data-health')),
+      active: isSidebarHrefActive('/data-health', pathname),
     })
     // ⚠️ The same test app/admin/page.tsx applies: isSuperAdminRole — MD and Developer. This used to be
     // canAccessAdmin (isAdminRole), which also admits `admin` and `hr`, so both HR users saw an Admin Panel link
@@ -761,8 +770,8 @@ export function Sidebar() {
         label: 'Admin Panel',
         href: '/admin',
         icon: Shield,
-        // Exact match, otherwise this stays highlighted while Effective Access below is the active page.
-        active: pathname === '/admin' || Boolean(pathname?.startsWith('/admin/users')),
+        // Exact match or sub-paths, otherwise this stays highlighted while Effective Access below is the active page.
+        active: isSidebarHrefActive('/admin', pathname),
       })
       // Sibling link rather than an Admin tab: this answers "why can't X see Y" and is reached
       // mid-investigation, not while working through the Users/Access flow.
@@ -772,7 +781,7 @@ export function Sidebar() {
       //   label: 'Effective Access',
       //   href: '/admin/effective-access',
       //   icon: KeyRound,
-      //   active: Boolean(pathname?.startsWith('/admin/effective-access')),
+      //   active: isSidebarHrefActive('/admin/effective-access', pathname),
       // })
     }
     if (canAccessScrapErp(userRole, permissionMap)) {
@@ -781,18 +790,15 @@ export function Sidebar() {
         label: 'Scrap',
         href: '/scrap',
         icon: Recycle,
-        active: Boolean(pathname?.startsWith('/scrap')),
+        active: isSidebarHrefActive('/scrap', pathname),
       })
     }
-    if (canAccessRestrictedAnalytics) {
-      commonNodes.push({
-        key: '/insurance',
-        label: 'Insurance Analysis',
-        href: '/insurance',
-        icon: ShieldCheck,
-        active: Boolean(pathname?.startsWith('/insurance')),
-      })
-    }
+    /*
+     * ⚠️ No Insurance row here. The cross-brand "Insurance Analysis" section was removed on
+     * 2026-09-15 and replaced by one Insurance entry per dealership, declared in brandNavigation
+     * above and gated on `<brand>.insurance.view`. A common row would put the whole group's policy
+     * book back in one place, which is the thing the split exists to stop.
+     */
     commonNodes.sort(byLabel)
 
     // ── Favourites ── emitted here, not earlier, because it draws on BOTH the brand sub-pages and
@@ -907,7 +913,7 @@ export function Sidebar() {
         children: sections,
       })
     }
-    brandNodes.sort(byLabel)
+    // Brand nodes maintain the exact priority order from visibleBrands (Kia -> Hyundai -> Platinum -> rest)
     if (brandNodes.length > 0) groups.push({ key: 'branches', label: 'Branches', nodes: brandNodes })
 
     return groups

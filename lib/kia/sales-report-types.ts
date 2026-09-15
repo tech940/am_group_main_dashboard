@@ -30,6 +30,13 @@ export type SalesReportFreshnessPayload = {
   coverageWarnings: string[]
 }
 
+/*
+ * `import type` only. lib/gate-pass/test-drives.ts is server-only and this file is imported by client
+ * components; a type import is erased at compile time, so nothing server-side reaches the browser —
+ * while TypeScript still forces the two to agree on the shape.
+ */
+import type { GatePassTestDrives } from '@/lib/gate-pass/test-drives'
+
 export type SalesReportKpi = {
   label: string
   value: number
@@ -41,6 +48,16 @@ export type SalesReportKpi = {
   changePct: number | null
   changeLabel: string
   trendDirection?: 'higher_is_better' | 'lower_is_better'
+  /**
+   * Test drives as the gate recorded them, on the Test Drives card only.
+   *
+   * ⚠️ A SECOND MEASUREMENT, never part of `value`. `value` counts enquiries a consultant marked
+   * "test drive done"; this counts demo cars that physically left the premises. They overlap, neither
+   * contains the other, and no key reconciles them — so they are displayed side by side and adding
+   * them would double-count. See lib/gate-pass/test-drives.ts.
+   */
+  gatePass?: GatePassTestDrives
+  previousGatePass?: GatePassTestDrives
 }
 
 export type SalesReportMetricPoint = {
@@ -194,6 +211,16 @@ export type SalesReportSummaryPayload = {
       totalSold: number
       totalRevenue: number
       customerCount: number
+      /** Cars this consultant retailed in the period — the denominator for avgRevenuePerCar. */
+      carsRetailed: number
+      /**
+       * Accessories revenue per CAR RETAILED.
+       *
+       * ⚠️ `null` means "no denominator", not "zero" — UNASSIGNED accessories, or a sale against a car
+       * retailed in an earlier period. Render a dash, never ₹0.
+       */
+      avgRevenuePerCar: number | null
+      /** The older per-buying-customer figure. Still true, but it flatters a low attach rate. */
       avgRevenuePerCustomer: number
     }>
     accessories: {

@@ -872,7 +872,7 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                     else rankBadge = `${rank}th`
 
                     return (
-                      <tr key={u.name} onClick={() => setSelectedEmp(u)} className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+                      <tr key={u.id || u.email || `${u.name}-${idx}`} onClick={() => setSelectedEmp(u)} className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
                         <td className="px-4 py-3.5 font-black text-slate-800 text-xs">{rankBadge}</td>
                         <td className="px-4 py-3.5">
                           <p className="font-bold text-slate-800">{u.name}</p>

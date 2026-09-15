@@ -38,6 +38,7 @@ import { formatIndiaDate, formatIndiaDateTime } from '@/lib/date-time'
 import { formatDuration, type GatePassMetrics } from '@/lib/gate-pass/metrics'
 import { getGatePassStatusInfo, isFuelFillingPurpose } from '@/lib/gate-pass/status'
 import { groupAlerts } from '@/lib/loconav/timeline'
+import { JourneyMap, type JourneySegment } from './journey-map'
 
 const STATUS_TONE_STYLES: Record<string, string> = {
   pending: 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
@@ -60,6 +61,15 @@ type Trip = {
   stopCount: number | null
   alertCount: number
   alerts: Array<{ label: string | null; eventType?: string | null; eventTimeMs: number | null; address: string | null; value: number | null; unit: string | null }>
+  /**
+   * The drive itself, leg by leg. Always present in the payload; EMPTY for anyone without
+   * gate_pass.approve, because app/api/gate-pass/[id]/route.ts redacts it — a route is a record of
+   * where a named customer went, and 'view' is open to every employee.
+   *
+   * Also empty for a drive longer than TRIP_MAX_SLICES days, which is summarised by its distance
+   * alone: a route costs two provider calls per day against a 20-request budget.
+   */
+  timeline: JourneySegment[]
   /** Set when the tracker that measured this drive was linked to the car only after it — see getTripForPass. */
   linkedAfterDrive: { linkedAt: string } | null
 }
@@ -228,11 +238,11 @@ export function GatePassDetail({
       step: 1,
       name: 'Request Raised',
       icon: FileText,
-      active: Boolean(createdEvt),
+      active: Boolean(createdEvt) || Boolean(p?.createdAt),
       actor: p?.requestedByName || createdEvt?.actorName || 'Staff',
       role: 'Requester',
       time: createdEvt?.createdAt || p?.createdAt,
-      remarks: p?.remarks,
+      remarks: (p?.remarks as string) || (p?.purposeNote as string) || createdEvt?.remarks,
       color: 'blue',
     },
     {
@@ -243,7 +253,7 @@ export function GatePassDetail({
       actor: p?.approvedByName || approvedEvt?.actorName || (p?.status === 'pending_approval' ? 'Pending Approval' : '—'),
       role: approvedEvt?.actorRole || 'Approver',
       time: approvedEvt?.createdAt || p?.approvedAt,
-      remarks: p?.approvalRemarks,
+      remarks: (p?.approvalRemarks as string) || approvedEvt?.remarks,
       color: p?.status === 'rejected' ? 'rose' : 'emerald',
     },
     {
@@ -255,6 +265,7 @@ export function GatePassDetail({
       role: 'Inspector',
       time: p?.gateOutAt || gateOutEvt?.createdAt,
       extra: p?.gateOutOdo ? `${p.gateOutOdo} km` : null,
+      remarks: gateOutEvt?.remarks,
       color: 'indigo',
     },
     {
@@ -266,6 +277,7 @@ export function GatePassDetail({
       role: 'Inspector',
       time: p?.gateInAt || gateInEvt?.createdAt,
       extra: p?.gateInOdo ? `${p.gateInOdo} km` : null,
+      remarks: gateInEvt?.remarks,
       color: 'teal',
     },
   ]
@@ -273,7 +285,7 @@ export function GatePassDetail({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto no-scrollbar scrollbar-none sm:max-w-3xl lg:max-w-4xl p-0 gap-0 rounded-2xl bg-slate-50 border border-slate-200 shadow-2xl">
+        <DialogContent className="max-h-[92vh] overflow-y-auto no-scrollbar scrollbar-none w-[95vw] sm:w-[70vw] max-w-[70vw] sm:max-w-[70vw] lg:max-w-[70vw] p-0 gap-0 rounded-2xl bg-slate-50 border border-slate-200 shadow-2xl">
           {/* ── Top Header Banner ── */}
           <div className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 rounded-t-2xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
@@ -453,6 +465,22 @@ export function GatePassDetail({
                 </div>
               ) : null}
 
+              {/* ── 2b. The journey: where it went, and when it was where ── */}
+              {(data?.trip?.timeline?.length ?? 0) > 0 ? (
+                <JourneyMap segments={data!.trip!.timeline} />
+              ) : data?.trip?.status === 'reconciled' ? (
+                /*
+                 * Reconciled, so the drive WAS checked — but no route came back for this viewer.
+                 * Two causes and the client cannot tell them apart, so it names both rather than
+                 * leaving a gap that reads as "the car did not go anywhere".
+                 */
+                <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-medium text-slate-500">
+                  No route is shown for this drive. Routes are visible to gate pass approvers only, and
+                  are not fetched for drives running longer than three days — those are checked by
+                  distance alone.
+                </p>
+              ) : null}
+
               {/* ── 3. Row-Wise Horizontal Timeline (Approvals Style) ── */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-3.5">
                 <div className="flex items-center justify-between">
@@ -525,7 +553,7 @@ export function GatePassDetail({
                           </div>
 
                           {st.remarks && (
-                            <p className="mt-2 text-[10px] italic text-slate-500 bg-white p-1.5 rounded border border-slate-100 truncate">
+                            <p className="mt-2 text-[10px] italic text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800 whitespace-pre-wrap break-words leading-relaxed">
                               &ldquo;{st.remarks}&rdquo;
                             </p>
                           )}
@@ -604,6 +632,26 @@ export function GatePassDetail({
                       </Badge>
                     )}
                   </div>
+
+                  {/* Fuel Price & Litres Ribbon */}
+                  {(data?.fuelDocs?.fuelAmount || p.fuelAmount) && (
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30 px-3 py-1.5 flex items-center gap-1.5">
+                        <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400">Price:</span>
+                        <span className="font-bold text-emerald-900 dark:text-emerald-200 font-mono">
+                          ₹{Number(data?.fuelDocs?.fuelAmount || p.fuelAmount).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      {(data?.fuelDocs?.fuelLitres || p.fuelLitres) && (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/60 px-3 py-1.5 flex items-center gap-1.5">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Quantity:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">
+                            {data?.fuelDocs?.fuelLitres || p.fuelLitres} L
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <EvidenceCard

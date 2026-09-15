@@ -9,10 +9,25 @@ export const metadata = {
 }
 
 type Props = {
-  searchParams: Promise<{ brand?: string }>
+  searchParams: Promise<{
+    brand?: string
+    location?: string
+    department?: string
+    dept?: string
+  }>
 }
 
 export default async function ShowroomUploadPage({ searchParams }: Props) {
-  const { brand } = await searchParams
-  return <ShowroomUploadForm initialBrand={brand} />
+  const params = await searchParams
+  const brand = params.brand
+  const location = params.location
+  const department = params.department || params.dept
+
+  return (
+    <ShowroomUploadForm
+      initialBrand={brand}
+      initialLocation={location}
+      initialDepartment={department}
+    />
+  )
 }

@@ -426,6 +426,38 @@ function KpiCard({
             <p className="mt-3 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">{item.comparisonLabel}</p>
             <p className="mt-1 text-[16px] font-black text-slate-700">{item.formattedComparisonValue}</p>
             {item.comparisonContext ? <p className="mt-1 text-[11px] font-medium text-slate-500">{item.comparisonContext}</p> : null}
+            {/*
+              * Test drives as the GATE recorded them, under the DMS figure.
+              *
+              * ⚠️ Shown separately and never added. The number above counts enquiries a consultant
+              * marked "test drive done"; this counts demo cars that physically left the premises.
+              * They overlap, neither contains the other, and nothing reconciles them — so the card
+              * states both and names which is which. See lib/gate-pass/test-drives.ts.
+              *
+              * ⚠️ Inline hex: app/globals.css retints emerald/amber utilities with !important.
+              */}
+            {item.gatePass && item.gatePass.total > 0 ? (
+              <div className="mt-2 border-t border-slate-200 pt-2">
+                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">At the gate</p>
+                <p className="mt-0.5 text-[12px] font-black text-slate-800">
+                  {item.gatePass.total.toLocaleString('en-IN')} demo {item.gatePass.total === 1 ? 'car went out' : 'cars went out'}
+                </p>
+                <p className="mt-0.5 text-[10px] font-semibold leading-snug">
+                  <span style={{ color: '#047857' }}>{item.gatePass.completed} completed</span>
+                  {item.gatePass.cancelled > 0 ? (
+                    <><span className="text-slate-300"> · </span><span style={{ color: '#b45309' }}>{item.gatePass.cancelled} cancelled</span></>
+                  ) : null}
+                  {item.gatePass.inProgress > 0 ? (
+                    <><span className="text-slate-300"> · </span><span style={{ color: '#1d4ed8' }}>{item.gatePass.inProgress} still out</span></>
+                  ) : null}
+                </p>
+                {item.previousGatePass ? (
+                  <p className="mt-0.5 text-[10px] font-medium text-slate-400">
+                    {item.previousGatePass.total} in the comparison period
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <span className={cn('rounded-full border px-2.5 py-1 text-[12px] font-black', tone)}>
             {item.changePct === null ? 'NA' : item.changeLabel}
@@ -852,7 +884,7 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
   const [tdPage, setTdPage] = useState(1)
   const [tdPageSize, setTdPageSize] = useState(25)
   // Consultant-wise Accessories Sales sorting
-  const [consultantAccSort, setConsultantAccSort] = useState<'consultant' | 'totalSold' | 'totalRevenue' | 'customerCount' | 'avgRevenuePerCustomer'>('totalRevenue')
+  const [consultantAccSort, setConsultantAccSort] = useState<'consultant' | 'totalSold' | 'totalRevenue' | 'customerCount' | 'carsRetailed' | 'avgRevenuePerCar'>('totalRevenue')
   const [consultantAccDirection, setConsultantAccDirection] = useState<'asc' | 'desc'>('desc')
   // All Vehicles accessories filter & sorting
   const [retailAccFilter, setRetailAccFilter] = useState<'all' | 'zero' | 'above5k' | 'under5k' | 'withAcc'>('all')
@@ -1280,7 +1312,7 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
     setReportDirection('desc')
   }
 
-  function handleConsultantAccSort(field: 'consultant' | 'totalSold' | 'totalRevenue' | 'customerCount' | 'avgRevenuePerCustomer') {
+  function handleConsultantAccSort(field: 'consultant' | 'totalSold' | 'totalRevenue' | 'customerCount' | 'carsRetailed' | 'avgRevenuePerCar') {
     if (consultantAccSort === field) {
       setConsultantAccDirection((current) => (current === 'desc' ? 'asc' : 'desc'))
     } else {
@@ -1296,9 +1328,19 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
       if (consultantAccSort === 'consultant') {
         comparison = (a.consultant || '').localeCompare(b.consultant || '')
       } else {
-        const valA = Number(a[consultantAccSort] ?? 0)
-        const valB = Number(b[consultantAccSort] ?? 0)
-        comparison = valA - valB
+        /*
+         * ⚠️ A null avgRevenuePerCar sorts LAST in both directions, rather than as 0. It means "no
+         * car retailed in this period, so this cannot be computed" — treating it as zero would put
+         * UNASSIGNED at the top of "lowest revenue per car", which reads as a finding about a
+         * consultant rather than an absence of data.
+         */
+        const rawA = a[consultantAccSort]
+        const rawB = b[consultantAccSort]
+        if (rawA === null || rawB === null) {
+          if (rawA === rawB) return 0
+          return rawA === null ? 1 : -1
+        }
+        comparison = Number(rawA ?? 0) - Number(rawB ?? 0)
       }
       return consultantAccDirection === 'asc' ? comparison : -comparison
     })
@@ -2851,7 +2893,7 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                     <Select
                       value={`${consultantAccSort}-${consultantAccDirection}`}
                       onValueChange={(val) => {
-                        const [field, dir] = val.split('-') as ['consultant' | 'totalSold' | 'totalRevenue' | 'customerCount' | 'avgRevenuePerCustomer', 'asc' | 'desc']
+                        const [field, dir] = val.split('-') as ['consultant' | 'totalSold' | 'totalRevenue' | 'customerCount' | 'carsRetailed' | 'avgRevenuePerCar', 'asc' | 'desc']
                         setConsultantAccSort(field)
                         setConsultantAccDirection(dir)
                       }}
@@ -2867,8 +2909,8 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                         <SelectItem value="totalSold-asc" className="text-xs font-bold">Accessories Sold: Low → High</SelectItem>
                         <SelectItem value="customerCount-desc" className="text-xs font-bold">Customers: High → Low</SelectItem>
                         <SelectItem value="customerCount-asc" className="text-xs font-bold">Customers: Low → High</SelectItem>
-                        <SelectItem value="avgRevenuePerCustomer-desc" className="text-xs font-bold">Avg Revenue / Customer: High → Low</SelectItem>
-                        <SelectItem value="avgRevenuePerCustomer-asc" className="text-xs font-bold">Avg Revenue / Customer: Low → High</SelectItem>
+                        <SelectItem value="avgRevenuePerCar-desc" className="text-xs font-bold">Avg Revenue / Car: High → Low</SelectItem>
+                        <SelectItem value="avgRevenuePerCar-asc" className="text-xs font-bold">Avg Revenue / Car: Low → High</SelectItem>
                         <SelectItem value="consultant-asc" className="text-xs font-bold">Consultant: A → Z</SelectItem>
                         <SelectItem value="consultant-desc" className="text-xs font-bold">Consultant: Z → A</SelectItem>
                       </SelectContent>
@@ -2886,8 +2928,9 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                           { key: 'consultant' as const, label: 'Sales Consultant' },
                           { key: 'totalSold' as const, label: 'Total Accessories Sold' },
                           { key: 'totalRevenue' as const, label: 'Total Accessories Revenue' },
-                          { key: 'customerCount' as const, label: 'Number of Customers' },
-                          { key: 'avgRevenuePerCustomer' as const, label: 'Avg Revenue per Customer' },
+                          { key: 'customerCount' as const, label: 'Customers Who Bought' },
+                          { key: 'carsRetailed' as const, label: 'Cars Retailed' },
+                          { key: 'avgRevenuePerCar' as const, label: 'Avg Revenue per Car' },
                         ].map((col) => {
                           const isActive = consultantAccSort === col.key
                           return (
@@ -2926,7 +2969,20 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                           <TableCell className="px-4 py-3">{formatNumber(row.totalSold)}</TableCell>
                           <TableCell className="font-bold text-slate-800 px-4 py-3">{formatCurrency(row.totalRevenue)}</TableCell>
                           <TableCell className="px-4 py-3">{formatNumber(row.customerCount)}</TableCell>
-                          <TableCell className="text-slate-600 px-4 py-3">{formatCurrency(row.avgRevenuePerCustomer)}</TableCell>
+                          <TableCell className="px-4 py-3">{formatNumber(row.carsRetailed)}</TableCell>
+                          {/*
+                            * ⚠️ Accessories revenue ÷ CARS RETAILED, not ÷ customers who bought. A
+                            * consultant who retailed 4 cars and sold accessories on 2 is at a 50%
+                            * attach rate; the old figure divided by 2 and reported him as if every
+                            * customer had bought. A dash where the denominator is 0 — UNASSIGNED
+                            * accessories, or a sale against a car retailed in an earlier period —
+                            * because ₹0 would read as "sold nothing", not "cannot be computed".
+                            */}
+                          <TableCell className="text-slate-600 px-4 py-3">
+                            {row.avgRevenuePerCar === null
+                              ? <span className="text-slate-400" title="No car retailed by this consultant in this period">—</span>
+                              : formatCurrency(row.avgRevenuePerCar)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

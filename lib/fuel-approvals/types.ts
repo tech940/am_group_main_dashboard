@@ -35,8 +35,8 @@ export type FuelApprovalStage = 'ceo' | 'accounts' | 'completed' | 'rejected' | 
 
 export interface FuelApprovalHistoryItem {
   id: string
-  action: 'SUBMIT' | 'APPROVE' | 'HOLD' | 'SEND_BACK' | 'REJECT' | 'RESUBMIT'
-  stage: 'ceo' | 'accounts' | 'submitter' | 'ea' | 'md' | 'ed' | 'hr'
+  action: 'SUBMIT' | 'APPROVE' | 'HOLD' | 'SEND_BACK' | 'REJECT' | 'RESUBMIT' | 'FINALIZE'
+  stage: FuelApprovalStage
   userId: string
   userName: string
   userEmail: string
