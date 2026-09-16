@@ -13,6 +13,7 @@ import {
   PERMISSION_GROUPS,
   PERMISSIONS,
   RESTRICTED_DEFAULT_PERMISSION_KEYS,
+  GRANT_ONLY_PERMISSION_KEYS,
   SENSITIVE_REPORT_PERMISSION_KEYS,
   ROLE_PERMISSION_TEMPLATES,
   type PermissionRole,
@@ -85,7 +86,10 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
  * v42 has neither the new keys nor the removal, and the TTL is 75 minutes — without this bump every
  * logged-in user would keep a stale set for over an hour and read the change as "it didn't work".
  */
-const PERMISSION_CACHE_VERSION = 'v43'
+// v44 (2026-09-16): kia.sales_performance relabelled "Sales Target Plan" in the registry. The
+// snapshot is cached for 75 minutes, so without a bump every signed-in admin keeps seeing the old
+// column name and reads it as the section still being missing.
+const PERMISSION_CACHE_VERSION = 'v45'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -106,6 +110,25 @@ function isAdminOnlyPermission(permissionKey: string) {
 // land here automatically (see RESTRICTED_DEFAULT_SECTIONS in the registry).
 function isRestrictedDefaultPermission(permissionKey: string) {
   return RESTRICTED_DEFAULT_PERMISSION_KEYS.has(permissionKey)
+}
+
+/**
+ * Grant-only sections: Targets, Data Health, Call Analysis, Social Media Leads, Vehicle Tracker and
+ * the Admin Panel. NO role default may set these — not a template, not a tier bundle, not a blanket.
+ *
+ * ⚠️ THIS IS THE WHOLE REASON THEY CAN HAVE A KEY AT ALL. They had none until 2026-09-16 because
+ * `buildTierRoleDefaults` hands family-'super' roles (`admin`, `hr` — not just MD/Developer) EVERY
+ * key that exists, so any key invented for them would have been auto-granted to two roles nobody
+ * intended. Stripping them after the bundle is built is what makes "off unless somebody ticks it"
+ * true regardless of which resolver path ran.
+ *
+ * ⚠️ Applied to DEFAULTS ONLY. Explicit overrides merge afterwards and still win, which is the point:
+ * the owner asked for these to be grantable, not for them to be grantable-except-when-they-are-not.
+ */
+function stripGrantOnly(values: Record<string, boolean>) {
+  for (const key of GRANT_ONLY_PERMISSION_KEYS) {
+    if (key in values) values[key] = false
+  }
 }
 
 /**
@@ -374,6 +397,8 @@ function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string |
     }
   }
   applySensitiveReportDefaults(roleDefaults, role)
+  // ⚠️ AFTER every blanket above, including the super-admin one — see stripGrantOnly.
+  if (!isSuperAdminRole(role)) stripGrantOnly(roleDefaults)
 
   return {
     effective: { ...roleDefaults },
@@ -721,6 +746,8 @@ export function resolveEffectiveSnapshot(
   // above, which would otherwise take Fuel Approvals from the CEO — its only approver — and BEFORE the
   // overrides merge, so an individual Access-Map tick still wins.
   applyFuelSectionDefaults(roleDefaults, role)
+  // ⚠️ LAST of the default layers and BEFORE the overrides merge, so a hand-tick still wins.
+  if (!isSuperAdminRole(role)) stripGrantOnly(roleDefaults)
   constrainSnapshotToBranch(roleDefaults, role, branchAccess)
 
   // Overrides merge LAST, so an explicit Deny wins over the role / brand / global default.
@@ -778,6 +805,13 @@ export function buildTierRoleDefaults(role: PermissionRole): Record<string, bool
   if (!profile) return base
   if (profile.family === 'super') {
     for (const key of Object.keys(base)) base[key] = true
+    /*
+     * ⚠️ `family: 'super'` is admin and hr as well as MD and Developer — see lib/permissions/tiers.ts.
+     * Without this the six grant-only sections would land on `admin` and `hr` by default, which is
+     * exactly what keeping them keyless used to prevent. MD/Developer get them back at the end of
+     * resolveEffectiveSnapshot, where isSuperAdminRole re-opens everything.
+     */
+    if (!isSuperAdminRole(role)) stripGrantOnly(base)
     return base
   }
   // Tracked roles inherit their FUNCTION TRACK (service/sales/branch/finance) up to their tier;

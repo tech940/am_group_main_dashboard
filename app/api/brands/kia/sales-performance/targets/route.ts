@@ -10,6 +10,7 @@ import {
   isCommitmentScope,
   type CommitmentScope,
 } from '@/lib/kia/commitments'
+import { invalidateCachePattern } from '@/lib/redis/cache-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -123,6 +124,10 @@ export async function POST(request: Request) {
       teamsUpdated = result.updated
     }
 
+    if (saved > 0 || teamsUpdated > 0) {
+      await invalidateCachePattern('kia:sales-target-plan:*')
+    }
+
     return NextResponse.json({ saved, teamsUpdated })
   } catch (error) {
     console.error('Failed to save KIA daily commitments:', error)
@@ -157,6 +162,7 @@ export async function DELETE(request: Request) {
       /* ⚠️ Scoped, or clearing one day would delete that person's whole month commitment with it. */
       scope: isCommitmentScope(scopeParam) ? scopeParam : 'day',
     })
+    await invalidateCachePattern('kia:sales-target-plan:*')
     return NextResponse.json(result)
   } catch (error) {
     console.error('Failed to clear a KIA daily commitment:', error)

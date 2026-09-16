@@ -776,28 +776,28 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
 
   const content = (
     <>
-      <div className="space-y-5 p-4 sm:p-6 max-w-[1600px] mx-auto font-sans">
+      <div className="space-y-4 sm:space-y-5 p-3 sm:p-6 max-w-[1600px] mx-auto font-sans w-full min-w-0 overflow-hidden">
         {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900/50 text-indigo-600 dark:text-indigo-400 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900/50 text-indigo-600 dark:text-indigo-400 shrink-0">
               <ScanLine className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-900 dark:text-slate-50 tracking-tight">Demo Car GatePass</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-50 tracking-tight">Demo Car GatePass</h1>
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
                 Manage travel approvals, gate departure (Gate Out), and vehicle return inspection (Gate In).
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
             <Button
               variant="outline"
               size="sm"
               onClick={() => refetch()}
               disabled={isFetching}
-              className="h-9 px-3 rounded-xl text-xs font-semibold border-slate-200 dark:border-slate-800 cursor-pointer"
+              className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl text-xs font-semibold border-slate-200 dark:border-slate-800 cursor-pointer flex-1 sm:flex-initial"
             >
               <RefreshCw className={cn('mr-1.5 h-3.5 w-3.5', isFetching && 'animate-spin')} /> Refresh
             </Button>
@@ -805,7 +805,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
               variant="outline"
               size="sm"
               asChild
-              className="h-9 px-3 rounded-xl text-xs font-semibold border-slate-200 dark:border-slate-800"
+              className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl text-xs font-semibold border-slate-200 dark:border-slate-800 flex-1 sm:flex-initial"
             >
               <a href={exportUrl}>
                 <Download className="mr-1.5 h-3.5 w-3.5" /> Export
@@ -814,7 +814,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
             <Button
               size="sm"
               onClick={() => setCreateOpen(true)}
-              className="h-9 px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer gap-1.5"
+              className="h-8 sm:h-9 px-3 sm:px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer gap-1.5 w-full sm:w-auto"
             >
               <Plus className="h-4 w-4" /> Raise Gate Pass
             </Button>
@@ -822,101 +822,103 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
         </div>
 
         {/* Section Navigation Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
-          <div className="inline-flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80">
-            <button
-              type="button"
-              onClick={() => setSection('passes')}
-              className={cn(
-                'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer',
-                section === 'passes'
-                  ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
-                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-              )}
-            >
-              <ScanLine className="h-3.5 w-3.5" />
-              <span>Gate Passes</span>
-              {summary ? (
-                <span
-                  className={cn(
-                    'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
-                    section === 'passes'
-                      ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
-                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                  )}
-                >
-                  {summary.total}
-                </span>
-              ) : null}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSection('map')}
-              className={cn(
-                'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer',
-                section === 'map'
-                  ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
-                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-              )}
-            >
-              <MapPin className="h-3.5 w-3.5" />
-              <span>Live Fleet Map</span>
-              {fleetData ? (
-                <span
-                  className={cn(
-                    'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
-                    fleetData.out > 0
-                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
-                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                  )}
-                >
-                  {fleetData.out} out
-                </span>
-              ) : null}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSection('fleet')}
-              className={cn(
-                'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer',
-                section === 'fleet'
-                  ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
-                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-              )}
-            >
-              <Car className="h-3.5 w-3.5" />
-              <span>Yard Fleet</span>
-              {fleetData ? (
-                <span
-                  className={cn(
-                    'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
-                    section === 'fleet'
-                      ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
-                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                  )}
-                >
-                  {fleetData.total}
-                </span>
-              ) : null}
-            </button>
-
-            {canManageTrackers ? (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div className="w-full sm:w-auto overflow-x-auto no-scrollbar scrollbar-none pb-0.5">
+            <div className="inline-flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80 min-w-max">
               <button
                 type="button"
-                onClick={() => setSection('trackers')}
+                onClick={() => setSection('passes')}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer',
-                  section === 'trackers'
+                  'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap',
+                  section === 'passes'
                     ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
                 )}
               >
-                <Satellite className="h-3.5 w-3.5" />
-                <span>GPS Trackers</span>
+                <ScanLine className="h-3.5 w-3.5" />
+                <span>Gate Passes</span>
+                {summary ? (
+                  <span
+                    className={cn(
+                      'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
+                      section === 'passes'
+                        ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                    )}
+                  >
+                    {summary.total}
+                  </span>
+                ) : null}
               </button>
-            ) : null}
+
+              <button
+                type="button"
+                onClick={() => setSection('map')}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap',
+                  section === 'map'
+                    ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                )}
+              >
+                <MapPin className="h-3.5 w-3.5" />
+                <span>Live Fleet Map</span>
+                {fleetData ? (
+                  <span
+                    className={cn(
+                      'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
+                      fleetData.out > 0
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                    )}
+                  >
+                    {fleetData.out} out
+                  </span>
+                ) : null}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSection('fleet')}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap',
+                  section === 'fleet'
+                    ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                )}
+              >
+                <Car className="h-3.5 w-3.5" />
+                <span>Yard Fleet</span>
+                {fleetData ? (
+                  <span
+                    className={cn(
+                      'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
+                      section === 'fleet'
+                        ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                    )}
+                  >
+                    {fleetData.total}
+                  </span>
+                ) : null}
+              </button>
+
+              {canManageTrackers ? (
+                <button
+                  type="button"
+                  onClick={() => setSection('trackers')}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap',
+                    section === 'trackers'
+                      ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                  )}
+                >
+                  <Satellite className="h-3.5 w-3.5" />
+                  <span>GPS Trackers</span>
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {/* Quick jump to map pill when demo cars are out */}
@@ -924,9 +926,9 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
             <button
               type="button"
               onClick={() => setSection('map')}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-3 py-1.5 rounded-xl transition-colors cursor-pointer dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
+              className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-3 py-1.5 rounded-xl transition-colors cursor-pointer dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 w-full sm:w-auto"
             >
-              <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping" />
+              <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping shrink-0" />
               <span>{fleetData.out} demo cars on the road</span>
               <span className="text-[11px] font-bold underline ml-1">View Satellite Map &rarr;</span>
             </button>
@@ -938,31 +940,31 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
           <>
             {/* Streamlined Metrics Strip */}
             {summary ? (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => selectTab('awaiting')}
                   className={cn(
-                    'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
+                    'p-3 sm:p-4 rounded-xl sm:rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
                     tab === 'awaiting'
                       ? 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 ring-2 ring-amber-400/20'
                       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
                   )}
                 >
                   <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                    <span className="font-semibold">Awaiting Approval</span>
-                    <Clock className="h-4 w-4 text-amber-500" />
+                    <span className="font-semibold text-[11px] sm:text-xs">Awaiting Approval</span>
+                    <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-500 shrink-0" />
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                  <div className="flex items-baseline gap-1.5 sm:gap-2">
+                    <span className="text-xl sm:text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
                       {summary.awaitingApproval}
                     </span>
-                    <span className="text-xs text-amber-600 dark:text-amber-400 font-bold">
-                      {summary.awaitingApproval === 1 ? '1 pending pass' : `${summary.awaitingApproval} pending`}
+                    <span className="text-[10px] sm:text-xs text-amber-600 dark:text-amber-400 font-bold truncate">
+                      {summary.awaitingApproval === 1 ? '1 pending' : `${summary.awaitingApproval} pending`}
                     </span>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {fleetData ? `${fleetData.available} demo cars ready on yard` : 'Pending manager decision'}
+                  <p className="mt-1 sm:mt-1.5 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {fleetData ? `${fleetData.available} cars in yard` : 'Pending decision'}
                   </p>
                 </button>
 
@@ -970,24 +972,24 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                   type="button"
                   onClick={() => selectTab('approved')}
                   className={cn(
-                    'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
+                    'p-3 sm:p-4 rounded-xl sm:rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
                     tab === 'approved'
                       ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 ring-2 ring-indigo-400/20'
                       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
                   )}
                 >
                   <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                    <span className="font-semibold">Ready for Gate Out</span>
-                    <ShieldCheck className="h-4 w-4 text-indigo-500" />
+                    <span className="font-semibold text-[11px] sm:text-xs">Ready for Gate Out</span>
+                    <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-indigo-500 shrink-0" />
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                  <div className="flex items-baseline gap-1.5 sm:gap-2">
+                    <span className="text-xl sm:text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
                       {summary.readyForGateOut ?? (fleetData ? fleetData.reserved : 0)}
                     </span>
-                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-bold">Approved</span>
+                    <span className="text-[10px] sm:text-xs text-indigo-600 dark:text-indigo-400 font-bold truncate">Approved</span>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {fleetData ? `${fleetData.reserved} booked · awaiting checkout` : 'Ready for gate departure'}
+                  <p className="mt-1 sm:mt-1.5 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {fleetData ? `${fleetData.reserved} booked` : 'Ready for gate departure'}
                   </p>
                 </button>
 
@@ -995,24 +997,24 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                   type="button"
                   onClick={() => selectTab('out')}
                   className={cn(
-                    'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
+                    'p-3 sm:p-4 rounded-xl sm:rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
                     tab === 'out'
                       ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 ring-2 ring-blue-400/20'
                       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
                   )}
                 >
                   <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                    <span className="font-semibold">Demo Cars Out</span>
-                    <Car className="h-4 w-4 text-blue-500" />
+                    <span className="font-semibold text-[11px] sm:text-xs">Demo Cars Out</span>
+                    <Car className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-500 shrink-0" />
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                  <div className="flex items-baseline gap-1.5 sm:gap-2">
+                    <span className="text-xl sm:text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
                       {fleetData ? fleetData.out : summary.outNow}
                     </span>
-                    <span className="text-xs text-blue-600 dark:text-blue-400 font-bold">On the road</span>
+                    <span className="text-[10px] sm:text-xs text-blue-600 dark:text-blue-400 font-bold truncate">On road</span>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {fleetData ? `${fleetData.available} of ${fleetData.total} demo cars in yard` : 'Active on the road'}
+                  <p className="mt-1 sm:mt-1.5 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {fleetData ? `${fleetData.available} of ${fleetData.total} in yard` : 'Active on the road'}
                   </p>
                 </button>
 
@@ -1020,27 +1022,27 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                   type="button"
                   onClick={() => selectTab('all')}
                   className={cn(
-                    'p-4 rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
+                    'p-3 sm:p-4 rounded-xl sm:rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
                     tab === 'all'
                       ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700'
                       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
                   )}
                 >
                   <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                    <span className="font-semibold">Total Fleet &amp; Passes</span>
-                    <Check className="h-4 w-4 text-emerald-500" />
+                    <span className="font-semibold text-[11px] sm:text-xs">Total Fleet &amp; Passes</span>
+                    <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-500 shrink-0" />
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                  <div className="flex items-baseline gap-1.5 sm:gap-2">
+                    <span className="text-xl sm:text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
                       {fleetData ? fleetData.total : summary.total}
                     </span>
-                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                      {fleetData ? `${fleetData.total} demo cars` : `${summary.completedTrips} closed`}
+                    <span className="text-[10px] sm:text-xs font-bold text-emerald-600 dark:text-emerald-400 truncate">
+                      {fleetData ? `${fleetData.total} cars` : `${summary.completedTrips} closed`}
                     </span>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                  <p className="mt-1 sm:mt-1.5 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
                     {fleetData
-                      ? `${fleetData.available} free · ${summary.completedTrips} completed passes`
+                      ? `${fleetData.available} free · ${summary.completedTrips} closed`
                       : 'All fleet & trip logs'}
                   </p>
                 </button>
@@ -1050,68 +1052,70 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
             {/* Main Passes Table Card */}
             <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
           {/* Controls Bar */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 p-3 sm:p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
             {/* Filter Tabs with Stage Count Badges */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
-              {TABS.map((t) => {
-                const active = tab === t.key
-                const count =
-                  t.key === 'awaiting'
-                    ? summary?.awaitingApproval ?? 0
-                    : t.key === 'approved'
-                    ? summary?.readyForGateOut ?? 0
-                    : t.key === 'out'
-                    ? summary?.outNow ?? 0
-                    : t.key === 'fuel_filling'
-                    ? (data?.rows ?? data?.passes ?? []).filter((p) => isFuelFillingPurpose(p.purpose)).length
-                    : t.key === 'closed'
-                    ? summary?.closedPasses ?? 0
-                    : t.key === 'unaccounted'
-                    ? unaccountedData?.offSite?.length ?? 0
-                    : summary?.total ?? 0
+            <div className="w-full lg:w-auto overflow-x-auto no-scrollbar scrollbar-none pb-1 lg:pb-0">
+              <div className="flex items-center gap-1.5 min-w-max">
+                {TABS.map((t) => {
+                  const active = tab === t.key
+                  const count =
+                    t.key === 'awaiting'
+                      ? summary?.awaitingApproval ?? 0
+                      : t.key === 'approved'
+                      ? summary?.readyForGateOut ?? 0
+                      : t.key === 'out'
+                      ? summary?.outNow ?? 0
+                      : t.key === 'fuel_filling'
+                      ? (data?.rows ?? data?.passes ?? []).filter((p) => isFuelFillingPurpose(p.purpose)).length
+                      : t.key === 'closed'
+                      ? summary?.closedPasses ?? 0
+                      : t.key === 'unaccounted'
+                      ? unaccountedData?.offSite?.length ?? 0
+                      : summary?.total ?? 0
 
-                return (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => selectTab(t.key)}
-                    className={cn(
-                      'inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer',
-                      active
-                        ? t.key === 'unaccounted'
-                          ? 'bg-rose-600 text-white shadow-xs border border-rose-600'
-                          : 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200/80 dark:border-slate-700'
-                        : t.key === 'unaccounted' && count > 0
-                        ? 'text-rose-700 dark:text-rose-400 bg-rose-50/70 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200/80 dark:border-rose-900/60'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
-                    )}
-                  >
-                    <span>{t.label}</span>
-                    <span
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => selectTab(t.key)}
                       className={cn(
-                        'inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-bold rounded-full transition-colors tabular-nums',
+                        'inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer',
                         active
                           ? t.key === 'unaccounted'
-                            ? 'bg-white/20 text-white'
-                            : 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300'
-                          : count > 0
-                          ? t.key === 'unaccounted'
-                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse'
-                            : t.key === 'awaiting'
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                            : t.key === 'approved'
-                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
-                            : t.key === 'out'
-                            ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-                            : 'bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                          : 'bg-slate-100 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500'
+                            ? 'bg-rose-600 text-white shadow-xs border border-rose-600'
+                            : 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200/80 dark:border-slate-700'
+                          : t.key === 'unaccounted' && count > 0
+                          ? 'text-rose-700 dark:text-rose-400 bg-rose-50/70 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200/80 dark:border-rose-900/60'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
                       )}
                     >
-                      {count}
-                    </span>
-                  </button>
-                )
-              })}
+                      <span>{t.label}</span>
+                      <span
+                        className={cn(
+                          'inline-flex items-center justify-center min-w-[18px] sm:min-w-[20px] h-4.5 sm:h-5 px-1 sm:px-1.5 text-[10px] sm:text-[11px] font-bold rounded-full transition-colors tabular-nums',
+                          active
+                            ? t.key === 'unaccounted'
+                              ? 'bg-white/20 text-white'
+                              : 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300'
+                            : count > 0
+                            ? t.key === 'unaccounted'
+                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse'
+                              : t.key === 'awaiting'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                              : t.key === 'approved'
+                              ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                              : t.key === 'out'
+                              ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                              : 'bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            : 'bg-slate-100 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500'
+                        )}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
             {/* Search Input (passes only; unaccounted view has its own dedicated search & branch filters) */}
@@ -1125,7 +1129,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                     setSearch(e.target.value)
                     setPage(1)
                   }}
-                  className="h-9 pl-8.5 pr-8 text-xs rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-medium"
+                  className="h-9 pl-8.5 pr-8 text-xs rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-medium w-full"
                 />
                 {search && (
                   <button
@@ -1145,11 +1149,11 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
 
           {/* Secondary Filter Controls Strip (passes only) */}
           {tab !== 'unaccounted' && (
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
-              <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 p-3 sm:px-4 sm:py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
                 {/* Branch / Dealership Filter */}
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                <div className="flex items-center gap-1.5 flex-1 sm:flex-initial min-w-[120px]">
+                  <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 hidden sm:flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5 text-slate-400" /> Branch:
                   </Label>
                   <Select
@@ -1159,7 +1163,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                       setPage(1)
                     }}
                   >
-                    <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
+                    <SelectTrigger className="h-8 sm:h-8.5 w-full sm:w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
                       <SelectValue placeholder="All Branches" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1174,8 +1178,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                 </div>
 
                 {/* Purpose Filter */}
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                <div className="flex items-center gap-1.5 flex-1 sm:flex-initial min-w-[130px]">
+                  <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 hidden sm:flex items-center gap-1">
                     <Compass className="w-3.5 h-3.5 text-slate-400" /> Purpose:
                   </Label>
                   <Select
@@ -1185,7 +1189,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                       setPage(1)
                     }}
                   >
-                    <SelectTrigger className="h-8.5 w-44 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
+                    <SelectTrigger className="h-8 sm:h-8.5 w-full sm:w-44 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
                       <SelectValue placeholder="All Purposes" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1200,8 +1204,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                 </div>
 
                 {/* Date Filter */}
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                <div className="flex items-center gap-1.5 flex-1 sm:flex-initial min-w-[110px]">
+                  <Label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0 hidden sm:flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-slate-400" /> Date:
                   </Label>
                   <Select
@@ -1211,7 +1215,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                       setPage(1)
                     }}
                   >
-                    <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
+                    <SelectTrigger className="h-8 sm:h-8.5 w-full sm:w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-lg">
                       <SelectValue placeholder="All Time" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1227,7 +1231,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
 
                 {/* Custom Date Pickers */}
                 {dateFilter === 'custom' && (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 w-full sm:w-auto">
                     <Input
                       type="date"
                       value={customStartDate}
@@ -1235,7 +1239,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                         setCustomStartDate(e.target.value)
                         setPage(1)
                       }}
-                      className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
+                      className="h-8 sm:h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 flex-1 sm:w-32 rounded-lg font-medium"
                     />
                     <span className="text-xs text-slate-400">to</span>
                     <Input
@@ -1245,7 +1249,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                         setCustomEndDate(e.target.value)
                         setPage(1)
                       }}
-                      className="h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 w-32 rounded-lg font-medium"
+                      className="h-8 sm:h-8.5 text-xs bg-slate-50 dark:bg-slate-800/80 flex-1 sm:w-32 rounded-lg font-medium"
                     />
                   </div>
                 )}
@@ -1258,7 +1262,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                     setPage(1)
                   }}
                   className={cn(
-                    'h-8.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
+                    'h-8 sm:h-8.5 px-2.5 sm:px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
                     mineOnly
                       ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 shadow-xs'
                       : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1277,7 +1281,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                       setPage(1)
                     }}
                     className={cn(
-                      'h-8.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
+                      'h-8 sm:h-8.5 px-2.5 sm:px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer inline-flex items-center gap-1.5',
                       awaitingMeOnly
                         ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
                         : 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-100/80'
@@ -1293,7 +1297,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                   <button
                     type="button"
                     onClick={resetFilters}
-                    className="h-8.5 px-2.5 rounded-lg text-xs font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                    className="h-8 sm:h-8.5 px-2.5 rounded-lg text-xs font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors inline-flex items-center gap-1 cursor-pointer"
                     title="Reset all filters"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -1316,7 +1320,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
             * back to the other queues.
             */}
           {tab === 'unaccounted' ? (
-            <div className="p-4">
+            <div className="p-3 sm:p-4">
               <UnaccountedPanel
                 onIssueGatePass={(vin) => {
                   setCreateInitialVin(vin)
@@ -1330,8 +1334,302 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
             </div>
           ) : null}
 
-          {/* Clean Modern Table */}
-          <div className={cn('overflow-x-auto', tab === 'unaccounted' && 'hidden')}>
+          {/* DEDICATED MOBILE CARD LIST (phones / small screens) */}
+          <div className={cn('block md:hidden p-2.5 sm:p-3 space-y-3 bg-slate-100/60 dark:bg-slate-950/40', tab === 'unaccounted' && 'hidden')}>
+            {isLoading ? (
+              <div className="p-8 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <Loader2 className="mx-auto h-6 w-6 animate-spin text-indigo-600 mb-2" />
+                <p className="text-xs font-medium">Loading gate passes...</p>
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <div className="max-w-xs mx-auto space-y-2">
+                  <div className="h-10 w-10 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                    <Car className="h-5 w-5" />
+                  </div>
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">No gate passes found</p>
+                  <p className="text-[11px] text-slate-400">
+                    {search ? 'Try adjusting your search terms.' : 'No passes recorded in this view.'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              rows.map((row) => {
+                const purposeStyle = getPurposeBadgeStyle(row.purpose)
+                const isOverdueNow = row.status === 'out' && isTripOverdue(row.expectedReturnAt)
+
+                return (
+                  <div
+                    key={`mobile-${row.id}`}
+                    onClick={() => setDetailId(row.id)}
+                    className="p-3.5 space-y-2.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 active:bg-slate-50/80 dark:active:bg-slate-850 transition-all cursor-pointer"
+                  >
+                    {/* Header Row: Pass No, Branch & Status */}
+                    <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-100 dark:border-slate-800/80">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800 px-2 py-0.5 rounded-md font-mono text-xs tracking-tight shadow-2xs shrink-0">
+                          {row.passNo}
+                        </span>
+                        <span
+                          className={cn(
+                            'text-[10px] font-bold px-1.5 py-0.2 rounded border uppercase tracking-wider shrink-0',
+                            row.dealerCode === 'JK402'
+                              ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+                              : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+                          )}
+                        >
+                          {row.dealerCode === 'JK402' ? 'Jammu' : row.dealerCode === 'JK501' ? 'Udhampur' : row.dealerCode}
+                        </span>
+                      </div>
+                      <div className="shrink-0">
+                        <StatusPill status={row.status} />
+                      </div>
+                    </div>
+
+                    {/* Vehicle & Driver Info Card */}
+                    <div className="bg-slate-50/80 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 px-2 py-0.5 rounded-md font-mono font-bold text-xs tracking-wider shadow-2xs">
+                          <Car className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                          <span>{row.registrationNumber || 'No Plate'}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400 flex items-center gap-1.5 truncate">
+                          <span
+                            className="w-2 h-2 rounded-full border border-slate-300 shrink-0 shadow-2xs"
+                            style={{ backgroundColor: getCarColorDot(row.color) }}
+                            title={`Color: ${row.color || 'Standard'}`}
+                          />
+                          <span className="font-medium truncate">{[row.model, row.color].filter(Boolean).join(' · ') || '—'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] pt-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-5 w-5 rounded-full bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 font-bold text-[9px] flex items-center justify-center shrink-0 border border-teal-200 dark:border-teal-800">
+                            {getDriverInitials(row.driverName)}
+                          </div>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">{row.driverName}</span>
+                        </div>
+                        <div className="text-slate-400 text-[10px]">
+                          by <span className="font-medium text-slate-600 dark:text-slate-400">{row.requestedByName}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Purpose, Badges & Distance */}
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border shadow-2xs',
+                            purposeStyle.bg,
+                            purposeStyle.text,
+                            purposeStyle.border
+                          )}
+                        >
+                          <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', purposeStyle.dot)} />
+                          {row.purpose}
+                        </span>
+
+                        {isOverdueNow && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 px-1.5 py-0.5 rounded">
+                            <Clock className="w-2.5 h-2.5" /> Overdue
+                          </span>
+                        )}
+
+                        {/* Distance / Odo info */}
+                        {row.gateInOdo && row.gateOutOdo && Number(row.gateInOdo) >= Number(row.gateOutOdo) ? (
+                          <span className="inline-flex items-center gap-1 font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded text-[11px] border border-slate-200 dark:border-slate-700 font-mono">
+                            <Route className="h-2.5 w-2.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                            {(Number(row.gateInOdo) - Number(row.gateOutOdo)).toLocaleString('en-IN')} km
+                          </span>
+                        ) : row.status === 'out' && row.gateOutOdo ? (
+                          <span className="inline-flex items-center gap-1 font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded text-[10px] border border-blue-200 dark:border-blue-800 font-mono">
+                            <Car className="h-2.5 w-2.5 text-blue-500 animate-pulse shrink-0" /> On Road
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {row.purposeNote && (
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-tight">
+                          {row.purposeNote}
+                        </p>
+                      )}
+
+                      {/* Fuel Filling indicators */}
+                      {isFuelFillingPurpose(row.purpose) && (
+                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                          {row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded">
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proofs Attached
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded">
+                              <Fuel className="w-2.5 h-2.5 text-amber-600" /> Proofs Pending
+                            </span>
+                          )}
+                          {row.fuelAmount && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-100/90 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.5 rounded font-mono">
+                              ₹{Number(row.fuelAmount).toLocaleString('en-IN')}
+                              {row.fuelLitres ? ` (${row.fuelLitres}L)` : ''}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Button Row with Top Separator */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                      {row.status === 'pending_approval' && (
+                        <>
+                          {canApprove && (
+                            <>
+                              <Button
+                                size="sm"
+                                disabled={approvingId === row.id}
+                                onClick={() => approvePass(row)}
+                                className="h-8 flex-1 min-w-[90px] px-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shadow-2xs gap-1 [&_svg]:size-3.5"
+                              >
+                                {approvingId === row.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="h-3.5 w-3.5" />
+                                )}
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setDecisionFor(row)
+                                  setRemarks('')
+                                }}
+                                className="h-8 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900 rounded-lg cursor-pointer [&_svg]:size-3.5"
+                              >
+                                <X className="h-3.5 w-3.5 mr-0.5" /> Reject
+                              </Button>
+                            </>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => cancel(row)}
+                            title="Cancel gate pass request"
+                            className="h-8 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5"
+                          >
+                            <Ban className="h-3.5 w-3.5" /> Cancel
+                          </Button>
+                        </>
+                      )}
+
+                      {row.status === 'approved' && (
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={() => setGateOutFor(row)}
+                            className="h-8 flex-1 min-w-[100px] px-3 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-2xs cursor-pointer gap-1.5 [&_svg]:size-3.5"
+                          >
+                            <Car className="h-3.5 w-3.5" /> Gate Out
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => showQr(row)}
+                            title="Show Gate Out QR code"
+                            className="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
+                          >
+                            <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => cancel(row)}
+                            title="Cancel gate pass request"
+                            className="h-8 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5"
+                          >
+                            <Ban className="h-3.5 w-3.5" /> Cancel
+                          </Button>
+                        </>
+                      )}
+
+                      {row.status === 'out' && (
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={() => setGateInFor(row)}
+                            className="h-8 flex-1 min-w-[100px] px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-2xs cursor-pointer gap-1.5 [&_svg]:size-3.5"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Gate In
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => showQr(row)}
+                            title="Show Gate In QR code"
+                            className="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
+                          >
+                            <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                          </Button>
+                        </>
+                      )}
+
+                      {/* Fuel Proofs button */}
+                      {isFuelFillingPurpose(row.purpose) && (
+                        row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setViewFuelProofFor(row)}
+                            className="h-8 px-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5 shadow-2xs"
+                          >
+                            <Fuel className="h-3.5 w-3.5 text-emerald-600" />
+                            Fuel Proofs
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setFuelProofFor(row)}
+                            className="h-8 px-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 border-amber-200 dark:border-amber-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5 shadow-2xs"
+                          >
+                            <Fuel className="h-3.5 w-3.5 text-amber-600" />
+                            Add Proofs
+                          </Button>
+                        )
+                      )}
+
+                      {trackedVins.has(row.vin) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSection('map')
+                            setMapFocus({ vin: row.vin, nonce: Date.now() })
+                          }}
+                          className="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
+                          title="Show this car on map"
+                        >
+                          <MapPin className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                        </Button>
+                      )}
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setDetailId(row.id)}
+                        className="h-8 px-2 text-xs font-semibold text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer ml-auto gap-1 [&_svg]:size-3.5"
+                      >
+                        <Eye className="h-3.5 w-3.5" /> View
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          {/* Clean Modern Table (desktop / tablets) */}
+          <div className={cn('hidden md:block overflow-x-auto', tab === 'unaccounted' && 'hidden')}>
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400">
                 <tr>
@@ -1678,8 +1976,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
           </div>
 
           {/* Table Footer with Pagination — passes only; the vehicle panel paginates nothing. */}
-          <div hidden={tab === 'unaccounted'} className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+          <div hidden={tab === 'unaccounted'} className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 sm:p-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400 text-center sm:text-left">
               {totalCount > 0 ? (
                 <span>
                   Showing <strong className="text-slate-700 dark:text-slate-200">{(page - 1) * pageSize + 1}</strong> to{' '}
@@ -1690,11 +1988,11 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                 <span>No passes found</span>
               )}
               <span className="text-slate-300 dark:text-slate-700">·</span>
-              <span className="text-[11px] text-slate-400">20 per page</span>
+              <span className="text-[11px] text-slate-400">20/page</span>
             </div>
 
             {totalPages > 1 && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap justify-center">
                 <Button
                   variant="outline"
                   size="sm"

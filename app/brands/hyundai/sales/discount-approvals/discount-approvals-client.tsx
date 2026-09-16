@@ -234,13 +234,18 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
         : '/api/discount-approvals'
       const res = await fetch(url)
       if (!res.ok) {
-        throw new Error('Failed to load discount approvals data')
+        const errJson = await res.json().catch(() => ({}))
+        throw new Error(errJson.error || 'Failed to load discount approvals data')
       }
       const json = await res.json()
-      setData(json)
+      if (Array.isArray(json)) {
+        setData(json)
+      } else {
+        setData([])
+      }
     } catch (err) {
       console.error(err)
-      setError('Failed to fetch data. Please try again.')
+      setError(err instanceof Error ? err.message : 'Failed to fetch data. Please try again.')
     } finally {
       setLoading(false)
     }

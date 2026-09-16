@@ -5,7 +5,11 @@ import { hasAllBranchAccess } from '@/lib/branches'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 
 /**
- * Sidebar sections whose access is FIXED BY ROLE in code and cannot be granted from the Access Map.
+ * Sidebar sections that CANNOT be granted from the Access Map.
+ *
+ * ⚠️ THIS LIST IS NOW EMPTY — see the note on LOCKED_SIDEBAR_SECTIONS below. What follows describes
+ * why the six former entries existed, because the reasoning still explains why their replacements are
+ * grant-only rather than ordinary keys.
  *
  * Each exists for a stated reason, recorded where its rule lives:
  *  - Targets and Data Health have no permission key on purpose. A key would reach `admin` and `hr`, which
@@ -44,54 +48,23 @@ export type LockedSidebarSection = {
 
 const normalise = (role: string | null | undefined) => String(role ?? '').trim().toLowerCase()
 
-export const LOCKED_SIDEBAR_SECTIONS: readonly LockedSidebarSection[] = [
-  {
-    key: 'locked.targets',
-    name: 'Targets',
-    href: '/targets',
-    rule: 'MD and Developer only',
-    canView: (role) => canViewMdTargets(role),
-  },
-  {
-    key: 'locked.data_health',
-    name: 'Data Health',
-    href: '/data-health',
-    rule: 'MD and Developer only',
-    canView: (role) => isSuperAdminRole(role),
-  },
-  {
-    // app/admin/page.tsx admits isSuperAdminRole and nothing else. The four admin permission groups exist, but
-    // none of them opens the console, so a tick there would not grant entry.
-    key: 'locked.admin_panel',
-    name: 'Admin Panel',
-    href: '/admin',
-    rule: 'MD and Developer only',
-    canView: (role) => isSuperAdminRole(role),
-  },
-  {
-    key: 'locked.call_analysis',
-    name: 'Call Analysis',
-    href: '/call-analysis',
-    rule: 'MD, Developer, EA, EBA and Assistant Manager',
-    canView: (role) => canViewRestrictedAnalytics(role),
-  },
-  {
-    key: 'locked.social_media_leads',
-    name: 'Social Media Leads',
-    href: '/social-media-leads',
-    rule: 'MD, Developer and Admin',
-    canView: (role) => (SOCIAL_MEDIA_LEADS_ROLES as readonly string[]).includes(normalise(role)),
-  },
-  {
-    key: 'locked.vehicle_tracker',
-    name: 'Vehicle Tracker',
-    href: '/brands/kia/vehicle-tracker',
-    rule: 'MD, Developer and Service GM, for KIA users',
-    // Mirrors isSidebarItemVisible in components/layout/sidebar.tsx, brand test included.
-    canView: (role, brand) =>
-      canViewVehicleTracker(role) && (brand === 'kia' || hasAllBranchAccess(brand) || hasGlobalAccessRole(role)),
-  },
-]
+/*
+ * ⚠️ EMPTY SINCE 2026-09-16, and it must stay a real list rather than be deleted.
+ *
+ * All six entries — Targets, Data Health, Admin Panel, Call Analysis, Social Media Leads and Vehicle
+ * Tracker — became ordinary grantable sections on the owner's instruction: "nothing should be fixed
+ * by role, if I want I can give access to those sections as well". Each now has a real permission key
+ * (see GRANT_ONLY_SECTIONS in lib/permissions/registry.ts) and a tickable column in the Access Map,
+ * so nothing is left that is visible-but-unreachable.
+ *
+ * ⚠️ THEY ARE STILL OFF BY DEFAULT. GRANT_ONLY_SECTIONS keeps every role template, tier bundle and
+ * blanket from setting them — which is what the old keyless design was protecting, and the reason a
+ * key could not simply be invented for them before. Only a hand-tick grants one now.
+ *
+ * The mechanism stays because the next section that genuinely cannot be delegated will need it, and
+ * because an empty list is what tells a reader the question was asked and answered.
+ */
+export const LOCKED_SIDEBAR_SECTIONS: readonly LockedSidebarSection[] = []
 
 /**
  * Permission groups that exist in the registry but that no page honours, because a LOCKED section above

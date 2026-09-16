@@ -31,15 +31,45 @@ import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
  * to the 1st, and the database refuses it anywhere else.
  */
 
-export type CommitmentScope = 'day' | 'month'
+export const COMMITMENT_SCOPES = [
+  'day',
+  'month',
+  'week_1',
+  'week_2',
+  'week_3',
+  'week_4',
+  'week_5',
+] as const
+
+export type CommitmentScope = (typeof COMMITMENT_SCOPES)[number]
 
 export function isCommitmentScope(value: unknown): value is CommitmentScope {
-  return value === 'day' || value === 'month'
+  return typeof value === 'string' && COMMITMENT_SCOPES.includes(value as CommitmentScope)
 }
 
 /** The 1st of the month a date falls in — where a monthly commitment is anchored. */
 export function monthAnchor(date: string): string {
   return `${date.slice(0, 7)}-01`
+}
+
+/** Anchor date for each commitment scope (month/w1 on 01, w2 on 08, w3 on 15, w4 on 22, w5 on 29). */
+export function anchorDateForScope(date: string, scope: CommitmentScope): string {
+  const prefix = date.slice(0, 7)
+  switch (scope) {
+    case 'month':
+    case 'week_1':
+      return `${prefix}-01`
+    case 'week_2':
+      return `${prefix}-08`
+    case 'week_3':
+      return `${prefix}-15`
+    case 'week_4':
+      return `${prefix}-22`
+    case 'week_5':
+      return `${prefix}-29`
+    case 'day':
+      return date
+  }
 }
 
 /** 'YYYY-MM-DD' only. Anything else is refused rather than silently coerced into the wrong day. */
@@ -51,6 +81,7 @@ export type DailyCommitmentInput = {
   testDrives?: number
   bookings?: number
   retails?: number
+  modelTargets?: Record<string, number>
   note?: string | null
 }
 
@@ -73,11 +104,9 @@ export async function upsertDailyCommitments(appUser: AppUser, input: {
 
   const scope: CommitmentScope = isCommitmentScope(input.scope) ? input.scope : 'day'
   /*
-   * ⚠️ A MONTHLY COMMITMENT IS SNAPPED TO THE 1st HERE, not left to the caller. The database refuses
-   * it anywhere else, and a 500 from a check constraint is a worse way to learn that than simply
-   * putting it where it belongs — the caller asked for "September", not for "the 14th".
+   * ⚠️ Snaps to appropriate anchor date for month/weekly scopes so they are indexed consistently.
    */
-  const commitmentDate = scope === 'month' ? monthAnchor(input.date) : input.date
+  const commitmentDate = anchorDateForScope(input.date, scope)
 
   const rows = (input.entries || [])
     .map((e) => ({
@@ -89,6 +118,7 @@ export async function upsertDailyCommitments(appUser: AppUser, input: {
       testDrives: count(e.testDrives),
       bookings: count(e.bookings),
       retails: count(e.retails),
+      modelTargets: e.modelTargets && typeof e.modelTargets === 'object' ? e.modelTargets : {},
       note: String(e.note ?? '').trim() || null,
       createdBy: appUser.id,
       updatedBy: appUser.id,
@@ -105,18 +135,12 @@ export async function upsertDailyCommitments(appUser: AppUser, input: {
       kiaSalesCommitments.commitmentDate,
       kiaSalesCommitments.scope,
     ],
-    /*
-     * ⚠️ EVERY EDITABLE COLUMN. An onConflict SET that names a subset writes the row, reports success,
-     * and drops the rest — the defect that hit MD Targets when the labour columns were added, and it
-     * presents as "the form did not save".
-     *
-     * `createdBy` is deliberately absent: whoever first committed this day keeps the credit.
-     */
     set: {
       enquiries: sql`excluded.enquiries`,
       testDrives: sql`excluded.test_drives`,
       bookings: sql`excluded.bookings`,
       retails: sql`excluded.retails`,
+      modelTargets: sql`excluded.model_targets`,
       note: sql`excluded.note`,
       updatedBy: sql`excluded.updated_by`,
       updatedAt: new Date(),
@@ -149,7 +173,7 @@ export async function clearDailyCommitment(input: {
   /* ⚠️ Scoped, or clearing one day would take the month's commitment with it. */
   const deleted = await db.delete(kiaSalesCommitments).where(and(
     eq(kiaSalesCommitments.dealerCode, dealerCode),
-    eq(kiaSalesCommitments.commitmentDate, scope === 'month' ? monthAnchor(input.date) : input.date),
+    eq(kiaSalesCommitments.commitmentDate, anchorDateForScope(input.date, scope)),
     eq(kiaSalesCommitments.consultantName, name),
     eq(kiaSalesCommitments.scope, scope),
   )).returning({ id: kiaSalesCommitments.id })
@@ -163,7 +187,7 @@ export async function readDailyCommitments(dealerCode: string, date: string, sco
   if (!ISO_DATE.test(String(date || ''))) throw new Error('A commitment date must be YYYY-MM-DD')
   return db.select().from(kiaSalesCommitments).where(and(
     eq(kiaSalesCommitments.dealerCode, code),
-    eq(kiaSalesCommitments.commitmentDate, scope === 'month' ? monthAnchor(date) : date),
+    eq(kiaSalesCommitments.commitmentDate, anchorDateForScope(date, scope)),
     eq(kiaSalesCommitments.scope, scope),
   ))
 }
@@ -197,22 +221,37 @@ export async function readMonthlyCommitmentTotals(input: {
       )
 
   /*
-   * ⚠️ THE MONTH COMMITMENT WINS OVER THE SUM OF DAYS when both exist — the same precedence the plan
-   * reader states. A month figure is what somebody signed up to; the days are a plan for reaching it,
-   * and part-way through a month they will always add to less. Scoring against the days would flatter
-   * anyone who simply has not filled the rest of the month in yet.
-   *
-   * MAX(...) FILTER picks the single monthly row (there is at most one per person per month, by the
-   * unique index) and GREATEST is not needed: a NULL from the filter falls through to the day sum.
+   * ⚠️ THE MONTH COMMITMENT WINS OVER THE SUM OF WEEKS / DAYS when both exist.
+   * MAX(...) FILTER picks the single monthly row. If null, sums weekly commitments if any, else sums daily commitments.
    */
   const rows = await db
     .select({
       dealerCode: kiaSalesCommitments.dealerCode,
       consultantName: kiaSalesCommitments.consultantName,
-      enquiries: sql<number>`COALESCE(MAX(${kiaSalesCommitments.enquiries}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'month'), SUM(${kiaSalesCommitments.enquiries}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'day'), 0)::int`,
-      testDrives: sql<number>`COALESCE(MAX(${kiaSalesCommitments.testDrives}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'month'), SUM(${kiaSalesCommitments.testDrives}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'day'), 0)::int`,
-      bookings: sql<number>`COALESCE(MAX(${kiaSalesCommitments.bookings}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'month'), SUM(${kiaSalesCommitments.bookings}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'day'), 0)::int`,
-      retails: sql<number>`COALESCE(MAX(${kiaSalesCommitments.retails}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'month'), SUM(${kiaSalesCommitments.retails}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'day'), 0)::int`,
+      enquiries: sql<number>`COALESCE(
+        MAX(${kiaSalesCommitments.enquiries}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'month'),
+        NULLIF(SUM(${kiaSalesCommitments.enquiries}) FILTER (WHERE ${kiaSalesCommitments.scope} LIKE 'week_%'), 0),
+        SUM(${kiaSalesCommitments.enquiries}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'day'),
+        0
+      )::int`,
+      testDrives: sql<number>`COALESCE(
+        MAX(${kiaSalesCommitments.testDrives}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'month'),
+        NULLIF(SUM(${kiaSalesCommitments.testDrives}) FILTER (WHERE ${kiaSalesCommitments.scope} LIKE 'week_%'), 0),
+        SUM(${kiaSalesCommitments.testDrives}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'day'),
+        0
+      )::int`,
+      bookings: sql<number>`COALESCE(
+        MAX(${kiaSalesCommitments.bookings}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'month'),
+        NULLIF(SUM(${kiaSalesCommitments.bookings}) FILTER (WHERE ${kiaSalesCommitments.scope} LIKE 'week_%'), 0),
+        SUM(${kiaSalesCommitments.bookings}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'day'),
+        0
+      )::int`,
+      retails: sql<number>`COALESCE(
+        MAX(${kiaSalesCommitments.retails}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'month'),
+        NULLIF(SUM(${kiaSalesCommitments.retails}) FILTER (WHERE ${kiaSalesCommitments.scope} LIKE 'week_%'), 0),
+        SUM(${kiaSalesCommitments.retails}) FILTER (WHERE ${kiaSalesCommitments.scope} = 'day'),
+        0
+      )::int`,
     })
     .from(kiaSalesCommitments)
     .where(where)

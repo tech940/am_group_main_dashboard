@@ -11,7 +11,7 @@
  */
 import 'dotenv/config'
 import { readFileSync } from 'node:fs'
-import { PERMISSIONS } from '../lib/permissions/registry'
+import { PERMISSIONS, PERMISSION_GROUPS, SECTION_ROUTES } from '../lib/permissions/registry'
 import { resolveEffectiveSnapshot } from '../lib/permissions/service'
 import { ALL_SECTIONS, canUserAccessSection } from '../lib/navigation/sections'
 
@@ -176,7 +176,70 @@ function grantReachTests() {
     /brand\.sections\.some\(\(section\) => \(/.test(sidebarSource))
 }
 
+/**
+ * Scenario 8 — the Access Map and the sidebar call every section the SAME thing.
+ *
+ * ⚠️ WHY THIS IS A REAL BUG AND NOT PEDANTRY. An admin ticking a box and a user hunting for the link
+ * have to be talking about one thing. When `kia.sales_performance` was relabelled "Sales Target Plan"
+ * in the sidebar and left as "Sales Performance" in the permission registry, the reported symptom was
+ * "sales target is not added in KIA" — the column was right there, under a name nobody was looking
+ * for. Three more had drifted the same way: Kia Proforma / Bookings, Follow-ups / Booking Follow-ups,
+ * Call & Follow-up Analytics / Call Analytics.
+ *
+ * ⚠️ Compares NAMES ONLY. A permission KEY must never be renamed to match a label — that orphans
+ * every grant already stored against it.
+ */
+function labelParityTests() {
+  console.log('\nScenario 8 — Access Map column names match the sidebar:')
+
+  /*
+   * Every { name, href } the sidebar renders. Walk each `href:` and take the NEAREST PRECEDING
+   * `name:` — the object shapes vary (one-line submenus, multi-line brand objects with logo/colour
+   * fields in between), so a single shape-matching regex misses about a third of them.
+   */
+  const src = readFileSync('components/layout/sidebar.tsx', 'utf8')
+  const lines = src.split('\n')
+  const sidebar = new Map<string, string>()
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().startsWith('//')) continue
+    const href = /href:\s*'([^']+)'/.exec(lines[i])
+    if (!href || !href[1].startsWith('/')) continue
+    let name: string | null = null
+    const same = /name:\s*'([^']+)'/.exec(lines[i])
+    if (same) name = same[1]
+    else {
+      for (let j = i; j >= 0 && j > i - 12; j--) {
+        if (lines[j].trim().startsWith('//')) continue
+        const m = /name:\s*'([^']+)'/.exec(lines[j])
+        if (m) { name = m[1]; break }
+      }
+    }
+    if (name && !sidebar.has(href[1])) sidebar.set(href[1], name)
+  }
+  assert('the sidebar tree could be read', sidebar.size > 20, `${sidebar.size} labels`)
+
+  const routes = SECTION_ROUTES as Record<string, { href: string; aliases?: string[] }>
+  const mismatched: string[] = []
+  let compared = 0
+  for (const group of PERMISSION_GROUPS as { key: string; name: string }[]) {
+    const route = routes[group.key]
+    if (!route) continue
+    const label = sidebar.get(route.href)
+      ?? (route.aliases || []).map((alias) => sidebar.get(alias)).find(Boolean)
+    if (!label) continue   // no sidebar link: nothing to be inconsistent with
+    compared += 1
+    if (label.trim() !== String(group.name).trim()) {
+      mismatched.push(`${group.key}: map "${group.name}" vs sidebar "${label}"`)
+    }
+  }
+  assert('something was actually compared', compared > 10, `${compared} linked sections`)
+  assert('every linked section has ONE name in both places',
+    mismatched.length === 0, mismatched.join(' | '))
+  console.log(`  [INFO] ${compared} section(s) carry both a sidebar link and a permission group`)
+}
+
 async function run() {
+  labelParityTests()
   grantReachTests()
   await liveDatabaseCheck()
   console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===\n`)

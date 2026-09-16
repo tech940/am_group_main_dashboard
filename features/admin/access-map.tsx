@@ -18,6 +18,7 @@ import {
   ChevronDown
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { BRANCH_OPTIONS } from '@/lib/branches'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
@@ -81,6 +82,30 @@ function groupOf(sectionKey: string) {
   return sectionKey === ADMIN_PRIMARY_KEY ? 'admin' : sectionKey.split('.')[0]
 }
 
+/**
+ * Column order: every GROUP-WIDE section first, then one block per brand.
+ *
+ * ⚠️ WHY THIS IS NOT REGISTRY ORDER. Groups used to come out in permission-registry `sortOrder`,
+ * which interleaves them — Cockpit, Delegation Tasks, Scrap, Customer 360, then the whole KIA block,
+ * then Purchase Orders, Petty Cash, AM Finance, CA. So the common sections sat on BOTH sides of KIA
+ * and an admin scanning for "does this person have Petty Cash" had to cross a brand to find it.
+ *
+ * A brand prefix is a real brand from lib/branches.ts — not "any prefix with a dot", which would
+ * also catch `locked.*` (fixed-by-role sections) and strand them at the end away from the group-wide
+ * columns they belong with.
+ */
+const BRAND_PREFIXES: string[] = BRANCH_OPTIONS.map((option) => option.value)
+
+function isBrandPrefix(prefix: string): boolean {
+  return BRAND_PREFIXES.includes(prefix)
+}
+
+/** Common blocks keep registry order; brand blocks follow in the order brands are listed. */
+function groupRank(prefix: string): number {
+  const brandIndex = BRAND_PREFIXES.indexOf(prefix)
+  return brandIndex === -1 ? 0 : 1 + brandIndex
+}
+
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/)
   if (parts.length >= 2) {
@@ -90,6 +115,7 @@ function getInitials(name: string) {
 }
 
 // Grid layout constants
+// (BRANCH_OPTIONS is imported at the top of the file for the brand ordering above.)
 const GROUP_ROW_H = 38
 const SECTION_ROW_H = 130
 const USER_COL_W = 240
@@ -124,7 +150,19 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
       list.push(section)
       byPrefix.set(prefix, list)
     }
-    return Array.from(byPrefix.entries()).map(([prefix, sections]) => ({ prefix, label: prefix === 'admin' ? 'Admin Panel' : prefixLabel(prefix), sections }))
+    return Array.from(byPrefix.entries())
+      .map(([prefix, sections]) => ({
+        prefix,
+        label: prefix === 'admin' ? 'Admin Panel' : prefixLabel(prefix),
+        sections,
+        isBrand: isBrandPrefix(prefix),
+      }))
+      /*
+       * Stable sort: group-wide blocks first in registry order, then the brands in the order
+       * lib/branches.ts lists them. Array.prototype.sort is stable in every engine this ships to, so
+       * equal ranks keep the order they were inserted in — which is registry order.
+       */
+      .sort((a, b) => groupRank(a.prefix) - groupRank(b.prefix))
   }, [displaySections])
 
   const visibleGroups = groupFilter === 'all' ? groups : groups.filter((g) => g.prefix === groupFilter)
@@ -348,16 +386,40 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
                   >
                     User Context <span className="font-bold lowercase text-slate-500">({filteredUsers.length})</span>
                   </th>
-                  {visibleGroups.map((g) => (
-                    <th
-                      key={g.prefix}
-                      colSpan={g.sections.length}
-                      className="sticky top-0 z-30 bg-slate-950 border-b border-l border-slate-800 px-2 text-center text-[9px] font-black uppercase tracking-[0.2em]"
-                      style={{ top: 0, height: GROUP_ROW_H }}
-                    >
-                      {g.label}
-                    </th>
-                  ))}
+                  {visibleGroups.map((g, gi) => {
+                    /*
+                     * ⚠️ The first brand block carries a heavier left edge. With ~25 columns of
+                     * identical checkboxes the eye has nothing to anchor on; this is the one line
+                     * that says "group-wide ends here, brands start".
+                     */
+                    const firstBrand = g.isBrand && !visibleGroups[gi - 1]?.isBrand
+                    return (
+                      <th
+                        key={g.prefix}
+                        colSpan={g.sections.length}
+                        title={g.isBrand ? `${g.label} — ${g.sections.length} section(s)` : `Group-wide — ${g.sections.length} section(s)`}
+                        className={cn(
+                          'sticky top-0 z-30 bg-slate-950 border-b border-slate-800 px-2 text-left text-[9px] font-black uppercase tracking-[0.2em]',
+                          firstBrand ? 'border-l-2 border-l-indigo-400' : 'border-l border-slate-800',
+                        )}
+                        style={{ top: 0, height: GROUP_ROW_H }}
+                      >
+                        {/*
+                          * ⚠️ THE LABEL STICKS TO THE LEFT EDGE, it is not centred in the cell.
+                          * KIA spans 28 columns; a centred label sits ~650px into the block, so
+                          * scrolling into the middle of a brand left the band blank and there was
+                          * nothing on screen saying which brand the checkboxes belonged to. Sticking
+                          * it keeps the answer visible for as long as any part of the block is.
+                          */}
+                        <span
+                          className={cn('inline-block', g.isBrand ? 'text-indigo-300' : 'text-slate-300')}
+                          style={{ position: 'sticky', left: USER_COL_W + 12 }}
+                        >
+                          {g.label}
+                        </span>
+                      </th>
+                    )
+                  })}
                 </tr>
 
                 {/* Row 2: Sections (sticky below group row) */}
@@ -378,7 +440,14 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
                     >
                       <div className="flex items-end justify-center pb-3" style={{ height: SECTION_ROW_H }}>
                         <span 
-                          className="whitespace-nowrap text-[9.5px] font-black uppercase tracking-wider text-slate-300" 
+                          className={cn(
+                            'whitespace-nowrap font-black uppercase tracking-wider',
+                            // ⚠️ Long names were being CLIPPED with no tooltip — "Vendor Payments &
+                            // Regist…", "Vehicle Allocation Histor…" — so a column could not be
+                            // identified at all. They shrink to fit now instead of being cut.
+                            s.name.length > 22 ? 'text-[8px]' : 'text-[9.5px]',
+                            s.locked ? 'text-slate-500' : 'text-slate-300',
+                          )}
                           style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
                         >
                           {s.name}

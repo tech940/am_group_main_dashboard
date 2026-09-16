@@ -1,6 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canViewMdTargets } from '@/lib/auth/md-targets-access'
+import { isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
 import { MainLayout } from '@/components/layout/main-layout'
 import { MdTargetsWorkspace } from '@/features/targets/md-targets-page'
 
@@ -28,7 +29,15 @@ export default async function TargetsPage() {
     redirect('/auth/login')
   }
 
-  if (!canViewMdTargets(appUser.role)) {
+  /*
+     * ⚠️ ROLE RULE **OR** AN EXPLICIT ACCESS-MAP GRANT (owner decision 2026-09-16: "nothing
+     * should be fixed by role"). `isPermissionExplicitlyAllowed` reads hand-ticked overrides
+     * only — never role templates — and the key is in GRANT_ONLY_SECTIONS, so no default can
+     * set it. This widens access by exactly one person and one section, and it keeps the page
+     * agreeing with the sidebar: the link only appears when this returns true.
+     */
+  if (!canViewMdTargets(appUser.role)
+    && !(await isPermissionExplicitlyAllowed(appUser, 'targets.view'))) {
     forbidden()
   }
 

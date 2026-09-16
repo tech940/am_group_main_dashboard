@@ -286,7 +286,7 @@ export function GatePassDetail({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto no-scrollbar scrollbar-none w-[95vw] sm:w-[70vw] max-w-[70vw] sm:max-w-[70vw] lg:max-w-[70vw] p-0 gap-0 rounded-2xl bg-slate-50 border border-slate-200 shadow-2xl">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto w-[96vw] sm:w-full sm:max-w-4xl p-0 gap-0 rounded-2xl bg-slate-50 border border-slate-200 shadow-2xl">
           {/* ── Top Header Banner ── */}
           <div className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 rounded-t-2xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">

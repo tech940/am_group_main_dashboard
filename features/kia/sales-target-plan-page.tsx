@@ -54,6 +54,37 @@ import { formatIndiaDateTime } from '@/lib/date-time'
  */
 
 type Cell = { actual: number; target: number; committedToDate: number; achievement: number | null; gap: number | null }
+
+type PlanModelItem = {
+  model: string
+  target: number
+  bookings: number
+  retails: number
+  achievement: number | null
+  gap: number | null
+}
+
+type PlanWeek = {
+  weekNumber: number
+  scope: 'week_1' | 'week_2' | 'week_3' | 'week_4'
+  label: string
+  dateRange: string
+  startDate: string
+  endDate: string
+  startDay: number
+  endDay: number
+  daysCount: number
+  workingDays: number
+  workingDaysElapsed: number
+  isCurrent: boolean
+  isPast: boolean
+  isFuture: boolean
+  enquiries: Cell
+  testDrives: Cell
+  bookings: Cell
+  retails: Cell
+}
+
 type ConsultantRow = {
   consultant: string
   teamLeader: string | null
@@ -61,24 +92,36 @@ type ConsultantRow = {
   testDrives: Cell
   bookings: Cell
   retails: Cell
+  weeks?: PlanWeek[]
+  models?: PlanModelItem[]
+  modelTargets?: Record<string, number>
   worstGap: number | null
   hasAnyTarget: boolean
   committedDays: number
-  commitmentBasis: 'month' | 'days' | 'none'
+  commitmentBasis: 'month' | 'weeks' | 'days' | 'none'
   monthCommitted: number | null
   daysPlanned: number | null
   isTeamLeader: boolean
   employeeId: string | null
 }
 
-type Scope = 'day' | 'month'
-type TeamRow = { teamLeader: string; consultants: number; enquiries: Cell; testDrives: Cell; bookings: Cell; retails: Cell }
+type TeamRow = {
+  teamLeader: string
+  consultants: number
+  enquiries: Cell
+  testDrives: Cell
+  bookings: Cell
+  retails: Cell
+  models?: PlanModelItem[]
+}
+
 type Day = {
   date: string; day: number; isSunday: boolean; isFuture: boolean
   enquiries: number; testDrives: number; bookings: number; retails: number
   committed: { enquiries: number; testDrives: number; bookings: number; retails: number }
   hasCommitment: boolean
 }
+
 type Payload = {
   context: {
     year: number; month: number; label: string; outlet: string; outletLabel: string
@@ -86,6 +129,9 @@ type Payload = {
     elapsedShare: number; isCurrentMonth: boolean
   }
   totals: { enquiries: Cell; testDrives: Cell; bookings: Cell; retails: Cell }
+  weeks: PlanWeek[]
+  models: PlanModelItem[]
+  allModels: string[]
   consultants: ConsultantRow[]
   teams: TeamRow[]
   daily: Day[]
@@ -440,28 +486,60 @@ function MetricTile({ theme, cell }: { theme: MetricTheme; cell: Cell }) {
             </span>
           )}
         </div>
+
+        {cell.target > 0 && (
+          <div className="pt-1 text-[10px] flex items-center justify-between font-medium">
+            <span className="text-slate-500 dark:text-slate-400">Target status:</span>
+            {cell.actual >= cell.target ? (
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">Target Achieved! ✓</span>
+            ) : (
+              <span className="font-bold text-amber-700 dark:text-amber-400">
+                Need {cell.target - cell.actual} more to hit target
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function ActualCell({ cell, metricKey }: { cell: Cell; metricKey?: MetricKey }) {
-  const theme = metricKey ? METRICS.find((m) => m.key === metricKey) : null
-  const accentHex = theme?.accentHex || '#334155'
+function PlanMetricCell({ cell, metricKey }: { cell: Cell; metricKey?: MetricKey }) {
+  const hasTgt = cell.target > 0
+  const need = hasTgt ? Math.max(0, cell.target - cell.actual) : 0
+  const isMet = hasTgt && cell.actual >= cell.target
+  const gap = cell.gap
 
   return (
-    <td className="py-2.5 px-3.5 whitespace-nowrap tabular-nums">
-      <div
-        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg border text-xs font-mono font-bold transition-all shadow-2xs"
-        style={{
-          backgroundColor: `${accentHex}0e`,
-          borderColor: `${accentHex}30`,
-        }}
-      >
-        <span style={{ color: accentHex }} className="font-extrabold">{cell.actual}</span>
-        {cell.target > 0 && (
-          <span className="text-slate-400 dark:text-slate-500 font-semibold text-[10.5px]">
-            / {cell.target}
+    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+      <div className="font-mono font-black text-xs text-slate-900 dark:text-white flex items-center justify-center gap-1">
+        <span>{cell.actual}</span>
+        <span className="text-[10px] text-slate-400 font-semibold">
+          / {hasTgt ? cell.target : '—'}
+        </span>
+      </div>
+
+      <div className="mt-1 flex flex-col items-center gap-0.5">
+        {gap !== null ? (
+          <span
+            className="text-[9.5px] font-extrabold tabular-nums"
+            style={{ color: paceInk(gap) }}
+          >
+            {paceText(gap)}
+          </span>
+        ) : (
+          <span className="text-[9.5px] text-slate-400 font-medium">—</span>
+        )}
+
+        {hasTgt && (
+          <span
+            className={`text-[8.5px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded border shadow-2xs ${
+              isMet
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+            }`}
+          >
+            {isMet ? 'Met ✓' : `Need ${need}`}
           </span>
         )}
       </div>
@@ -477,14 +555,7 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
 
   /*
    * ⚠️ THE COMMITMENTS FORM'S STATE LIVES HERE, not inside the tab.
-   *
-   * The tab unmounts the instant somebody clicks "This Month", so state held inside it was discarded
-   * without warning — type a morning's commitments, glance at the plan, come back to empty boxes and
-   * a database that never heard about any of it. Anything a person has typed has to outlive the
-   * component showing it.
    */
-  const [commitDate, setCommitDate] = useState('')
-  const [commitScope, setCommitScope] = useState<Scope>('day')
   const [commitDrafts, setCommitDrafts] = useState<Record<string, Draft>>({})
 
   const [year, month] = monthKey ? monthKey.split('-').map(Number) : [null, null]
@@ -664,8 +735,8 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
       {/* ── 4. Segmented Modern Tabs ──────────────────────────────────────────────────────── */}
       <div className="bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl inline-flex gap-1 border border-slate-200/80 dark:border-slate-800">
         {([
-          { key: 'month', label: 'This Month', icon: BarChart3 },
-          { key: 'targets', label: 'Commitments Entry', icon: Target },
+          { key: 'month', label: 'This Month & Milestones', icon: BarChart3 },
+          { key: 'targets', label: 'Monthly Commitments & Models', icon: Target },
           { key: 'daily', label: 'Day by Day Trajectory', icon: CalendarDays },
         ] as { key: TabKey; label: string; icon: any }[]).map((t) => {
           const Icon = t.icon
@@ -712,10 +783,6 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
           data={data}
           canSetTargets={canSetTargets}
           onSaved={() => query.refetch()}
-          date={commitDate}
-          setDate={setCommitDate}
-          scope={commitScope}
-          setScope={setCommitScope}
           drafts={commitDrafts}
           setDrafts={setCommitDrafts}
         />
@@ -730,9 +797,219 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
 /* ────────────────────────────────────────────────────────────────────────────────────────────── */
 
 function MonthTab({ data }: { data: Payload }) {
+  const [consultantView, setConsultantView] = useState<'weeks' | 'models' | 'funnel'>('weeks')
+
   return (
     <div className="space-y-6">
-      {/* 1. Team Breakdown */}
+      {/* ── 1. Dealership Model Performance Strip ── */}
+      {data.models && data.models.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+              <Layers className="h-4 w-4 text-[var(--dashboard-action-bg,#055B65)]" />
+              Dealership Model-Wise Performance
+            </h3>
+            <span className="text-[11px] font-bold text-slate-500">
+              {data.models.length} Models Tracked
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-6 gap-3">
+            {data.models.map((m) => {
+              const hasTgt = m.target > 0
+              const pct = hasTgt ? Math.min(100, Math.round((m.retails / m.target) * 100)) : 0
+              const need = hasTgt ? Math.max(0, m.target - m.retails) : 0
+              return (
+                <div
+                  key={m.model}
+                  className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                        {m.model}
+                      </span>
+                      {hasTgt && (
+                        <span className="text-[10px] font-mono font-bold text-slate-400">
+                          {pct}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xl font-black font-mono text-slate-900 dark:text-white tabular-nums">
+                        {m.retails}
+                      </span>
+                      <span className="text-xs text-slate-400 font-bold tabular-nums">
+                        / {hasTgt ? m.target : '—'} retails
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                    <div className="relative h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div
+                        className="absolute inset-y-0 left-0 bg-emerald-600 rounded-full transition-all duration-500"
+                        style={{ width: `${hasTgt ? pct : m.retails > 0 ? 100 : 0}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] font-bold">
+                      <span className="text-teal-700 dark:text-teal-400">
+                        {m.bookings} bkg
+                      </span>
+                      <span style={{ color: paceInk(m.gap) }}>
+                        {paceText(m.gap)}
+                      </span>
+                    </div>
+                    {hasTgt && (
+                      <div className="text-[9.5px] font-bold flex items-center justify-between pt-0.5 border-t border-slate-100/60 dark:border-slate-800/60">
+                        <span className="text-slate-400 font-normal">Remaining:</span>
+                        {m.retails >= m.target ? (
+                          <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">Met ✓</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400 font-extrabold">Need {need}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── 2. Weekly Performance Milestone Breakdown (Weeks 1 to 4) ── */}
+      {data.weeks && data.weeks.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-[var(--dashboard-action-bg,#055B65)]" />
+              Weekly Target vs. Actuals Milestone Breakdown (4 Weeks)
+            </h3>
+            <span className="text-[11px] font-bold text-slate-500">
+              Monthly targets divided across W1–W4
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {data.weeks.map((w) => {
+              const statusBg = w.isCurrent
+                ? 'bg-teal-50 border-teal-200 text-teal-800 dark:bg-teal-950/40 dark:border-teal-800 dark:text-teal-300'
+                : w.isPast
+                  ? 'bg-slate-100 border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
+                  : 'bg-slate-50 border-slate-200/60 text-slate-500 dark:bg-slate-900/50 dark:border-slate-800 dark:text-slate-500'
+              const statusLabel = w.isCurrent ? 'In Progress' : w.isPast ? 'Completed' : 'Upcoming'
+
+              const retailTgt = w.retails.target
+              const retailAct = w.retails.actual
+              const retailPct = retailTgt > 0 ? Math.min(100, Math.round((retailAct / retailTgt) * 100)) : 0
+              const retailGap = w.retails.gap
+              const retailNeed = retailTgt > 0 ? Math.max(0, retailTgt - retailAct) : 0
+
+              return (
+                <div
+                  key={w.scope}
+                  className={`p-4 rounded-2xl bg-white dark:bg-slate-900 border transition-all ${
+                    w.isCurrent
+                      ? 'border-teal-400 dark:border-teal-600 shadow-md ring-1 ring-teal-400/30'
+                      : 'border-slate-200/80 dark:border-slate-800 shadow-xs'
+                  }`}
+                >
+                  <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                      <span className="text-xs font-black text-slate-900 dark:text-white">
+                        Week {w.weekNumber}
+                      </span>
+                      <span className="block text-[10px] font-bold text-slate-400">
+                        Day {w.startDay}–{w.endDay}
+                      </span>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${statusBg}`}>
+                      {statusLabel}
+                    </span>
+                  </div>
+
+                  {/* Primary Retail Highlight */}
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-850/60 border border-slate-100 dark:border-slate-800 mb-2.5">
+                    <div className="flex items-center justify-between text-[11px] mb-1">
+                      <span className="font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                        <TrendingUp className="h-3 w-3 text-emerald-600" />
+                        Retails
+                      </span>
+                      <span className="font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                        {retailAct} <span className="text-slate-400 font-bold">/ {retailTgt > 0 ? retailTgt : '—'}</span>
+                      </span>
+                    </div>
+                    <div className="relative h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden mb-1">
+                      <div
+                        className="absolute inset-y-0 left-0 bg-emerald-600 rounded-full transition-all duration-500"
+                        style={{ width: `${retailPct}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] font-bold">
+                      <span style={{ color: paceInk(retailGap) }}>
+                        {paceText(retailGap)}
+                      </span>
+                      {retailTgt > 0 && (
+                        <span className={retailAct >= retailTgt ? 'text-emerald-600 font-black' : 'text-amber-600 font-bold'}>
+                          {retailAct >= retailTgt ? 'Week Met ✓' : `Need ${retailNeed}`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Mini Secondary Metrics Grid */}
+                  <div className="grid grid-cols-3 gap-1.5 text-center">
+                    <div className="p-1.5 rounded-lg bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/30">
+                      <span className="block text-[8.5px] font-black uppercase text-sky-700 dark:text-sky-300">Enq</span>
+                      <span className="text-[11px] font-black font-mono text-slate-800 dark:text-slate-200 tabular-nums">
+                        {w.enquiries.actual}
+                        <span className="text-[9px] text-slate-400 font-normal">/{w.enquiries.target || '—'}</span>
+                      </span>
+                      {w.enquiries.target > 0 && (
+                        <span className="block text-[8px] font-bold text-slate-500 mt-0.5">
+                          {w.enquiries.actual >= w.enquiries.target ? 'Met ✓' : `Need ${w.enquiries.target - w.enquiries.actual}`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-1.5 rounded-lg bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/30">
+                      <span className="block text-[8.5px] font-black uppercase text-purple-700 dark:text-purple-300">TD</span>
+                      <span className="text-[11px] font-black font-mono text-slate-800 dark:text-slate-200 tabular-nums">
+                        {w.testDrives.actual}
+                        <span className="text-[9px] text-slate-400 font-normal">/{w.testDrives.target || '—'}</span>
+                      </span>
+                      {w.testDrives.target > 0 && (
+                        <span className="block text-[8px] font-bold text-slate-500 mt-0.5">
+                          {w.testDrives.actual >= w.testDrives.target ? 'Met ✓' : `Need ${w.testDrives.target - w.testDrives.actual}`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-1.5 rounded-lg bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/30">
+                      <span className="block text-[8.5px] font-black uppercase text-teal-700 dark:text-teal-300">Bkg</span>
+                      <span className="text-[11px] font-black font-mono text-slate-800 dark:text-slate-200 tabular-nums">
+                        {w.bookings.actual}
+                        <span className="text-[9px] text-slate-400 font-normal">/{w.bookings.target || '—'}</span>
+                      </span>
+                      {w.bookings.target > 0 && (
+                        <span className="block text-[8px] font-bold text-slate-500 mt-0.5">
+                          {w.bookings.actual >= w.bookings.target ? 'Met ✓' : `Need ${w.bookings.target - w.bookings.actual}`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[9.5px] text-slate-400 font-semibold">
+                    <span>{w.workingDays} work days</span>
+                    <span>{w.workingDaysElapsed} elapsed</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── 3. Team Breakdown ── */}
       {data.teams.length > 0 && (
         <div className="overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
           <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900">
@@ -745,121 +1022,444 @@ function MonthTab({ data }: { data: Payload }) {
             </span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs kia-plan-table">
               <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-                <tr className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                <tr className="text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider text-[10px]">
                   <th scope="col" className="py-3 px-4">Team Leader</th>
                   <th scope="col" className="py-3 px-4">Headcount</th>
                   {METRICS.map((m) => (
-                    <th scope="col" key={m.key} className="py-3 px-3.5">
-                      {m.label}
+                    <th scope="col" key={m.key} className="py-3 px-3 text-center">
+                      <span className="block font-black" style={{ color: m.accentHex }}>{m.label}</span>
+                      <span className="block text-[9px] text-slate-400 font-normal">Act / Tgt · Gap</span>
                     </th>
                   ))}
-                  <th scope="col" className="py-3 px-4 text-right">Retail Pace</th>
+                  <th scope="col" className="py-3 px-4 text-right">Retail Pace & Deficit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {data.teams.map((t) => (
-                  <tr key={t.teamLeader} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
-                    <td className="py-3 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap">
-                      {t.teamLeader}
-                    </td>
-                    <td className="py-3 px-4 text-slate-500 font-mono font-bold">{t.consultants}</td>
-                    {METRICS.map((m) => (
-                      <ActualCell key={m.key} cell={t[m.key]} metricKey={m.key} />
-                    ))}
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <span
-                        className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-black font-mono tabular-nums border shadow-2xs"
-                        style={{
-                          backgroundColor: `${paceInk(t.retails.gap)}12`,
-                          borderColor: `${paceInk(t.retails.gap)}30`,
-                          color: paceInk(t.retails.gap),
-                        }}
-                      >
-                        {paceText(t.retails.gap)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {data.teams.map((t) => {
+                  const hasRetTgt = t.retails.target > 0
+                  const retNeed = hasRetTgt ? Math.max(0, t.retails.target - t.retails.actual) : 0
+                  return (
+                    <tr key={t.teamLeader} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
+                      <td className="py-3 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap">
+                        {t.teamLeader}
+                      </td>
+                      <td className="py-3 px-4 text-slate-500 font-mono font-bold">{t.consultants}</td>
+                      {METRICS.map((m) => (
+                        <PlanMetricCell key={m.key} cell={t[m.key]} metricKey={m.key} />
+                      ))}
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex flex-col items-end gap-1">
+                          <span
+                            className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-black font-mono tabular-nums border shadow-2xs"
+                            style={{
+                              backgroundColor: `${paceInk(t.retails.gap)}12`,
+                              borderColor: `${paceInk(t.retails.gap)}30`,
+                              color: paceInk(t.retails.gap),
+                            }}
+                          >
+                            {paceText(t.retails.gap)}
+                          </span>
+                          {hasRetTgt && (
+                            <span className="text-[9.5px] font-bold text-slate-500">
+                              {t.retails.actual >= t.retails.target
+                                ? 'Team Goal Met ✓'
+                                : `Need ${retNeed} more`}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* 2. Consultant Leaderboard */}
+      {/* ── 4. Consultant Leaderboard Table with 3 Switchable Views ── */}
       <div className="overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
-        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900">
+        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900">
           <div>
             <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
               <Target className="h-4 w-4 text-[var(--dashboard-action-bg,#055B65)]" />
               Consultant Performance Leaderboard
             </h3>
           </div>
-          <span className="text-[10.5px] text-slate-600 dark:text-slate-400 font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-            Sorted by gap (priority focus first)
-          </span>
+          <div className="flex items-center gap-2">
+            {/* View Switcher: Weekly Breakdown vs Model Wise Targets vs Full Funnel */}
+            <div className="inline-flex rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 p-0.5 text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={() => setConsultantView('weeks')}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                  consultantView === 'weeks'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-black'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Weekly Breakdown (W1–W4)
+              </button>
+              <button
+                type="button"
+                onClick={() => setConsultantView('models')}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                  consultantView === 'models'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-black'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Model-Wise Targets
+              </button>
+              <button
+                type="button"
+                onClick={() => setConsultantView('funnel')}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                  consultantView === 'funnel'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-black'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Full Funnel
+              </button>
+            </div>
+            <span className="text-[10.5px] text-slate-600 dark:text-slate-400 font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hidden md:inline-block">
+              Sorted by gap
+            </span>
+          </div>
         </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-              <tr className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                <th scope="col" className="py-3 px-4">Consultant</th>
-                <th scope="col" className="py-3 px-4">Team Leader</th>
-                {METRICS.map((m) => (
-                  <th scope="col" key={m.key} className="py-3 px-3.5">
-                    {m.label}
-                  </th>
-                ))}
-                <th scope="col" className="py-3 px-4 text-right">Pace Gap</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {data.consultants.map((row) => (
-                <tr key={row.consultant} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
-                  <td className="py-3 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap">
-                    {row.consultant}
-                    {row.isTeamLeader && (
-                      <span
-                        className="ml-2 align-middle px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide border shadow-2xs"
-                        style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#a5b4fc' }}
-                        title="Team leader — their own enquiries, test drives, bookings and retails, read from the DMS feed like anyone else"
-                      >
-                        Lead
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-slate-500 font-semibold whitespace-nowrap">
-                    {row.teamLeader || '—'}
-                  </td>
-                  {METRICS.map((m) => (
-                    <ActualCell key={m.key} cell={row[m.key]} metricKey={m.key} />
+          {/* VIEW 1: WEEKLY BREAKDOWN (W1 to W4) */}
+          {consultantView === 'weeks' && (
+            <table className="w-full text-left text-xs kia-plan-table">
+              <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <tr className="text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider text-[10px]">
+                  <th scope="col" className="py-3 px-4">Consultant</th>
+                  <th scope="col" className="py-3 px-4">Team Leader</th>
+                  {data.weeks.map((w) => (
+                    <th scope="col" key={w.scope} className="py-3 px-3 text-center">
+                      <span className="block font-black text-slate-800 dark:text-slate-200">W{w.weekNumber} Retail</span>
+                      <span className="block text-[9px] text-slate-400 font-normal">Day {w.startDay}–{w.endDay}</span>
+                    </th>
                   ))}
-                  <td className="py-3 px-4 text-right whitespace-nowrap">
-                    <span
-                      className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-black font-mono tabular-nums border shadow-2xs"
-                      style={{
-                        backgroundColor: `${paceInk(row.worstGap)}15`,
-                        borderColor: `${paceInk(row.worstGap)}40`,
-                        color: paceInk(row.worstGap),
-                      }}
-                      title={row.hasAnyTarget ? 'Against the retail target, then bookings' : 'No target set for this consultant'}
-                    >
-                      {paceText(row.worstGap)}
-                    </span>
-                  </td>
+                  <th scope="col" className="py-3 px-3.5 text-center font-black">
+                    <span className="block text-slate-800 dark:text-slate-200">Month Retail</span>
+                    <span className="block text-[9px] text-slate-400 font-normal">Act / Target</span>
+                  </th>
+                  <th scope="col" className="py-3 px-4 text-right">Retail Gap & Deficit</th>
                 </tr>
-              ))}
-              {data.consultants.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-400 font-medium">
-                    No consultant activity or targets recorded for this month.
-                  </td>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                {data.consultants.map((row) => {
+                  const hasRetTgt = row.retails.target > 0
+                  const retNeed = hasRetTgt ? Math.max(0, row.retails.target - row.retails.actual) : 0
+                  const isRetMet = hasRetTgt && row.retails.actual >= row.retails.target
+
+                  return (
+                    <tr key={row.consultant} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
+                      <td className="py-3 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap">
+                        {row.consultant}
+                        {row.isTeamLeader && (
+                          <span
+                            className="ml-2 align-middle px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide border shadow-2xs"
+                            style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#a5b4fc' }}
+                          >
+                            Lead
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-slate-500 font-semibold whitespace-nowrap">
+                        {row.teamLeader || '—'}
+                      </td>
+                      {(row.weeks || []).map((cw) => {
+                        const tgt = cw.retails.target
+                        const act = cw.retails.actual
+                        const gap = cw.retails.gap
+                        const hasTgt = tgt > 0
+                        const need = hasTgt ? Math.max(0, tgt - act) : 0
+                        const isMet = hasTgt && act >= tgt
+
+                        return (
+                          <td key={cw.scope} className="py-3 px-3 text-center whitespace-nowrap">
+                            <div className="font-mono font-black text-xs text-slate-900 dark:text-white">
+                              {act}{' '}
+                              <span className="text-[10px] text-slate-400 font-semibold">
+                                / {hasTgt ? tgt : '—'}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex flex-col items-center gap-0.5">
+                              {gap !== null && (
+                                <span
+                                  className="inline-block text-[9.5px] font-bold tabular-nums"
+                                  style={{ color: paceInk(gap) }}
+                                >
+                                  {paceText(gap)}
+                                </span>
+                              )}
+                              {hasTgt && (
+                                <span
+                                  className={`text-[8.5px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded border shadow-2xs ${
+                                    isMet
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                      : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                  }`}
+                                >
+                                  {isMet ? 'Met ✓' : `Need ${need}`}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        )
+                      })}
+                      <td className="py-3 px-3.5 text-center whitespace-nowrap font-mono">
+                        <div className="font-black text-xs text-slate-900 dark:text-white">
+                          {row.retails.actual}
+                          <span className="text-[10px] text-slate-400 font-semibold"> / {row.retails.target > 0 ? row.retails.target : '—'}</span>
+                        </div>
+                        {hasRetTgt && (
+                          <div className="mt-1">
+                            <span
+                              className={`text-[8.5px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded border shadow-2xs ${
+                                isRetMet
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                              }`}
+                            >
+                              {isRetMet ? 'Goal Met ✓' : `Need ${retNeed}`}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex flex-col items-end gap-1">
+                          <span
+                            className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-black font-mono tabular-nums border shadow-2xs"
+                            style={{
+                              backgroundColor: `${paceInk(row.retails.gap)}15`,
+                              borderColor: `${paceInk(row.retails.gap)}40`,
+                              color: paceInk(row.retails.gap),
+                            }}
+                          >
+                            {paceText(row.retails.gap)}
+                          </span>
+                          {hasRetTgt && (
+                            <span className="text-[9.5px] font-bold text-slate-500">
+                              {isRetMet
+                                ? 'Target Met ✓'
+                                : `Need ${retNeed} to hit`}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {/* VIEW 2: MODEL-WISE TARGETS & ACHIEVED */}
+          {consultantView === 'models' && (
+            <table className="w-full text-left text-xs kia-plan-table">
+              <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <tr className="text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider text-[10px]">
+                  <th scope="col" className="py-3 px-4">Consultant</th>
+                  <th scope="col" className="py-3 px-4">Team Leader</th>
+                  {data.allModels.map((m) => (
+                    <th scope="col" key={m} className="py-3 px-3 text-center">
+                      <span className="block font-black text-slate-800 dark:text-slate-200">{m}</span>
+                      <span className="block text-[9px] text-slate-400 font-normal">Act / Tgt · Gap</span>
+                    </th>
+                  ))}
+                  <th scope="col" className="py-3 px-3.5 text-center font-black">
+                    <span className="block text-slate-800 dark:text-slate-200">Total Retail</span>
+                    <span className="block text-[9px] text-slate-400 font-normal">Act / Target</span>
+                  </th>
+                  <th scope="col" className="py-3 px-4 text-right">Retail Gap & Deficit</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                {data.consultants.map((row) => {
+                  const hasRetTgt = row.retails.target > 0
+                  const retNeed = hasRetTgt ? Math.max(0, row.retails.target - row.retails.actual) : 0
+                  const isRetMet = hasRetTgt && row.retails.actual >= row.retails.target
+
+                  return (
+                    <tr key={row.consultant} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
+                      <td className="py-3 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap">
+                        {row.consultant}
+                        {row.isTeamLeader && (
+                          <span
+                            className="ml-2 align-middle px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide border shadow-2xs"
+                            style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#a5b4fc' }}
+                          >
+                            Lead
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-slate-500 font-semibold whitespace-nowrap">
+                        {row.teamLeader || '—'}
+                      </td>
+                      {data.allModels.map((mName) => {
+                        const mItem = (row.models || []).find((x) => x.model === mName)
+                        const act = mItem?.retails || 0
+                        const tgt = mItem?.target || 0
+                        const hasTgt = tgt > 0
+                        const need = hasTgt ? Math.max(0, tgt - act) : 0
+                        const isMet = hasTgt && act >= tgt
+
+                        return (
+                          <td key={mName} className="py-3 px-3 text-center whitespace-nowrap">
+                            <div className="font-mono font-black text-xs text-slate-900 dark:text-white">
+                              {act}{' '}
+                              <span className="text-[10px] text-slate-400 font-semibold">
+                                / {hasTgt ? tgt : '—'}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex flex-col items-center gap-0.5">
+                              {hasTgt && mItem && mItem.gap !== null ? (
+                                <span
+                                  className="inline-block text-[9.5px] font-bold tabular-nums"
+                                  style={{ color: paceInk(mItem.gap) }}
+                                >
+                                  {paceText(mItem.gap)}
+                                </span>
+                              ) : null}
+                              {hasTgt && (
+                                <span
+                                  className={`text-[8.5px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded border shadow-2xs ${
+                                    isMet
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                      : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                  }`}
+                                >
+                                  {isMet ? 'Met ✓' : `Need ${need}`}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        )
+                      })}
+                      <td className="py-3 px-3.5 text-center whitespace-nowrap font-mono">
+                        <div className="font-black text-xs text-slate-900 dark:text-white">
+                          {row.retails.actual}
+                          <span className="text-[10px] text-slate-400 font-semibold"> / {row.retails.target > 0 ? row.retails.target : '—'}</span>
+                        </div>
+                        {hasRetTgt && (
+                          <div className="mt-1">
+                            <span
+                              className={`text-[8.5px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded border shadow-2xs ${
+                                isRetMet
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                              }`}
+                            >
+                              {isRetMet ? 'Goal Met ✓' : `Need ${retNeed}`}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex flex-col items-end gap-1">
+                          <span
+                            className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-black font-mono tabular-nums border shadow-2xs"
+                            style={{
+                              backgroundColor: `${paceInk(row.retails.gap)}15`,
+                              borderColor: `${paceInk(row.retails.gap)}40`,
+                              color: paceInk(row.retails.gap),
+                            }}
+                          >
+                            {paceText(row.retails.gap)}
+                          </span>
+                          {hasRetTgt && (
+                            <span className="text-[9.5px] font-bold text-slate-500">
+                              {isRetMet
+                                ? 'Target Met ✓'
+                                : `Need ${retNeed} to hit`}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {/* VIEW 3: FULL FUNNEL OVERVIEW */}
+          {consultantView === 'funnel' && (
+            <table className="w-full text-left text-xs kia-plan-table">
+              <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <tr className="text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider text-[10px]">
+                  <th scope="col" className="py-3 px-4">Consultant</th>
+                  <th scope="col" className="py-3 px-4">Team Leader</th>
+                  {METRICS.map((m) => (
+                    <th scope="col" key={m.key} className="py-3 px-3 text-center">
+                      <span className="block font-black" style={{ color: m.accentHex }}>{m.label}</span>
+                      <span className="block text-[9px] text-slate-400 font-normal">Act / Tgt · Gap</span>
+                    </th>
+                  ))}
+                  <th scope="col" className="py-3 px-4 text-right">Pace Gap & Deficit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                {data.consultants.map((row) => {
+                  const hasRetTgt = row.retails.target > 0
+                  const retNeed = hasRetTgt ? Math.max(0, row.retails.target - row.retails.actual) : 0
+                  const isRetMet = hasRetTgt && row.retails.actual >= row.retails.target
+
+                  return (
+                    <tr key={row.consultant} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
+                      <td className="py-3 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap">
+                        {row.consultant}
+                        {row.isTeamLeader && (
+                          <span
+                            className="ml-2 align-middle px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide border shadow-2xs"
+                            style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#a5b4fc' }}
+                            title="Team leader"
+                          >
+                            Lead
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-slate-500 font-semibold whitespace-nowrap">
+                        {row.teamLeader || '—'}
+                      </td>
+                      {METRICS.map((m) => (
+                        <PlanMetricCell key={m.key} cell={row[m.key]} metricKey={m.key} />
+                      ))}
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex flex-col items-end gap-1">
+                          <span
+                            className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-black font-mono tabular-nums border shadow-2xs"
+                            style={{
+                              backgroundColor: `${paceInk(row.worstGap)}15`,
+                              borderColor: `${paceInk(row.worstGap)}40`,
+                              color: paceInk(row.worstGap),
+                            }}
+                            title={row.hasAnyTarget ? 'Against retail target, then bookings' : 'No target set'}
+                          >
+                            {paceText(row.worstGap)}
+                          </span>
+                          {hasRetTgt && (
+                            <span className="text-[9.5px] font-bold text-slate-500">
+                              {isRetMet
+                                ? 'Goal Met ✓'
+                                : `Need ${retNeed} retails`}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
@@ -869,76 +1469,66 @@ function MonthTab({ data }: { data: Payload }) {
 /* ────────────────────────────────────────────────────────────────────────────────────────────── */
 
 type Draft = {
-  enquiries: string; testDrives: string; bookings: string; retails: string; note: string
-  /** A commitment exists for this person on this day (possibly all zeros). */
+  enquiries: string
+  testDrives: string
+  bookings: string
+  retails: string
+  modelTargets: Record<string, string>
+  note: string
   present: boolean
-  /** ⚠️ This exact content is what the database holds. False the moment somebody types. */
   saved: boolean
 }
 type TeamDraft = Record<string, string>
 
-const EMPTY_DRAFT: Draft = { enquiries: '', testDrives: '', bookings: '', retails: '', note: '', present: false, saved: false }
-
-/** Today in IST as 'YYYY-MM-DD'. en-CA formats as ISO, which is why it is used rather than toISOString. */
-function istTodayIso(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date())
+const EMPTY_DRAFT: Draft = {
+  enquiries: '',
+  testDrives: '',
+  bookings: '',
+  retails: '',
+  modelTargets: {},
+  note: '',
+  present: false,
+  saved: false,
 }
 
-/**
- * Recording what each consultant commits to for ONE DAY.
- *
- * ⚠️ THERE IS NO "ACHIEVED" BOX ANYWHERE ON THIS FORM, and there must never be one. What happened is
- * read from the DMS feeds; the moment somebody can type it, this screen starts disagreeing with Sales
- * Report and becomes the workbook it replaced.
- *
- * ⚠️ A ROW SAVED AS ALL ZEROS IS A REAL COMMITMENT — "no retail today, the stock is not here". A row
- * never filled in is not. That is why Clear is a separate action from typing zeros: the two are
- * different statements and the screen has to be able to make both.
- */
+const DEFAULT_ENTRY_MODELS = ['SONET', 'NEW SELTOS', 'CARENS', 'SYROS', 'SORENTO']
+
 function CommitmentsTab({
-  data, canSetTargets, onSaved, date, setDate, scope, setScope, drafts, setDrafts,
+  data,
+  canSetTargets,
+  onSaved,
+  drafts,
+  setDrafts,
 }: {
   data: Payload
   canSetTargets: boolean
   onSaved: () => void
-  /*
-   * ⚠️ `date` AND `drafts` LIVE IN THE PAGE, NOT HERE. This component unmounts the moment somebody
-   * clicks another tab, so holding half-typed commitments in its own state meant a glance at "This
-   * Month" threw the morning's entry away without a word. State that a person has typed into must
-   * outlive the thing displaying it.
-   */
-  date: string
-  setDate: (value: string) => void
-  scope: Scope
-  setScope: (value: Scope) => void
   drafts: Record<string, Draft>
   setDrafts: React.Dispatch<React.SetStateAction<Record<string, Draft>>>
 }) {
   const monthPrefix = `${data.context.year}-${String(data.context.month).padStart(2, '0')}`
-  const today = istTodayIso()
+  const date = `${monthPrefix}-01`
   const outlet = data.context.outlet
   const [teams, setTeams] = useState<TeamDraft>({})
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [customModels, setCustomModels] = useState<string[]>([])
+  const [newModelName, setNewModelName] = useState('')
+  const [showAddModel, setShowAddModel] = useState(false)
 
-  /*
-   * Changing the month on the toolbar must move the day too, or the form edits a day that is not on
-   * screen. An empty date means the page has not chosen one yet — the first render settles it.
-   */
-  useEffect(() => {
-    if (date && date.startsWith(monthPrefix)) return
-    setDate(today.startsWith(monthPrefix) ? today : `${monthPrefix}-01`)
-  }, [monthPrefix, today, date, setDate])
+  // Combine default models, extra models from backend, and user-added custom models
+  const activeModels = useMemo(() => {
+    const list = [...DEFAULT_ENTRY_MODELS]
+    for (const m of data.allModels || []) {
+      if (!list.includes(m) && m !== 'OTHER') list.push(m)
+    }
+    for (const m of customModels) {
+      const u = m.trim().toUpperCase()
+      if (u && !list.includes(u)) list.push(u)
+    }
+    return list
+  }, [data.allModels, customModels])
 
-  /*
-   * ⚠️ SEEDED FROM A STABLE SIGNATURE, NOT FROM `data.consultants`.
-   *
-   * That array is parsed fresh out of JSON on every refetch, so its identity changes even when the
-   * people are identical — and depending on it meant every refresh of the plan threw away whatever
-   * was half-typed in this form. Only a change in the actual roster should reseed it.
-   */
   const rosterKey = useMemo(
     () => data.consultants.map((r) => `${r.consultant}:${r.teamLeader ?? ''}`).join('|'),
     [data.consultants],
@@ -952,36 +1542,36 @@ function CommitmentsTab({
   }, [rosterKey])
 
   /*
-   * What is already committed for the chosen day.
-   *
-   * ⚠️ DEPENDS ON THE DAY AND THE OUTLET ONLY. Re-reading on anything else wipes the form under the
-   * person typing into it — which is exactly how a morning's commitments were entered and then
-   * silently lost.
+   * Read monthly commitments & model targets from database.
    */
   useEffect(() => {
-    if (!date) return
     let cancelled = false
     async function load() {
       setLoading(true)
       try {
-        const params = new URLSearchParams({ outlet, date, scope })
+        const params = new URLSearchParams({ outlet, date, scope: 'month' })
         const res = await fetch(`/api/brands/kia/sales-performance/targets?${params}`, { cache: 'no-store' })
         const body = await res.json().catch(() => ({}))
         if (cancelled) return
         const next: Record<string, Draft> = {}
         for (const e of (body.entries || [])) {
+          const mTargetsRaw = (e.modelTargets && typeof e.modelTargets === 'object') ? e.modelTargets : {}
+          const mTargetsStr: Record<string, string> = {}
+          for (const [k, v] of Object.entries(mTargetsRaw)) {
+            mTargetsStr[k] = v !== undefined && v !== null ? String(v) : ''
+          }
+
           next[String(e.consultantName).trim()] = {
-            enquiries: String(e.enquiries ?? ''),
-            testDrives: String(e.testDrives ?? ''),
-            bookings: String(e.bookings ?? ''),
-            retails: String(e.retails ?? ''),
+            enquiries: e.enquiries !== null && e.enquiries !== undefined ? String(e.enquiries) : '',
+            testDrives: e.testDrives !== null && e.testDrives !== undefined ? String(e.testDrives) : '',
+            bookings: e.bookings !== null && e.bookings !== undefined ? String(e.bookings) : '',
+            retails: e.retails !== null && e.retails !== undefined ? String(e.retails) : '',
+            modelTargets: mTargetsStr,
             note: e.note || '',
             present: true,
             saved: true,
           }
         }
-        /* Keyed by the stored name; rendering falls back to EMPTY_DRAFT for anyone absent, so the
-         * roster can change without this having to know about it. */
         setDrafts(next)
       } catch {
         if (!cancelled) setDrafts({})
@@ -991,7 +1581,7 @@ function CommitmentsTab({
     }
     void load()
     return () => { cancelled = true }
-  }, [date, outlet, scope])
+  }, [date, outlet, setDrafts])
 
   const DEFAULT_TEAM_LEADERS = [
     'MICHAEL DEEP SINGH',
@@ -1007,34 +1597,84 @@ function CommitmentsTab({
     return [...set].sort()
   }, [teams])
 
-  const set = (name: string, field: keyof Draft, value: string) =>
+  const setFunnel = (name: string, field: 'enquiries' | 'testDrives' | 'bookings' | 'retails' | 'note', value: string) =>
     setDrafts((prev) => ({
       ...prev,
       [name]: { ...(prev[name] || EMPTY_DRAFT), [field]: value, present: true, saved: false },
     }))
 
-  /* Rows the person actually touched. An untouched row must NOT be written as a row of zeros. */
-  const touched = (d: Draft) =>
-    d.present && (d.enquiries !== '' || d.testDrives !== '' || d.bookings !== '' || d.retails !== '' || d.note.trim() !== '')
+  const setModelTarget = (name: string, model: string, value: string) =>
+    setDrafts((prev) => {
+      const current = prev[name] || EMPTY_DRAFT
+      const currentModels = { ...current.modelTargets, [model]: value }
+      return {
+        ...prev,
+        [name]: {
+          ...current,
+          modelTargets: currentModels,
+          present: true,
+          saved: false,
+        },
+      }
+    })
+
+  const touched = (d: Draft) => {
+    if (!d.present) return false
+    if (d.enquiries !== '' || d.testDrives !== '' || d.bookings !== '' || d.retails !== '' || d.note.trim() !== '') return true
+    return Object.values(d.modelTargets || {}).some((v) => v !== '' && v !== '0')
+  }
 
   const committedCount = Object.values(drafts).filter(touched).length
-  /* Rows the person has typed into that are not yet in the database. */
   const unsavedCount = data.consultants.filter((row) => {
     const d = drafts[row.consultant]
     return d && touched(d) && !d.saved
   }).length
 
+  // Calculate live sum totals across all consultant drafts
+  const totals = useMemo(() => {
+    let enq = 0
+    let td = 0
+    let bkg = 0
+    let ret = 0
+    const models: Record<string, number> = {}
+    for (const m of activeModels) models[m] = 0
+
+    for (const row of data.consultants) {
+      const d = drafts[row.consultant]
+      if (!d) continue
+      enq += Number(d.enquiries) || 0
+      td += Number(d.testDrives) || 0
+      bkg += Number(d.bookings) || 0
+      ret += Number(d.retails) || 0
+      for (const m of activeModels) {
+        models[m] += Number(d.modelTargets?.[m]) || 0
+      }
+    }
+
+    const totalModelSum = Object.values(models).reduce((a, b) => a + b, 0)
+    return { enq, td, bkg, ret, models, totalModelSum }
+  }, [drafts, data.consultants, activeModels])
+
+  const handleAddModel = () => {
+    const u = newModelName.trim().toUpperCase()
+    if (u && !activeModels.includes(u)) {
+      setCustomModels((prev) => [...prev, u])
+      setNewModelName('')
+      setShowAddModel(false)
+      toast({
+        title: 'Model added',
+        description: `Added ${u} column to commitments matrix.`,
+        variant: 'success',
+      })
+    }
+  }
+
   async function save() {
     const pending = data.consultants.filter((row) => touched(drafts[row.consultant] || EMPTY_DRAFT))
-    /*
-     * ⚠️ AN EMPTY SAVE IS NOT A SUCCESS. It used to POST zero entries, write nothing, and toast
-     * "0 consultants saved" in the same green as a real save — so a day that never reached the
-     * database looked exactly like one that did.
-     */
     if (pending.length === 0) {
       toast({
         title: 'Nothing to save yet',
-        description: 'Type a number against at least one consultant first. An empty box means nobody has committed.',
+        description: 'Type a target number against at least one consultant first.',
         variant: 'error',
       })
       return
@@ -1045,12 +1685,19 @@ function CommitmentsTab({
       const entries = pending
         .map((row) => {
           const d = drafts[row.consultant]
+          const mTargetsNum: Record<string, number> = {}
+          for (const [k, v] of Object.entries(d.modelTargets || {})) {
+            const val = Number(v) || 0
+            if (val > 0) mTargetsNum[k] = val
+          }
+
           return {
             consultantName: row.consultant,
             enquiries: Number(d.enquiries) || 0,
             testDrives: Number(d.testDrives) || 0,
             bookings: Number(d.bookings) || 0,
             retails: Number(d.retails) || 0,
+            modelTargets: mTargetsNum,
             note: d.note.trim() || null,
           }
         })
@@ -1061,7 +1708,7 @@ function CommitmentsTab({
         body: JSON.stringify({
           outlet,
           date,
-          scope,
+          scope: 'month',
           entries,
           year: data.context.year,
           month: data.context.month,
@@ -1073,11 +1720,10 @@ function CommitmentsTab({
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body.error || 'Could not save the commitments')
+
       toast({
-        title: scope === 'month' ? 'Month commitments saved' : 'Day commitments saved',
-        description: `${body.saved ?? entries.length} consultant${(body.saved ?? entries.length) === 1 ? '' : 's'} for ${
-          scope === 'month' ? data.context.label : date
-        }.`,
+        title: 'Monthly Commitments Saved',
+        description: `Saved targets for ${body.saved ?? entries.length} consultants for ${data.context.label}. Weekly targets divided automatically.`,
         variant: 'success',
       })
       setDrafts((prev) => {
@@ -1098,15 +1744,14 @@ function CommitmentsTab({
 
   async function clearOne(consultant: string) {
     try {
-      const params = new URLSearchParams({ outlet, date, consultant, scope })
+      const params = new URLSearchParams({ outlet, date, consultant, scope: 'month' })
       const res = await fetch(`/api/brands/kia/sales-performance/targets?${params}`, { method: 'DELETE' })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not clear it')
       setDrafts((prev) => ({ ...prev, [consultant]: { ...EMPTY_DRAFT } }))
+
       toast({
         title: 'Commitment cleared',
-        description: `${consultant} has no ${scope === 'month' ? 'month' : 'day'} commitment recorded for ${
-          scope === 'month' ? data.context.label : date
-        }.`,
+        description: `${consultant} has no monthly commitment recorded for ${data.context.label}.`,
         variant: 'success',
       })
       onSaved()
@@ -1120,14 +1765,11 @@ function CommitmentsTab({
       <div className="rounded-2xl border border-slate-200 bg-slate-50 dark:bg-slate-900 p-6 text-center">
         <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
           Commitments are recorded by the General Manager, Sales Manager, Sales Head or MD. You can view
-          the plan and the day-by-day on the other two tabs.
+          the plan on the other tabs.
         </p>
       </div>
     )
   }
-
-  const dayName = new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', timeZone: 'UTC' })
-  const isSunday = new Date(`${date}T00:00:00Z`).getUTCDay() === 0
 
   return (
     <div className="overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-[0_4px_20px_rgba(15,23,42,0.02)] space-y-0">
@@ -1136,57 +1778,56 @@ function CommitmentsTab({
         <div>
           <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
             <Target className="h-4 w-4 text-[var(--dashboard-action-bg,#055B65)]" />
-            Commitments Matrix — {data.context.outletLabel}
+            Monthly Targets & Model Matrix — {data.context.outletLabel}
           </h3>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            {scope === 'month'
-              ? `What each consultant signs up to for the whole of ${data.context.label}.`
-              : 'What each consultant commits to for this one day.'}{' '}
-            Achievement is read from the DMS feed and is never typed here.
+            Set monthly funnel targets and model-wise targets for {data.context.label}. Targets are automatically divided across Week 1 (1–7), Week 2 (8–14), Week 3 (15–21), and Week 4 (22–End).
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Scope Toggle */}
-          <div role="group" aria-label="Commitment scope" className="inline-flex rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-0.5 shadow-2xs">
-            {([
-              { key: 'day', label: 'For a day' },
-              { key: 'month', label: 'For the month' },
-            ] as { key: Scope; label: string }[]).map((option) => {
-              const isSelected = scope === option.key
-              return (
+          {/* Add Model Button & Popup */}
+          <div className="relative">
+            {showAddModel ? (
+              <div className="flex items-center gap-1.5 p-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <Input
+                  value={newModelName}
+                  onChange={(e) => setNewModelName(e.target.value)}
+                  placeholder="e.g. CARNIVAL, EV6"
+                  className="h-7 w-32 text-xs font-bold uppercase rounded-lg border-slate-200 dark:border-slate-700"
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddModel()}
+                  autoFocus
+                />
                 <button
-                  key={option.key}
                   type="button"
-                  onClick={() => setScope(option.key)}
-                  aria-pressed={isSelected}
-                  className={`h-8 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-[var(--dashboard-action-bg,#055B65)] text-white shadow-2xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
+                  onClick={handleAddModel}
+                  className="h-7 px-2.5 rounded-lg text-xs font-black bg-teal-600 text-white cursor-pointer hover:bg-teal-700"
                 >
-                  {option.label}
+                  Add
                 </button>
-              )
-            })}
+                <button
+                  type="button"
+                  onClick={() => setShowAddModel(false)}
+                  className="h-7 px-2 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAddModel(true)}
+                className="h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center gap-1.5 shadow-2xs transition-all"
+              >
+                <span>+</span>
+                <span>Add Model Column</span>
+              </button>
+            )}
           </div>
 
-          {scope === 'day' ? (
-            <Input
-              type="date"
-              value={date}
-              min={`${monthPrefix}-01`}
-              max={`${monthPrefix}-${String(data.context.monthDays).padStart(2, '0')}`}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-9 w-36 text-xs font-bold rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-              aria-label="Commitment date"
-            />
-          ) : (
-            <span className="h-9 px-3 inline-flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300">
-              {data.context.label}
-            </span>
-          )}
+          <span className="h-9 px-3.5 inline-flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300 font-mono">
+            {data.context.label}
+          </span>
 
           <Button
             onClick={save}
@@ -1195,37 +1836,29 @@ function CommitmentsTab({
             className="h-9 px-4 rounded-xl text-xs font-bold border-none cursor-pointer hover:opacity-90 shadow-2xs active:scale-95 disabled:opacity-50"
           >
             {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
-            {scope === 'month' ? 'Save Month Targets' : 'Save Day Commitments'}
+            Save Month Targets
           </Button>
         </div>
       </div>
 
-      {/* Info & Status Strip */}
+      {/* Info & Status Strip with Totals Summary */}
       <div className="px-5 py-2.5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] bg-white dark:bg-slate-900">
-        {scope === 'day' && <span className="font-bold text-slate-700 dark:text-slate-300">{dayName}</span>}
-        {scope === 'day' && isSunday && (
-          <span className="font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: `${INK.behind}15`, color: INK.behind }}>
-            Sunday — showroom normally closed
-          </span>
-        )}
-        {scope === 'month' && (
-          <span className="font-bold" style={{ color: INK.teal }}>
-            A month commitment overrides the day-by-day sum when both exist
-          </span>
-        )}
+        <span className="font-bold" style={{ color: INK.teal }}>
+          Monthly Target & Model Breakdown
+        </span>
         <span className="text-slate-500 font-medium">
-          {loading
-            ? 'Reading commitments…'
-            : `${committedCount} of ${data.consultants.length} committed for this ${scope === 'month' ? 'month' : 'day'}`}
+          {loading ? 'Reading commitments…' : `${committedCount} of ${data.consultants.length} consultants committed`}
         </span>
         {unsavedCount > 0 && (
           <span className="font-black px-2 py-0.5 rounded-md border" style={{ backgroundColor: `${INK.behind}15`, borderColor: `${INK.behind}30`, color: INK.behind }}>
             {unsavedCount} row{unsavedCount === 1 ? '' : 's'} not saved yet
           </span>
         )}
-        <span className="ml-auto text-slate-400 font-medium">
-          Empty = nobody has committed. A saved 0 = committed to none.
-        </span>
+        <div className="ml-auto flex items-center gap-3">
+          <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">
+            Total Retails: <strong className="text-emerald-600">{totals.ret}</strong> · Model Targets Sum: <strong className={totals.totalModelSum === totals.ret ? 'text-teal-600' : 'text-amber-600'}>{totals.totalModelSum}</strong>
+          </span>
+        </div>
       </div>
 
       <datalist id="kia-team-leaders">
@@ -1234,17 +1867,24 @@ function CommitmentsTab({
 
       {/* Table Data Entry Grid */}
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
+        <table className="w-full text-left text-xs kia-plan-table">
           <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-            <tr className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+            <tr className="text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider text-[10px]">
               <th scope="col" className="py-3 px-4">Consultant</th>
-              <th scope="col" className="py-3 px-3.5">Team Leader</th>
+              <th scope="col" className="py-3 px-3">Team Leader</th>
+              {/* Funnel Targets */}
               {METRICS.map((m) => (
-                <th scope="col" key={m.key} className="py-3 px-2.5 text-center">
+                <th scope="col" key={m.key} className="py-3 px-2 text-center" style={{ color: m.accentHex }}>
                   {m.label}
                 </th>
               ))}
-              <th scope="col" className="py-3 px-3.5">Note</th>
+              {/* Model Targets */}
+              {activeModels.map((mName) => (
+                <th scope="col" key={mName} className="py-3 px-2 text-center bg-slate-50/60 dark:bg-slate-900/40">
+                  <span className="font-black text-slate-800 dark:text-slate-200">{mName}</span>
+                </th>
+              ))}
+              <th scope="col" className="py-3 px-3">Note</th>
               <th scope="col" className="py-3 px-4 text-right">Clear</th>
             </tr>
           </thead>
@@ -1263,51 +1903,71 @@ function CommitmentsTab({
                         Lead
                       </span>
                     )}
-                    <span className="block text-[10px] font-medium text-slate-400">
-                      {row.commitmentBasis === 'month'
-                        ? `Month commitment set · ${row.committedDays} day${row.committedDays === 1 ? '' : 's'} planned`
-                        : `${row.committedDays} day${row.committedDays === 1 ? '' : 's'} committed this month`}
-                    </span>
                   </td>
-                  <td className="py-2.5 px-3.5">
+                  <td className="py-2.5 px-3">
                     <Input
                       list="kia-team-leaders"
                       value={teams[row.consultant] ?? ''}
                       onChange={(e) => setTeams((prev) => ({ ...prev, [row.consultant]: e.target.value }))}
                       placeholder="Unassigned"
-                      className="h-8 w-32 text-xs font-semibold rounded-lg border-slate-200 dark:border-slate-800"
+                      className="h-8 w-28 text-xs font-semibold rounded-lg border-slate-200 dark:border-slate-800"
                       aria-label={`Team leader for ${row.consultant}`}
                     />
                   </td>
+                  {/* Funnel Inputs */}
                   {METRICS.map((m) => {
-                    const hasVal = d[m.key as keyof Draft] !== '' && d[m.key as keyof Draft] !== undefined
+                    const hasVal = d[m.key as 'enquiries' | 'testDrives' | 'bookings' | 'retails'] !== '' && d[m.key as 'enquiries' | 'testDrives' | 'bookings' | 'retails'] !== undefined
                     return (
-                      <td key={m.key} className="py-2.5 px-2.5 text-center">
+                      <td key={m.key} className="py-2.5 px-1.5 text-center">
                         <Input
                           type="number"
                           min="0"
                           step="1"
-                          value={d[m.key as keyof Draft] as string}
-                          onChange={(e) => set(row.consultant, m.key as keyof Draft, e.target.value)}
+                          value={d[m.key as 'enquiries' | 'testDrives' | 'bookings' | 'retails'] as string}
+                          onChange={(e) => setFunnel(row.consultant, m.key as 'enquiries' | 'testDrives' | 'bookings' | 'retails', e.target.value)}
                           placeholder="—"
                           style={{
                             borderColor: hasVal ? `${m.accentHex}45` : undefined,
                             backgroundColor: hasVal ? `${m.accentHex}0a` : undefined,
                             color: hasVal ? m.accentHex : undefined,
                           }}
-                          className="h-8 w-16 mx-auto text-xs font-mono font-black rounded-lg tabular-nums border-slate-200 dark:border-slate-800 text-center transition-all"
-                          aria-label={`${m.label} committed by ${row.consultant} for ${scope === 'month' ? data.context.label : date}`}
+                          className="h-8 w-14 mx-auto text-xs font-mono font-black rounded-lg tabular-nums border-slate-200 dark:border-slate-800 text-center transition-all"
+                          aria-label={`${m.label} target for ${row.consultant}`}
                         />
                       </td>
                     )
                   })}
-                  <td className="py-2.5 px-3.5">
+                  {/* Model Target Inputs */}
+                  {activeModels.map((mName) => {
+                    const val = d.modelTargets?.[mName] ?? ''
+                    const hasVal = val !== '' && val !== '0'
+                    return (
+                      <td key={mName} className="py-2.5 px-1.5 text-center bg-slate-50/40 dark:bg-slate-900/30">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={val}
+                          onChange={(e) => setModelTarget(row.consultant, mName, e.target.value)}
+                          placeholder="—"
+                          style={{
+                            borderColor: hasVal ? `${INK.teal}50` : undefined,
+                            backgroundColor: hasVal ? `${INK.teal}0d` : undefined,
+                            color: hasVal ? INK.teal : undefined,
+                          }}
+                          className="h-8 w-14 mx-auto text-xs font-mono font-black rounded-lg tabular-nums border-slate-200 dark:border-slate-800 text-center transition-all"
+                          aria-label={`${mName} target for ${row.consultant}`}
+                        />
+                      </td>
+                    )
+                  })}
+                  <td className="py-2.5 px-3">
                     <Input
                       value={d.note}
-                      onChange={(e) => set(row.consultant, 'note', e.target.value)}
-                      placeholder="half day, stock held…"
-                      className="h-8 w-44 text-xs font-medium rounded-lg border-slate-200 dark:border-slate-800"
-                      aria-label={`Note for ${row.consultant} on ${date}`}
+                      onChange={(e) => setFunnel(row.consultant, 'note', e.target.value)}
+                      placeholder="special focus, notes…"
+                      className="h-8 w-32 text-xs font-medium rounded-lg border-slate-200 dark:border-slate-800"
+                      aria-label={`Note for ${row.consultant}`}
                     />
                   </td>
                   <td className="py-2.5 px-4 text-right whitespace-nowrap">
@@ -1316,9 +1976,7 @@ function CommitmentsTab({
                       onClick={() => clearOne(row.consultant)}
                       disabled={!d.present}
                       className="h-7 px-2.5 rounded-lg text-[10px] font-extrabold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-30 disabled:cursor-default transition-all"
-                      title={d.present
-                        ? 'Remove this commitment entirely — different from committing to zero'
-                        : 'Nothing is committed for this day'}
+                      title={d.present ? 'Remove commitment' : 'Nothing committed'}
                     >
                       Clear
                     </button>
@@ -1327,6 +1985,30 @@ function CommitmentsTab({
               )
             })}
           </tbody>
+          {/* Totals Summary Footer */}
+          <tfoot className="border-t-2 border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950 font-black">
+            <tr>
+              <td className="py-3 px-4 font-black text-slate-900 dark:text-white uppercase text-[10px] tracking-wider">
+                Total Month Targets
+              </td>
+              <td className="py-3 px-3 text-slate-400 font-mono text-[10px]">
+                {data.consultants.length} Cons
+              </td>
+              {METRICS.map((m) => (
+                <td key={m.key} className="py-3 px-1.5 text-center font-mono text-xs" style={{ color: m.accentHex }}>
+                  {totals[m.key as 'enq' | 'td' | 'bkg' | 'ret']}
+                </td>
+              ))}
+              {activeModels.map((mName) => (
+                <td key={mName} className="py-3 px-1.5 text-center font-mono text-xs text-teal-700 dark:text-teal-300">
+                  {totals.models[mName] || 0}
+                </td>
+              ))}
+              <td colSpan={2} className="py-3 px-4 text-right text-[10px] text-slate-400">
+                Sum: {totals.totalModelSum} models
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
@@ -1467,6 +2149,49 @@ function DailyTab({ data, metric, onMetric }: { data: Payload; metric: MetricKey
               </rect>
             ))}
 
+            {/* Week Boundary Milestones (Day 7, 14, 21, 28) */}
+            {days.map((d, i) => {
+              if (d.day === 7 || d.day === 14 || d.day === 21 || d.day === 28) {
+                const x = PAD.l + i * colW + colW
+                const wNo = Math.floor(d.day / 7)
+                return (
+                  <g key={`w_line_${d.day}`}>
+                    <line
+                      x1={x}
+                      y1={PAD.t}
+                      x2={x}
+                      y2={PAD.t + innerH}
+                      stroke="#94a3b8"
+                      strokeDasharray="2 3"
+                      strokeWidth="1"
+                      opacity={0.6}
+                    />
+                    <rect
+                      x={x - 12}
+                      y={PAD.t - 14}
+                      width={24}
+                      height={12}
+                      rx={3}
+                      fill="#f1f5f9"
+                      stroke="#cbd5e1"
+                      strokeWidth="0.5"
+                    />
+                    <text
+                      x={x}
+                      y={PAD.t - 5}
+                      fontSize="8"
+                      fontWeight="bold"
+                      fill="#475569"
+                      textAnchor="middle"
+                    >
+                      W{wNo}
+                    </text>
+                  </g>
+                )
+              }
+              return null
+            })}
+
             {/* Daily Volume Bars */}
             {days.map((d, i) => {
               const h = (d[metric] / peak) * (innerH * 0.55)
@@ -1560,6 +2285,53 @@ function DailyTab({ data, metric, onMetric }: { data: Payload; metric: MetricKey
             Left scale: running total · right scale: that day alone
           </span>
         </div>
+
+        {/* Weekly Milestone Summary for chosen metric */}
+        {data.weeks && data.weeks.length > 0 && (
+          <div className="mt-4 pt-3.5 border-t border-slate-100 dark:border-slate-800">
+            <h4 className="text-[11px] font-black uppercase text-slate-600 dark:text-slate-400 mb-2">
+              Weekly {activeTheme.label} Milestone Pace
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2">
+              {data.weeks.map((w) => {
+                const mCell = w[metric]
+                return (
+                  <div
+                    key={w.scope}
+                    className={`p-2.5 rounded-xl border text-xs ${
+                      w.isCurrent
+                        ? 'bg-teal-50/60 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800'
+                        : 'bg-slate-50 dark:bg-slate-850/50 border-slate-100 dark:border-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1">
+                      <span>Week {w.weekNumber}</span>
+                      <span className="text-[9px]">{w.startDay}–{w.endDay}</span>
+                    </div>
+                    <div className="font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                      {mCell.actual}{' '}
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        / {mCell.target > 0 ? mCell.target : '—'}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[9.5px] font-bold" style={{ color: paceInk(mCell.gap) }}>
+                      {paceText(mCell.gap)}
+                    </div>
+                    {mCell.target > 0 && (
+                      <div className="mt-0.5 text-[8.5px] font-bold">
+                        {mCell.actual >= mCell.target ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">Met ✓</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400">Need {mCell.target - mCell.actual}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

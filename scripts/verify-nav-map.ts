@@ -130,7 +130,27 @@ const adminLabel = sidebar.indexOf("label: 'Admin Panel'")
 const beforeAdmin = adminLabel > 0 ? sidebar.slice(Math.max(0, adminLabel - 500), adminLabel) : ''
 assert('the Admin Panel link uses the page\'s own test (isSuperAdminRole)',
   beforeAdmin.includes('isSuperAdminRole(userRole)') && !/if \(canAccessAdmin\)/.test(beforeAdmin))
-assert('app/admin/page.tsx still admits isSuperAdminRole only', /if \(!isSuperAdminRole\(appUser\.role\)\) forbidden\(\)/.test(read('app/admin/page.tsx')))
+/*
+ * ⚠️ THIS ASSERTION WAS INVERTED ON 2026-09-16. It read "app/admin/page.tsx still admits
+ * isSuperAdminRole only", which was true until the owner reversed it: "nothing should be fixed by
+ * role — if I want I can give access to those sections as well". The console is now reachable by a
+ * hand-ticked `admin_panel.view` as well as by being a super admin.
+ *
+ * ⚠️ What still has to hold, and is what this now checks: the page accepts the SAME pair the sidebar
+ * does (role OR explicit grant), and the key is GRANT-ONLY — so no role template, tier bundle or
+ * blanket can hand out the admin console by default. Whoever holds this key can edit permissions,
+ * including their own, so "off unless somebody ticked it" is the whole safety property.
+ */
+const adminPage = read('app/admin/page.tsx')
+assert('app/admin/page.tsx admits a super admin OR an explicit admin_panel.view grant',
+  /isSuperAdminRole\(appUser\.role\)/.test(adminPage)
+  && /isPermissionExplicitlyAllowed\(appUser, 'admin_panel\.view'\)/.test(adminPage))
+assert('and the sidebar tests the identical pair',
+  /isSuperAdminRole\(userRole\) \|\| grantedHere\('admin_panel\.view'\)/.test(read('lib/navigation/sections.ts')))
+assert('admin_panel is grant-only, so no role default can hand out the console',
+  /'admin_panel',/.test(read('lib/permissions/registry.ts').slice(
+    read('lib/permissions/registry.ts').indexOf('GRANT_ONLY_SECTIONS'),
+    read('lib/permissions/registry.ts').indexOf('GRANT_ONLY_PERMISSION_KEYS'))))
 
 console.log(failures === 0 ? '\n=== ALL CHECKS PASSED ===' : `\n=== ${failures} FAILURE(S) ===`)
 process.exit(failures === 0 ? 0 : 1)

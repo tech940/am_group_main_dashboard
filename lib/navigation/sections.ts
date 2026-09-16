@@ -834,9 +834,22 @@ export function canUserAccessSection(
   // 3. Special Custom Gated Pages
   const href = section.href
 
+  /*
+   * ── FORMERLY "FIXED BY ROLE" ──────────────────────────────────────────────────────────────────
+   * Owner decision 2026-09-16: "nothing should be fixed by role — if I want, I can give access to
+   * those sections as well". Each of these six used to `return` a role verdict that no Access-Map
+   * tick could reach. They now read "the role rule OR a grant", so the role keeps its default access
+   * and an admin can widen it one person at a time.
+   *
+   * ⚠️ The grant is the EFFECTIVE map here, which is safe for exactly these keys: they are in
+   * GRANT_ONLY_SECTIONS, so no template, tier bundle or blanket can set them. The only thing that
+   * makes one true is an explicit tick (or being a super admin, who returned true far above).
+   */
+  const grantedHere = (key: string) => Boolean(permissionMap && permissionMap[key] === true)
+
   // Vehicle Tracker
   if (href === '/brands/kia/vehicle-tracker') {
-    return canViewVehicleTracker(userRole)
+    return canViewVehicleTracker(userRole) || grantedHere('kia.vehicle_tracker.view')
   }
 
   // Booking Payment History
@@ -847,6 +860,7 @@ export function canUserAccessSection(
   // Testing - Social Media Leads
   if (href === '/social-media-leads') {
     return ['md', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
+      || grantedHere('social_media_leads.view')
   }
 
   // Scrap
@@ -861,7 +875,7 @@ export function canUserAccessSection(
   // permission key for this section, because a key would still reach `admin` and `hr` through the
   // super tier bundle — see lib/auth/md-targets-access.ts.
   if (isMdTargetsHref(href)) {
-    return canViewMdTargets(userRole)
+    return canViewMdTargets(userRole) || grantedHere('targets.view')
   }
 
   // Bank Sanctions — EA / MD / Accounts / Developer ONLY, unwidenable. Same `return`-not-
@@ -869,6 +883,7 @@ export function canUserAccessSection(
   // no permission key, so without the return it would fall to the function's final `return true`
   // and become visible to every role. See lib/auth/bank-sanctions-access.ts.
   if (isBankSanctionsHref(href)) {
+    // Already permission-aware through permissionMap; left as it is.
     return canViewBankSanctions(userRole, permissionMap)
   }
 
@@ -878,7 +893,9 @@ export function canUserAccessSection(
   // re-open them. Both the sidebar and both search surfaces route through here, so this single test
   // is what makes "no one else can see these at all" true everywhere at once.
   if (isRestrictedAnalyticsHref(href)) {
-    return canViewRestrictedAnalytics(userRole)
+    /* ⚠️ Carries customer names and numbers for thousands of vehicles — grantable now, but one
+     * person at a time and never by a role default. */
+    return canViewRestrictedAnalytics(userRole) || grantedHere('call_analysis.view')
   }
 
   // Petty Cash
@@ -903,9 +920,12 @@ export function canUserAccessSection(
 
   // Admin Panel
   if (href.startsWith('/admin')) {
-    // Must match app/admin/page.tsx, which gates on isSuperAdminRole (developer || md). Listing
-  // 'admin' here let that role find /admin in search and then be forbidden by the page.
-  return isSuperAdminRole(userRole)
+    /*
+     * ⚠️ GRANTING THIS GRANTS THE CONSOLE — Users, Access Map, Roles, Audit, Settings. Whoever holds
+     * it can edit permissions, including their own. Flagged to the owner; opened at their explicit
+     * instruction. app/admin/page.tsx enforces the identical pair.
+     */
+    return isSuperAdminRole(userRole) || grantedHere('admin_panel.view')
   }
 
   // Data Health — MD + Developer ONLY, and unwidenable. Super admins already returned true above, so
@@ -913,7 +933,8 @@ export function canUserAccessSection(
   // without this return it falls through to the function's final `return true` and appears in EVERY
   // role's search — an operations tool exposing table names and row counts across every brand.
   if (href === '/data-health') {
-    return false
+    // Exposes table names and row counts across every brand — grantable, never defaulted.
+    return grantedHere('data_health.view')
   }
 
   // CA Portal — mirrors the sidebar exactly: the CA role list OR an explicit ca.view. The generated

@@ -254,8 +254,16 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'edit'],
   },
   {
+    /*
+     * ⚠️ THE NAME MUST MATCH THE SIDEBAR LABEL FOR THE SAME HREF. An admin ticking a box in the
+     * Access Map and a user looking for the link in the sidebar have to be talking about the same
+     * thing; two names for one section reads as a section that is missing. Asserted by
+     * `npm run verify:permissions` (scenario 8), which compares every group carrying a SECTION_ROUTES
+     * href against the label the sidebar renders for it. ⚠️ Change the NAME only — renaming the KEY
+     * orphans every grant stored against it.
+     */
     key: 'kia.proforma',
-    name: 'Kia Proforma',
+    name: 'Bookings',
     parentKey: 'kia.service',
     description: 'Kia proforma generation, approvals, finance remarks, user database, and analytics.',
     sortOrder: 35,
@@ -286,10 +294,17 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    /*
+     * ⚠️ THE KEY STAYS `kia.sales_performance` — only the label changed when the section became the
+     * Sales Target Plan on 2026-09-16. Renaming a permission KEY orphans every grant already stored
+     * against it (see the Access-Map incident); the label is display text and is safe to change.
+     * Until this was updated the sidebar said "Sales Target Plan" and the Access Map column said
+     * "Sales Performance", so admins looking for it concluded it was missing.
+     */
     key: 'kia.sales_performance',
-    name: 'Sales Performance',
+    name: 'Sales Target Plan',
     parentKey: 'kia.sales',
-    description: 'AM KIA consultant sales targets and leaderboard (bookings, deliveries, conversion).',
+    description: 'Daily and monthly commitments per consultant against actuals read from the DMS feeds.',
     sortOrder: 38,
     actions: ['view'],
   },
@@ -388,7 +403,7 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
   },
   {
     key: 'kia.lead_followups',
-    name: 'Follow-ups',
+    name: 'Booking Follow-ups',
     parentKey: 'kia.sales',
     description: 'AM KIA lead follow-up pipeline — scheduled next-touch on bookings so no lead goes cold.',
     sortOrder: 42,
@@ -396,7 +411,7 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
   },
   {
     key: 'kia.call_analytics',
-    name: 'Call & Follow-up Analytics',
+    name: 'Call Analytics',
     parentKey: 'kia.sales',
     description: 'AM KIA manager analytics — call volume, contact rate, dispositions, follow-up completion and leaderboards.',
     sortOrder: 43,
@@ -916,6 +931,76 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     sortOrder: 90,
     actions: ['view', 'edit'],
   },
+
+  /*
+   * ── GRANT-ONLY SECTIONS ────────────────────────────────────────────────────────────────────
+   *
+   * These six were "fixed by role" until 2026-09-16: no permission key at all, listed read-only in
+   * the Access Map, unreachable however many boxes an admin ticked. The owner reversed that —
+   * "nothing should be fixed by role, if I want I can give access to those sections as well" — so
+   * each now has a real key and a tickable column.
+   *
+   * ⚠️ THEY ARE NOT ORDINARY KEYS. The reason they had none was stated in lib/permissions/
+   * locked-sections.ts: a key reaches `admin` and `hr`, which are family 'super', and that tier's
+   * bundle is EVERY key there is — so simply adding one would have handed all six to two roles
+   * nobody meant to give them to. GRANT_ONLY_SECTIONS below is what stops that: no role template,
+   * no tier bundle and no blanket ever sets them. Only a hand-tick in the Access Map does (and
+   * MD/Developer, who can never be locked out of anything).
+   */
+  {
+    key: 'targets',
+    name: 'Targets',
+    parentKey: null,
+    description: 'MD monthly sales and service targets per brand and branch.',
+    sortOrder: 171,
+    actions: ['view'],
+  },
+  {
+    key: 'data_health',
+    name: 'Data Health',
+    parentKey: null,
+    description: 'Ingestion and table health across every feed. Exposes table names and row counts.',
+    sortOrder: 172,
+    actions: ['view'],
+  },
+  {
+    key: 'call_analysis',
+    name: 'Call Analysis',
+    parentKey: null,
+    description: 'CRE call records. ⚠️ Carries customer names and numbers for thousands of vehicles.',
+    sortOrder: 173,
+    actions: ['view'],
+  },
+  {
+    key: 'social_media_leads',
+    name: 'Social Media Leads',
+    parentKey: null,
+    description: 'Leads captured from social campaigns.',
+    sortOrder: 174,
+    actions: ['view'],
+  },
+  {
+    key: 'kia.vehicle_tracker',
+    name: 'Vehicle Tracker',
+    parentKey: 'kia',
+    description: 'Service-floor camera logger for AM KIA.',
+    sortOrder: 175,
+    actions: ['view'],
+  },
+  {
+    /*
+     * ⚠️ GRANTING THIS GRANTS THE ADMIN CONSOLE — Users, Access Map, Roles, Audit and Settings. A
+     * person who holds it can edit permissions, including their own, so it is the one key that can
+     * be used to take every other key. Flagged to the owner; granted at their explicit instruction.
+     * `user_management` and friends still gate the individual admin tabs.
+     */
+    key: 'admin_panel',
+    name: 'Admin Panel',
+    parentKey: null,
+    description: 'The admin console. ⚠️ Whoever holds this can change permissions, including their own.',
+    sortOrder: 176,
+    actions: ['view'],
+  },
 ]
 
 /*
@@ -948,6 +1033,14 @@ if (NON_INTEGER_SORT_ORDERS.length > 0) {
 // separate hand-maintained map in the sidebar. `aliases` are additional paths that resolve to
 // the same section (e.g. a Business Excellence landing page vs. its /overview route).
 export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }> = {
+  // Grant-only sections — see GRANT_ONLY_SECTIONS below and the note on their groups above.
+  targets: { href: '/targets' },
+  data_health: { href: '/data-health' },
+  call_analysis: { href: '/call-analysis' },
+  social_media_leads: { href: '/social-media-leads' },
+  admin_panel: { href: '/admin' },
+  'kia.vehicle_tracker': { href: '/brands/kia/vehicle-tracker' },
+
   cockpit: { href: '/cockpit' },
   delegation_tasks: { href: '/delegation-tasks' },
   purchase_orders: { href: '/purchase-orders' },
@@ -1066,6 +1159,34 @@ export const RESTRICTED_DEFAULT_SECTIONS = new Set<string>(
 // The concrete permission keys (e.g. 'kia.call_center.view') under restricted sections. The resolver
 // uses this to exclude them from the blanket brand-default and global-access-role defaults, so only
 // super admins (MD/Developer) and explicitly-granted users/roles get them.
+/**
+ * Sections that NO role default may ever grant — not a role template, not a tier bundle, not the
+ * brand blanket, not the global-access blanket. The ONLY ways in are a hand-tick in the Access Map
+ * and being a super admin (MD / Developer), who can never be locked out of anything.
+ *
+ * ⚠️ WHY THIS CLASS HAS TO EXIST. `RESTRICTED_DEFAULT_SECTIONS` below already keeps a section out of
+ * the brand and global-access blankets — but NOT out of the super-tier bundle, which sets every key
+ * true for family 'super' (`admin` and `hr`, on top of MD/Developer). These six were left without a
+ * permission key at all precisely to dodge that, at the cost of being ungrantable. This set is what
+ * lets them have a key AND stay off by default.
+ *
+ * ⚠️ Adding a key here does NOT hide it from anyone who already holds an explicit grant — overrides
+ * are applied after every default, by design.
+ */
+export const GRANT_ONLY_SECTIONS = new Set<string>([
+  'targets',
+  'data_health',
+  'call_analysis',
+  'social_media_leads',
+  'admin_panel',
+  'kia.vehicle_tracker',
+])
+
+/** The concrete permission keys under a grant-only section. */
+export const GRANT_ONLY_PERMISSION_KEYS = new Set<string>(
+  PERMISSIONS.filter((permission) => GRANT_ONLY_SECTIONS.has(permission.groupKey)).map((permission) => permission.key)
+)
+
 export const RESTRICTED_DEFAULT_PERMISSION_KEYS = new Set<string>(
   PERMISSIONS.filter((permission) => RESTRICTED_DEFAULT_SECTIONS.has(permission.groupKey)).map((permission) => permission.key)
 )

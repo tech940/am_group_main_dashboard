@@ -4,7 +4,9 @@ import { discountApprovals } from '@/lib/db/schema'
 import { desc, eq, sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessBrand } from '@/lib/auth/brand-access'
-import { type BranchValue } from '@/lib/branches'
+import { hasAllBranchAccess, type BranchValue } from '@/lib/branches'
+import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
+import { hasExplicitBrandGrant } from '@/lib/permissions/deny'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +16,35 @@ async function ensureSchema() {
   if (isSchemaMigrated) return
   try {
     await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS discount_approvals (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        requester_name TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        customer_id TEXT NOT NULL,
+        customer_name TEXT,
+        model TEXT,
+        variant TEXT,
+        color TEXT,
+        discount_amount NUMERIC(14, 2) NOT NULL,
+        accessories_amount NUMERIC(14, 2),
+        tl_manager TEXT,
+        tele_date DATE,
+        insurance_type TEXT,
+        delivery_date DATE,
+        reference TEXT,
+        status TEXT NOT NULL DEFAULT 'PENDING_GSM',
+        remarks TEXT,
+        history JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS am_group_discount_approvals_employees (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
       ALTER TABLE discount_approvals ADD COLUMN IF NOT EXISTS tele_date date;
       ALTER TABLE discount_approvals ADD COLUMN IF NOT EXISTS insurance_type text;
       ALTER TABLE discount_approvals ADD COLUMN IF NOT EXISTS history jsonb DEFAULT '[]'::jsonb;
@@ -38,7 +69,7 @@ export async function GET(request: NextRequest) {
     const branchParam = searchParams.get('branch')
 
     let rows
-    if (branchParam) {
+    if (branchParam && branchParam.toLowerCase() !== 'all') {
       rows = await db
         .select()
         .from(discountApprovals)
@@ -52,59 +83,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Filter rows by authorized brand access
-    const allowedRows = rows.filter((row) =>
-      canAccessBrand(appUser, row.branch as BranchValue)
-    )
+    const isGlobal = isSuperAdminRole(appUser.role) || hasGlobalAccessRole(appUser.role)
+    let allowedRows = rows
 
-    // Enrich each row with booking details in parallel
-    const enrichedRows = await Promise.all(
-      allowedRows.map(async (row) => {
-        let booking: any = null
-        const upperVin = row.customerId.toUpperCase()
-        const normalizedBranch = row.branch.toLowerCase()
-
-        try {
-          if (normalizedBranch === 'hyundai') {
-            // First try resolving via hyundai_sales_report if it's a VIN
-            let orderRefNo = ''
-            const salesResult = await db.execute(sql.raw(`
-              SELECT order_ref_no 
-              FROM hyundai_sales_report 
-              WHERE UPPER(vin_number) = '${upperVin.replace(/'/g, "''")}' 
-              LIMIT 1
-            `))
-            if (salesResult.length > 0) {
-              orderRefNo = String(salesResult[0].order_ref_no)
-            }
-
-            let queryStr = ''
-            if (orderRefNo) {
-              queryStr = `SELECT * FROM hyundai_booking_report WHERE order_ref_no = '${orderRefNo.replace(/'/g, "''")}' LIMIT 1`
-            } else {
-              queryStr = `SELECT * FROM hyundai_booking_report WHERE (UPPER(order_ref_no) = '${upperVin.replace(/'/g, "''")}' OR UPPER(customer_id) = '${upperVin.replace(/'/g, "''")}') LIMIT 1`
-            }
-            const bookingResult = await db.execute(sql.raw(queryStr))
-            booking = bookingResult[0] || null
-          } else if (normalizedBranch === 'platinum') {
-            const bookingResult = await db.execute(sql.raw(`
-              SELECT * FROM am_platinum_booking_report 
-              WHERE (UPPER(customer_id) = '${upperVin.replace(/'/g, "''")}' OR UPPER(order_ref_no) = '${upperVin.replace(/'/g, "''")}') 
-              LIMIT 1
-            `))
-            booking = bookingResult[0] || null
-          }
-        } catch (err) {
-          console.error(`Error loading booking for row ${row.id}:`, err)
+    if (!isGlobal && appUser.brand !== 'all' && !hasAllBranchAccess(appUser.brand)) {
+      const allowedBrands = new Set<string>()
+      for (const b of ['hyundai', 'platinum', 'kia', 'mg'] as BranchValue[]) {
+        if (canAccessBrand(appUser, b) || (await hasExplicitBrandGrant(appUser, b))) {
+          allowedBrands.add(b)
         }
+      }
+      allowedRows = rows.filter((row) => allowedBrands.has(row.branch.toLowerCase()))
+    }
 
-        return {
-          ...row,
-          bookingData: booking,
-        }
-      })
-    )
-
-    return NextResponse.json(enrichedRows)
+    return NextResponse.json(allowedRows)
   } catch (error) {
     console.error('Error fetching discount approvals:', error)
     return NextResponse.json({ error: 'Failed to fetch discount approvals' }, { status: 500 })

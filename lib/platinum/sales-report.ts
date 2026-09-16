@@ -1656,12 +1656,12 @@ export async function getPlatinumSalesReportTable(
               s.*,
               COALESCE(
                 NULLIF(CASE WHEN s.contact_num1 NOT LIKE '%*%' THEN s.contact_num1 ELSE NULL END, ''),
-                enq.contact_number,
+                enq.unmasked_contact_number,
                 s.contact_num1
               ) AS contact_num1
             FROM ${sql.raw(config.table)} s
             LEFT JOIN LATERAL (
-              SELECT e.contact_number
+              SELECT e.contact_number AS unmasked_contact_number
               FROM ${sql.raw(TABLES.enquiry.table)} e
               WHERE (
                 (e.customer_id IS NOT NULL AND e.customer_id = s.customerid)
@@ -1685,12 +1685,12 @@ export async function getPlatinumSalesReportTable(
               b.*,
               COALESCE(
                 NULLIF(CASE WHEN b.contact_number NOT LIKE '%*%' THEN b.contact_number ELSE NULL END, ''),
-                enq.contact_number,
+                enq.unmasked_contact_number,
                 b.contact_number
               ) AS contact_number
             FROM ${sql.raw(config.table)} b
             LEFT JOIN LATERAL (
-              SELECT e.contact_number
+              SELECT e.contact_number AS unmasked_contact_number
               FROM ${sql.raw(TABLES.enquiry.table)} e
               WHERE (
                 (e.customer_id IS NOT NULL AND e.customer_id = b.customer_id)
@@ -1797,12 +1797,12 @@ export async function getPlatinumSalesReportCsv(
           s.*,
           COALESCE(
             NULLIF(CASE WHEN s.contact_num1 NOT LIKE '%*%' THEN s.contact_num1 ELSE NULL END, ''),
-            enq.contact_number,
+            enq.unmasked_contact_number,
             s.contact_num1
           ) AS contact_num1
         FROM ${sql.raw(config.table)} s
         LEFT JOIN LATERAL (
-          SELECT e.contact_number
+          SELECT e.contact_number AS unmasked_contact_number
           FROM ${sql.raw(TABLES.enquiry.table)} e
           WHERE (
             (e.customer_id IS NOT NULL AND e.customer_id = s.customerid)
@@ -1825,12 +1825,12 @@ export async function getPlatinumSalesReportCsv(
           b.*,
           COALESCE(
             NULLIF(CASE WHEN b.contact_number NOT LIKE '%*%' THEN b.contact_number ELSE NULL END, ''),
-            enq.contact_number,
+            enq.unmasked_contact_number,
             b.contact_number
           ) AS contact_number
         FROM ${sql.raw(config.table)} b
         LEFT JOIN LATERAL (
-          SELECT e.contact_number
+          SELECT e.contact_number AS unmasked_contact_number
           FROM ${sql.raw(TABLES.enquiry.table)} e
           WHERE (
             (e.customer_id IS NOT NULL AND e.customer_id = b.customer_id)

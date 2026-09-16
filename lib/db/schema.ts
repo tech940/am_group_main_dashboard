@@ -1044,10 +1044,10 @@ export const kiaSalesCommitments = pgTable('kia_sales_commitments', {
    */
   commitmentDate: date('commitment_date').notNull(),
   /**
-   * 'day' or 'month'. Free text against a UI list, never a pgEnum — house rule from 0050.
+   * 'day', 'month', 'week_1', 'week_2', 'week_3', 'week_4', 'week_5'. Free text against a UI list, never a pgEnum — house rule from 0050.
    *
    * ⚠️ PART OF THE ROW'S IDENTITY. The unique index is (dealer, consultant, date, scope): without
-   * scope, a monthly commitment and a 1st-of-the-month daily commitment fight over one slot and the
+   * scope, a monthly/weekly commitment and a daily commitment fight over one slot and the
    * upsert overwrites one with the other.
    */
   scope: text('scope').default('day').notNull(),
@@ -1056,6 +1056,9 @@ export const kiaSalesCommitments = pgTable('kia_sales_commitments', {
   testDrives: integer('test_drives').default(0).notNull(),
   bookings: integer('bookings').default(0).notNull(),
   retails: integer('retails').default(0).notNull(),
+
+  /** Model-wise monthly sales targets, e.g. {"SONET": 5, "NEW SELTOS": 8, "CARENS": 4, "SYROS": 2, "SORENTO": 1} */
+  modelTargets: jsonb('model_targets').$type<Record<string, number>>().default({}).notNull(),
 
   /** Why this day's number is what it is: "half day", "two deliveries held for Navratri". */
   note: text('note'),

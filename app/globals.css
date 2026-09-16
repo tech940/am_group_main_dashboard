@@ -563,6 +563,7 @@
   .fuel-clean-table thead tr,
   .fuel-management-clean-table thead tr,
   .c360-activity-table thead tr,
+  .kia-plan-table thead tr,
   .access-map-grid thead tr { background-color: transparent !important; }
   /* The MD Targets grid keeps its own quiet slate header: the global rule would otherwise paint it
      the theme primary with white uppercase 900-weight text, which fights a dense editable grid. */
@@ -571,6 +572,31 @@
     font-weight: 900 !important;
     letter-spacing: 0.06em !important;
     text-transform: uppercase !important;
+  }
+  .kia-plan-table thead tr {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+  }
+  .dark .kia-plan-table thead tr {
+    background-color: #0f172a !important;
+    background: #0f172a !important;
+    border-bottom: 1px solid #1e293b !important;
+  }
+  .kia-plan-table th,
+  .kia-plan-table thead th {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #475569 !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.05em !important;
+    text-transform: uppercase !important;
+  }
+  .dark .kia-plan-table th,
+  .dark .kia-plan-table thead th {
+    background-color: #0f172a !important;
+    background: #0f172a !important;
+    color: #94a3b8 !important;
   }
   .petty-cash-clean-table th {
     background-color: #f8fafc !important;

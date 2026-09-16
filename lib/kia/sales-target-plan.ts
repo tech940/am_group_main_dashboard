@@ -110,6 +110,22 @@ function outletSql(alias: string) {
   )))`)
 }
 
+export const DEFAULT_PLAN_MODELS = ['SONET', 'NEW SELTOS', 'CARENS', 'SYROS', 'SORENTO'] as const
+
+export function normalizeModelName(raw: string): string {
+  const u = String(raw || '').trim().toUpperCase()
+  if (!u) return 'OTHER'
+  if (u.includes('SONET')) return 'SONET'
+  if (u.includes('SELTOS')) return 'NEW SELTOS'
+  if (u.includes('CARENS')) return 'CARENS'
+  if (u.includes('SYROS')) return 'SYROS'
+  if (u.includes('SORENTO')) return 'SORENTO'
+  if (u.includes('CARNIVAL')) return 'CARNIVAL'
+  if (u.includes('EV6')) return 'EV6'
+  if (u.includes('EV9')) return 'EV9'
+  return u
+}
+
 export type PlanMetricKey = 'enquiries' | 'testDrives' | 'bookings' | 'retails'
 
 export const PLAN_METRICS: { key: PlanMetricKey; label: string; short: string }[] = [
@@ -121,24 +137,48 @@ export const PLAN_METRICS: { key: PlanMetricKey; label: string; short: string }[
 
 export type PlanCell = {
   actual: number
-  /** The month's commitment: the SUM of the days committed inside it. */
+  /** The month's commitment */
   target: number
   /**
-   * The commitment for the days that have actually happened. This is what `actual` is judged
-   * against — not a straight-line share of the month.
+   * The commitment for the days that have actually happened.
    */
   committedToDate: number
-  /** actual ÷ target, or null when nothing is committed — never 0, which would read as "failing". */
+  /** actual ÷ target, or null when nothing is committed — never 0 */
   achievement: number | null
   /**
-   * actual − committedToDate. Positive is ahead. Null when nothing has been committed, because
-   * there is then nothing to be behind.
-   *
-   * ⚠️ NOT a straight-line pace estimate. Once commitments are daily, "where you should be today" is
-   * a number somebody actually wrote down, so the gap is exact — no assumption about how the month
-   * is meant to be spread, and Sundays need no special case because nobody commits to one.
+   * actual − committedToDate. Positive is ahead.
    */
   gap: number | null
+}
+
+export type PlanModelItem = {
+  model: string
+  target: number
+  bookings: number
+  retails: number
+  achievement: number | null
+  gap: number | null
+}
+
+export type PlanWeek = {
+  weekNumber: number
+  scope: 'week_1' | 'week_2' | 'week_3' | 'week_4'
+  label: string
+  dateRange: string
+  startDate: string
+  endDate: string
+  startDay: number
+  endDay: number
+  daysCount: number
+  workingDays: number
+  workingDaysElapsed: number
+  isCurrent: boolean
+  isPast: boolean
+  isFuture: boolean
+  enquiries: PlanCell
+  testDrives: PlanCell
+  bookings: PlanCell
+  retails: PlanCell
 }
 
 export type PlanConsultantRow = {
@@ -148,26 +188,23 @@ export type PlanConsultantRow = {
   testDrives: PlanCell
   bookings: PlanCell
   retails: PlanCell
+  /** Weekly breakdown for this consultant (Week 1 to Week 4) */
+  weeks: PlanWeek[]
+  /** Model-wise targets and actuals for this consultant */
+  models: PlanModelItem[]
+  modelTargets: Record<string, number>
   /** The single number the table sorts on: the retail gap, then the booking gap. */
   worstGap: number | null
   hasAnyTarget: boolean
-  /** How many days of this month this consultant has a DAY commitment recorded for. */
   committedDays: number
   /**
    * Which kind of commitment the month figure came from.
-   * 'month' — somebody signed up to a monthly number (it wins).
-   * 'days'  — only day commitments exist; the month figure is their sum.
-   * 'none'  — nothing has been committed.
    */
-  commitmentBasis: 'month' | 'days' | 'none'
-  /** The monthly retail commitment, when one was made. Null when only days exist. */
+  commitmentBasis: 'month' | 'weeks' | 'days' | 'none'
   monthCommitted: number | null
-  /** The retails planned across the days so far. Null when no day has been committed. */
   daysPlanned: number | null
   /**
-   * This person leads a team. They still carry their own numbers — three of Jammu's four leaders have
-   * never filed an enquiry, but Akash Bhat sold 626 of them before moving up, and a leader who sells
-   * must be counted like anyone else.
+   * This person leads a team.
    */
   isTeamLeader: boolean
   /** The DMS employee id this row was resolved to, or null when the feed left it blank. */
@@ -176,10 +213,6 @@ export type PlanConsultantRow = {
 
 /**
  * One day, both sides of it.
- *
- * The bare metric keys are what ACTUALLY happened, read from the DMS feeds. `committed` is what was
- * promised for that day. ⚠️ `hasCommitment` is separate from the numbers on purpose: a day committed
- * as zero and a day nobody filled in both read `retails: 0`, and only one of them is a decision.
  */
 export type PlanDay = {
   /** ISO date, IST calendar day. */
@@ -202,6 +235,7 @@ export type PlanTeamRow = {
   testDrives: PlanCell
   bookings: PlanCell
   retails: PlanCell
+  models: PlanModelItem[]
 }
 
 export type SalesTargetPlanPayload = {
@@ -228,12 +262,15 @@ export type SalesTargetPlanPayload = {
     bookings: PlanCell
     retails: PlanCell
   }
+  /** Weekly breakdown across the entire outlet (Weeks 1 to 4) */
+  weeks: PlanWeek[]
+  /** Model breakdown across the entire outlet */
+  models: PlanModelItem[]
+  allModels: string[]
   consultants: PlanConsultantRow[]
   teams: PlanTeamRow[]
   daily: PlanDay[]
   availableMonths: { year: number; month: number; label: string }[]
-  /** When the DMS feed was last uploaded. The screen must show it — these are yesterday's numbers
-   *  until this morning's export lands, and a figure without its as-of time invites the wrong call. */
   dataAsOf: string | null
 }
 
@@ -302,8 +339,7 @@ const zero = (): Counts => ({ enquiries: 0, testDrives: 0, bookings: 0, retails:
  * operational figure people watch move during the day; getCachedData serves the stale entry while
  * refreshing behind it, so the wait is paid once rather than per viewer.
  *
- * ⚠️ BUMP THE VERSION IN THIS KEY whenever the payload shape or any counting rule changes. A shape
- * change served from a v-N entry looks exactly like the change not working.
+ * ⚠️ BUMP THE VERSION IN THIS KEY whenever the payload shape or any counting rule changes.
  */
 export async function getSalesTargetPlan(input: {
   year?: number | null
@@ -316,7 +352,7 @@ export async function getSalesTargetPlan(input: {
   const month = input.month && Number.isFinite(input.month) && input.month >= 1 && input.month <= 12
     ? Math.floor(input.month)
     : today.month
-  const key = `kia:sales-target-plan:v7-scope:${outlet}:${year}-${String(month).padStart(2, '0')}`
+  const key = `kia:sales-target-plan:v9-model-w4:${outlet}:${year}-${String(month).padStart(2, '0')}`
   return getCachedData(key, () => buildSalesTargetPlan({ year, month, outlet }), CACHE_TTL.SHORT)
 }
 
@@ -358,14 +394,6 @@ async function buildSalesTargetPlan(input: {
           c.enquiry_date,
           c.test_drive_date,
           ${outletE} AS outlet,
-          /*
-           * ⚠️ PARTITIONED BY OUTLET **AND** ENQUIRY NUMBER. KIA's DMS issues enquiry numbers PER
-           * DEALER, so E202604793 exists at BOTH JK402 and JK501 as two different customers —
-           * measured: 1,821 numbers are in use at both outlets. Partitioning on the number alone
-           * collapsed those pairs into one row and silently dropped the loser: September Jammu read
-           * 229 enquiries against a true 255. Sales Report namespaces every dedupe key by dealer for
-           * exactly this reason (see buildDeduplicationKey in lib/kia/sales-report.ts).
-           */
           ROW_NUMBER() OVER (
             PARTITION BY ${outletE}, UPPER(BTRIM(c.enquiry_no))
             ORDER BY c.uploaded_at DESC, c.id DESC
@@ -391,14 +419,14 @@ async function buildSalesTargetPlan(input: {
     `),
 
     /*
-     * Bookings — the same definition Sales Performance uses (rule 3): one row per booking_no,
-     * cancellations excluded. DISTINCT ON does in SQL what that reader does by pulling every row.
+     * Bookings — one row per booking_no, cancellations excluded, with model.
      */
     analyticsDb.execute(sql`
       WITH one_per_booking AS (
         SELECT DISTINCT ON (UPPER(BTRIM(c.booking_no)))
           BTRIM(c.consultant_name) AS name,
-          EXTRACT(DAY FROM c.booking_date)::int AS day
+          EXTRACT(DAY FROM c.booking_date)::int AS day,
+          COALESCE(BTRIM(c.model), '') AS model
         FROM kia_booking_report c
         WHERE c.booking_date >= ${start}::date AND c.booking_date < ${endExclusive}::date
           AND c.booking_no IS NOT NULL AND BTRIM(c.booking_no) <> ''
@@ -407,26 +435,25 @@ async function buildSalesTargetPlan(input: {
           AND ${outletEFilter}
         ORDER BY UPPER(BTRIM(c.booking_no)), c.booking_date DESC
       )
-      SELECT name, day, COUNT(*)::int AS bookings FROM one_per_booking GROUP BY 1, 2
+      SELECT name, day, model, COUNT(*)::int AS bookings FROM one_per_booking GROUP BY 1, 2, 3
     `),
 
     /*
-     * Retails — delivery_date, deduped on VIN (rule 3). ⚠️ NOT on invoice_no: KIA reuses invoice
-     * numbers (16 numbers across 32 distinct VINs), and an invoice-keyed dedupe silently drops the
-     * earlier retail. One car is one VIN.
+     * Retails — delivery_date, deduped on VIN (rule 3), with model.
      */
     analyticsDb.execute(sql`
       WITH one_per_car AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(UPPER(BTRIM(c.vin_number)), ''), 'INV:' || UPPER(BTRIM(COALESCE(c.invoice_no, '')))))
           BTRIM(c.consultant_name) AS name,
-          EXTRACT(DAY FROM c.delivery_date)::int AS day
+          EXTRACT(DAY FROM c.delivery_date)::int AS day,
+          COALESCE(BTRIM(c.model), '') AS model
         FROM ${sql.raw(SALES_TABLE)} c
         WHERE c.delivery_date >= ${start}::date AND c.delivery_date < ${endExclusive}::date
           AND c.consultant_name IS NOT NULL AND BTRIM(c.consultant_name) <> ''
           AND ${outletEFilter}
         ORDER BY COALESCE(NULLIF(UPPER(BTRIM(c.vin_number)), ''), 'INV:' || UPPER(BTRIM(COALESCE(c.invoice_no, '')))), c.delivery_date DESC
       )
-      SELECT name, day, COUNT(*)::int AS retails FROM one_per_car GROUP BY 1, 2
+      SELECT name, day, model, COUNT(*)::int AS retails FROM one_per_car GROUP BY 1, 2, 3
     `),
 
     analyticsDb.execute(sql`
@@ -441,19 +468,6 @@ async function buildSalesTargetPlan(input: {
 
     analyticsDb.execute(sql`SELECT MAX(uploaded_at) AS as_of FROM kia_enquiry_report`),
 
-    /*
-     * ⚠️ WHO IS WHO. The DMS spells the same person more than one way: EJK4020138 files enquiries as
-     * both "NEERAJ" and "NEERAJS", and EJK4020022 as both "AKASH BHAT" and "AKASH BHATS". Keyed on
-     * the name, one person becomes two rows on the screen — September showed NEERAJS with 31
-     * enquiries and NEERAJ with 0 beside it, and neither number was that person's month.
-     *
-     * `kec_employee_id` is the identity, and it is present on 38,646 of 38,839 rows. Measured: NO
-     * name maps to more than one id, so collapsing names onto an id can never merge two real people.
-     *
-     * ⚠️ ONLY kia_enquiry_report CARRIES THE ID. The booking and sales feeds have a name and nothing
-     * else, so this doubles as the alias map that merges their rows too — and every name in both of
-     * those feeds is known here, so nothing is stranded.
-     */
     analyticsDb.execute(sql`
       SELECT UPPER(BTRIM(c.consultant_name)) AS name_key,
              BTRIM(c.kec_employee_id) AS employee_id,
@@ -467,18 +481,14 @@ async function buildSalesTargetPlan(input: {
       GROUP BY 1, 2, 3
     `),
 
-    /*
-     * ⚠️ THE COMMITMENT IS DAILY. Every row in the month is read and summed here; the month total is
-     * never stored. Reading a stored monthly figure alongside these would be two sources of truth
-     * that drift the first time somebody edits one day.
-     */
+    /* Commitments */
     db.select().from(kiaSalesCommitments).where(and(
       ...(isAll ? [] : [eq(kiaSalesCommitments.dealerCode, outlet)]),
       gte(kiaSalesCommitments.commitmentDate, start),
       lt(kiaSalesCommitments.commitmentDate, endExclusive),
     )),
 
-    /* kia_sales_targets now carries ONLY the team a consultant reports to, per month. */
+    /* kia_sales_targets: team assignments per month */
     db.select().from(kiaSalesTargets).where(and(
       ...(isAll ? [] : [eq(kiaSalesTargets.dealerCode, outlet)]),
       eq(kiaSalesTargets.year, year),
@@ -486,13 +496,7 @@ async function buildSalesTargetPlan(input: {
     )),
   ])
 
-  /*
-   * ── Who is who ────────────────────────────────────────────────────────────────────────────────
-   * `idOf` maps a spelling to the employee id behind it; `resolve` turns any spelling into the key
-   * everything else is grouped by. A name with no id resolves to itself, which is the right answer
-   * for the 0.5% of rows the DMS leaves blank — it keeps them visible as their own row rather than
-   * folding them onto somebody arbitrary.
-   */
+  // ── Who is who ────────────────────────────────────────────────────────────────────────────────
   const idOf = new Map<string, string>()
   const canonicalName = new Map<string, { name: string; rows: number }>()
   for (const r of rowsOf(identityRes)) {
@@ -500,12 +504,6 @@ async function buildSalesTargetPlan(input: {
     const id = String(r.employee_id ?? '').trim()
     if (!nk || !id) continue
     idOf.set(nk, id)
-    /*
-     * ⚠️ THE DISPLAY NAME IS THE SPELLING USED MOST, NOT THE MOST RECENT ONE. Most-recent elevates a
-     * typo: EJK4020022 filed 626 enquiries as "AKASH BHAT" and then 30 as "AKASH BHATS", so the
-     * newest spelling is the wrong one and the screen read "AKASH BHATS" beside a team labelled
-     * "AKASH BHAT" — the same person, looking like two.
-     */
     const rows = num(r.rows)
     const current = canonicalName.get(id)
     if (!current || rows > current.rows) canonicalName.set(id, { name: String(r.display ?? nk).trim(), rows })
@@ -517,12 +515,15 @@ async function buildSalesTargetPlan(input: {
   }
   const nameFor = (key: string, fallback: string) => canonicalName.get(key)?.name || fallback
 
-  // ── Fold every source into one map keyed on that resolved identity ─────────────────────────────
+  // ── Fold every source into one map keyed on resolved identity ─────────────────────────────────
   const counts = new Map<string, Counts>()
   const display = new Map<string, string>()
   const daily = new Map<number, Counts>()
+  const consultantDailyCounts = new Map<string, Map<number, Counts>>()
+  const consultantModelCounts = new Map<string, Map<string, { bookings: number; retails: number }>>()
+  const allDiscoveredModels = new Set<string>()
 
-  const bump = (name: unknown, day: number | null, metric: keyof Counts, by: number) => {
+  const bump = (name: unknown, day: number | null, metric: keyof Counts, by: number, rawModel?: string) => {
     if (by <= 0) return
     const key = resolve(name)
     if (!key) return
@@ -530,10 +531,34 @@ async function buildSalesTargetPlan(input: {
     const c = counts.get(key) || zero()
     c[metric] += by
     counts.set(key, c)
+
     if (day && day >= 1 && day <= monthDays) {
       const d = daily.get(day) || zero()
       d[metric] += by
       daily.set(day, d)
+
+      let cdMap = consultantDailyCounts.get(key)
+      if (!cdMap) {
+        cdMap = new Map<number, Counts>()
+        consultantDailyCounts.set(key, cdMap)
+      }
+      const cd = cdMap.get(day) || zero()
+      cd[metric] += by
+      cdMap.set(day, cd)
+    }
+
+    if (rawModel && (metric === 'bookings' || metric === 'retails')) {
+      const norm = normalizeModelName(rawModel)
+      allDiscoveredModels.add(norm)
+      let mGroup = consultantModelCounts.get(key)
+      if (!mGroup) {
+        mGroup = new Map<string, { bookings: number; retails: number }>()
+        consultantModelCounts.set(key, mGroup)
+      }
+      const mStats = mGroup.get(norm) || { bookings: 0, retails: 0 }
+      if (metric === 'bookings') mStats.bookings += by
+      if (metric === 'retails') mStats.retails += by
+      mGroup.set(norm, mStats)
     }
   }
 
@@ -541,27 +566,17 @@ async function buildSalesTargetPlan(input: {
     bump(r.name, num(r.enquiry_day) || null, 'enquiries', num(r.enquiries))
     bump(r.name, num(r.td_day) || null, 'testDrives', num(r.test_drives))
   }
-  for (const r of rowsOf(bookingRes)) bump(r.name, num(r.day) || null, 'bookings', num(r.bookings))
-  for (const r of rowsOf(retailRes)) bump(r.name, num(r.day) || null, 'retails', num(r.retails))
+  for (const r of rowsOf(bookingRes)) {
+    bump(r.name, num(r.day) || null, 'bookings', num(r.bookings), String(r.model || ''))
+  }
+  for (const r of rowsOf(retailRes)) {
+    bump(r.name, num(r.day) || null, 'retails', num(r.retails), String(r.model || ''))
+  }
 
-  /*
-   * ── Commitments ───────────────────────────────────────────────────────────────────────────────
-   * The month's commitment is the SUM of the days committed inside it. Nothing stores a monthly
-   * figure, so a day edited in week 3 moves the month total immediately and there is nothing to
-   * re-sync.
-   *
-   * ⚠️ A consultant who has committed but done nothing MUST still appear. They are the row the
-   * morning meeting exists for, and keying the table off activity alone makes the person doing
-   * nothing the one who vanishes from the screen.
-   *
-   * ⚠️ `committedDays` counts ROWS, not the numbers on them. A day committed as zero — "no retail
-   * today, the stock is not here" — is a decision somebody stood behind; a day nobody filled in is
-   * not. The two must not both read as 0.
-   */
+  // ── Commitments ───────────────────────────────────────────────────────────────────────────────
   type Committed = { enquiries: number; testDrives: number; bookings: number; retails: number }
-  /** The month figure somebody signed up to, when one exists. At most one row per person. */
   const monthCommitment = new Map<string, Committed>()
-  /** The days added up — the plan for reaching it. */
+  const consultantModelTargets = new Map<string, Record<string, number>>()
   const daySum = new Map<string, Committed>()
   const toDate = new Map<string, Committed>()
   const committedDays = new Map<string, number>()
@@ -573,18 +588,27 @@ async function buildSalesTargetPlan(input: {
     if (!display.has(key)) display.set(key, nameFor(key, c.consultantName.trim()))
     if (!counts.has(key)) counts.set(key, zero())
 
-    /*
-     * ⚠️ A MONTH COMMITMENT IS NOT A DAY. It is held apart and never added to the day sum — folding
-     * them together would double-count a month whose days are also filled in, and the two answer
-     * different questions ("what did you sign up to" vs "how do you plan to get there").
-     */
     if (c.scope === 'month') {
       monthCommitment.set(key, {
         enquiries: c.enquiries, testDrives: c.testDrives, bookings: c.bookings, retails: c.retails,
       })
+      if (c.modelTargets && typeof c.modelTargets === 'object') {
+        const mt = c.modelTargets as Record<string, unknown>
+        const parsed: Record<string, number> = {}
+        for (const [mk, mv] of Object.entries(mt)) {
+          const mNorm = normalizeModelName(mk)
+          const nVal = Number(mv) || 0
+          if (nVal > 0) {
+            parsed[mNorm] = (parsed[mNorm] || 0) + nVal
+            allDiscoveredModels.add(mNorm)
+          }
+        }
+        consultantModelTargets.set(key, parsed)
+      }
       continue
     }
 
+    // Daily commitment
     const acc = daySum.get(key) || zero()
     acc.enquiries += c.enquiries
     acc.testDrives += c.testDrives
@@ -593,12 +617,9 @@ async function buildSalesTargetPlan(input: {
     daySum.set(key, acc)
     committedDays.set(key, (committedDays.get(key) || 0) + 1)
 
-    /* commitmentDate is a `date`, so drizzle hands back 'YYYY-MM-DD' — take the day off the text
-     * rather than constructing a Date, which would re-introduce the timezone shift 0067 avoids. */
     const dayNo = Number(String(c.commitmentDate).slice(8, 10))
 
-    /* Only days that have happened count toward the baseline today's actuals are judged against. */
-    if (dayNo <= daysElapsed) {  // eslint-disable-line no-lone-blocks
+    if (dayNo <= daysElapsed) {
       const td = toDate.get(key) || zero()
       td.enquiries += c.enquiries
       td.testDrives += c.testDrives
@@ -616,7 +637,7 @@ async function buildSalesTargetPlan(input: {
     }
   }
 
-  /* kia_sales_targets is now only "which team does this person report to", per month. */
+  /* Team mappings */
   const teamOf = new Map<string, string | null>()
   for (const t of teamRows) {
     const key = resolve(t.consultantName)
@@ -626,62 +647,85 @@ async function buildSalesTargetPlan(input: {
     if (!counts.has(key)) counts.set(key, zero())
   }
 
-  /*
-   * ⚠️ TEAM LEADERS ARE PEOPLE TOO, and they get their own row.
-   *
-   * Three of the four Jammu leaders have never filed an enquiry — they lead rather than sell — so
-   * nothing in the feeds would ever put them on this screen. Akash Bhat DID sell (626 enquiries, 64
-   * retails) right up to 2026-06-29 and then stopped, which is what moving to team leader looks like
-   * in this data. Either way the row belongs here: a leader with no sales of their own reads as zero
-   * against no commitment, which is the truth, and a leader who does sell has it counted.
-   */
   for (const leader of new Set([...teamOf.values()].filter((v): v is string => Boolean(v)))) {
     const key = resolve(leader)
     if (!key) continue
-    /*
-     * ⚠️ A TYPED LEADER NAME OVERRIDES THE FEED'S SPELLING. Somebody wrote "AKASH BHAT" deliberately;
-     * the feed's own most-used spelling is a fallback for people nobody has named. Without this the
-     * leader's row and the team heading disagree about what he is called.
-     */
     display.set(key, leader)
     if (!counts.has(key)) counts.set(key, zero())
-    /* A leader belongs to their own team, so the team total is leader + members. */
     if (!teamOf.has(key)) teamOf.set(key, leader)
   }
 
-  /*
-   * ── THE PRECEDENCE RULE, STATED ONCE ──────────────────────────────────────────────────────────
-   *
-   * A MONTH COMMITMENT WINS over the sum of the days inside it.
-   *
-   * Both are real and staff make both, so the screen shows both — but only one can be the number the
-   * month is scored against, and it has to be the one somebody signed up to. Part-way through a month
-   * the days will always add to less than the month (nobody has filled in the rest yet), so scoring
-   * against the day sum would quietly flatter everyone who is behind on their planning.
-   *
-   * ⚠️ THE BASELINE FOR "BEHIND BY" IS DIFFERENT AGAIN, and deliberately so:
-   *   · days committed for the days that have HAPPENED, when there are any — exact, no assumptions;
-   *   · otherwise a working-day pro-rata of the month commitment — an estimate, and labelled as one.
-   * A month figure alone cannot say what today was supposed to look like; spreading it evenly is the
-   * least-wrong reading and the screen says that is what it did.
-   */
-  type Targets = Committed & { teamLeader: string | null; basis: 'month' | 'days' | 'none' }
+  // ── 4 Fixed Weeks Partitioning ────────────────────────────────────────────────────────────────
+  // Week 1: Day 1–7, Week 2: Day 8–14, Week 3: Day 15–21, Week 4: Day 22–monthDays
+  const weekConfigs: { weekNumber: number; scope: 'week_1' | 'week_2' | 'week_3' | 'week_4'; startDay: number; endDay: number }[] = [
+    { weekNumber: 1, scope: 'week_1', startDay: 1, endDay: 7 },
+    { weekNumber: 2, scope: 'week_2', startDay: 8, endDay: 14 },
+    { weekNumber: 3, scope: 'week_3', startDay: 15, endDay: 21 },
+    { weekNumber: 4, scope: 'week_4', startDay: 22, endDay: monthDays },
+  ]
+
+  const weekMeta = weekConfigs.map((w) => {
+    const wWorkingDays = workingDaysUpTo(year, month, w.endDay) - workingDaysUpTo(year, month, w.startDay - 1)
+    const wWorkingDaysElapsed = daysElapsed >= w.startDay
+      ? workingDaysUpTo(year, month, Math.min(w.endDay, daysElapsed)) - workingDaysUpTo(year, month, w.startDay - 1)
+      : 0
+    const isCurrent = isCurrentMonth && daysElapsed >= w.startDay && daysElapsed <= w.endDay
+    const isPast = daysElapsed > w.endDay
+    const isFuture = daysElapsed < w.startDay
+
+    return {
+      ...w,
+      label: `Week ${w.weekNumber} (Day ${w.startDay}–${w.endDay})`,
+      dateRange: `${year}-${String(month).padStart(2, '0')}-${String(w.startDay).padStart(2, '0')} to ${year}-${String(month).padStart(2, '0')}-${String(w.endDay).padStart(2, '0')}`,
+      startDate: `${year}-${String(month).padStart(2, '0')}-${String(w.startDay).padStart(2, '0')}`,
+      endDate: `${year}-${String(month).padStart(2, '0')}-${String(w.endDay).padStart(2, '0')}`,
+      daysCount: w.endDay - w.startDay + 1,
+      workingDays: wWorkingDays,
+      workingDaysElapsed: wWorkingDaysElapsed,
+      isCurrent,
+      isPast,
+      isFuture,
+    }
+  })
+
+  // ── Month Precedence Rules ───────────────────────────────────────────────────────────────────
+  type Targets = Committed & { teamLeader: string | null; basis: 'month' | 'weeks' | 'days' | 'none' }
   const targets = new Map<string, Targets>()
-  for (const key of new Set([...monthCommitment.keys(), ...daySum.keys(), ...teamOf.keys()])) {
+  const allKeys = new Set([
+    ...monthCommitment.keys(),
+    ...daySum.keys(),
+    ...teamOf.keys(),
+  ])
+
+  for (const key of allKeys) {
     const monthly = monthCommitment.get(key)
     const days = daySum.get(key)
     const figure = monthly || days || zero()
+    const basis: 'month' | 'weeks' | 'days' | 'none' = monthly
+      ? 'month'
+      : days
+        ? 'days'
+        : 'none'
+
     targets.set(key, {
       ...figure,
       teamLeader: teamOf.get(key) ?? null,
-      basis: monthly ? 'month' : days ? 'days' : 'none',
+      basis,
     })
   }
 
-  /* Working days gone, as a share — only used to pro-rata a month figure that has no days behind it. */
-  const monthShare = workingDays > 0 ? workingDaysElapsed / workingDays : 0
+  // ── Model Registry ────────────────────────────────────────────────────────────────────────────
+  // Default models first, then any extra discovered models sorted alphabetically
+  const allModels: string[] = [...DEFAULT_PLAN_MODELS]
+  const extraModels = [...allDiscoveredModels]
+    .filter((m) => !allModels.includes(m as any) && m !== 'OTHER')
+    .sort()
+  allModels.push(...extraModels)
+  if (allDiscoveredModels.has('OTHER') && !allModels.includes('OTHER')) {
+    allModels.push('OTHER')
+  }
 
-  /* Resolved once, so the per-row check is a lookup rather than a scan of every team name. */
+  const monthShare = workingDays > 0 ? workingDaysElapsed / workingDays : 0
   const leaderKeys = new Set(
     [...teamOf.values()].filter((v): v is string => Boolean(v)).map((v) => resolve(v)).filter(Boolean),
   )
@@ -692,10 +736,113 @@ async function buildSalesTargetPlan(input: {
     const days = daySum.get(key)
     const dayDays = committedDays.get(key) || 0
     const monthly = monthCommitment.get(key)
-    /*
-     * The baseline for "where should you be today". Days win when they exist because they are a
-     * decision; otherwise the month figure is spread across working days, which is an estimate.
-     */
+    const mTargets = consultantModelTargets.get(key) || {}
+    const mCounts = consultantModelCounts.get(key) || new Map<string, { bookings: number; retails: number }>()
+
+    // 1. Weekly target division from monthly target
+    // We compute targets for W1, W2, W3, and W4 takes the remainder so sum equals monthly target exactly.
+    const w1WorkingShare = workingDays > 0 ? weekMeta[0].workingDays / workingDays : 0.25
+    const w2WorkingShare = workingDays > 0 ? weekMeta[1].workingDays / workingDays : 0.25
+    const w3WorkingShare = workingDays > 0 ? weekMeta[2].workingDays / workingDays : 0.25
+
+    const w1Tgt: Committed = {
+      enquiries: Math.round(t.enquiries * w1WorkingShare),
+      testDrives: Math.round(t.testDrives * w1WorkingShare),
+      bookings: Math.round(t.bookings * w1WorkingShare),
+      retails: Math.round(t.retails * w1WorkingShare),
+    }
+    const w2Tgt: Committed = {
+      enquiries: Math.round(t.enquiries * w2WorkingShare),
+      testDrives: Math.round(t.testDrives * w2WorkingShare),
+      bookings: Math.round(t.bookings * w2WorkingShare),
+      retails: Math.round(t.retails * w2WorkingShare),
+    }
+    const w3Tgt: Committed = {
+      enquiries: Math.round(t.enquiries * w3WorkingShare),
+      testDrives: Math.round(t.testDrives * w3WorkingShare),
+      bookings: Math.round(t.bookings * w3WorkingShare),
+      retails: Math.round(t.retails * w3WorkingShare),
+    }
+    const w4Tgt: Committed = {
+      enquiries: Math.max(0, t.enquiries - (w1Tgt.enquiries + w2Tgt.enquiries + w3Tgt.enquiries)),
+      testDrives: Math.max(0, t.testDrives - (w1Tgt.testDrives + w2Tgt.testDrives + w3Tgt.testDrives)),
+      bookings: Math.max(0, t.bookings - (w1Tgt.bookings + w2Tgt.bookings + w3Tgt.bookings)),
+      retails: Math.max(0, t.retails - (w1Tgt.retails + w2Tgt.retails + w3Tgt.retails)),
+    }
+    const weekTargets = [w1Tgt, w2Tgt, w3Tgt, w4Tgt]
+
+    // Weekly calculations for this consultant
+    const consultantWeeks: PlanWeek[] = weekMeta.map((wm, wIdx) => {
+      // Actuals in this week
+      const cdMap = consultantDailyCounts.get(key)
+      const wAct = zero()
+      if (cdMap) {
+        for (let d = wm.startDay; d <= wm.endDay; d++) {
+          const cd = cdMap.get(d)
+          if (cd) {
+            wAct.enquiries += cd.enquiries
+            wAct.testDrives += cd.testDrives
+            wAct.bookings += cd.bookings
+            wAct.retails += cd.retails
+          }
+        }
+      }
+
+      const wTarget = weekTargets[wIdx]
+      let wToDate: Committed = zero()
+
+      if (wm.isPast) {
+        wToDate = wTarget
+      } else if (wm.isCurrent) {
+        const share = wm.workingDays > 0 ? wm.workingDaysElapsed / wm.workingDays : 0
+        wToDate = {
+          enquiries: Math.round(wTarget.enquiries * share * 10) / 10,
+          testDrives: Math.round(wTarget.testDrives * share * 10) / 10,
+          bookings: Math.round(wTarget.bookings * share * 10) / 10,
+          retails: Math.round(wTarget.retails * share * 10) / 10,
+        }
+      }
+
+      const weekHasTarget = t.basis !== 'none'
+
+      return {
+        weekNumber: wm.weekNumber,
+        scope: wm.scope,
+        label: wm.label,
+        dateRange: wm.dateRange,
+        startDate: wm.startDate,
+        endDate: wm.endDate,
+        startDay: wm.startDay,
+        endDay: wm.endDay,
+        daysCount: wm.daysCount,
+        workingDays: wm.workingDays,
+        workingDaysElapsed: wm.workingDaysElapsed,
+        isCurrent: wm.isCurrent,
+        isPast: wm.isPast,
+        isFuture: wm.isFuture,
+        enquiries: cell(wAct.enquiries, wTarget.enquiries, wToDate.enquiries, weekHasTarget),
+        testDrives: cell(wAct.testDrives, wTarget.testDrives, wToDate.testDrives, weekHasTarget),
+        bookings: cell(wAct.bookings, wTarget.bookings, wToDate.bookings, weekHasTarget),
+        retails: cell(wAct.retails, wTarget.retails, wToDate.retails, weekHasTarget),
+      }
+    })
+
+    // 2. Model Breakdown for this consultant
+    const consultantModels: PlanModelItem[] = allModels.map((mName) => {
+      const mTgt = mTargets[mName] || 0
+      const actuals = mCounts.get(mName) || { bookings: 0, retails: 0 }
+      const hasTgt = mTgt > 0
+      const committedToDate = hasTgt ? mTgt * monthShare : 0
+      return {
+        model: mName,
+        target: mTgt,
+        bookings: actuals.bookings,
+        retails: actuals.retails,
+        achievement: hasTgt ? actuals.retails / mTgt : null,
+        gap: hasTgt ? Math.round((actuals.retails - committedToDate) * 10) / 10 : null,
+      }
+    })
+
     const td = dayDays > 0
       ? (toDate.get(key) || zero())
       : monthly
@@ -706,7 +853,8 @@ async function buildSalesTargetPlan(input: {
             retails: monthly.retails * monthShare,
           }
         : zero()
-    const committed = dayDays > 0 || Boolean(monthly)
+
+    const committed = dayDays > 0 || Boolean(monthly) || t.basis !== 'none'
     const row: PlanConsultantRow = {
       consultant: display.get(key) || key,
       teamLeader: t.teamLeader,
@@ -714,12 +862,10 @@ async function buildSalesTargetPlan(input: {
       testDrives: cell(c.testDrives, t.testDrives, td.testDrives, committed),
       bookings: cell(c.bookings, t.bookings, td.bookings, committed),
       retails: cell(c.retails, t.retails, td.retails, committed),
+      weeks: consultantWeeks,
+      models: consultantModels,
+      modelTargets: mTargets,
       worstGap: null,
-      /*
-       * ⚠️ Having COMMITTED is not the same as having committed a non-zero number. A consultant who
-       * committed zero retails every day this month has a plan; treating them as unplanned would sort
-       * them to the bottom with the people nobody has asked.
-       */
       hasAnyTarget: committed,
       committedDays: dayDays,
       commitmentBasis: t.basis,
@@ -728,16 +874,10 @@ async function buildSalesTargetPlan(input: {
       isTeamLeader: leaderKeys.has(key),
       employeeId: canonicalName.has(key) ? key : null,
     }
-    /* Retail is what the month is judged on; bookings decide it when no retail target is set. */
     row.worstGap = row.retails.gap ?? row.bookings.gap ?? row.enquiries.gap
     consultants.push(row)
   }
 
-  /*
-   * ⚠️ Sorted by who is FURTHEST BEHIND, not alphabetically and not by who is winning. This screen
-   * exists for the morning meeting, and the row that needs the conversation belongs at the top.
-   * Consultants with no target at all sort last — they are not behind, they are unplanned.
-   */
   consultants.sort((a, b) => {
     if (a.hasAnyTarget !== b.hasAnyTarget) return a.hasAnyTarget ? -1 : 1
     const ag = a.worstGap ?? Number.POSITIVE_INFINITY
@@ -747,30 +887,71 @@ async function buildSalesTargetPlan(input: {
   })
 
   // ── Teams ─────────────────────────────────────────────────────────────────────────────────────
-  const teamAgg = new Map<string, { n: number; actual: Counts; target: Counts; toDate: Counts; committed: boolean }>()
+  const teamAgg = new Map<string, {
+    n: number
+    actual: Counts
+    target: Counts
+    toDate: Counts
+    committed: boolean
+    models: Map<string, { target: number; bookings: number; retails: number }>
+  }>()
+
   for (const row of consultants) {
     if (!row.teamLeader) continue
-    const t = teamAgg.get(row.teamLeader) || { n: 0, actual: zero(), target: zero(), toDate: zero(), committed: false }
+    let t = teamAgg.get(row.teamLeader)
+    if (!t) {
+      t = {
+        n: 0,
+        actual: zero(),
+        target: zero(),
+        toDate: zero(),
+        committed: false,
+        models: new Map(),
+      }
+      teamAgg.set(row.teamLeader, t)
+    }
     t.n += 1
-    /* A team counts as committed if ANY of its people have. Otherwise one unplanned member would
-     * make the whole team read as unplanned. */
     if (row.hasAnyTarget) t.committed = true
     for (const m of PLAN_METRICS) {
       t.actual[m.key] += row[m.key].actual
       t.target[m.key] += row[m.key].target
       t.toDate[m.key] += row[m.key].committedToDate
     }
-    teamAgg.set(row.teamLeader, t)
+    for (const mItem of row.models) {
+      const existing = t.models.get(mItem.model) || { target: 0, bookings: 0, retails: 0 }
+      existing.target += mItem.target
+      existing.bookings += mItem.bookings
+      existing.retails += mItem.retails
+      t.models.set(mItem.model, existing)
+    }
   }
+
   const teams: PlanTeamRow[] = [...teamAgg.entries()]
-    .map(([teamLeader, t]) => ({
-      teamLeader,
-      consultants: t.n,
-      enquiries: cell(t.actual.enquiries, t.target.enquiries, t.toDate.enquiries, t.committed),
-      testDrives: cell(t.actual.testDrives, t.target.testDrives, t.toDate.testDrives, t.committed),
-      bookings: cell(t.actual.bookings, t.target.bookings, t.toDate.bookings, t.committed),
-      retails: cell(t.actual.retails, t.target.retails, t.toDate.retails, t.committed),
-    }))
+    .map(([teamLeader, t]) => {
+      const teamModels: PlanModelItem[] = allModels.map((mName) => {
+        const tm = t.models.get(mName) || { target: 0, bookings: 0, retails: 0 }
+        const hasTgt = tm.target > 0
+        const committedToDate = hasTgt ? tm.target * monthShare : 0
+        return {
+          model: mName,
+          target: tm.target,
+          bookings: tm.bookings,
+          retails: tm.retails,
+          achievement: hasTgt ? tm.retails / tm.target : null,
+          gap: hasTgt ? Math.round((tm.retails - committedToDate) * 10) / 10 : null,
+        }
+      })
+
+      return {
+        teamLeader,
+        consultants: t.n,
+        enquiries: cell(t.actual.enquiries, t.target.enquiries, t.toDate.enquiries, t.committed),
+        testDrives: cell(t.actual.testDrives, t.target.testDrives, t.toDate.testDrives, t.committed),
+        bookings: cell(t.actual.bookings, t.target.bookings, t.toDate.bookings, t.committed),
+        retails: cell(t.actual.retails, t.target.retails, t.toDate.retails, t.committed),
+        models: teamModels,
+      }
+    })
     .sort((a, b) => (a.retails.gap ?? 0) - (b.retails.gap ?? 0))
 
   // ── Totals ────────────────────────────────────────────────────────────────────────────────────
@@ -778,6 +959,8 @@ async function buildSalesTargetPlan(input: {
   const totalTarget = zero()
   const totalToDate = zero()
   let anyCommitted = false
+  const totalModelMap = new Map<string, { target: number; bookings: number; retails: number }>()
+
   for (const row of consultants) {
     if (row.hasAnyTarget) anyCommitted = true
     for (const m of PLAN_METRICS) {
@@ -785,9 +968,71 @@ async function buildSalesTargetPlan(input: {
       totalTarget[m.key] += row[m.key].target
       totalToDate[m.key] += row[m.key].committedToDate
     }
+    for (const mItem of row.models) {
+      const existing = totalModelMap.get(mItem.model) || { target: 0, bookings: 0, retails: 0 }
+      existing.target += mItem.target
+      existing.bookings += mItem.bookings
+      existing.retails += mItem.retails
+      totalModelMap.set(mItem.model, existing)
+    }
   }
 
-  // ── Daily series — every day of the month, including the ones with nothing in them ────────────
+  // ── Outlet-Wide Models ────────────────────────────────────────────────────────────────────────
+  const outletModels: PlanModelItem[] = allModels.map((mName) => {
+    const tm = totalModelMap.get(mName) || { target: 0, bookings: 0, retails: 0 }
+    const hasTgt = tm.target > 0
+    const committedToDate = hasTgt ? tm.target * monthShare : 0
+    return {
+      model: mName,
+      target: tm.target,
+      bookings: tm.bookings,
+      retails: tm.retails,
+      achievement: hasTgt ? tm.retails / tm.target : null,
+      gap: hasTgt ? Math.round((tm.retails - committedToDate) * 10) / 10 : null,
+    }
+  })
+
+  // ── Weeks Totals ──────────────────────────────────────────────────────────────────────────────
+  const weeks: PlanWeek[] = weekMeta.map((wm, wIdx) => {
+    const wAct = zero()
+    const wTgt = zero()
+    const wToDate = zero()
+    let wAnyCommitted = false
+
+    for (const row of consultants) {
+      const cw = row.weeks[wIdx]
+      if (!cw) continue
+      for (const m of PLAN_METRICS) {
+        wAct[m.key] += cw[m.key].actual
+        wTgt[m.key] += cw[m.key].target
+        wToDate[m.key] += cw[m.key].committedToDate
+        if (cw[m.key].target > 0 || cw[m.key].committedToDate > 0) wAnyCommitted = true
+      }
+    }
+
+    return {
+      weekNumber: wm.weekNumber,
+      scope: wm.scope,
+      label: wm.label,
+      dateRange: wm.dateRange,
+      startDate: wm.startDate,
+      endDate: wm.endDate,
+      startDay: wm.startDay,
+      endDay: wm.endDay,
+      daysCount: wm.daysCount,
+      workingDays: wm.workingDays,
+      workingDaysElapsed: wm.workingDaysElapsed,
+      isCurrent: wm.isCurrent,
+      isPast: wm.isPast,
+      isFuture: wm.isFuture,
+      enquiries: cell(wAct.enquiries, wTgt.enquiries, wToDate.enquiries, wAnyCommitted),
+      testDrives: cell(wAct.testDrives, wTgt.testDrives, wToDate.testDrives, wAnyCommitted),
+      bookings: cell(wAct.bookings, wTgt.bookings, wToDate.bookings, wAnyCommitted),
+      retails: cell(wAct.retails, wTgt.retails, wToDate.retails, wAnyCommitted),
+    }
+  })
+
+  // ── Daily series — every day of the month ─────────────────────────────────────────────────────
   const days: PlanDay[] = []
   for (let day = 1; day <= monthDays; day++) {
     const d = daily.get(day) || zero()
@@ -828,6 +1073,9 @@ async function buildSalesTargetPlan(input: {
       bookings: cell(totalActual.bookings, totalTarget.bookings, totalToDate.bookings, anyCommitted),
       retails: cell(totalActual.retails, totalTarget.retails, totalToDate.retails, anyCommitted),
     },
+    weeks,
+    models: outletModels,
+    allModels,
     consultants,
     teams,
     daily: days,
@@ -835,3 +1083,4 @@ async function buildSalesTargetPlan(input: {
     dataAsOf: asOf,
   }
 }
+

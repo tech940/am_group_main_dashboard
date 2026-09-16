@@ -2,6 +2,7 @@ import { forbidden, redirect } from 'next/navigation'
 import { VehicleTrackerPage } from '@/features/kia/vehicle-tracker-page'
 import { getBrandAccess } from '@/lib/auth/brand-access'
 import { canFillVehicleTracker, canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
+import { isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
 
 export const metadata = {
   title: 'Vehicle Tracker | AM Kia',
@@ -20,7 +21,9 @@ export default async function Page() {
   }
 
   // Role-gated: Branch Admin + Service GM can view; only Branch Admin (+ MD/Developer) can fill.
-  if (!canViewVehicleTracker(access.appUser.role)) {
+  // ⚠️ Role rule OR an explicit Access-Map grant — owner decision 2026-09-16.
+  if (!canViewVehicleTracker(access.appUser.role)
+    && !(await isPermissionExplicitlyAllowed(access.appUser, 'kia.vehicle_tracker.view'))) {
     forbidden()
   }
 

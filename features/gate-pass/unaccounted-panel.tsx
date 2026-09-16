@@ -399,105 +399,107 @@ export function UnaccountedPanel({
       {/* ── Toolbar: Sub-tabs, Search & Branch Filter ──────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
         {/* Sub-tab pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('all')}
-            className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer inline-flex items-center gap-1.5',
-              activeSubTab === 'all'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            )}
-          >
-            <span>All Flagged</span>
-            <span
+        <div className="w-full sm:w-auto overflow-x-auto no-scrollbar scrollbar-none pb-1 sm:pb-0">
+          <div className="flex items-center gap-1.5 min-w-max">
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('all')}
               className={cn(
-                'min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center',
-                activeSubTab === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                'px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer inline-flex items-center gap-1.5',
+                activeSubTab === 'all'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               )}
             >
-              {offSite.length}
-            </span>
-          </button>
+              <span>All Flagged</span>
+              <span
+                className={cn(
+                  'min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center',
+                  activeSubTab === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                )}
+              >
+                {offSite.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('live')}
-            className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer inline-flex items-center gap-1.5',
-              activeSubTab === 'live'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            )}
-          >
-            <span>Active (Today)</span>
-            <span
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('live')}
               className={cn(
-                'min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center',
+                'px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer inline-flex items-center gap-1.5',
                 activeSubTab === 'live'
-                  ? 'bg-white/20 text-white'
-                  : activeBreachesCount > 0
-                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 font-bold'
-                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               )}
             >
-              {activeBreachesCount}
-            </span>
-          </button>
+              <span>Active (Today)</span>
+              <span
+                className={cn(
+                  'min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center',
+                  activeSubTab === 'live'
+                    ? 'bg-white/20 text-white'
+                    : activeBreachesCount > 0
+                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 font-bold'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                )}
+              >
+                {activeBreachesCount}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('stale')}
-            className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer inline-flex items-center gap-1.5',
-              activeSubTab === 'stale'
-                ? 'bg-slate-800 text-white dark:bg-slate-700 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            )}
-          >
-            <span>Stale Fixes</span>
-            <span
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('stale')}
               className={cn(
-                'min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center',
-                activeSubTab === 'stale' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                'px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer inline-flex items-center gap-1.5',
+                activeSubTab === 'stale'
+                  ? 'bg-slate-800 text-white dark:bg-slate-700 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               )}
             >
-              {staleCount}
-            </span>
-          </button>
+              <span>Stale Fixes</span>
+              <span
+                className={cn(
+                  'min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center',
+                  activeSubTab === 'stale' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                )}
+              >
+                {staleCount}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('untracked')}
-            className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer inline-flex items-center gap-1.5',
-              activeSubTab === 'untracked'
-                ? 'bg-slate-800 text-white dark:bg-slate-700 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            )}
-          >
-            <span>No GPS</span>
-            <span
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('untracked')}
               className={cn(
-                'min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center',
-                activeSubTab === 'untracked' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                'px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer inline-flex items-center gap-1.5',
+                activeSubTab === 'untracked'
+                  ? 'bg-slate-800 text-white dark:bg-slate-700 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               )}
             >
-              {unknowable.length}
-            </span>
-          </button>
+              <span>No GPS</span>
+              <span
+                className={cn(
+                  'min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center',
+                  activeSubTab === 'untracked' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                )}
+              >
+                {unknowable.length}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Search & Branch Select */}
-        <div className="flex items-center gap-2">
-          <div className="relative w-full sm:w-64">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-64 min-w-[160px]">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
             <Input
               placeholder="Search vehicle, VIN, location..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8.5 pl-8 pr-7 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700"
+              className="h-8.5 pl-8 pr-7 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 w-full"
             />
             {searchQuery && (
               <button
@@ -511,7 +513,7 @@ export function UnaccountedPanel({
           </div>
 
           <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-            <SelectTrigger className="h-8.5 w-36 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-xl">
+            <SelectTrigger className="h-8.5 flex-1 sm:w-36 min-w-[120px] text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 rounded-xl">
               <SelectValue placeholder="All Branches" />
             </SelectTrigger>
             <SelectContent>

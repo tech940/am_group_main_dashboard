@@ -112,7 +112,7 @@ export function FuelProofViewerDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          className="max-h-[92vh] overflow-y-auto w-[95vw] sm:w-[70vw] max-w-[70vw] sm:max-w-[70vw] p-0 gap-0 overflow-hidden border-slate-200 dark:border-slate-800 shadow-2xl"
+          className="max-h-[90dvh] overflow-y-auto w-[96vw] sm:w-full sm:max-w-3xl p-0 gap-0 border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl"
           onPointerDownOutside={(e) => e.preventDefault()}
         >
           {/* Header */}
