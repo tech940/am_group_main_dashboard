@@ -140,7 +140,7 @@ function istShortDate(value: Date | string | null | undefined): string {
 }
 
 const LOCATION_OPTIONS = ['JAMMU', 'UDHAMPUR', 'BANIHAL']
-const BRAND_OPTIONS = ['KIA', 'HYUNDAI', 'MG', 'TATA', 'PLATINUM', 'DIAMOND', 'HONDA', 'KTM', 'BAJAJ', 'SKODA', 'NEXA', 'OLA']
+const BRAND_OPTIONS = ['KIA', 'HYUNDAI', 'MG', 'TATA', 'PLATINUM', 'HONDA', 'KTM', 'BAJAJ']
 
 interface ApprovalHistoryEntry {
   id: string
@@ -414,6 +414,7 @@ const BRAND_BADGE_STYLES: Record<string, string> = {
  */
 const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dealerName?: string | null; dealerCode?: string | null }) => {
   const b = (row.brand || '').trim().toLowerCase()
+  if (b === 'diamond' || b === 'honda') return 'honda'
   if (b) return b
 
   const reqNo = (row.requestNo || '').trim().toUpperCase()
@@ -422,8 +423,7 @@ const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dea
   if (reqNo.startsWith('PLATINUM')) return 'platinum'
   if (reqNo.startsWith('MG')) return 'mg'
   if (reqNo.startsWith('TATA')) return 'tata'
-  if (reqNo.startsWith('DIAMOND') || reqNo.startsWith('DIA')) return 'diamond'
-  if (reqNo.startsWith('HONDA')) return 'honda'
+  if (reqNo.startsWith('DIAMOND') || reqNo.startsWith('DIA') || reqNo.startsWith('HONDA')) return 'honda'
   if (reqNo.startsWith('KTM')) return 'ktm'
   if (reqNo.startsWith('BAJAJ')) return 'bajaj'
 
@@ -1671,9 +1671,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const scopedRows = useMemo(() => {
     const rows = data?.rows || []
     return rows.filter((row) => {
+      const rowBrand = (row.brand || '').trim().toUpperCase()
+      const selBrand = selectedBrand.trim().toUpperCase()
       const matchesBrand =
         selectedBrand === 'All' ||
-        (row.brand && row.brand.trim().toUpperCase() === selectedBrand.trim().toUpperCase())
+        rowBrand === selBrand ||
+        (selBrand === 'HONDA' && rowBrand === 'DIAMOND')
       if (!matchesBrand) return false
       // selectedLocation has no control in the filter bar today, so this is always 'All' — kept so
       // that adding one automatically carries the headline numbers with it.
@@ -1823,8 +1826,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       if (!matchesGl) return false
 
       // 4.6. Brand filter
-      const matchesBrand = selectedBrand === 'All' || 
-        (row.brand && row.brand.trim().toUpperCase() === selectedBrand.trim().toUpperCase())
+      const rowBrand = (row.brand || '').trim().toUpperCase()
+      const selBrand = selectedBrand.trim().toUpperCase()
+      const matchesBrand =
+        selectedBrand === 'All' ||
+        rowBrand === selBrand ||
+        (selBrand === 'HONDA' && rowBrand === 'DIAMOND')
       if (!matchesBrand) return false
 
       // 5. Date filter
@@ -2612,8 +2619,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const getBranchChipClass = getBrandChipClass
 
   const getBrandBadgeClass = (brand: string) => {
-    const b = (brand || '').trim().toLowerCase()
+    let b = (brand || '').trim().toLowerCase()
+    if (b === 'diamond') b = 'honda'
     return BRAND_BADGE_STYLES[b] || 'bg-slate-100 text-slate-800 border-slate-300 font-black'
+  }
+
+  const displayBrandName = (brand: string | null | undefined) => {
+    if (!brand) return '—'
+    const b = brand.trim().toUpperCase()
+    return b === 'DIAMOND' ? 'HONDA' : b
   }
 
   const getRoleRemarksStyles = (roleKey: string) => {
@@ -3125,7 +3139,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               <div className="flex items-center gap-1.5">
                                 <span className="text-slate-950 font-black text-xs">{row.name}</span>
                                 <span className={`inline-block border px-1.5 py-0.2 rounded text-[8.5px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
-                                  {row.brand || '—'}
+                                  {displayBrandName(row.brand)}
                                 </span>
                               </div>
                               <span className="text-slate-500 font-semibold text-[10.5px]">{row.email}</span>
@@ -3878,7 +3892,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               <div className="flex items-center gap-1.5">
                                 <span className="text-slate-950 font-black text-xs">{row.name}</span>
                                 <span className={`inline-block border px-1.5 py-0.2 rounded text-[8.5px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
-                                  {row.brand || '—'}
+                                  {displayBrandName(row.brand)}
                                 </span>
                               </div>
                               <span className="text-slate-500 font-semibold text-[10.5px]">{row.email}</span>
@@ -4107,7 +4121,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-slate-950 font-black text-sm">{row.name}</span>
                             <span className={`inline-block border px-1.5 py-0.2 rounded-full text-[8px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
-                              {row.brand || '—'}
+                              {displayBrandName(row.brand)}
                             </span>
                           </div>
                           <span className="text-slate-400 text-[11px] font-semibold">{row.email}</span>

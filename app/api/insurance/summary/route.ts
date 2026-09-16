@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
+import { requireInsuranceAccess } from '@/lib/insurance/access'
 import { createDbGate } from '@/lib/db/concurrency'
 import {
   FILTER_PARAM_COLUMNS,
@@ -37,12 +37,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (!canViewRestrictedAnalytics(user.role)) {
-      return NextResponse.json({ error: 'Forbidden: Restricted access' }, { status: 403 })
-    }
-
     const { searchParams } = new URL(request.url)
     const brandId = resolveBrand(searchParams.get('type'))
+    /*
+     * ⚠️ Gated on the BRAND the request asked for, not on a role list. See lib/insurance/access.ts —
+     * the page enforces the identical `<brand>.insurance.view` plus brand scope, and a role list here
+     * would 403 exactly the people the Access Map had just granted.
+     */
+    const insuranceGate = await requireInsuranceAccess(brandId)
+    if (insuranceGate.denied) return insuranceGate.denied
     const brand = INSURANCE_BRANDS[brandId]
     const tableName = insuranceSource(brand)
 

@@ -32,6 +32,7 @@ import {
   ExternalLink,
   Receipt,
   Download,
+  PencilLine,
 } from 'lucide-react'
 import {
   Dialog,
@@ -41,7 +42,14 @@ import {
 } from '@/components/ui/dialog'
 import { FuelFormDialog } from './fuel-form-dialog'
 import { FuelFinalizeDialog } from './fuel-finalize-dialog'
-import { FUEL_LOCATIONS, FUEL_REQUIRED_FOR_OPTIONS, parseFuelSlipUrls } from '@/lib/fuel-approvals/constants'
+import {
+  FUEL_LOCATIONS,
+  FUEL_REQUIRED_FOR_OPTIONS,
+  parseFuelSlipUrls,
+  getFuelFinalization,
+  getFuelLifecycleState,
+  type FuelFinalization,
+} from '@/lib/fuel-approvals/constants'
 import type { FuelApprovalRecord, FuelApprovalStatus } from '@/lib/fuel-approvals/types'
 import { canUserApproveStage } from '@/lib/fuel-approvals/access'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
@@ -53,6 +61,19 @@ function istDate(value: string | Date | null | undefined): string {
   const d = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-IN', { timeZone: IST, day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+/**
+ * The sentence a finalised marker carries on hover.
+ *
+ * Deliberately names the person and the moment rather than saying "Finalised" alone: this marker is
+ * the thing that stops somebody re-opening the form, so it has to answer "finalised by whom, when"
+ * without needing the record opened.
+ */
+function finalizedTitle(fin: FuelFinalization): string {
+  const who = fin.byName ? ` by ${fin.byName}` : ''
+  const when = fin.at ? ` on ${istDate(fin.at)}${istTime(fin.at) ? ' ' + istTime(fin.at) : ''}` : ''
+  return `Finalised${who}${when}. Use Edit to correct the amount or slips.`
 }
 
 function istTime(value: string | Date | null | undefined): string {
@@ -76,7 +97,14 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
   const queryClient = useQueryClient()
   const isDeveloper = currentUser.role?.toLowerCase() === 'developer' || currentUser.role?.toLowerCase() === 'admin'
 
-  const [currentTab, setCurrentTab] = useState<'pending' | 'all' | 'approved' | 'held' | 'sent_back' | 'rejected'>('pending')
+  /*
+    * ⚠️ "Approved" IS NOT ONE SECTION. The CEO's decision opens the finalisation job rather than
+    * closing the order, so an approved order is either still to be finalised or actually completed,
+    * and those are two different queues for two different people. One combined tab is what made a
+    * finished-looking list of orders whose bills nobody had recorded.
+    */
+  type FuelTabKey = 'pending' | 'to_finalise' | 'completed' | 'all' | 'held' | 'sent_back' | 'rejected'
+  const [currentTab, setCurrentTab] = useState<FuelTabKey>('pending')
   const [selectedLocation, setSelectedLocation] = useState<string>('ALL')
   const [selectedPurpose, setSelectedPurpose] = useState<string>('ALL')
   const [selectedFuelType, setSelectedFuelType] = useState<string>('ALL')
@@ -123,6 +151,8 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
           mdPending: number
           all: number
           approved: number
+          toFinalise: number
+          completed: number
           held: number
           sentBack: number
           rejected: number
@@ -144,6 +174,8 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
     mdPending: 0,
     all: 0,
     approved: 0,
+    toFinalise: 0,
+    completed: 0,
     held: 0,
     sentBack: 0,
     rejected: 0,
@@ -427,7 +459,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
       case 'accounts_pending':
         return (
           <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-            <Clock className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Accounts Review
+            <Clock className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Pending Review
           </span>
         )
       case 'ea_pending':
@@ -450,6 +482,64 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
           </span>
         )
     }
+  }
+
+  /**
+   * What the Stage Status column says. One chip, stating where the order actually IS.
+   *
+   * ⚠️ An approved order does NOT get a green "Approved" chip any more. Until its bill and slips are
+   * recorded it is open work and reads as such; only a finalised order reads as done. getStatusBadge
+   * still owns every other status — this adds the position that `status` cannot express.
+   */
+  const getLifecycleBadge = (record: FuelApprovalRecord) => {
+    const state = getFuelLifecycleState(record)
+    if (state === 'to_finalise') {
+      return (
+        <span
+          title="CEO approved. The fuel bill and slips still have to be recorded before this order is complete."
+          style={{ backgroundColor: '#fffbeb', color: '#92400e', borderColor: '#fcd34d' }}
+          className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border"
+        >
+          <Clock className="w-3.5 h-3.5 mr-1" /> To Finalise
+        </span>
+      )
+    }
+    if (state === 'completed') {
+      return (
+        <span
+          title={finalizedTitle(getFuelFinalization(record))}
+          style={{ backgroundColor: '#ecfdf5', color: '#065f46', borderColor: '#a7f3d0' }}
+          className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border"
+        >
+          <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Completed
+        </span>
+      )
+    }
+    return getStatusBadge(record.status)
+  }
+
+  /** The one line under the chip: what is outstanding, or what was recorded. Null when neither. */
+  const lifecycleNote = (record: FuelApprovalRecord): string | null => {
+    const state = getFuelLifecycleState(record)
+    if (state === 'to_finalise') {
+      return record.ceoApprovedAt ? `CEO approved ${istDate(record.ceoApprovedAt)}` : 'Bill not recorded'
+    }
+    if (state === 'completed') {
+      const fin = getFuelFinalization(record)
+      const cost = record.totalCost ? `₹${Number(record.totalCost).toLocaleString('en-IN')}` : null
+      return [cost, fin.at ? istDate(fin.at) : null].filter(Boolean).join(' · ') || null
+    }
+    return null
+  }
+
+  const stageStatusCell = (record: FuelApprovalRecord, align: 'start' | 'end' = 'start') => {
+    const note = lifecycleNote(record)
+    return (
+      <div className={`flex flex-col gap-1 ${align === 'end' ? 'items-end' : 'items-start'}`}>
+        {getLifecycleBadge(record)}
+        {note && <span className="text-[10px] font-semibold text-slate-400">{note}</span>}
+      </div>
+    )
   }
 
   const mainContent = (
@@ -503,174 +593,104 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
           <span className="text-[11px] text-slate-400 mt-1 block font-medium">Awaiting your approval</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-emerald-200 transition-colors">
+        {/*
+          * ⚠️ This tile used to be captioned "Completed Orders / CEO approved" over counts.approved —
+          * it counted 38 orders as completed whose bills nobody had recorded. Approved is now split
+          * into the work still outstanding and the work actually finished, and both are clickable
+          * because a number nobody can act on is decoration.
+          */}
+        <button
+          type="button"
+          onClick={() => { setCurrentTab('to_finalise'); setSelectedIds(new Set()) }}
+          className="p-4 text-left rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-amber-300 transition-colors cursor-pointer"
+        >
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+            To Finalise
+          </span>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl font-black tabular-nums" style={{ color: counts.toFinalise > 0 ? '#b45309' : '#1e293b' }}>
+              {counts.toFinalise}
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block font-medium">Approved, bill not recorded</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setCurrentTab('completed'); setSelectedIds(new Set()) }}
+          className="p-4 text-left rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-emerald-300 transition-colors cursor-pointer"
+        >
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+            Completed
+          </span>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl font-black tabular-nums" style={{ color: '#047857' }}>
+              {counts.completed}
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block font-medium">Bill &amp; slips recorded</span>
+        </button>
+
+        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
             Approved Fuel
           </span>
           <div className="mt-1.5 flex items-baseline gap-1.5">
-            <span className="text-2xl font-black text-emerald-700 tabular-nums">
+            <span className="text-2xl font-black tabular-nums" style={{ color: '#047857' }}>
               {counts.totalLitersApproved}
             </span>
-            <span className="text-xs font-bold text-emerald-600">Ltrs</span>
+            <span className="text-xs font-bold" style={{ color: '#059669' }}>Ltrs</span>
           </div>
           <span className="text-[11px] text-slate-400 mt-1 block font-medium">Total dispensed &amp; authorized</span>
         </div>
-
-        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-            Completed Orders
-          </span>
-          <div className="mt-1.5 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-800 tabular-nums">
-              {counts.approved}
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-400 mt-1 block font-medium">CEO approved</span>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-            In Pipeline
-          </span>
-          <div className="mt-1.5 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-800 tabular-nums">
-              {counts.all - counts.approved - counts.rejected}
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-400 mt-1 block font-medium">Under active review</span>
-        </div>
       </div>
 
-      {/* Tab Navigation */}
+      {/*
+        * Tab Navigation — one row of data, not six hand-copied buttons. The order is the pipeline:
+        * what needs approving, what needs finalising, what is done, then the archives.
+        */}
       <div className="border-b border-slate-200">
         <div className="flex items-center gap-6 text-xs sm:text-sm font-semibold overflow-x-auto whitespace-nowrap scrollbar-none pb-2">
-          <button
-            onClick={() => {
-              setCurrentTab('pending')
-              setSelectedIds(new Set())
-            }}
-            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-              currentTab === 'pending'
-                ? 'text-teal-800 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span>Pending My Approval</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              counts.pending > 0
-                ? 'bg-teal-700 text-white'
-                : 'bg-slate-100 text-slate-600'
-            }`}>
-              {counts.pending}
-            </span>
-            {currentTab === 'pending' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-            )}
-          </button>
-
-          <button
-            onClick={() => {
-              setCurrentTab('all')
-              setSelectedIds(new Set())
-            }}
-            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-              currentTab === 'all'
-                ? 'text-teal-800 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span>All Requisitions</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-              {counts.all}
-            </span>
-            {currentTab === 'all' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-            )}
-          </button>
-
-          <button
-            onClick={() => {
-              setCurrentTab('approved')
-              setSelectedIds(new Set())
-            }}
-            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-              currentTab === 'approved'
-                ? 'text-teal-800 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span>Approved</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-              {counts.approved}
-            </span>
-            {currentTab === 'approved' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-            )}
-          </button>
-
-          <button
-            onClick={() => {
-              setCurrentTab('held')
-              setSelectedIds(new Set())
-            }}
-            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-              currentTab === 'held'
-                ? 'text-teal-800 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span>On Hold</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-              {counts.held}
-            </span>
-            {currentTab === 'held' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-            )}
-          </button>
-
-          <button
-            onClick={() => {
-              setCurrentTab('sent_back')
-              setSelectedIds(new Set())
-            }}
-            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-              currentTab === 'sent_back'
-                ? 'text-teal-800 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span>Sent Back</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              counts.sentBack > 0
-                ? 'bg-amber-600 text-white'
-                : 'bg-slate-100 text-slate-600'
-            }`}>
-              {counts.sentBack}
-            </span>
-            {currentTab === 'sent_back' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-            )}
-          </button>
-
-          <button
-            onClick={() => {
-              setCurrentTab('rejected')
-              setSelectedIds(new Set())
-            }}
-            className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
-              currentTab === 'rejected'
-                ? 'text-teal-800 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span>Rejected</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-              {counts.rejected}
-            </span>
-            {currentTab === 'rejected' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />
-            )}
-          </button>
+          {([
+            { key: 'pending', label: 'Pending My Approval', count: counts.pending, tone: 'teal' },
+            { key: 'to_finalise', label: 'To Finalise', count: counts.toFinalise, tone: 'amber' },
+            { key: 'completed', label: 'Completed', count: counts.completed, tone: 'plain' },
+            { key: 'all', label: 'All Requisitions', count: counts.all, tone: 'plain' },
+            { key: 'held', label: 'On Hold', count: counts.held, tone: 'plain' },
+            { key: 'sent_back', label: 'Sent Back', count: counts.sentBack, tone: 'amber' },
+            { key: 'rejected', label: 'Rejected', count: counts.rejected, tone: 'plain' },
+          ] as { key: FuelTabKey; label: string; count: number; tone: 'teal' | 'amber' | 'plain' }[]).map((tab) => {
+            const active = currentTab === tab.key
+            /* A count only shouts when there is something to do about it. */
+            const loud = tab.count > 0 && tab.tone !== 'plain'
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => {
+                  setCurrentTab(tab.key)
+                  setSelectedIds(new Set())
+                }}
+                aria-current={active ? 'page' : undefined}
+                className={`pb-2.5 relative transition-colors cursor-pointer flex items-center gap-2 ${
+                  active ? 'text-teal-800 font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  style={
+                    loud
+                      ? { backgroundColor: tab.tone === 'amber' ? '#b45309' : '#0f766e', color: '#ffffff' }
+                      : { backgroundColor: '#f1f5f9', color: '#475569' }
+                  }
+                >
+                  {tab.count}
+                </span>
+                {active && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-700 rounded-full" />}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -818,10 +838,20 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
         <div className="flex flex-col items-center justify-center p-16 bg-white rounded-2xl border border-slate-200 text-center">
           <Fuel className="w-8 h-8 text-slate-300 mb-2" />
           <p className="text-sm font-bold text-slate-800">
-            {currentTab === 'pending' ? 'No orders awaiting your approval' : 'No fuel records found'}
+            {currentTab === 'pending'
+              ? 'No orders awaiting your approval'
+              : currentTab === 'to_finalise'
+              ? 'Nothing waiting to be finalised'
+              : currentTab === 'completed'
+              ? 'No completed orders yet'
+              : 'No fuel records found'}
           </p>
           <p className="text-xs text-slate-500 mt-1 max-w-sm">
-            {currentTab === 'pending'
+            {currentTab === 'to_finalise'
+              ? 'Every approved order has had its fuel bill and slips recorded.'
+              : currentTab === 'completed'
+              ? 'An order lands here once someone records its fuel bill and slips.'
+              : currentTab === 'pending'
               ? 'When dealership staff submit fuel requests requiring your review, they will show up here.'
               : 'No requests match your selected filters. Try changing or resetting the filters.'}
           </p>
@@ -856,7 +886,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                         {record.requestNumber}
                       </span>
                     </div>
-                    {getStatusBadge(record.status)}
+                    {stageStatusCell(record, 'end')}
                   </div>
 
                   <div>
@@ -948,21 +978,50 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                       </>
                     )}
 
-                    {record.status === 'approved' && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setFinalizeRecord(record)
-                        }}
-                        style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                        className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
-                        title="Finalise fuel cost and slips"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{record.totalCost ? 'Finalised' : 'Finalise'}</span>
-                      </button>
-                    )}
+                    {/*
+                      * ⚠️ A FINALISED ORDER IS A STATE, NOT A BUTTON. This used to be one button whose
+                      * LABEL flipped to "Finalised" while its click handler still opened the finalise
+                      * form — so the screen said the work was done and then invited you to do it again.
+                      * Finalised now renders as a marker you cannot press, and correcting it is a
+                      * separate, deliberate Edit. See getFuelFinalization for why the test is the
+                      * history entry and not `totalCost`.
+                      */}
+                    {record.status === 'approved' && (() => {
+                      const fin = getFuelFinalization(record)
+                      if (!fin.finalized) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setFinalizeRecord(record)
+                            }}
+                            style={{ backgroundColor: '#055B65', color: '#ffffff' }}
+                            className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                            title="Finalise fuel cost and slips"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Finalise</span>
+                          </button>
+                        )
+                      }
+                      /* Completed is stated once, in the Stage Status column. Here it is only an action. */
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setFinalizeRecord(record)
+                          }}
+                          style={{ backgroundColor: '#ffffff', color: '#334155' }}
+                          className="h-8 px-2.5 rounded-xl text-xs font-bold border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 flex items-center gap-1 shadow-xs cursor-pointer"
+                          title={`${finalizedTitle(fin)} Opens the finalise form so the amount or slips can be corrected.`}
+                        >
+                          <PencilLine className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Edit Final</span>
+                        </button>
+                      )
+                    })()}
 
                     {(() => {
                       const slipUrls = parseFuelSlipUrls(record.fuelSlipUrl)
@@ -1098,7 +1157,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                         </td>
 
                         <td className="py-3 px-3 whitespace-nowrap">
-                          {getStatusBadge(record.status)}
+                          {stageStatusCell(record)}
                         </td>
 
                         {/* ALL ACTION BUTTONS DIRECTLY VISIBLE ON ROW */}
@@ -1200,19 +1259,43 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                               </>
                             ) : record.status === 'approved' ? (
                               <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setFinalizeRecord(record)
-                                  }}
-                                  style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
-                                  title="Finalise fuel cost and slips"
-                                >
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  <span>{record.totalCost ? 'Finalised' : 'Finalise'}</span>
-                                </button>
+                                {/* Same rule as the card view above: finalised is a marker, editing is its own button. */}
+                                {(() => {
+                                  const fin = getFuelFinalization(record)
+                                  if (!fin.finalized) {
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setFinalizeRecord(record)
+                                        }}
+                                        style={{ backgroundColor: '#055B65', color: '#ffffff' }}
+                                        className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                                        title="Finalise fuel cost and slips"
+                                      >
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        <span>Finalise</span>
+                                      </button>
+                                    )
+                                  }
+                                  /* Completed is stated once, in the Stage Status column. Here it is only an action. */
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setFinalizeRecord(record)
+                                      }}
+                                      style={{ backgroundColor: '#ffffff', color: '#334155' }}
+                                      className="h-7 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                                      title={`${finalizedTitle(fin)} Opens the finalise form so the amount or slips can be corrected.`}
+                                    >
+                                      <PencilLine className="w-3 h-3 text-slate-500" />
+                                      <span>Edit Final</span>
+                                    </button>
+                                  )
+                                })()}
                                 {(() => {
                                   const slipUrls = parseFuelSlipUrls(record.fuelSlipUrl)
                                   if (slipUrls.length === 0) return null
@@ -1349,7 +1432,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {getStatusBadge(selectedRecord.status)}
+                  {getLifecycleBadge(selectedRecord)}
                   <button
                     onClick={() => setSelectedRecord(null)}
                     className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
@@ -1782,33 +1865,53 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                 </div>
               )}
               {/* Finalize Action Box for Approved Requests */}
-              {selectedRecord.status === 'approved' && (
-                <div className="p-4 border-t border-slate-200 bg-emerald-50/50 space-y-2.5">
-                  <div className="flex items-center justify-between">
+              {selectedRecord.status === 'approved' && (() => {
+                const fin = getFuelFinalization(selectedRecord)
+                const cost = selectedRecord.totalCost
+                  ? `₹${Number(selectedRecord.totalCost).toLocaleString('en-IN')}`
+                  : null
+                return (
+                  <div className="p-4 border-t border-slate-200 bg-emerald-50/50 space-y-2.5">
                     <div>
                       <span className="text-xs font-bold text-teal-900 flex items-center gap-1.5">
                         <CheckCircle2 className="w-4 h-4 text-teal-700" />
-                        Order Approved by CEO
+                        {fin.finalized ? 'Order Finalised' : 'Order Approved by CEO'}
                       </span>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        {selectedRecord.totalCost
-                          ? `Fuel cost ₹${Number(selectedRecord.totalCost).toLocaleString('en-IN')} is recorded.`
+                        {fin.finalized
+                          ? [
+                              cost ? `Fuel cost ${cost} recorded` : 'Closed without a cost figure',
+                              fin.byName ? `by ${fin.byName}` : null,
+                              fin.at ? `on ${istDate(fin.at)}${istTime(fin.at) ? ' ' + istTime(fin.at) : ''}` : null,
+                            ].filter(Boolean).join(' ') + '.'
                           : 'Enter final fuel bill amount and upload receipts / fuel slips.'}
                       </p>
                     </div>
+                    {/*
+                      * Finalised orders offer EDIT, not Finalise again. The button that used to sit here
+                      * kept inviting the same action it had just reported complete.
+                      */}
+                    <Button
+                      onClick={() => {
+                        setFinalizeRecord(selectedRecord)
+                      }}
+                      style={
+                        fin.finalized
+                          ? { backgroundColor: '#ffffff', color: '#334155', borderColor: '#e2e8f0' }
+                          : { backgroundColor: '#055B65', color: '#ffffff' }
+                      }
+                      className={
+                        fin.finalized
+                          ? 'w-full rounded-xl text-xs font-bold h-9 shadow-sm border hover:bg-slate-50 cursor-pointer flex items-center justify-center gap-2'
+                          : 'w-full rounded-xl text-xs font-bold h-9 shadow-sm hover:brightness-110 cursor-pointer flex items-center justify-center gap-2 border-none'
+                      }
+                    >
+                      {fin.finalized ? <PencilLine className="w-4 h-4 text-slate-500" /> : <CheckCircle2 className="w-4 h-4" />}
+                      <span>{fin.finalized ? 'Edit Finalised Details' : 'Finalise Fuel Order'}</span>
+                    </Button>
                   </div>
-                  <Button
-                    onClick={() => {
-                      setFinalizeRecord(selectedRecord)
-                    }}
-                    style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                    className="w-full rounded-xl text-xs font-bold h-9 shadow-sm hover:brightness-110 cursor-pointer flex items-center justify-center gap-2 border-none"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{selectedRecord.totalCost ? 'Update Final Fuel Cost & Slips' : 'Finalise Fuel Order'}</span>
-                  </Button>
-                </div>
-              )}
+                )
+              })()}
             </div>
           </div>
         </div>

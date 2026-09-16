@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
+import { filterPermittedInsuranceBrands } from '@/lib/insurance/access'
 import { getRenewalAnalytics } from '@/lib/insurance/renewal-analytics'
 import { INSURANCE_BRANDS, type InsuranceBrandId } from '@/lib/insurance/brands'
 import { getCachedData } from '@/lib/redis/cache-utils'
@@ -12,7 +12,7 @@ export const maxDuration = 120
 /**
  * Renewal trend and retention — the analytics beside the work queue in /api/insurance/renewals.
  *
- * ⚠️ Gated identically to the rest of /insurance (MD + Developer via canViewRestrictedAnalytics).
+ * ⚠️ Gated identically to the rest of the insurance books — per BRAND, via lib/insurance/access.ts.
  * These are aggregates rather than the PII-dense row list, but they describe the same book and the
  * section's access decision is a single one — do not widen this endpoint on its own.
  *
@@ -22,11 +22,20 @@ export const maxDuration = 120
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canViewRestrictedAnalytics(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
 
   const params = new URL(request.url).searchParams
-  const requested = (params.get('brands') || '').split(',').map((b) => b.trim()).filter(Boolean)
-  const brands = requested.filter((b): b is InsuranceBrandId => b in INSURANCE_BRANDS)
+  const rawParam = params.get('brands') || params.get('brand') || params.get('type') || ''
+  const requested = rawParam.split(',').map((b) => b.trim()).filter(Boolean)
+  /*
+   * ⚠️ Narrowed to the brands this user may actually see, rather than refused outright. Someone with
+   * Kia but not Hyundai asking for both gets their Kia book — and must NOT get Hyundai's rows folded
+   * in silently. An empty result after this means "you may see none of what you asked for".
+   */
+  const brands = await filterPermittedInsuranceBrands(
+    requested.filter((b): b is InsuranceBrandId => b in INSURANCE_BRANDS),
+  )
+  if (brands.length === 0) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const graceDays = Math.min(Math.max(Number(params.get('graceDays') || 30), 0), 180)
 
   try {

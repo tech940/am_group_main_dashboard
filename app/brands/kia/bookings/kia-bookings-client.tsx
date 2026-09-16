@@ -130,7 +130,7 @@ import { proformaPdfFilename } from '@/lib/kia-proforma/pdf-filename'
 import { getIndiaYmd } from '@/lib/date-time'
 // One list for the form and the API — see lib/kia/discount-chain.ts.
 import { DISCOUNT_TYPES } from '@/lib/kia/discount-chain'
-import { canRequestDiscount } from '@/lib/kia/discount-chain'
+import { canRequestDiscount, canRequestDiscountRole } from '@/lib/kia/discount-chain'
 // What counts as an MD remark — shared with the server count and the KPI SQL.
 import { isKiaRemarkActivityType } from '@/lib/kia/md-remarks'
 
@@ -911,14 +911,14 @@ function BookingMobileCard({
       {/*
         * ── APPLY FOR DISCOUNT, ON THE ROW ─────────────────────────────────────────────────────
         * This lived only inside the detail drawer, so a consultant had to open a booking to find
-        * out the option existed. A post-delivery discount is raised FROM the list — you are looking
-        * down a column of delivered cars deciding which needs one.
+        * out the option existed. A discount is raised FROM the list — you are looking down a column
+        * of bookings deciding which needs one.
         *
-        * ⚠️ Delivered only, from the shared rule. Before handover a discount belongs in the
-        * proforma price; this flow is money returned after the sale. The API enforces the same
-        * check, so hiding the button is a courtesy rather than the control.
+        * ⚠️ Any live booking, cancelled excepted (owner decision 2026-09-16 — it used to be
+        * delivered-only, which hid the button on five bookings in six). Gated on the raiser role as
+        * well; the API enforces both, so hiding the button is a courtesy rather than the control.
         */}
-      {canRequestDiscount(row) && onApplyDiscount && (
+      {canRequestDiscount(row) && canRequestDiscountRole(normalizedCurrentRole) && onApplyDiscount && (
         <button
           type="button"
           onClick={(event) => { event.stopPropagation(); onApplyDiscount(row.id) }}
@@ -3807,6 +3807,26 @@ export function KiaBookingsClient({
                           <button type="button" title="View booking" onClick={() => openBooking(row.id)} className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--kia-text)]">
                             <Eye className="h-4 w-4" />
                           </button>
+                          {/*
+                            * ── APPLY FOR DISCOUNT, IN THE CRM TABLE ──────────────────────────
+                            * It lived only on the mobile card and inside the detail drawer, so on a
+                            * desktop — which is where this list is actually worked — you had to open
+                            * a booking to discover the option existed at all.
+                            *
+                            * ⚠️ Gated on canRequestDiscount and the RAISER role, the same two rules
+                            * the API enforces. Showing it to somebody the server will refuse is
+                            * worse than not showing it.
+                            */}
+                          {canRequestDiscount(row) && canRequestDiscountRole(normalizedCurrentRole) && (
+                            <button
+                              type="button"
+                              title="Apply for a discount on this booking"
+                              onClick={() => { setAutoOpenDiscountFor(row.id); openBooking(row.id) }}
+                              className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--kia-text)]"
+                            >
+                              <Percent className="h-4 w-4" />
+                            </button>
+                          )}
                           {(() => {
                             const isRowPending = getKiaBookingStageInfo(row.status, row.proformaApprovalStatus).state === 'pending'
                             const isRowOverdue = isRowPending && isKiaBookingWaitLong(row.updatedAt, nowTick)
@@ -6418,6 +6438,15 @@ function BookingDrawer({
   const isIdtRole = normalizeRole(currentUserRole) === 'idt'
   const canDeliver = (effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : false) && !isIdtRole
   const canAllotVehicle = effectivePersona === 'actual' ? canAllotKiaVehicleToBooking(currentUserRole) : false
+  /*
+   * ⚠️ BOTH DISCOUNT RULES, from the shared module the API uses.
+   *
+   * This button had NO gate of any kind — it was offered on every booking to every role, including
+   * cancelled bookings and people the server has never allowed to raise one. That was survivable
+   * only while the API's own check was delivered-only and silent; now that the route enforces a
+   * requester role as well, an ungated button is a 403 waiting to happen.
+   */
+  const canRaiseDiscount = canRequestDiscount(booking) && canRequestDiscountRole(currentUserRole)
   const canActOnStock = effectivePersona === 'actual' ? canAllotKiaVehicle(currentUserRole) : effectivePersona !== 'sales_person'
   // Sales persons (and managers/admin) can edit booking details until the booking is closed.
   const canEditBooking = !isTerminal && (canActAsSalesPerson || canActAsSalesManager)
@@ -6947,14 +6976,21 @@ function BookingDrawer({
               <IconTile icon={Percent} tone="accent" size="sm" />
               <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)]">Discount Requests</h3>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsDiscountDialogOpen(true)}
-              className="h-8 rounded-xl text-xs font-bold border-indigo-200 text-indigo-600 hover:bg-indigo-50/50"
-            >
-              <Plus className="mr-1 h-3.5 w-3.5" /> Apply Discount
-            </Button>
+            {canRaiseDiscount ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsDiscountDialogOpen(true)}
+                className="h-8 rounded-xl text-xs font-bold border-indigo-200 text-indigo-600 hover:bg-indigo-50/50"
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" /> Apply Discount
+              </Button>
+            ) : (
+              /* Said, not silently hidden — otherwise the option looks broken rather than closed. */
+              <span className="text-[11px] font-semibold text-[var(--kia-text-faint)]">
+                {isCancelled ? 'Cancelled — no discount' : 'Raised by sales only'}
+              </span>
+            )}
           </div>
           {discounts && discounts.length > 0 ? (
             <div className="space-y-3.5">

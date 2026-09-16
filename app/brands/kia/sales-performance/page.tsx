@@ -1,11 +1,11 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getBrandAccess } from '@/lib/auth/brand-access'
 import { requirePermission } from '@/lib/permissions/service'
-import { KiaSalesPerformancePage } from '@/features/kia/kia-sales-performance-page'
+import { KiaSalesTargetPlanPage } from '@/features/kia/sales-target-plan-page'
 
 export const metadata = {
-  title: 'Sales Performance | AM Kia',
-  description: 'AM Kia consultant sales targets and leaderboard',
+  title: 'Sales Target Plan | AM Kia',
+  description: 'AM Kia monthly sales targets against actuals, per consultant',
 }
 
 // Managers may set targets; everyone with view access sees the leaderboard.
@@ -19,5 +19,5 @@ export default async function KiaSalesPerformanceRoute() {
   const permission = await requirePermission(access.appUser, 'kia.sales_performance.view')
   if (!permission.allowed) forbidden()
 
-  return <KiaSalesPerformancePage canSetTargets={TARGET_MANAGER_ROLES.has(access.appUser.role)} />
+  return <KiaSalesTargetPlanPage canSetTargets={TARGET_MANAGER_ROLES.has(access.appUser.role)} />
 }

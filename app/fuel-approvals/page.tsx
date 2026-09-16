@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 
 export const metadata = {
   title: 'Fuel Approvals | AM Group Dashboard',
-  description: 'Manage vehicle and yard fuel requisition orders with CEO -> Accounts approval workflow',
+  description: 'Manage vehicle and yard fuel requisition orders with CEO approval and finalisation workflow',
 }
 
 export default async function FuelApprovalsPage() {

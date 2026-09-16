@@ -1,5 +1,5 @@
 /**
- * Post-delivery discount requests: who acts next, and who may act.
+ * Booking discount requests: who may raise one, who acts next, and who may act.
  *
  *     requested → Sales Manager → MD → Accounts confirm the money reached the customer
  *
@@ -13,6 +13,8 @@
  * decided by the same function. Every approval chain in this codebase that had two copies of its
  * rule has drifted — the vendor-payment screen once offered a VP buttons the server rejected.
  */
+
+import { canCreateKiaBooking } from '@/lib/kia/workflow-access'
 
 export const DISCOUNT_MD_THRESHOLD = 5000
 
@@ -66,6 +68,64 @@ export const SALES_MANAGER_ROLES = ['sales_manager', 'general_manager', 'sales_h
 export const CEO_ROLES = ['ceo', 'ed'] as const
 export const MD_ROLES = ['md'] as const
 export const ACCOUNTS_ROLES = ['accounts', 'accounts_head', 'accounts_team', 'finance_head', 'finance_team'] as const
+
+/**
+ * Who may RAISE a discount request.
+ *
+ * ⚠️ THIS IS A NEW CONTROL, and it closes a hole rather than adding friction. Until 2026-09-16 the
+ * POST route checked only that somebody was logged in, so any authenticated employee — service
+ * advisor, HR, anyone — could raise a discount against any booking in the company. The button being
+ * hidden from them was the only thing standing in the way, and a hidden button is not a control.
+ *
+ * The set is the same one that may create a booking (consultant, SM/GSM/Sales Head, MD, support) —
+ * deliberately REUSED from lib/kia/workflow-access.ts rather than restated here. Every approval
+ * chain in this codebase that kept two copies of its role list has drifted.
+ */
+export function canRequestDiscountRole(role: unknown): boolean {
+  return canCreateKiaBooking(String(role ?? ''))
+}
+
+/**
+ * Did this person raise the request they are now trying to act on?
+ *
+ * ⚠️ THE REASON THIS EXISTS. GSM/SM are the FIRST APPROVAL STAGE, and from 2026-09-16 they may also
+ * raise a request — so without this check a Sales Manager could raise a discount and immediately
+ * approve it themselves, clearing stage one of a chain that exists to have someone else look at it.
+ * Nobody approves their own request at any stage, support roles included; the request simply waits
+ * for a different pair of eyes.
+ */
+export function isOwnDiscountRequest(
+  row: { requestedBy?: string | null },
+  actorUserId: string | null | undefined,
+): boolean {
+  const requester = String(row.requestedBy ?? '').trim()
+  const actor = String(actorUserId ?? '').trim()
+  return requester !== '' && actor !== '' && requester === actor
+}
+
+/**
+ * The whole answer for one person, one request: may they act on it right now?
+ *
+ * Prefer this over calling canActOnDiscountStage directly — it is the only form that knows about
+ * self-approval, and the screen and the API must reach the same verdict from the same function.
+ */
+export function canActOnDiscountRequest(params: {
+  role: unknown
+  actorUserId?: string | null
+  row: DiscountChainRow & { requestedBy?: string | null }
+}): { allowed: boolean; reason: string | null } {
+  const stage = discountStage(params.row)
+  if (stage === 'done' || stage === 'rejected') {
+    return { allowed: false, reason: `This request is already ${stage === 'done' ? 'completed' : 'rejected'}.` }
+  }
+  if (isOwnDiscountRequest(params.row, params.actorUserId)) {
+    return { allowed: false, reason: 'You raised this request, so somebody else has to approve it.' }
+  }
+  if (!canActOnDiscountStage(params.role, stage)) {
+    return { allowed: false, reason: `This request is waiting on ${DISCOUNT_STAGE_LABEL[stage]}.` }
+  }
+  return { allowed: true, reason: null }
+}
 
 export function canActOnDiscountStage(role: unknown, stage: DiscountStage): boolean {
   const r = String(role ?? '').trim().toLowerCase()
@@ -123,13 +183,30 @@ export function isValidDiscountType(value: unknown): boolean {
 }
 
 /**
+ * Statuses a discount can NOT be raised against. Everything else can.
+ *
+ * Stated as a deny-list on purpose: the booking pipeline gains stages over time, and an allow-list
+ * would silently lock the button out of every new one until somebody noticed.
+ */
+const DISCOUNT_BLOCKED_STATUSES = new Set(['cancelled'])
+
+/**
  * Can a discount be requested against this booking at all?
  *
- * ⚠️ DELIVERED ONLY, by the brief. A discount before handover belongs in the price on the proforma,
- * where it is part of the deal the customer signs; this flow is for money returned AFTER the sale,
- * which is why it needs the MD and then a payment.
+ * ⚠️ ANY LIVE BOOKING, from 2026-09-16 (owner decision). This used to be DELIVERED ONLY — the
+ * original brief treated the flow as money returned AFTER a sale, so a discount before handover was
+ * supposed to live in the proforma price instead. In practice the negotiation that needs approval
+ * happens while the customer is still deciding, and consultants were being told "a discount can only
+ * be requested once the vehicle has been delivered" at exactly the moment they needed one. Measured
+ * when the rule changed: 69 of 223 bookings were delivered, so five bookings in six could not ask.
+ *
+ * ⚠️ CANCELLED IS STILL REFUSED, and so is a deleted booking. There is no money to return on a sale
+ * that is not happening, and an approval chain running against a dead booking wastes the CEO's time
+ * and leaves an approved discount attached to nothing.
  */
 export function canRequestDiscount(booking: { status?: string | null; deletedAt?: unknown }): boolean {
   if (booking.deletedAt) return false
-  return String(booking.status ?? '').trim().toLowerCase() === 'delivered'
+  const status = String(booking.status ?? '').trim().toLowerCase()
+  if (!status) return false
+  return !DISCOUNT_BLOCKED_STATUSES.has(status)
 }

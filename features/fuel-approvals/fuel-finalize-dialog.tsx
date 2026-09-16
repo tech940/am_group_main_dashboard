@@ -26,8 +26,9 @@ import {
   Fuel,
   MapPin,
   Calendar,
+  PencilLine,
 } from 'lucide-react'
-import { parseFuelSlipUrls } from '@/lib/fuel-approvals/constants'
+import { parseFuelSlipUrls, getFuelFinalization } from '@/lib/fuel-approvals/constants'
 import type { FuelApprovalRecord } from '@/lib/fuel-approvals/types'
 
 interface SlipItem {
@@ -229,9 +230,16 @@ export function FuelFinalizeDialog({
         throw new Error(data.error || 'Failed to finalize fuel approval')
       }
 
+      /*
+       * ⚠️ SAY WHERE IT WENT. Finalising removes the order from the To Finalise queue, so without this
+       * the row simply vanishes from the list the person is working through and nothing explains it.
+       */
+      const wasFinalized = getFuelFinalization(record).finalized
       toast({
-        title: 'Fuel order finalized',
-        description: data.message || `Fuel order ${record.requestNumber} finalized successfully.`,
+        title: wasFinalized ? 'Finalised order updated' : 'Fuel order finalised',
+        description: wasFinalized
+          ? `${record.requestNumber} updated. It stays in Completed.`
+          : `${record.requestNumber} is complete and has moved to the Completed section.`,
         variant: 'success',
       })
 
@@ -250,6 +258,13 @@ export function FuelFinalizeDialog({
 
   if (!record) return null
 
+  /*
+   * ⚠️ Reached by two different intents — finalising for the first time, and correcting an order that
+   * is already closed. The form is identical; the words must not be, or an edit reads as though it is
+   * about to do something that already happened.
+   */
+  const isEdit = getFuelFinalization(record).finalized
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto p-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl">
@@ -266,10 +281,12 @@ export function FuelFinalizeDialog({
               </span>
             </div>
             <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100 mt-1">
-              Finalise Fuel Order
+              {isEdit ? 'Edit Finalised Fuel Order' : 'Finalise Fuel Order'}
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Record final fuel amount, verify pump bill totals, and attach multiple invoices or slips
+              {isEdit
+                ? 'Correct the recorded amount, add or remove slips. The change is written to the order history.'
+                : 'Record final fuel amount, verify pump bill totals, and attach multiple invoices or slips'}
             </DialogDescription>
           </div>
         </div>
@@ -456,8 +473,8 @@ export function FuelFinalizeDialog({
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                  Finalise Order
+                  {isEdit ? <PencilLine className="w-3.5 h-3.5 mr-1.5" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />}
+                  {isEdit ? 'Save Changes' : 'Finalise Order'}
                 </>
               )}
             </Button>

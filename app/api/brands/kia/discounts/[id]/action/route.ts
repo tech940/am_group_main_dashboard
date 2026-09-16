@@ -4,7 +4,8 @@ import { db } from '@/lib/db'
 import { kiaBookingDiscounts, kiaBookings, kiaBookingActivity } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
-  canActOnDiscountStage,
+  canActOnDiscountRequest,
+  isOwnDiscountRequest,
   discountStage,
   discountOverallStatus,
   requiresMdApproval,
@@ -56,9 +57,28 @@ export async function POST(
       return NextResponse.json({ error: `This discount is already ${currentStage}.` }, { status: 400 })
     }
 
-    if (!canActOnDiscountStage(appUser.role, currentStage)) {
+    /*
+     * ⚠️ NOBODY APPROVES THEIR OWN REQUEST — and this became load-bearing on 2026-09-16, when
+     * SM/GSM were allowed to RAISE a discount as well as approve one. GSM/SM are the first approval
+     * stage, so without this a Sales Manager could raise a request and clear stage one of it in the
+     * same breath — a chain that exists precisely to put a second pair of eyes on the money.
+     *
+     * Support roles are not exempt. The request simply waits for somebody else.
+     *
+     * canActOnDiscountRequest bundles the stage check with this one so the screen and the API cannot
+     * reach different verdicts — the defect that once offered a VP buttons the server rejected.
+     */
+    const verdict = canActOnDiscountRequest({
+      role: appUser.role,
+      actorUserId: appUser.id,
+      row: discount,
+    })
+    if (!verdict.allowed) {
+      const isSelf = isOwnDiscountRequest(discount, appUser.id)
       return NextResponse.json({
-        error: `Forbidden. Your role (${appUser.role}) cannot act on the "${DISCOUNT_STAGE_LABEL[currentStage]}" stage.`,
+        error: isSelf
+          ? verdict.reason
+          : `Forbidden. Your role (${appUser.role}) cannot act on the "${DISCOUNT_STAGE_LABEL[currentStage]}" stage.`,
       }, { status: 403 })
     }
 

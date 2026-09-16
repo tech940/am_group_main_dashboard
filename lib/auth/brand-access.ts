@@ -6,6 +6,7 @@ import { hasAllBranchAccess, isBranchValue, type BranchValue } from '@/lib/branc
 import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 import { requirePermission } from '@/lib/permissions/service'
 import { enforceDealerScope } from '@/lib/auth/dealer-scope'
+import { hasExplicitBrandGrant } from '@/lib/permissions/deny'
 
 export function canAccessBrand(appUser: AppUser | null, brand: BranchValue) {
   if (!appUser) return false
@@ -19,15 +20,35 @@ export function canAccessBrand(appUser: AppUser | null, brand: BranchValue) {
   return userBrand === targetBrand
 }
 
+/**
+ * ⚠️ AN ACCESS-MAP GRANT OPENS THE BRAND DOOR.
+ *
+ * `canAccessBrand` above compares the user's `brand` column against a string and knows nothing about
+ * permissions, so before 2026-09-16 a Hyundai user explicitly granted a KIA section in the Access Map
+ * passed `requirePermission` and was then thrown out by this gate. The tick was stored, the resolver
+ * honoured it, and the door refused it — with nothing on screen to say why.
+ *
+ * A DEFAULT (which brand you belong to) must not overrule a DECISION (this person may see this).
+ *
+ * ⚠️ This opens the BRAND, not the section: every page and route behind it keeps its own
+ * `requirePermission('<brand>.<section>.view')`, so somebody granted one KIA section still cannot
+ * reach the rest of KIA. `hasExplicitBrandGrant` reads only hand-ticked overrides, never role
+ * templates, and fails closed.
+ *
+ * ⚠️ The permission lookup runs ONLY when the plain brand check has already failed, so the common
+ * path — a KIA user opening a KIA page — costs exactly what it did before.
+ */
 export async function getBrandAccess(brand: string) {
   const appUser = await getAuthenticatedAppUser()
   const normalizedBrand = isBranchValue(brand) ? brand : null
+  if (!normalizedBrand) return { appUser, brand: null, allowed: false }
 
-  return {
-    appUser,
-    brand: normalizedBrand,
-    allowed: Boolean(normalizedBrand && canAccessBrand(appUser, normalizedBrand)),
+  if (canAccessBrand(appUser, normalizedBrand)) {
+    return { appUser, brand: normalizedBrand, allowed: true }
   }
+
+  const granted = await hasExplicitBrandGrant(appUser, normalizedBrand)
+  return { appUser, brand: normalizedBrand, allowed: granted }
 }
 
 export async function requireBrandApiAccess(brand: string) {

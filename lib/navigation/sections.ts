@@ -291,14 +291,13 @@ export const ALL_SECTIONS: SearchSection[] = [
   },
   {
     id: 'kia_sales_performance',
-    name: 'Sales Performance',
-    description: 'Detailed metrics on consultant performance, conversion rates, and targets.',
+    name: 'Sales Target Plan',
+    description: 'Monthly enquiry, test drive, booking and retail targets against actuals, per consultant and team.',
     href: '/brands/kia/sales-performance',
     department: 'sales',
     brand: 'kia',
     iconName: 'TrendingUp',
-    badge: 'TEST',
-    initials: 'SP',
+    initials: 'TP',
     category: 'kia',
   },
   {
@@ -809,8 +808,26 @@ export function canUserAccessSection(
       .split(',')
       .map((k) => k.trim())
       .filter(Boolean)
-    
-    const hasBrandAccess = isGlobal || isAllBranches || userBrandKeys.includes(section.brand)
+
+    /*
+     * ⚠️ AN ACCESS-MAP GRANT BEATS THE BRAND CHECK.
+     *
+     * Before 2026-09-16 this returned false for any cross-brand section no matter what an admin had
+     * ticked, so a Hyundai user granted a KIA section could not find it in the sidebar OR in search —
+     * the link simply did not exist, which reads as the grant never having been made.
+     *
+     * ⚠️ SAFE BECAUSE OF WHAT `permissionMap` IS. It is the EFFECTIVE map, and for a brand-prefixed
+     * key outside the user's own brand `constrainSnapshotToBranch` has already zeroed every default —
+     * role template, tier bundle and brand blanket alike. The ONLY way such a key reads `true` here is
+     * the final loop in resolveEffectiveSnapshot re-applying an explicit `allowed = true` override.
+     * So this widens by exactly the sections an admin ticked, and nothing else.
+     *
+     * The section's own key still has to pass at step 4; this only stops the brand vetoing first.
+     */
+    const sectionKey = SIDEBAR_PERMISSION_BY_HREF[section.href]
+    const grantedAcrossBrand = Boolean(sectionKey && permissionMap && permissionMap[sectionKey] === true)
+
+    const hasBrandAccess = isGlobal || isAllBranches || userBrandKeys.includes(section.brand) || grantedAcrossBrand
     if (!hasBrandAccess) return false
   }
 

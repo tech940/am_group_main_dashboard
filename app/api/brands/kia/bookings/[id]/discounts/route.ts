@@ -3,7 +3,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { kiaVehicleAllocations, kiaBookingDiscounts, kiaBookings, kiaBookingActivity } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
-import { canRequestDiscount, isValidDiscountType } from '@/lib/kia/discount-chain'
+import { canRequestDiscount, canRequestDiscountRole, isValidDiscountType } from '@/lib/kia/discount-chain'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -53,6 +53,18 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    /*
+     * ⚠️ WHO MAY RAISE ONE — a control that did not exist before 2026-09-16. This route checked only
+     * that somebody was logged in, so any authenticated employee could raise a discount against any
+     * booking in the company; the button being hidden from them was all that stood in the way.
+     * Consultants, SM/GSM/Sales Head, MD and support may raise one. Nobody else.
+     */
+    if (!canRequestDiscountRole(appUser.role)) {
+      return NextResponse.json({
+        error: 'Only a sales consultant, Sales Manager, GSM, Sales Head or MD can raise a discount request.',
+      }, { status: 403 })
+    }
+
     const { id } = await context.params
     const body = await request.json().catch(() => ({}))
     const { amount, reason, discountType } = body
@@ -79,23 +91,26 @@ export async function POST(
     }
 
     /*
-     * ⚠️ DELIVERED ONLY. A discount before handover belongs in the proforma price, where the
-     * customer signs it; this flow is money returned AFTER the sale, which is why it needs the MD
-     * and then a payment. Enforced here and not only on the screen — the button being hidden is a
+     * ⚠️ ANY LIVE BOOKING, cancelled excepted — see canRequestDiscount for why the delivered-only
+     * rule was dropped. Enforced here and not only on the screen: the button being hidden is a
      * courtesy, this is the control.
      */
     if (!canRequestDiscount(booking)) {
       return NextResponse.json({
-        error: 'A discount can only be requested once the vehicle has been delivered.',
+        error: 'A discount cannot be raised against a cancelled booking.',
       }, { status: 400 })
     }
 
     /*
-     * The delivered vehicle AS IT STANDS NOW, frozen onto the request.
+     * The booking AS IT STANDS NOW, frozen onto the request.
      *
      * The booking keeps changing — a car can be re-allotted and a variant corrected, both of which
-     * happened this month — so an approver reading this request weeks later must see what was
-     * actually delivered when it was raised, not whatever the record has become.
+     * happened this month — so an approver reading this request weeks later must see what it looked
+     * like when it was raised, not whatever the record has become.
+     *
+     * ⚠️ `vin` AND `deliveredAt` ARE NOW OFTEN NULL, and that is correct: a request raised before
+     * allocation has no car yet and one raised before handover has no delivery date. An approver
+     * reading "no vehicle allocated" is being told something true about when it was asked.
      */
     const [allocation] = await db
       .select()
@@ -118,6 +133,9 @@ export async function POST(
       vin: allocation?.vinNumber ?? booking.allocatedVin ?? null,
       engineNo: allocation?.engineNo ?? null,
       deliveredAt: booking.deliveredAt ? booking.deliveredAt.toISOString() : null,
+      /* What stage the booking was at when the discount was asked for — an approver needs this now
+       * that a request can arrive long before delivery. */
+      bookingStatus: booking.status ?? null,
       consultantName: booking.consultantName,
       bankName: booking.bankName,
       loanAmount: booking.loanAmount,
@@ -149,7 +167,8 @@ export async function POST(
       activityType: 'discount_requested',
       title: 'Discount Requested',
       description: `Requested a ${String(discountType).trim()} discount of INR ${Number(amount).toLocaleString('en-IN')}`
-        + ` on ${vehicleSnapshot.vin || 'an unallocated vehicle'} by ${appUser.fullName}. Reason: ${String(reason).trim()}.`,
+        + ` on ${vehicleSnapshot.vin || 'an unallocated vehicle'} by ${appUser.fullName}`
+        + ` (booking ${String(booking.status ?? 'unknown').replace(/_/g, ' ')}). Reason: ${String(reason).trim()}.`,
       actorUserId: appUser.id,
       actorName: appUser.fullName,
       actorRole: appUser.role,

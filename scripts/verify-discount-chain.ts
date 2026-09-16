@@ -1,5 +1,10 @@
 /**
- * The post-delivery discount chain: Sales Manager → MD → Accounts.
+ * The booking discount chain: GSM/SM → CEO → MD (over ₹5,000) → Accounts.
+ *
+ * ⚠️ SECTIONS 1 AND 4 WERE STALE until 2026-09-16 and had been failing. They were written for an
+ * earlier SM → MD → Accounts chain; a CEO desk was inserted between the two and these assertions
+ * were never updated, so six of them asserted a flow the code had stopped running. A verifier that
+ * is permanently red teaches people to ignore it.
  *
  * ── What this guards ──────────────────────────────────────────────────────────────────────────
  * Every failure here is silent. A request that skips a stage still renders as a tidy row; a rejected
@@ -14,6 +19,7 @@ import { analyticsExecute } from '../lib/analytics/db'
 import { sql } from 'drizzle-orm'
 import {
   discountStage, canActOnDiscountStage, discountOverallStatus, canRequestDiscount,
+  canRequestDiscountRole, canActOnDiscountRequest, isOwnDiscountRequest,
   isValidDiscountType, DISCOUNT_TYPES, DISCOUNT_STAGE_LABEL,
 } from '../lib/kia/discount-chain'
 
@@ -22,20 +28,32 @@ const check = (c: boolean, m: string) => { if (!c) failures++; console.log(`  [$
 
 async function main() {
   console.log('1) The chain advances one desk at a time')
-  check(discountStage({}) === 'sales_manager', 'a new request waits on the Sales Manager')
-  check(discountStage({ smStatus: 'APPROVED' }) === 'md', 'once SM approves it goes to the MD')
-  check(discountStage({ smStatus: 'APPROVED', mdStatus: 'APPROVED' }) === 'accounts', 'once MD approves it goes to Accounts')
-  check(discountStage({ smStatus: 'APPROVED', mdStatus: 'APPROVED', payoutStatus: 'PAID' }) === 'done', 'PAID finishes it')
+  /* Small: GSM/SM → CEO → Accounts.   Over ₹5,000: GSM/SM → CEO → MD → Accounts. */
+  const small = 4000
+  const large = 50000
+  check(discountStage({}) === 'sales_manager', 'a new request waits on the GSM/SM')
+  check(discountStage({ requestedAmount: small, smStatus: 'APPROVED' }) === 'ceo',
+    'once the GSM/SM approves it goes to the CEO')
+  check(discountStage({ requestedAmount: small, smStatus: 'APPROVED', ceoStatus: 'APPROVED' }) === 'accounts',
+    'a small discount goes straight from the CEO to Accounts')
+  // ⚠️ Over ₹5,000 the MD is inserted — the threshold is the whole reason that desk exists.
+  check(discountStage({ requestedAmount: large, smStatus: 'APPROVED', ceoStatus: 'APPROVED' }) === 'md',
+    'over ₹5,000 the CEO hands it to the MD')
+  check(discountStage({ requestedAmount: large, smStatus: 'APPROVED', ceoStatus: 'APPROVED', mdStatus: 'APPROVED' }) === 'accounts',
+    'once the MD approves it goes to Accounts')
+  check(discountStage({ requestedAmount: small, smStatus: 'APPROVED', ceoStatus: 'APPROVED', payoutStatus: 'PAID' }) === 'done',
+    'PAID finishes it')
   /*
    * NOT_PAID also finishes the chain. Accounts are recording a fact, so "we did not pay" is an
    * answer — leaving it at the Accounts desk for ever would hide it in a queue nobody clears.
    */
-  check(discountStage({ smStatus: 'APPROVED', mdStatus: 'APPROVED', payoutStatus: 'NOT_PAID' }) === 'done',
+  check(discountStage({ requestedAmount: small, smStatus: 'APPROVED', ceoStatus: 'APPROVED', payoutStatus: 'NOT_PAID' }) === 'done',
     'NOT_PAID also finishes it — Accounts recorded an answer')
 
   console.log('\n2) A rejection stops the chain dead')
   check(discountStage({ smStatus: 'REJECTED' }) === 'rejected', 'the Sales Manager can end it')
-  check(discountStage({ smStatus: 'APPROVED', mdStatus: 'REJECTED' }) === 'rejected', 'so can the MD')
+  check(discountStage({ smStatus: 'APPROVED', ceoStatus: 'REJECTED' }) === 'rejected', 'so can the CEO')
+  check(discountStage({ smStatus: 'APPROVED', ceoStatus: 'APPROVED', mdStatus: 'REJECTED' }) === 'rejected', 'so can the MD')
   // The one that matters: a refused request must never surface in the next desk's queue.
   check(discountStage({ smStatus: 'REJECTED', mdStatus: 'APPROVED' }) === 'rejected',
     'an SM rejection wins even if an MD approval was somehow written after it')
@@ -59,22 +77,70 @@ async function main() {
 
   console.log('\n4) The overall status never overstates')
   check(discountOverallStatus({}) === 'PENDING', 'a new request is PENDING')
-  check(discountOverallStatus({ smStatus: 'APPROVED' }) === 'PENDING', 'one approval is not approval')
-  check(discountOverallStatus({ smStatus: 'APPROVED', mdStatus: 'APPROVED' }) === 'APPROVED', 'MD approval is approval')
+  check(discountOverallStatus({ requestedAmount: small, smStatus: 'APPROVED' }) === 'PENDING',
+    'one approval is not approval')
+  check(discountOverallStatus({ requestedAmount: large, smStatus: 'APPROVED', ceoStatus: 'APPROVED' }) === 'PENDING',
+    'a large discount is not approved until the MD has seen it')
+  check(discountOverallStatus({ requestedAmount: small, smStatus: 'APPROVED', ceoStatus: 'APPROVED' }) === 'APPROVED',
+    'a small discount is approved once the CEO says yes')
   /*
-   * The distinction the business cares about: APPROVED means the MD said yes, NOT that the customer
-   * has the money. Collapsing the two would make "approved but unpaid" invisible.
+   * The distinction the business cares about: APPROVED means the last approver said yes, NOT that the
+   * customer has the money. Collapsing the two would make "approved but unpaid" invisible.
    */
-  check(discountOverallStatus({ smStatus: 'APPROVED', mdStatus: 'APPROVED', payoutStatus: 'NOT_PAID' }) === 'APPROVED',
+  check(discountOverallStatus({ requestedAmount: small, smStatus: 'APPROVED', ceoStatus: 'APPROVED', payoutStatus: 'NOT_PAID' }) === 'APPROVED',
     'approved-but-unpaid still reads APPROVED — the payout is reported separately')
   check(discountOverallStatus({ smStatus: 'REJECTED' }) === 'REJECTED', 'a rejection is a rejection')
 
-  console.log('\n5) Only a DELIVERED booking can be discounted')
-  check(canRequestDiscount({ status: 'delivered' }), 'delivered qualifies')
-  for (const st of ['ready_delivery', 'vehicle_allocated', 'proforma_generated', 'cancelled', 'draft']) {
-    check(!canRequestDiscount({ status: st }), `${st} does not`)
+  console.log('\n5) Any LIVE booking can be discounted — cancelled cannot')
+  /*
+   * ⚠️ THIS RULE CHANGED ON 2026-09-16 (owner decision). It used to be delivered-only, on the
+   * original brief's reading that a discount before handover belongs in the proforma price. In
+   * practice the negotiation that needs approval happens while the customer is still deciding, and
+   * measured at the time: 69 of 223 bookings were delivered, so five in six could not ask.
+   */
+  for (const st of ['delivered', 'vehicle_allocated', 'proforma_generated', 'booking_created', 'repeated_booking']) {
+    check(canRequestDiscount({ status: st }), `${st} qualifies`)
   }
+  // ⚠️ There is no money to return on a sale that is not happening, and an approval chain running
+  // against a dead booking wastes the CEO's time.
+  check(!canRequestDiscount({ status: 'cancelled' }), 'cancelled does NOT')
   check(!canRequestDiscount({ status: 'delivered', deletedAt: new Date() }), 'a deleted booking never qualifies')
+  check(!canRequestDiscount({ status: '' }), 'a booking with no status at all does not qualify')
+
+  console.log('\n5b) Who may RAISE one — a control that did not exist before')
+  /*
+   * ⚠️ Until 2026-09-16 the POST route checked only that somebody was logged in, so ANY authenticated
+   * employee could raise a discount against ANY booking in the company. The hidden button was the
+   * only thing in the way, and a hidden button is not a control.
+   */
+  for (const role of ['sales_executive', 'sales_manager', 'general_manager', 'sales_head', 'md', 'admin', 'developer']) {
+    check(canRequestDiscountRole(role), `${role} may raise one`)
+  }
+  for (const role of ['accounts', 'cre', 'hr', 'service_advisor', 'idt', 'ceo', '']) {
+    check(!canRequestDiscountRole(role), `${role || '(blank)'} may not`)
+  }
+
+  console.log('\n5c) Nobody approves their own request')
+  /*
+   * ⚠️ LOAD-BEARING SINCE SM/GSM MAY RAISE ONE. They are also the FIRST approval stage, so without
+   * this a Sales Manager could raise a discount and clear stage one of it in the same breath —
+   * defeating a chain that exists to put a second pair of eyes on the money.
+   */
+  const raisedBySm = { requestedBy: 'user-sm', requestedAmount: 4000 }
+  check(!canActOnDiscountRequest({ role: 'sales_manager', actorUserId: 'user-sm', row: raisedBySm }).allowed,
+    'the SM who raised it cannot approve it')
+  check(canActOnDiscountRequest({ role: 'sales_manager', actorUserId: 'user-other', row: raisedBySm }).allowed,
+    'a different SM can')
+  // Support roles are not exempt — they are the likeliest to try.
+  check(!canActOnDiscountRequest({ role: 'developer', actorUserId: 'user-dev', row: { requestedBy: 'user-dev' } }).allowed,
+    'not even support approves its own request')
+  check(canActOnDiscountRequest({ role: 'developer', actorUserId: 'user-dev', row: raisedBySm }).allowed,
+    'support can still unblock a request somebody ELSE raised')
+  check(isOwnDiscountRequest({ requestedBy: 'u1' }, 'u1'), 'the same person is recognised')
+  check(!isOwnDiscountRequest({ requestedBy: 'u1' }, 'u2'), 'a different person is not')
+  // ⚠️ Two blanks must NOT count as a match, or every legacy row with no requester blocks everyone.
+  check(!isOwnDiscountRequest({ requestedBy: null }, null), 'two blanks are not the same person')
+  check(!isOwnDiscountRequest({ requestedBy: '' }, 'u1'), 'a blank requester blocks nobody')
 
   console.log('\n6) The discount type is checked, not trusted')
   check(isValidDiscountType('Cash discount'), 'a listed type passes')
@@ -98,14 +164,34 @@ async function main() {
       + ` Rs${Number(r.requested_amount).toLocaleString('en-IN').padStart(12)}  ${DISCOUNT_STAGE_LABEL[stage]}`)
   }
   /*
-   * The migration must not have advanced anybody. Both pre-existing requests were awaiting their
-   * first approval and must still be — a default on a new stage column would have silently pushed
-   * them past a desk no human touched.
+   * ⚠️ BOTH ASSERTIONS HERE WERE REPLACED ON 2026-09-16, because each had outlived what it was
+   * checking and had started failing on correct data:
+   *
+   *   · "migration 0050 left every existing request at stage one" was a ONE-TIME post-migration
+   *     check. Three of the four requests have since been approved by a real GSM and a real CEO, so
+   *     it had quietly become an assertion that nobody ever uses the feature.
+   *
+   *   · "every request on file is against a delivered booking" asserted the delivered-only rule,
+   *     which the owner dropped. It was ALREADY false when it was replaced: two of the four live
+   *     requests sit on `proforma_generated` and `booking_created` bookings — evidence that the rule
+   *     was out of step with how the desk actually works, not just inconvenient.
+   *
+   * What replaces them is what stays true: the chain cannot skip a desk, and no request may hang off
+   * a booking that is cancelled or deleted.
    */
-  check(rows.every((r) => !r.sm_status && !r.md_status && !r.payout_status),
-    'migration 0050 left every existing request at stage one')
-  check(rows.every((r) => String(r.booking_status).toLowerCase() === 'delivered'),
-    'every request on file is against a delivered booking')
+  const n = (v: unknown) => String(v ?? '').trim().toUpperCase()
+  check(rows.every((r) => !n(r.md_status) || n(r.sm_status) === 'APPROVED'),
+    'no request reached the MD without the GSM/SM approving it first')
+  check(rows.every((r) => !n(r.payout_status) || n(r.sm_status) === 'APPROVED'),
+    'nothing was paid out that the GSM/SM never approved')
+  check(rows.every((r) => n(r.booking_status) !== 'CANCELLED'),
+    'no request is attached to a cancelled booking')
+  check(rows.every((r) => r.booking_status !== null),
+    'every request still points at a booking that exists')
+
+  const preDelivery = rows.filter((r) => n(r.booking_status) !== 'DELIVERED').length
+  console.log(`   ${preDelivery} of ${rows.length} request(s) are against a booking that is not yet delivered`
+    + ' — allowed since 2026-09-16.')
 
   console.log(failures === 0 ? '\n=== ALL CHECKS PASSED ===' : `\n=== ${failures} FAILURE(S) ===`)
   process.exit(failures === 0 ? 0 : 1)

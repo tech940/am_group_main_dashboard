@@ -5,7 +5,7 @@ import { kiaBookingDiscounts, kiaBookings } from '@/lib/db/schema'
 import { eq, desc, and, or, ilike } from 'drizzle-orm'
 import {
   discountStage,
-  canActOnDiscountStage,
+  canActOnDiscountRequest,
   DISCOUNT_STAGE_LABEL,
   requiresMdApproval,
   type DiscountStage,
@@ -123,7 +123,12 @@ export async function GET(request: Request) {
         ceoApprovedAmount: r.ceoApprovedAmount,
         approvedAmount: r.approvedAmount,
       })
-      const canAct = canActOnDiscountStage(appUser.role, stage)
+      /*
+       * ⚠️ THE SAME VERDICT THE ACTION ROUTE WILL REACH, including the self-approval rule — otherwise
+       * an SM who raised a request sees live Approve/Reject buttons on it and gets a 403 when they
+       * press one. A control the screen offers and the server refuses is worse than no control.
+       */
+      const canAct = canActOnDiscountRequest({ role: appUser.role, actorUserId: appUser.id, row: r }).allowed
 
       return {
         ...r,

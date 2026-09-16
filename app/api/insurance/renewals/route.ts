@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewRestrictedAnalytics } from '@/lib/auth/restricted-analytics'
+import { filterPermittedInsuranceBrands } from '@/lib/insurance/access'
 import { getRenewalPipeline } from '@/lib/insurance/renewals'
 import { INSURANCE_BRANDS, type InsuranceBrandId } from '@/lib/insurance/brands'
 
@@ -18,11 +18,19 @@ export const maxDuration = 120
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canViewRestrictedAnalytics(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
 
   const params = new URL(request.url).searchParams
   const requested = (params.get('brands') || '').split(',').map((b) => b.trim()).filter(Boolean)
-  const brands = requested.filter((b): b is InsuranceBrandId => b in INSURANCE_BRANDS)
+  /*
+   * ⚠️ Narrowed to the brands this user may actually see, rather than refused outright. Someone with
+   * Kia but not Hyundai asking for both gets their Kia book — and must NOT get Hyundai's rows folded
+   * in silently. An empty result after this means "you may see none of what you asked for".
+   */
+  const brands = await filterPermittedInsuranceBrands(
+    requested.filter((b): b is InsuranceBrandId => b in INSURANCE_BRANDS),
+  )
+  if (brands.length === 0) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const lookaheadDays = Math.min(Math.max(Number(params.get('lookaheadDays') || 90), 1), 365)
   const lapsedDays = Math.min(Math.max(Number(params.get('lapsedDays') || 30), 0), 365)
 

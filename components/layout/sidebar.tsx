@@ -98,6 +98,7 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Bookings', href: '/brands/kia/proforma' },
           { name: 'Finance', href: '/finance' },
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
+          { name: 'Sales Target Plan', href: '/brands/kia/sales-performance' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Booking Payment History', href: '/brands/kia/booking-payment-history' },
           { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups' },
@@ -543,7 +544,24 @@ export function Sidebar() {
         if (alwaysVisibleBrandKeys.has(brand.key)) return true
         if (hasGlobalAccessRole(userRole)) return true
         if (hasAllBranchAccess(userBrand)) return true
-        return userBrandKeys.includes(brand.key)
+        if (userBrandKeys.includes(brand.key)) return true
+
+        /*
+         * ⚠️ AN ACCESS-MAP GRANT KEEPS THE BRAND CARD.
+         *
+         * Before 2026-09-16 this returned false here and the ENTIRE brand accordion never rendered —
+         * so a Hyundai user granted a KIA section had nowhere for that link to appear, however many
+         * boxes an admin ticked. isSidebarItemVisible was already permission-driven and would have
+         * shown the row; it never got the chance, because its container was gone.
+         *
+         * So the last question is not "does this person belong to the brand" but "is there anything
+         * inside it they can actually open". If yes, the card stays and only the granted rows appear
+         * in it — isSidebarItemVisible still hides everything else.
+         */
+        return brand.sections.some((section) => (
+          ('href' in section && section.href && isSidebarItemVisible(section.href))
+          || section.submenus.some((submenu) => isSidebarItemVisible(submenu.href))
+        ))
       })
       .sort((a, b) => {
         if (userBrand) {
@@ -555,7 +573,7 @@ export function Sidebar() {
         const bOrder = BRANCH_OPTIONS.findIndex((branch) => branch.value === b.key)
         return aOrder - bOrder
       })
-  }, [userBrand, userRole])
+  }, [userBrand, userRole, isSidebarItemVisible])
 
   const favouriteItems = useMemo(() => {
     const itemMap = new Map<string, { href: string; label: string; brandName: string }>()

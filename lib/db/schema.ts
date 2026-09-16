@@ -978,13 +978,97 @@ export const kiaSalesTargets = pgTable('kia_sales_targets', {
   consultantName: text('consultant_name').notNull(),
   year: integer('year').notNull(),
   month: integer('month').notNull(), // 1..12
+  /*
+   * ⚠️ THESE FOUR MONTHLY TARGETS ARE SUPERSEDED AND NO LONGER WRITTEN. Owner decision 2026-09-16:
+   * a commitment is DAILY. It lives in `kiaSalesDailyCommitments` below, one row per consultant per
+   * day, and the month's figure is SUM(days) — derived, never stored twice.
+   *
+   * They are kept rather than dropped because lib/brands/sales-stock.ts read bookingTarget and
+   * deliveryTarget for the Group Cockpit; that reader now sums the daily table instead. Dropping the
+   * columns is a later migration, once nothing has referenced them for a while.
+   *
+   * Do NOT start writing them again to "keep both in sync". That is the two-sources-of-truth defect
+   * this table already carries a scar from.
+   */
+  enquiryTarget: integer('enquiry_target').default(0).notNull(),
+  testDriveTarget: integer('test_drive_target').default(0).notNull(),
   bookingTarget: integer('booking_target').default(0).notNull(),
   deliveryTarget: integer('delivery_target').default(0).notNull(),
+  /*
+   * Which team leader this consultant reports to. Free text, NULLABLE, and null must stay a valid
+   * state: the consultant list is derived from the DMS feed, so a new joiner appears the day their
+   * first enquiry lands and must be targetable before anyone slots them into a team.
+   */
+  teamLeader: text('team_leader'),
   createdBy: uuid('created_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   kiaSalesTargetsUniqueIdx: uniqueIndex('kia_sales_targets_unique_idx').on(table.dealerCode, table.consultantName, table.year, table.month),
+}))
+
+/**
+ * What a consultant commits to — for one DAY, or for a whole MONTH. Migrations 0067 and 0068.
+ *
+ * ⚠️ TWO SCOPES, ONE TABLE, ONE PRECEDENCE RULE. A month commitment ("5 retails in September") and
+ * the day commitments that deliver it ("1 today") are different statements and staff make both. They
+ * share this table so that "what is committed for September" has ONE place to look; which of the two
+ * scores the month is decided in exactly one place, lib/kia/sales-target-plan.ts.
+ *
+ *
+ * ⚠️ COMMITMENTS ARE TYPED; ACHIEVEMENTS NEVER ARE. What actually happened is read from the DMS
+ * report feeds the Sales Report section already reads — kia_enquiry_report, kia_booking_report and
+ * kia_sales_report. Nothing on this table records an outcome, deliberately: a hand-typed "achieved"
+ * column is how the 36-sheet workbook this replaces ended up with 864 error cells and a test-drive
+ * percentage totalling 286%.
+ *
+ * ⚠️ `commitmentDate` IS A DATE, NOT A TIMESTAMP. Everyone works in IST calendar days; a timestamptz
+ * puts a 09:00 IST commitment on the previous UTC day and moves it a day earlier in every aggregate.
+ *
+ * ⚠️ ZERO IS A REAL COMMITMENT; A MISSING ROW IS NOT. "No retail today, the stock is not here" is a
+ * decision worth recording. "Nobody has said" is not the same thing, and must not be shown as a zero
+ * somebody stood behind — so the ROW's existence carries "a commitment was made" and the counts
+ * carry how much.
+ *
+ * The month's commitment is SUM of these rows. It is never stored on kia_sales_targets.
+ */
+export const kiaSalesCommitments = pgTable('kia_sales_commitments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  dealerCode: text('dealer_code').notNull(),
+  consultantName: text('consultant_name').notNull(),
+  /**
+   * The day committed to, or — when `scope` is 'month' — the FIRST of the month committed to.
+   *
+   * ⚠️ A monthly row anywhere but the 1st is invisible to every monthly read, so the database refuses
+   * it (kia_sales_commitments_month_anchor_check). Migration 0068.
+   */
+  commitmentDate: date('commitment_date').notNull(),
+  /**
+   * 'day' or 'month'. Free text against a UI list, never a pgEnum — house rule from 0050.
+   *
+   * ⚠️ PART OF THE ROW'S IDENTITY. The unique index is (dealer, consultant, date, scope): without
+   * scope, a monthly commitment and a 1st-of-the-month daily commitment fight over one slot and the
+   * upsert overwrites one with the other.
+   */
+  scope: text('scope').default('day').notNull(),
+
+  enquiries: integer('enquiries').default(0).notNull(),
+  testDrives: integer('test_drives').default(0).notNull(),
+  bookings: integer('bookings').default(0).notNull(),
+  retails: integer('retails').default(0).notNull(),
+
+  /** Why this day's number is what it is: "half day", "two deliveries held for Navratri". */
+  note: text('note'),
+
+  createdBy: uuid('created_by').references(() => users.id),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaSalesCommitmentsUniqueIdx: uniqueIndex('kia_sales_commitments_unique_idx')
+    .on(table.dealerCode, table.consultantName, table.commitmentDate, table.scope),
+  kiaSalesCommitmentsPeriodIdx: index('kia_sales_commitments_period_idx')
+    .on(table.dealerCode, table.commitmentDate),
 }))
 
 /**

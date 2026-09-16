@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       rows = await db
         .select()
         .from(discountApprovals)
-        .where(eq(discountApprovals.branch, branchParam.toLowerCase().trim()))
+        .where(sql`LOWER(${discountApprovals.branch}) = ${branchParam.toLowerCase().trim()}`)
         .orderBy(desc(discountApprovals.createdAt))
     } else {
       rows = await db

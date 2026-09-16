@@ -3,7 +3,7 @@ import 'server-only'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { analyticsDb } from '@/lib/analytics/db'
-import { kiaSalesTargets } from '@/lib/db/schema'
+import { readMonthlyCommitmentTotals } from '@/lib/kia/commitments'
 import type { AppUser } from '@/lib/auth/app-user'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { getSalesStockSource } from '@/lib/brands/sales-stock-sources'
@@ -26,10 +26,30 @@ function monthLabel(year: number, month: number) {
   return new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date(Date.UTC(year, month - 1, 1)))
 }
 
+/**
+ * The outlet a row belongs to.
+ *
+ * ⚠️ `dealer_code_2` FIRST. On 2026-07-22 the KIA feed changed shape: `dealer_code` became the PARENT
+ * code JK402 on every row and the real outlet moved into `dealer_code_2`. Because `dealer_code` is
+ * never empty, a COALESCE that reads it first never reaches the real value — and this module read it
+ * first until 2026-09-16, so for September it reported Jammu 106 bookings / 68 deliveries and
+ * Udhampur ZERO, against a true 78/28 and 38/30. Every Udhampur consultant's work was credited to
+ * Jammu, and Udhampur's own leaderboard was empty.
+ *
+ * Provably a no-op before Jul-2026: `dealer_code_2` is NULL on 100% of those rows. Mirrors
+ * `dealerColumns` in lib/kia/sales-report.ts and `outletSql` in lib/kia/sales-target-plan.ts —
+ * change them together.
+ */
+const OUTLET_SQL = sql`UPPER(BTRIM(COALESCE(
+  NULLIF(BTRIM(dealer_code_2), ''),
+  NULLIF(BTRIM(dealer_code), ''),
+  ''
+)))`
+
 function salesDealerClause(dealerCode: string | null) {
   const normalized = normalizeKiaDealerCode(dealerCode) || null
   if (!normalized) return sql``
-  return sql`AND UPPER(TRIM(dealer_code)) = ${normalized}`
+  return sql`AND ${OUTLET_SQL} = ${normalized}`
 }
 
 export type KiaSalesConsultant = { consultant: string; dealer: string }
@@ -99,7 +119,7 @@ async function buildKiaSalesPerformance(input: { year?: number | null; month?: n
     analyticsDb.execute(sql`
       SELECT UPPER(TRIM(consultant_name)) AS key,
              TRIM(consultant_name) AS name,
-             UPPER(TRIM(dealer_code)) AS dealer,
+             ${OUTLET_SQL} AS dealer,
              booking_no,
              status
       FROM kia_booking_report
@@ -111,7 +131,7 @@ async function buildKiaSalesPerformance(input: { year?: number | null; month?: n
     analyticsDb.execute(sql`
       SELECT UPPER(TRIM(consultant_name)) AS key,
              TRIM(consultant_name) AS name,
-             UPPER(TRIM(dealer_code)) AS dealer,
+             ${OUTLET_SQL} AS dealer,
              vin_number,
              invoice_no
       FROM ${sql.raw(SALES_TABLE)}
@@ -120,22 +140,26 @@ async function buildKiaSalesPerformance(input: { year?: number | null; month?: n
         ${salesDealerClause(dealerCode)}
     `),
     analyticsDb.execute(sql`
-      SELECT MAX(TRIM(consultant_name)) AS name, UPPER(TRIM(dealer_code)) AS dealer
+      SELECT MAX(TRIM(consultant_name)) AS name, ${OUTLET_SQL} AS dealer
       FROM ${sql.raw(SALES_TABLE)}
       WHERE consultant_name IS NOT NULL AND TRIM(consultant_name) <> '' AND dealer_code IS NOT NULL
         ${salesDealerClause(dealerCode)}
-      GROUP BY UPPER(TRIM(consultant_name)), UPPER(TRIM(dealer_code))
+      GROUP BY UPPER(TRIM(consultant_name)), ${OUTLET_SQL}
       ORDER BY name
     `),
-    db.select().from(kiaSalesTargets).where(
-      dealerCode
-        ? and(eq(kiaSalesTargets.year, year), eq(kiaSalesTargets.month, month), eq(kiaSalesTargets.dealerCode, dealerCode))
-        : and(eq(kiaSalesTargets.year, year), eq(kiaSalesTargets.month, month)),
-    ),
+    /*
+     * ⚠️ THE MONTH'S TARGET IS THE SUM OF THE DAYS COMMITTED IN IT. Owner decision 2026-09-16: a
+     * commitment is daily. The four monthly target columns on kia_sales_targets are superseded and no
+     * longer written — reading them here would serve a number nobody has updated since, beside a
+     * daily plan that says something else.
+     */
+    readMonthlyCommitmentTotals({ dealerCode, year, month }),
   ])
 
   const targetMap = new Map<string, { bookingTarget: number; deliveryTarget: number }>()
-  for (const t of targets) targetMap.set(`${t.dealerCode}|${consultantKey(t.consultantName)}`, { bookingTarget: t.bookingTarget, deliveryTarget: t.deliveryTarget })
+  for (const [key, totals] of targets.entries()) {
+    targetMap.set(key, { bookingTarget: totals.bookings, deliveryTarget: totals.retails })
+  }
 
   // Deduplicate bookings by booking_no (same logic as Sales Report page)
   const uniqueBookings = new Map<string, Record<string, unknown>>()
@@ -231,16 +255,22 @@ async function buildKiaSalesPerformance(input: { year?: number | null; month?: n
       })
     }
   }
-  // Include consultants who have a target this month but no actuals yet (so they still show, at 0).
-  for (const t of targets) {
-    const id = `${t.dealerCode}|${consultantKey(t.consultantName)}`
+  /*
+   * Consultants who have committed this month but have no actuals yet, so they still show at 0 —
+   * the person doing nothing must not be the one who disappears from the leaderboard.
+   *
+   * The map is keyed `${DEALER}|${UPPER(NAME)}`, which is the key readMonthlyCommitmentTotals
+   * returns; the display name is recovered from it since the sum carries no original casing.
+   */
+  for (const [id, totals] of targets.entries()) {
     if (map.has(id)) continue
+    const [dealer, key] = id.split('|')
     map.set(id, {
-      rank: 0, consultant: t.consultantName, dealer: t.dealerCode,
+      rank: 0, consultant: key, dealer,
       bookings: 0, deliveries: 0, conversion: 0,
-      bookingTarget: t.bookingTarget, deliveryTarget: t.deliveryTarget,
-      bookingAchievement: t.bookingTarget > 0 ? 0 : null,
-      deliveryAchievement: t.deliveryTarget > 0 ? 0 : null,
+      bookingTarget: totals.bookings, deliveryTarget: totals.retails,
+      bookingAchievement: totals.bookings > 0 ? 0 : null,
+      deliveryAchievement: totals.retails > 0 ? 0 : null,
     })
   }
 
@@ -272,29 +302,13 @@ async function buildKiaSalesPerformance(input: { year?: number | null; month?: n
   }
 }
 
-export async function upsertKiaSalesTargets(appUser: AppUser, input: {
-  year: number
-  month: number
-  entries: { dealerCode: string; consultantName: string; bookingTarget: number; deliveryTarget: number }[]
-}) {
-  const year = Math.floor(input.year)
-  const month = Math.floor(input.month)
-  if (!Number.isInteger(year) || !(month >= 1 && month <= 12)) throw new Error('Invalid period')
-  const values = (input.entries || [])
-    .map((e) => ({
-      dealerCode: normalizeKiaDealerCode(e.dealerCode) || String(e.dealerCode || '').trim().toUpperCase(),
-      consultantName: String(e.consultantName || '').trim(),
-      year,
-      month,
-      bookingTarget: Math.max(0, Math.floor(num(e.bookingTarget))),
-      deliveryTarget: Math.max(0, Math.floor(num(e.deliveryTarget))),
-      createdBy: appUser.id,
-    }))
-    .filter((e) => e.dealerCode && e.consultantName)
-  if (!values.length) return { updated: 0 }
-  await db.insert(kiaSalesTargets).values(values).onConflictDoUpdate({
-    target: [kiaSalesTargets.dealerCode, kiaSalesTargets.consultantName, kiaSalesTargets.year, kiaSalesTargets.month],
-    set: { bookingTarget: sql`excluded.booking_target`, deliveryTarget: sql`excluded.delivery_target`, updatedAt: new Date() },
-  })
-  return { updated: values.length }
-}
+/**
+ * ⚠️ REMOVED — `upsertKiaSalesTargets` wrote monthly targets, and a commitment is DAILY now.
+ *
+ * Use `upsertDailyCommitments` in lib/kia/daily-commitments.ts (one row per consultant per day), and
+ * `upsertTeamAssignments` for the team a consultant reports to. The month's figure is SUM(days) and
+ * is never stored, so nothing here needs to write it.
+ *
+ * Do not reintroduce a monthly writer "for convenience". Two places holding the same commitment is
+ * exactly what migration 0067 exists to prevent.
+ */

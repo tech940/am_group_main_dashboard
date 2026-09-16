@@ -39,6 +39,7 @@ import { formatDuration, type GatePassMetrics } from '@/lib/gate-pass/metrics'
 import { getGatePassStatusInfo, isFuelFillingPurpose } from '@/lib/gate-pass/status'
 import { groupAlerts } from '@/lib/loconav/timeline'
 import { JourneyMap, type JourneySegment } from './journey-map'
+import { LiveRoutePanel } from './live-route-panel'
 
 const STATUS_TONE_STYLES: Record<string, string> = {
   pending: 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
@@ -465,8 +466,17 @@ export function GatePassDetail({
                 </div>
               ) : null}
 
-              {/* ── 2b. The journey: where it went, and when it was where ── */}
-              {(data?.trip?.timeline?.length ?? 0) > 0 ? (
+              {/*
+                * ── 2b. The journey ──
+                *
+                * ⚠️ A car still OUT gets the LIVE route, not the reconciled one. The reconciliation
+                * sweep only runs after gate-in — it exists to check the odometer a guard typed there —
+                * so an active trip has no stored timeline and used to show nothing at all, which is
+                * the one moment anybody actually wants a map.
+                */}
+              {String((data?.pass as Record<string, unknown> | undefined)?.status ?? '') === 'out' && passId ? (
+                <LiveRoutePanel passId={passId} />
+              ) : (data?.trip?.timeline?.length ?? 0) > 0 ? (
                 <JourneyMap segments={data!.trip!.timeline} />
               ) : data?.trip?.status === 'reconciled' ? (
                 /*

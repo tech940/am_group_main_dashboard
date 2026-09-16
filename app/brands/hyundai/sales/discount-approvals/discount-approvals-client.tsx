@@ -109,7 +109,7 @@ type Props = {
     email: string
     brand: string | null
   }
-  branch?: 'hyundai' | 'platinum'
+  branch?: 'hyundai' | 'platinum' | 'all'
 }
 
 export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props) {
@@ -117,15 +117,17 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  const initialBranch = (branch && branch !== 'all') ? branch : 'all'
+
   // Staged Filter State (inputs before clicking Apply)
   const [stagedSearchTerm, setStagedSearchTerm] = useState('')
-  const [stagedBranchFilter, setStagedBranchFilter] = useState<'all' | 'hyundai' | 'platinum'>('all')
+  const [stagedBranchFilter, setStagedBranchFilter] = useState<'all' | 'hyundai' | 'platinum'>(initialBranch)
   const [stagedSelectedMonth, setStagedSelectedMonth] = useState<string>('all') // Month-wise format: "YYYY-MM" or "all"
   const [stagedInsuranceFilter, setStagedInsuranceFilter] = useState<'all' | 'In House' | 'Out House'>('all')
 
   // Applied Filter State (only updated on clicking Apply Filters)
   const [appliedSearchTerm, setAppliedSearchTerm] = useState('')
-  const [appliedBranchFilter, setAppliedBranchFilter] = useState<'all' | 'hyundai' | 'platinum'>('all')
+  const [appliedBranchFilter, setAppliedBranchFilter] = useState<'all' | 'hyundai' | 'platinum'>(initialBranch)
   const [appliedSelectedMonth, setAppliedSelectedMonth] = useState<string>('all')
   const [appliedInsuranceFilter, setAppliedInsuranceFilter] = useState<'all' | 'In House' | 'Out House'>('all')
 
@@ -159,12 +161,12 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
   // Reset Filters Action
   const handleResetFilters = () => {
     setStagedSearchTerm('')
-    setStagedBranchFilter('all')
+    setStagedBranchFilter(initialBranch)
     setStagedSelectedMonth('all')
     setStagedInsuranceFilter('all')
 
     setAppliedSearchTerm('')
-    setAppliedBranchFilter('all')
+    setAppliedBranchFilter(initialBranch)
     setAppliedSelectedMonth('all')
     setAppliedInsuranceFilter('all')
   }
@@ -226,7 +228,10 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
     setLoading(true)
     setError('')
     try {
-      const url = '/api/discount-approvals'
+      const branchParam = (branch && branch !== 'all') ? branch : (appliedBranchFilter !== 'all' ? appliedBranchFilter : '')
+      const url = branchParam 
+        ? `/api/discount-approvals?branch=${encodeURIComponent(branchParam)}` 
+        : '/api/discount-approvals'
       const res = await fetch(url)
       if (!res.ok) {
         throw new Error('Failed to load discount approvals data')
@@ -242,6 +247,9 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
   }
 
   useEffect(() => {
+    const curBranch = (branch && branch !== 'all') ? branch : 'all'
+    setStagedBranchFilter(curBranch)
+    setAppliedBranchFilter(curBranch)
     fetchSubmissions()
   }, [branch])
 
@@ -324,7 +332,8 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
       (item.tlManager || '').toLowerCase().includes(appliedSearchTerm.toLowerCase()) ||
       (item.model || '').toLowerCase().includes(appliedSearchTerm.toLowerCase())
 
-    const matchesBranch = appliedBranchFilter === 'all' || item.branch === appliedBranchFilter
+    const targetBranch = (branch && branch !== 'all') ? branch : appliedBranchFilter
+    const matchesBranch = targetBranch === 'all' || (item.branch || '').toLowerCase() === targetBranch.toLowerCase()
 
     // Month-wise Date filter (Tele Date or CreatedAt)
     const matchesMonth = (() => {
@@ -501,7 +510,7 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
 
   const hasActiveFilters =
     Boolean(appliedSearchTerm) ||
-    appliedBranchFilter !== 'all' ||
+    (!branch && appliedBranchFilter !== 'all') ||
     appliedSelectedMonth !== 'all' ||
     appliedInsuranceFilter !== 'all'
 

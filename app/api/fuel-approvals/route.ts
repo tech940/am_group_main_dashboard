@@ -7,6 +7,7 @@ import { generateFuelRequestNumber } from '@/lib/fuel-approvals/request-number'
 import type { FuelApprovalRecord } from '@/lib/fuel-approvals/types'
 
 import { canViewFuelApprovals } from '@/lib/fuel-approvals/view-access'
+import { getFuelLifecycleState } from '@/lib/fuel-approvals/constants'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -56,6 +57,14 @@ export async function GET(request: NextRequest) {
     let heldCount = 0
     let sentBackCount = 0
     let rejectedCount = 0
+    /*
+     * ⚠️ APPROVED SPLITS IN TWO. The CEO's approval opens the finalisation job, it does not close the
+     * order — so an approved order is counted either as work still to do (toFinalise) or as done
+     * (completed). One number for both is what let 38 unfinalised orders sit under a tile captioned
+     * "Completed Orders".
+     */
+    let toFinaliseCount = 0
+    let completedCount = 0
     let totalLitersApproved = 0
 
     for (const row of records) {
@@ -66,6 +75,8 @@ export async function GET(request: NextRequest) {
 
       if (row.status === 'approved') {
         approvedCount++
+        if (getFuelLifecycleState(row) === 'completed') completedCount++
+        else toFinaliseCount++
         totalLitersApproved += parseFloat(row.fuelFilledLtrs as string) || 0
       } else if (row.status.includes('on_hold')) {
         heldCount++
@@ -107,7 +118,13 @@ export async function GET(request: NextRequest) {
           // Non-approvers have no pending approvals in their inbox
           return false
         }
+      } else if (tab === 'to_finalise') {
+        // CEO approved, bill not yet recorded. The queue for whoever closes the paperwork.
+        if (getFuelLifecycleState(row) !== 'to_finalise') return false
+      } else if (tab === 'completed') {
+        if (getFuelLifecycleState(row) !== 'completed') return false
       } else if (tab === 'approved') {
+        // Legacy value: both halves, so an old bookmark still returns something sensible.
         if (row.status !== 'approved') return false
       } else if (tab === 'held') {
         if (!row.status.includes('on_hold')) return false
@@ -150,6 +167,8 @@ export async function GET(request: NextRequest) {
         hrPending: eaPendingCount,
         all: records.length,
         approved: approvedCount,
+        toFinalise: toFinaliseCount,
+        completed: completedCount,
         held: heldCount,
         sentBack: sentBackCount,
         rejected: rejectedCount,

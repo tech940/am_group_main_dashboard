@@ -1064,6 +1064,122 @@ console.log('\n8e) The backfill can only ever do what it says:')
     /matchDemoFill/.test(backfill) && !/extractPlateTokens|normalisePlate/.test(backfill))
 }
 
+console.log('\n8f) A finalised order says so, and cannot be finalised twice:')
+{
+  const constants = stripComments(read('lib/fuel-approvals/constants.ts'))
+  const client = stripComments(read('features/fuel-approvals/fuel-approvals-client.tsx'))
+  const dialog = stripComments(read('features/fuel-approvals/fuel-finalize-dialog.tsx'))
+
+  /*
+   * ⚠️ WHAT "FINALISED" MEANS IS ONE STATEMENT. The buttons used to test `record.totalCost`, which is
+   * wrong twice: the cost is optional on the finalise form, and BOTH the create and resubmit routes
+   * write totalCost from the request form — so an order read "Finalised" before it was even approved.
+   * The FINALIZE history entry is the only record of the act itself.
+   */
+  assert('getFuelFinalization decides it from the FINALIZE history entry',
+    /export function getFuelFinalization/.test(constants) && /'FINALIZE'/.test(constants))
+  assert('the most recent finalisation wins, so a correction names whoever made it',
+    /for \(const entry of history\)[\s\S]{0,120}last = entry/.test(constants))
+
+  // The whole point of the fix: no surface may go back to guessing from the cost field.
+  for (const [name, src] of [['the list client', client], ['the finalise dialog', dialog]] as const) {
+    assert(`${name} reads getFuelFinalization rather than guessing from totalCost`,
+      /getFuelFinalization\(/.test(src))
+    assert(`${name} never labels a control from record.totalCost`,
+      !/\{(?:record|selectedRecord)\.totalCost \? '/.test(src))
+  }
+
+  /*
+   * ⚠️ A FINALISED ORDER MUST NOT OFFER THE FINALISE BUTTON. The defect was a single button whose
+   * label flipped to "Finalised" while its onClick still opened the form — the screen reported the
+   * work done and then invited you to do it again.
+   */
+  assert('no control is labelled Finalised and wired to open the finalise form',
+    !/<span>\{[^}]*\? 'Finalised' : 'Finalise'\}<\/span>/.test(client))
+  /*
+   * Correcting a completed order is a DIFFERENT control from finalising one, in both views. Where the
+   * STATE is displayed is 8g's business — it lives in the Stage Status column now, not in the actions.
+   */
+  const edits = (client.match(/<span>Edit Final<\/span>/g) || []).length
+  assert('both the card view and the table view offer Edit Final on a completed order',
+    edits === 2, `${edits} control(s)`)
+
+  // Editing and finalising are the same form; they must not be the same sentence.
+  assert('the dialog renames itself when it is correcting an already-finalised order',
+    /const isEdit = getFuelFinalization\(record\)\.finalized/.test(dialog)
+    && /isEdit \? 'Edit Finalised Fuel Order'/.test(dialog)
+    && /isEdit \? 'Save Changes'/.test(dialog))
+  // Finalising removes the row from the queue being worked through; that must not look like a glitch.
+  assert('finalising says the order has moved to Completed', /moved to the Completed section/.test(dialog))
+}
+
+console.log('\n8g) Approved is not one bucket — the pipeline has a finalisation step:')
+{
+  const constants = stripComments(read('lib/fuel-approvals/constants.ts'))
+  const list = stripComments(read('app/api/fuel-approvals/route.ts'))
+  const client = stripComments(read('features/fuel-approvals/fuel-approvals-client.tsx'))
+
+  /*
+   * ⚠️ `status='approved'` IS NOT "done", and `current_stage='completed'` is written the instant the
+   * CEO approves — so every approved order claimed to be completed while its bill was outstanding.
+   * The lifecycle adds the one position `status` cannot express, and adds it WITHOUT a third stored
+   * copy of the fact (see the status + current_stage note in the plan).
+   */
+  assert('the lifecycle is derived, not a new stored column',
+    /export function getFuelLifecycleState/.test(constants)
+    && /getFuelFinalization\(record\)\.finalized \? 'completed' : 'to_finalise'/.test(constants))
+  /*
+   * ⚠️ NOTHING NEW IS STORED. `FuelApprovalStage` has had a 'completed' member all along — the action
+   * route writes it the moment the CEO approves, which is exactly the claim that was untrue. The fix
+   * must not answer one wrong stored value with a second stored value: no 'completed' STATUS, and no
+   * finalised column on the table. The position is derived from the history entry, once.
+   */
+  const types = stripComments(read('lib/fuel-approvals/types.ts'))
+  const statusUnion = types.slice(
+    types.indexOf('export type FuelApprovalStatus'),
+    types.indexOf('export type FuelApprovalStage'),
+  )
+  assert('no completed status was added to FuelApprovalStatus', !/'completed'/.test(statusUnion))
+  assert('no finalised column was added to the table',
+    !/finaliz|finalis/i.test(stripComments(read('lib/db/schema.ts'))))
+
+  // Server-side, so the counts and the rows cannot disagree with each other.
+  assert('the API filters the two new sections itself',
+    /tab === 'to_finalise'/.test(list) && /tab === 'completed'/.test(list)
+    && /getFuelLifecycleState\(row\)/.test(list))
+  assert('the API counts them separately', /toFinalise: toFinaliseCount/.test(list) && /completed: completedCount/.test(list))
+  assert('the old ?tab=approved still answers, so a stale bookmark is not a 500',
+    /tab === 'approved'/.test(list))
+
+  assert('the screen offers a To Finalise section and a Completed section',
+    /key: 'to_finalise', label: 'To Finalise'/.test(client) && /key: 'completed', label: 'Completed'/.test(client))
+
+  // ⚠️ The tile that said "Completed Orders / CEO approved" over counts.approved counted 38 orders as
+  // completed whose bills nobody had recorded.
+  assert('no tile calls the approved count completed',
+    !/Completed Orders/.test(client) && !/\{counts\.approved\}/.test(client))
+
+  // The Stage Status column has to state the real position, or the sections and the rows disagree.
+  assert('the status column reads the lifecycle, not the raw status',
+    /const getLifecycleBadge = \(record: FuelApprovalRecord\)/.test(client)
+    && /getLifecycleBadge\(record\)/.test(client))
+  /*
+   * ⚠️ BOTH STATE CHIPS MUST BE SPANS. A chip reading "Completed" that opens the finalise form is the
+   * original defect wearing a different label, so this checks the TAG, not the text.
+   */
+  for (const label of ['To Finalise', 'Completed']) {
+    const at = client.indexOf(`/> ${label}\n`)
+    assert(`the Stage Status column states "${label}"`, at > 0)
+    if (at > 0) {
+      const before = client.slice(0, at)
+      assert(`"${label}" is a span, not a pressable control`,
+        before.lastIndexOf('<span') > before.lastIndexOf('<button'))
+    }
+  }
+  assert('an approved-but-unfinalised order reads as outstanding, not as done',
+    /state === 'to_finalise'/.test(client) && client.includes('/> To Finalise'))
+}
+
 console.log('\n9) Live database (read-only):')
 async function liveChecks() {
   const url = process.env.DATABASE_URL
