@@ -202,10 +202,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       }
 
       /*
-       * Approved by Finance: the MD may still edit, nobody else may.
+       * Approved by Finance: the MD and the GSM may still edit, nobody else may.
        *
-       * ⚠️ Owner decision, 2026-09-10, and it REVERSES the previous absolute lock. The GM's rule is
-       * unchanged — still locked out once Finance has signed. Both predicates live in
+       * ⚠️ Owner decisions: MD 2026-09-10, GSM 2026-09-16. The edit below resets the proforma to
+       * PENDING, so it must pass stage 1 AND Finance again before the customer is mailed or the
+       * consultant can download it. Both predicates live in
        * lib/kia/workflow-access.ts and the client imports the SAME ones, so the Edit button and this
        * gate cannot drift apart.
        */
@@ -214,7 +215,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         !canEditApprovedKiaProforma(appUser.role)
       ) {
         return NextResponse.json(
-          { error: 'This proforma has already been approved by Finance. Only the MD can edit it now.' },
+          { error: 'This proforma has already been approved by Finance. Only the GSM or the MD can edit it now.' },
           { status: 400 },
         )
       }

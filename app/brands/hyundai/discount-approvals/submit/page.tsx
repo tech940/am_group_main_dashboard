@@ -123,8 +123,13 @@ export default function HyundaiDiscountApprovalSubmitPage() {
         }
       }
       
+      // Auto-populate insurance type
+      if (data.insuranceType) {
+        setInsuranceType(data.insuranceType)
+      }
+
       setVerifySuccess(true)
-      setVerifyMessage('Booking details fetched successfully!')
+      setVerifyMessage('Details successfully retrieved from records!')
     } catch (err) {
       console.error('Lookup error:', err)
       setVerifySuccess(false)
@@ -220,9 +225,6 @@ export default function HyundaiDiscountApprovalSubmitPage() {
         <div className="space-y-4 text-center mb-8">
           <div className="flex justify-center">
             <BrandLogoLockup brand="hyundai" variant="card" size="md" />
-          </div>
-          <div className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-[#002c5f]/10 border border-[#002c5f]/25 text-[#002c5f] text-xs font-black tracking-wide uppercase">
-            <span>Discount Approval Portal</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
             AM Hyundai Discount Approval

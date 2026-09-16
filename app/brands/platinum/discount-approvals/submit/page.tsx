@@ -122,9 +122,14 @@ export default function PlatinumDiscountApprovalSubmitPage() {
           setOtherTLName(manager)
         }
       }
-      
+
+      // Auto-populate insurance type
+      if (data.insuranceType) {
+        setInsuranceType(data.insuranceType)
+      }
+
       setVerifySuccess(true)
-      setVerifyMessage('Details successfully retrieved from booking records!')
+      setVerifyMessage('Details successfully retrieved from records!')
     } catch (error) {
       console.error('Error verifying customer ID:', error)
       setVerifySuccess(false)
@@ -220,9 +225,6 @@ export default function PlatinumDiscountApprovalSubmitPage() {
         <div className="space-y-4 text-center mb-8">
           <div className="flex justify-center">
             <BrandLogoLockup brand="platinum" variant="card" size="md" />
-          </div>
-          <div className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-[#002c5f]/10 border border-[#002c5f]/25 text-[#002c5f] text-xs font-black tracking-wide uppercase">
-            <span>Discount Approval Portal</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
             AM Platinum Discount Approval

@@ -185,16 +185,25 @@ export function canEditKiaProforma(role?: string | null) {
 /**
  * Edit a proforma Finance has ALREADY APPROVED.
  *
- * ⚠️ MD ONLY — owner decision, 2026-09-10. The GM keeps the pre-approval edit and is still locked
- * out afterwards; that rule was not changed. An approved proforma is a document the customer has
- * been sent, so re-opening it is deliberately the narrowest possible carve-out.
+ * MD and GSM (`general_manager`). The MD was given this on 2026-09-10; the GSM on 2026-09-16 (owner
+ * decision). An approved proforma is a document the customer has already been sent, so re-opening it
+ * stays deliberately narrow — the Sales Manager, Finance and everyone else remain locked out.
+ *
+ * ⚠️ WHAT KEEPS THIS SAFE IS THE REST OF THE CHAIN, NOT THIS LIST. After an edit the proforma must be
+ * approved at stage 1 (SM / GSM) AND again by Finance before anything reaches the customer — the
+ * email and the saved PDF both sit behind Finance's final approval only. A GSM can approve their own
+ * edit at stage 1 (the owner asked for exactly that), but cannot approve the Finance stage:
+ * `roleActsOnKiaStage` gives the GSM stage 1 only. So Finance is the independent check on every
+ * revision a GSM makes.
  *
  * ⚠️ Editing an approved proforma RESETS the whole chain — approvalStatus back to 'PENDING',
  * approvedBy and linkPreview cleared — so the document must be re-approved before the customer copy
  * is reissued. That is existing behaviour, not something this predicate chooses; it is called out
  * here because it is the thing an MD pressing Edit will not expect.
  */
+const APPROVED_PROFORMA_EDIT_ROLES = ['md', 'general_manager']
+
 export function canEditApprovedKiaProforma(role?: string | null) {
-  // ⚠️ No admin/developer bypass here either — see canEditKiaProforma above. The MD alone.
-  return norm(role) === 'md'
+  // ⚠️ No admin/developer bypass here either — see canEditKiaProforma above.
+  return APPROVED_PROFORMA_EDIT_ROLES.includes(norm(role))
 }

@@ -1746,7 +1746,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const [declineReason, setDeclineReason] = useState('')
   const [editingRow, setEditingRow] = useState<KiaProformaRow | null>(null)
   const [isSavingEdit, setIsSavingEdit] = useState(false)
-  // Only the General Manager may edit an approved proforma in-place (server enforces the same).
+  // GSM + MD may edit; GSM + MD may also reopen one Finance has approved (server enforces the same).
   const canEditProforma = canEditKiaProforma(options.currentUser.role)
   const canEditAfterApproval = canEditApprovedKiaProforma(options.currentUser.role)
   const canViewPii = canViewKiaCustomerPii(options.currentUser.role)
@@ -1953,7 +1953,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
                   disabled={row.approvalStatus?.toUpperCase() === 'APPROVED' && !canEditAfterApproval}
                   title={row.approvalStatus?.toUpperCase() === 'APPROVED'
                     ? (canEditAfterApproval
-                        ? 'Approved by Finance. Editing reopens the approval chain — it returns to PENDING and must be approved again.'
+                        ? 'Approved by Finance. Editing sends it back for GSM/SM approval and then Finance approval — the customer is emailed and the consultant can download it only after Finance approves again.'
                         : 'This proforma has already been approved by Finance and cannot be edited.')
                     : 'Edit Proforma'}
                   className={cn(
@@ -2421,7 +2421,7 @@ function GMEditForm({
              * they type, not after they save.
              */
             <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-rose-700">
-              <AlertTriangle className="h-3 w-3" /> Already approved — saving revokes the customer&apos;s copy and restarts the full approval chain
+              <AlertTriangle className="h-3 w-3" /> Already approved — after saving it needs GSM/SM approval, then Finance approval, before the customer is emailed or the consultant can download it
             </div>
           ) : (
             <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
