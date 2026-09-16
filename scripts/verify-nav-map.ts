@@ -28,7 +28,7 @@ import {
   LOCKED_SIDEBAR_SECTIONS,
   SOCIAL_MEDIA_LEADS_ROLES,
 } from '../lib/permissions/locked-sections'
-import { ROLE_PERMISSION_TEMPLATES, SECTION_ROUTES } from '../lib/permissions/registry'
+import { ROLE_PERMISSION_TEMPLATES, SECTION_ROUTES, SECTION_DISPLAY_BRAND } from '../lib/permissions/registry'
 
 let failures = 0
 function assert(label: string, condition: boolean, detail = '') {
@@ -85,6 +85,18 @@ assert('the Access Map route appends the locked sections and drops the groups th
   matrixRoute.includes('LOCKED_SIDEBAR_SECTIONS') && matrixRoute.includes('GROUPS_REPLACED_BY_LOCKED_SECTIONS'))
 const accessMap = read('features/admin/access-map.tsx')
 assert('the Access Map refuses to toggle a locked section', /if \(columnKey\.startsWith\('locked\.'\)\) return/.test(accessMap))
+
+console.log('\n2b) Sections filed under a brand without a brand-prefixed key sit in the same place everywhere:')
+for (const [groupKey, brand] of Object.entries(SECTION_DISPLAY_BRAND)) {
+  const href = SECTION_ROUTES[groupKey]?.href
+  const entry = ALL_SECTIONS.find((section) => section.href === href)
+  assert(`${groupKey} is a routed section`, Boolean(href))
+  assert(`${href} is filed under '${brand}' in search`, entry?.brand === brand, `found '${entry?.brand}'`)
+  assert(`${href} is NOT also a Common sidebar row`, !sidebar.includes(`key: '${href}'`))
+  // Access is untouched by the move: a holder from another brand still finds it.
+  assert(`${href} is still found by a Hyundai login holding ${groupKey}.view`,
+    Boolean(entry) && canUserAccessSection(entry!, 'viewer', 'hyundai', { [`${groupKey}.view`]: true }))
+}
 
 console.log('\n3) No search entry is shown to someone who holds nothing:')
 for (const section of ALL_SECTIONS) {

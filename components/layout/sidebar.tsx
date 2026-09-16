@@ -21,8 +21,6 @@ import {
   Recycle,
   PhoneCall,
   ShieldCheck,
-  Fuel,
-  ScanLine,
   Camera,
   Calculator,
   LogOut, UserSearch } from 'lucide-react'
@@ -80,6 +78,16 @@ const brandNavigation: SidebarBrand[] = [
        * belongs to neither.
        */
       { name: 'Insurance', key: 'insurance', href: '/brands/kia/insurance', submenus: [] },
+      /*
+       * Moved here from Common on 2026-09-16 — the owner: "these are for KIA, no need for them to be
+       * in common". ⚠️ ONLY THE PLACE CHANGED. The hrefs and permission keys (fuel_management,
+       * fuel_approvals, gate_pass) are untouched, so every existing grant still works. Holders
+       * outside KIA keep them too: visibleBrands keeps the AM Kia card for anyone who can open a
+       * section inside it, and isSidebarItemVisible gates each row on its own key.
+       */
+      { name: 'Demo Car GatePass', key: 'gate-pass', href: '/gate-pass', submenus: [] },
+      { name: 'Fuel Approvals', key: 'fuel-approvals', href: '/fuel-approvals', submenus: [] },
+      { name: 'Fuel Management', key: 'fuel-management', href: '/fuel-management', submenus: [] },
       {
         name: 'Service',
         key: 'service',
@@ -491,7 +499,8 @@ export function Sidebar() {
     // Sales GM is excluded. This one stays role-based (it has no permission-registry entry).
     if (href === VEHICLE_TRACKER_HREF) {
       const isKiaUser = userBrand === 'kia' || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
-      return canViewVehicleTracker(userRole) && isKiaUser
+      // ⚠️ OR an explicit tick — app/brands/kia/vehicle-tracker/page.tsx accepts the same grant.
+      return (canViewVehicleTracker(userRole) && isKiaUser) || hasExplicitGrant('kia.vehicle_tracker.view')
     }
     // Booking Payment History
     if (href === BOOKING_PAYMENT_HISTORY_HREF) {
@@ -505,6 +514,7 @@ export function Sidebar() {
     // Testing - Social Media Leads: Gated ONLY to MD and Developer
     if (href === '/social-media-leads') {
       return ['md', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
+        || hasExplicitGrant('social_media_leads.view')
     }
     // Everything else is gated by the user's effective permissions. Brand users are no longer
     // auto-granted their whole brand here, so a per-section Deny — and restricted-role defaults
@@ -516,7 +526,7 @@ export function Sidebar() {
     }
 
     return true
-  }, [userBrand, userRole, permissionMap])
+  }, [userBrand, userRole, permissionMap, permissionOverrides])
 
   const toggleFavourite = useCallback(async (href: string) => {
     if (!isEligibleFavouriteHref(href)) return
@@ -629,7 +639,8 @@ export function Sidebar() {
     // still reach `admin` and `hr`, because both are family:'super' in lib/permissions/tiers.ts and
     // the super tier bundle sets every key true, bypassing deny-by-default. The page and every
     // /api/targets route enforce this same predicate — see lib/auth/md-targets-access.ts.
-    if (canViewMdTargets(userRole)) commonNodes.push({
+    // ⚠️ Role rule OR an explicit Access-Map tick — the same pair app/targets/page.tsx accepts.
+    if (canViewMdTargets(userRole) || hasExplicitGrant('targets.view')) commonNodes.push({
       key: '/targets',
       label: 'Targets',
       href: '/targets',
@@ -688,36 +699,11 @@ export function Sidebar() {
         active: isSidebarHrefActive('/brands/kia/vendors', pathname),
       })
     }
-    // ⚠️ Its own key only. Holding fuel_approvals.view used to show this link as well. Since 2026-09-11 the
-    // CEO and HR keep Fuel Approvals but not Fuel Management, and canViewFuelManagement on the page would
-    // bounce them — the sidebar/guard desync this codebase has had four outages from.
-    if (hasPermission('fuel_management.view')) {
-      commonNodes.push({
-        key: '/fuel-management',
-        label: 'Fuel Management',
-        href: '/fuel-management',
-        icon: Fuel,
-        active: isSidebarHrefActive('/fuel-management', pathname),
-      })
-    }
-    if (hasPermission('fuel_approvals.view')) {
-      commonNodes.push({
-        key: '/fuel-approvals',
-        label: 'Fuel Approvals',
-        href: '/fuel-approvals',
-        icon: Fuel,
-        active: isSidebarHrefActive('/fuel-approvals', pathname) || isSidebarHrefActive('/brands/kia/fuel-approvals', pathname),
-      })
-    }
-    if (hasPermission('gate_pass.view')) {
-      commonNodes.push({
-        key: '/gate-pass',
-        label: 'Demo Car GatePass',
-        href: '/gate-pass',
-        icon: ScanLine,
-        active: isSidebarHrefActive('/gate-pass', pathname),
-      })
-    }
+    /*
+     * Fuel Management, Fuel Approvals and Demo Car GatePass are no longer here — they moved under
+     * AM Kia on 2026-09-16 (see brandNavigation). Same keys, same gate: isSidebarItemVisible resolves
+     * each href to its own `.view` key exactly as the hasPermission tests here did.
+     */
     if (hasPermission('showroom_images.view')) {
       commonNodes.push({
         key: '/showroom-images',
@@ -747,7 +733,7 @@ export function Sidebar() {
     //   icon: CalendarClock,
     //   active: isSidebarHrefActive('/insurance/renewals', pathname),
     // })
-    if (canAccessRestrictedAnalytics) commonNodes.push({
+    if (canAccessRestrictedAnalytics || hasExplicitGrant('call_analysis.view')) commonNodes.push({
       key: '/call-analysis',
       label: 'Call Analysis',
       href: '/call-analysis',
@@ -770,7 +756,7 @@ export function Sidebar() {
     // and load timestamps across every brand. Gated on the super-admin role directly rather than a
     // permission key, so it can never be granted sideways from the Access Map. The page and the API
     // enforce the identical check — see scripts/verify-guard-parity.ts for why that matters here.
-    if (isSuperAdminRole(userRole)) commonNodes.push({
+    if (isSuperAdminRole(userRole) || hasExplicitGrant('data_health.view')) commonNodes.push({
       key: '/data-health',
       label: 'Data Health',
       href: '/data-health',
@@ -780,7 +766,8 @@ export function Sidebar() {
     // ⚠️ The same test app/admin/page.tsx applies: isSuperAdminRole — MD and Developer. This used to be
     // canAccessAdmin (isAdminRole), which also admits `admin` and `hr`, so both HR users saw an Admin Panel link
     // that answered forbidden() on click — the sidebar/guard desync this codebase keeps producing.
-    if (isSuperAdminRole(userRole)) {
+    // Role OR an explicit `admin_panel.view` tick — app/admin/page.tsx accepts the identical pair.
+    if (isSuperAdminRole(userRole) || hasExplicitGrant('admin_panel.view')) {
       // Single link — the Admin page exposes all sections (Users, Access, Branch Admins, System,
       // Settings) as in-page tabs, so no sidebar dropdown is needed.
       commonNodes.push({
@@ -936,7 +923,7 @@ export function Sidebar() {
 
     return groups
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, canAccessPettyCash, canAccessDelegationTasks, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
+  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, permissionOverrides, canAccessAdmin, canAccessPettyCash, canAccessDelegationTasks, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
 
   return (
     <>

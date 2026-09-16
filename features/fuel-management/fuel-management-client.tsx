@@ -1,1412 +1,422 @@
 'use client'
 
-import { useMemo, useState, type FC, type ReactNode } from 'react'
+import * as React from 'react'
+import Link from 'next/link'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import {
-  Activity,
-  AlertCircle,
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUpRight,
-  BarChart3,
-  Building2,
-  Calendar,
-  CalendarDays,
-  Car,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleCheck,
-  Clock,
-  Download,
-  Droplet,
-  Droplets,
-  ExternalLink,
-  Eye,
-  FileCheck,
-  FileSpreadsheet,
-  FileText,
-  Filter,
-  Flame,
-  Fuel,
-  Gauge,
-  HelpCircle,
-  Hourglass,
-  IndianRupee,
-  Info,
-  Layers,
-  LayoutGrid,
-  ListFilter,
-  LoaderCircle,
-  MapPin,
-  PieChart,
-  Printer,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  ShieldAlert,
-  ShieldCheck,
-  SlidersHorizontal,
-  Sparkles,
-  Tag,
-  TrendingDown,
-  TrendingUp,
-  TriangleAlert,
-  Truck,
-  Wrench,
-  X,
-  Zap,
-} from 'lucide-react'
+import { ArrowUpRight, Download, RefreshCw, RotateCcw } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { formatIndiaDate, formatIndiaDateTime, getIndiaYmd } from '@/lib/date-time'
-import { getGatePassStatusInfo, type GatePassStatusInfo } from '@/lib/gate-pass/status'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { FUEL_REPORTS } from '@/lib/fuel-management/reports'
+import type { FuelLifecycle, FuelManagementResponse, FuelQualityKey } from '@/lib/fuel-management/types'
+import {
+  PERIOD_OPTIONS,
+  activeFilterCount,
+  downloadFuelReport,
+  fetchFuel,
+  filterParams,
+  initialFilters,
+  presetRange,
+  type FilterState,
+  type PeriodPreset,
+} from './fuel-data'
+import { EmptyState, FilterSelect, FuelTokens, Loading, Segmented, Skeleton, fmtRange, fmtWhen } from './fuel-ui'
+import { HeadlineStrip } from './headline-strip'
+import { OverviewView } from './overview-view'
+import { RecordsView } from './records-view'
+import { VehiclesView } from './vehicles-view'
+import { ExceptionsView } from './exceptions-view'
+import { ReportsView } from './reports-view'
+import { QualityView } from './quality-view'
+import { SettingsView } from './settings-view'
+import { RecordDrawer } from './record-drawer'
+import { VehicleDrawer } from './vehicle-drawer'
 
-/* -------------------------------------------------------------------------------------------------
- * API CONTRACT & TYPES (Mirrors lib/fuel-management/types.ts)
- * ----------------------------------------------------------------------------------------------- */
+export type FuelTab = 'overview' | 'records' | 'vehicles' | 'exceptions' | 'reports' | 'quality' | 'settings'
 
-type Branch = 'ALL' | 'JK402' | 'JK501'
+export type DrillTarget = { kind: 'record'; id: string } | { kind: 'vehicle'; key: string }
 
-type CheckKind =
-  | 'odometer_backwards'
-  | 'gate_odometer_mismatch'
-  | 'possible_duplicate'
-  | 'unmatched_demo_fill'
-  | 'missing_odometer'
-
-type FuelEnergyTypeSummary = {
-  energyType: string
-  label: string
-  approvedLitres: number
-  totalLitres: number
-  approvedRequests: number
-  totalRequests: number
-  avgFillSize: number
-  percentage: number
+/** How a view asks the shell to move somewhere. */
+export type FuelNavigate = {
+  toTab: (tab: FuelTab, options?: { recordState?: FuelLifecycle | 'open_exceptions' | ''; quality?: FuelQualityKey | ''; exceptionKey?: string }) => void
+  openRecord: (id: string) => void
+  openVehicle: (key: string) => void
+  /** Show every record for one vehicle: sets the vehicle filter and opens the record list. */
+  recordsForVehicle: (key: string) => void
+  download: (reportId: string) => void
 }
 
-type FuelBranchEnergySummary = {
-  branch: string
-  branchLabel: string
-  petrolLitres: number
-  dieselLitres: number
-  cngLitres: number
-  evKwh: number
-  totalLitres: number
-  petrolPct: number
-  dieselPct: number
-}
+const TAB_ORDER: FuelTab[] = ['overview', 'records', 'vehicles', 'exceptions', 'reports', 'quality', 'settings']
+const TAB_STORAGE_KEY = 'fuel-management:tab'
 
-type FuelPurposeEnergyMatrixRow = {
-  purpose: string
-  purposeLabel: string
-  petrolLitres: number
-  dieselLitres: number
-  cngLitres: number
-  evKwh: number
-  totalLitres: number
-  requestsCount: number
-}
+/**
+ * Fuel Management — the control centre for fuel spend, volume, vehicles, usage, efficiency and accountability.
+ *
+ * Every figure comes from the server (GET /api/fuel-management and its sub-routes), which aggregates one cached
+ * ledger joining fuel requests, demo gate passes, LocoNav trips and the configured benchmarks. This file holds
+ * the page frame: period and filters, the headline strip, the tabs, and the drill-down drawers.
+ */
+export function FuelManagementClient() {
+  const [filters, setFilters] = React.useState<FilterState>(initialFilters)
+  const [tab, setTab] = React.useState<FuelTab>('overview')
+  const [recordState, setRecordState] = React.useState<FuelLifecycle | 'open_exceptions' | ''>('')
+  const [qualityFilter, setQualityFilter] = React.useState<FuelQualityKey | ''>('')
+  const [focusException, setFocusException] = React.useState<string>('')
+  const [drill, setDrill] = React.useState<DrillTarget[]>([])
+  const opener = React.useRef<HTMLElement | null>(null)
+  const filterBar = React.useRef<HTMLDivElement | null>(null)
+  const tabRefs = React.useRef<Partial<Record<FuelTab, HTMLButtonElement | null>>>({})
 
-type FuelManagementResponse = {
-  period: { from: string; to: string; branch: Branch }
-  kpis: {
-    approvedLitres: number
-    approvedRequests: number
-    awaiting: { total: number; byStage: { stage: string; label: string; count: number }[] }
-    demoDriveKm: number
-    demoDrives: number
-    gpsVerifiedKm: number
-    gpsVerifiedDrives: number
-    checksNeedingAttention: number
-  }
-  byPurpose: {
-    purpose: string
-    label: string
-    approvedLitres: number
-    approvedRequests: number
-    awaitingRequests: number
-  }[]
-  byEnergyType?: FuelEnergyTypeSummary[]
-  byBranchEnergy?: FuelBranchEnergySummary[]
-  purposeEnergyMatrix?: FuelPurposeEnergyMatrixRow[]
-  demoCars: {
-    vin: string
-    registrationNumber: string | null
-    model: string | null
-    branchLabel: string
-    approvedLitres: number
-    lastFillDate: string | null
-    lastFillOdometerKm: number | null
-    lastGatePassOdometerKm?: number | null
-    lastOdometerKm?: number | null
-    kmSinceLastFill: number | null
-    kmPerLitre: { value: number; fillsUsed: number } | null
-    kmPerLitreNote: string | null
-    driveKm: number
-    gpsKm: number
-    fills: {
-      requestNumber: string
-      date: string
-      litres: number
-      energyType?: string
-      odometerKm: number | null
-      status: string
-      statusLabel: string
-    }[]
-    drives: {
-      passNo: string
-      gateOutAt: string
-      status: string
-      odometerKm: number | null
-      gpsKm: number | null
-    }[]
-  }[]
-  otherFuel: {
-    requestNumber: string
-    date: string
-    purpose: string
-    purposeLabel: string
-    energyType?: string
-    vehicleLabel: string
-    branchLabel: string
-    litres: number
-    status: string
-    statusLabel: string
-  }[]
-  checks: {
-    kind: CheckKind
-    severity: 'warning' | 'info'
-    requestNumber: string
-    vin: string | null
-    vehicleLabel: string
-    message: string
-  }[]
-  generatedAt: string
-}
-
-type DemoCar = FuelManagementResponse['demoCars'][number]
-type FuelCheck = FuelManagementResponse['checks'][number]
-type OtherFuelRow = FuelManagementResponse['otherFuel'][number]
-
-type TabId = 'overview' | 'requests' | 'mileage' | 'usage' | 'exceptions' | 'reports'
-
-type PeriodPreset =
-  | 'today'
-  | 'yesterday'
-  | 'this_week'
-  | 'month'
-  | 'last_month'
-  | 'last30'
-  | 'last90'
-  | 'this_year'
-  | 'custom'
-
-const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
-  { value: 'today', label: 'Today' },
-  { value: 'this_week', label: '7 Days' },
-  { value: 'month', label: 'This Month' },
-  { value: 'last_month', label: 'Last Month' },
-  { value: 'last30', label: 'Last 30D' },
-  { value: 'last90', label: 'Last 90D' },
-  { value: 'this_year', label: 'This FY' },
-  { value: 'custom', label: 'Custom Range' },
-]
-
-const BRANCH_OPTIONS: { value: Branch; label: string }[] = [
-  { value: 'ALL', label: 'All Branches' },
-  { value: 'JK402', label: 'Jammu' },
-  { value: 'JK501', label: 'Udhampur' },
-]
-
-const BRANCH_LABEL: Record<Branch, string> = {
-  ALL: 'All Branches',
-  JK402: 'Jammu (JK402)',
-  JK501: 'Udhampur (JK501)',
-}
-
-const MAX_PERIOD_DAYS = 366
-const ESTIMATED_FUEL_PRICE_INR = 95 // Standard reference rate for cost derivations
-
-// ── Status Tokens & Formatters ───────────────────────────────────────────────────
-
-const TONE = {
-  warning: { bg: '#fef3c7', fg: '#92400e', border: '#fde68a' },
-  info: { bg: '#eef2ff', fg: '#3730a3', border: '#c7d2fe' },
-  success: { bg: '#d1fae5', fg: '#065f46', border: '#a7f3d0' },
-  danger: { bg: '#ffe4e6', fg: '#9f1239', border: '#fecdd3' },
-  muted: { bg: '#f1f5f9', fg: '#475569', border: '#e2e8f0' },
-} as const
-
-type Tone = keyof typeof TONE
-
-const CHECK_TITLE: Record<CheckKind, string> = {
-  odometer_backwards: 'Odometer reading went backwards',
-  gate_odometer_mismatch: 'Fill odometer is below an earlier gate-in reading',
-  possible_duplicate: 'Possible duplicate request',
-  unmatched_demo_fill: 'Demo fill not linked to a demo car',
-  missing_odometer: 'Demo fill has no odometer reading',
-}
-
-const CHECK_CATEGORY: Record<CheckKind, 'efficiency' | 'data_quality' | 'workflow'> = {
-  odometer_backwards: 'data_quality',
-  gate_odometer_mismatch: 'data_quality',
-  possible_duplicate: 'data_quality',
-  unmatched_demo_fill: 'data_quality',
-  missing_odometer: 'data_quality',
-}
-
-const litresFormat = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 })
-const currencyFormat = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
-const kmFormat = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 })
-const countFormat = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
-
-function formatLitres(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? litresFormat.format(value) : '0'
-}
-
-function formatCurrency(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? `₹${currencyFormat.format(value)}` : '₹0'
-}
-
-function formatKm(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? kmFormat.format(value) : '0'
-}
-
-function formatCount(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? countFormat.format(value) : '0'
-}
-
-function plural(count: number, one: string, many: string): string {
-  return count === 1 ? one : many
-}
-
-function ymdToUtcMs(ymd: string): number {
-  return Date.parse(`${ymd}T00:00:00Z`)
-}
-
-function isValidYmd(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const ms = ymdToUtcMs(value)
-  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === value
-}
-
-function shiftYmd(ymd: string, days: number): string {
-  return new Date(ymdToUtcMs(ymd) + days * 86_400_000).toISOString().slice(0, 10)
-}
-
-function formatYmd(value: string | null | undefined, withYear = true): string {
-  const ymd = String(value ?? '').slice(0, 10)
-  if (!isValidYmd(ymd)) return '—'
-  const istMidnight = `${ymd}T00:00:00+05:30`
-  return withYear
-    ? formatIndiaDate(istMidnight)
-    : formatIndiaDateTime(istMidnight, { hour: undefined, minute: undefined, hour12: undefined }) ?? '—'
-}
-
-function formatRange(from: string, to: string): string {
-  if (from === to) return formatYmd(from)
-  if (from.slice(0, 4) === to.slice(0, 4)) return `${formatYmd(from, false)} – ${formatYmd(to)}`
-  return `${formatYmd(from)} – ${formatYmd(to)}`
-}
-
-function getRangeDays(from: string, to: string): number {
-  if (!isValidYmd(from) || !isValidYmd(to)) return 0
-  return Math.max(1, Math.round((ymdToUtcMs(to) - ymdToUtcMs(from)) / 86_400_000) + 1)
-}
-
-function shiftRange(from: string, to: string, direction: 'prev' | 'next'): { from: string; to: string } {
-  const days = getRangeDays(from, to)
-  const offset = direction === 'next' ? days : -days
-  return {
-    from: shiftYmd(from, offset),
-    to: shiftYmd(to, offset),
-  }
-}
-
-function presetRange(preset: Exclude<PeriodPreset, 'custom'>, today: string) {
-  switch (preset) {
-    case 'today':
-      return { from: today, to: today }
-    case 'yesterday': {
-      const y = shiftYmd(today, -1)
-      return { from: y, to: y }
+  // The last tab is a per-viewer convenience only; the page works the same without it.
+  React.useEffect(() => {
+    try {
+      const saved = window.sessionStorage.getItem(TAB_STORAGE_KEY) as FuelTab | null
+      if (saved && TAB_ORDER.includes(saved)) setTab(saved)
+    } catch {
+      /* storage unavailable */
     }
-    case 'this_week':
-      return { from: shiftYmd(today, -6), to: today }
-    case 'month':
-      return { from: `${today.slice(0, 8)}01`, to: today }
-    case 'last_month': {
-      const year = parseInt(today.slice(0, 4), 10)
-      const month = parseInt(today.slice(5, 7), 10)
-      const prevYear = month === 1 ? year - 1 : year
-      const prevMonth = month === 1 ? 12 : month - 1
-      const prevMonthStr = String(prevMonth).padStart(2, '0')
-      const lastDay = new Date(year, month - 1, 0).getDate()
-      return {
-        from: `${prevYear}-${prevMonthStr}-01`,
-        to: `${prevYear}-${prevMonthStr}-${String(lastDay).padStart(2, '0')}`,
-      }
+  }, [])
+  const changeTab = React.useCallback((next: FuelTab) => {
+    setTab(next)
+    try {
+      window.sessionStorage.setItem(TAB_STORAGE_KEY, next)
+    } catch {
+      /* storage unavailable */
     }
-    case 'last30':
-      return { from: shiftYmd(today, -29), to: today }
-    case 'last90':
-      return { from: shiftYmd(today, -89), to: today }
-    case 'this_year': {
-      const year = parseInt(today.slice(0, 4), 10)
-      const month = parseInt(today.slice(5, 7), 10)
-      const fyStartYear = month >= 4 ? year : year - 1
-      return { from: `${fyStartYear}-04-01`, to: today }
-    }
-    default:
-      return { from: `${today.slice(0, 8)}01`, to: today }
-  }
-}
+  }, [])
 
-type RangeResult = { range: { from: string; to: string }; error: null } | { range: null; error: string }
-
-function validateCustomRange(from: string, to: string): RangeResult {
-  if (!from || !to) return { range: null, error: 'Pick both a start date and an end date.' }
-  if (!isValidYmd(from) || !isValidYmd(to)) return { range: null, error: 'One of the dates is not a valid date.' }
-  if (from > to) return { range: null, error: 'Start date must be before or equal to end date.' }
-  const days = (ymdToUtcMs(to) - ymdToUtcMs(from)) / 86_400_000 + 1
-  if (days > MAX_PERIOD_DAYS) return { range: null, error: 'Choose a period of one year or less.' }
-  return { range: { from, to }, error: null }
-}
-
-function vinTail(vin: string | null | undefined): string | null {
-  const clean = String(vin ?? '').trim()
-  return clean ? `VIN …${clean.slice(-6)}` : null
-}
-
-function fuelStatusTone(status: string): Tone {
-  if (status === 'approved') return 'success'
-  if (status === 'rejected') return 'danger'
-  if (status === 'sent_back' || status.endsWith('_on_hold')) return 'warning'
-  return 'info'
-}
-
-type PurposeStyle = {
-  bg: string
-  text: string
-  border: string
-  bar: string
-  dot: string
-}
-
-const PURPOSE_CONFIG: Record<string, PurposeStyle> = {
-  DEMO: {
-    bg: 'bg-purple-50',
-    text: 'text-purple-700',
-    border: 'border-purple-200/80',
-    bar: 'bg-purple-500',
-    dot: 'bg-purple-500',
-  },
-  GENSET: {
-    bg: 'bg-amber-50',
-    text: 'text-amber-800',
-    border: 'border-amber-200/80',
-    bar: 'bg-amber-500',
-    dot: 'bg-amber-500',
-  },
-  NEW_DELIVERY: {
-    bg: 'bg-emerald-50',
-    text: 'text-emerald-700',
-    border: 'border-emerald-200/80',
-    bar: 'bg-emerald-500',
-    dot: 'bg-emerald-500',
-  },
-  STOCK_TRANSFER: {
-    bg: 'bg-sky-50',
-    text: 'text-sky-700',
-    border: 'border-sky-200/80',
-    bar: 'bg-sky-500',
-    dot: 'bg-sky-500',
-  },
-  STOCK_YARD: {
-    bg: 'bg-cyan-50',
-    text: 'text-cyan-700',
-    border: 'border-cyan-200/80',
-    bar: 'bg-cyan-500',
-    dot: 'bg-cyan-500',
-  },
-  SERVICE: {
-    bg: 'bg-rose-50',
-    text: 'text-rose-700',
-    border: 'border-rose-200/80',
-    bar: 'bg-rose-500',
-    dot: 'bg-rose-500',
-  },
-  STAFF_VEHICLE: {
-    bg: 'bg-blue-50',
-    text: 'text-blue-700',
-    border: 'border-blue-200/80',
-    bar: 'bg-blue-500',
-    dot: 'bg-blue-500',
-  },
-  OTHER: {
-    bg: 'bg-slate-50',
-    text: 'text-slate-700',
-    border: 'border-slate-200',
-    bar: 'bg-slate-500',
-    dot: 'bg-slate-500',
-  },
-}
-
-function getPurposeConfig(purpose?: string): PurposeStyle {
-  if (!purpose) return PURPOSE_CONFIG.OTHER
-  const key = purpose.toUpperCase().replace(/[\s-]/g, '_')
-  return PURPOSE_CONFIG[key] || PURPOSE_CONFIG.OTHER
-}
-
-function PurposeBadge({ purpose, label }: { purpose?: string; label?: string }) {
-  const conf = getPurposeConfig(purpose)
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap',
-        conf.bg,
-        conf.text,
-        conf.border,
-      )}
-    >
-      <span className={cn('h-1.5 w-1.5 rounded-full', conf.dot)} />
-      <span>{label || purpose || 'General'}</span>
-    </span>
-  )
-}
-
-function BranchBadge({ branch }: { branch: string }) {
-  const isJK402 = branch.includes('402') || branch.toLowerCase().includes('jammu')
-  const isJK501 = branch.includes('501') || branch.toLowerCase().includes('udhampur')
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap',
-        isJK402 && 'border-sky-200 bg-sky-50 text-sky-800',
-        isJK501 && 'border-indigo-200 bg-indigo-50 text-indigo-800',
-        !isJK402 && !isJK501 && 'border-slate-200 bg-slate-50 text-slate-700',
-      )}
-    >
-      <MapPin className="h-2.5 w-2.5 opacity-70" />
-      <span>{branch}</span>
-    </span>
-  )
-}
-
-function EnergyTypeBadge({ energyType }: { energyType?: string }) {
-  const norm = (energyType || 'PETROL').toUpperCase()
-  if (norm === 'DIESEL') {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-md border border-blue-200/90 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800 whitespace-nowrap">
-        <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
-        <span>Diesel</span>
-      </span>
-    )
-  }
-  if (norm === 'CNG') {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-md border border-teal-200/90 bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-800 whitespace-nowrap">
-        <span className="h-1.5 w-1.5 rounded-full bg-teal-600" />
-        <span>CNG</span>
-      </span>
-    )
-  }
-  if (norm === 'EV') {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200/90 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 whitespace-nowrap">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-        <span>EV</span>
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200/90 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 whitespace-nowrap">
-      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-      <span>Petrol</span>
-    </span>
-  )
-}
-
-function MileageBadge({ value }: { value: number | null | undefined }) {
-  if (value === null || value === undefined || value <= 0) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 whitespace-nowrap">
-        <Clock className="h-3 w-3 text-slate-400" />
-        <span>Need 2nd fill</span>
-      </span>
-    )
-  }
-  const isHigh = value >= 14
-  const isNormal = value >= 10
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-bold tabular-nums whitespace-nowrap',
-        isHigh && 'border-emerald-200 bg-emerald-50 text-emerald-800',
-        isNormal && !isHigh && 'border-teal-200 bg-teal-50 text-teal-800',
-        !isNormal && 'border-amber-200 bg-amber-50 text-amber-900',
-      )}
-    >
-      <Gauge className={cn('h-3 w-3', isHigh ? 'text-emerald-600' : isNormal ? 'text-teal-600' : 'text-amber-600')} />
-      <span>{formatKm(value)} km/L</span>
-    </span>
-  )
-}
-
-// ── Data Loader ──────────────────────────────────────────────────────────────────
-
-class FuelManagementLoadError extends Error {
-  readonly status: number
-  constructor(message: string, status: number) {
-    super(message)
-    this.name = 'FuelManagementLoadError'
-    this.status = status
-  }
-}
-
-async function loadFuelManagement(from: string, to: string, branch: Branch): Promise<FuelManagementResponse> {
-  const params = new URLSearchParams({ from, to, branch })
-  let res: Response
-  try {
-    res = await fetch(`/api/fuel-management?${params.toString()}`, { cache: 'no-store' })
-  } catch {
-    throw new FuelManagementLoadError('Could not reach the server. Check your connection.', 0)
-  }
-
-  if (!res.ok) {
-    if (res.status === 401) throw new FuelManagementLoadError('Session expired. Sign in again.', 401)
-    if (res.status === 403) throw new FuelManagementLoadError("You don't have access to Fuel Management.", 403)
-    const body = (await res.json().catch(() => null)) as { error?: unknown } | null
-    const msg = typeof body?.error === 'string' ? body.error.trim() : ''
-    throw new FuelManagementLoadError(msg || 'Could not load fuel data.', res.status)
-  }
-
-  const payload = (await res.json().catch(() => null)) as FuelManagementResponse | null
-  if (!payload || typeof payload !== 'object' || !payload.kpis || !payload.period) {
-    throw new FuelManagementLoadError('Invalid response from server.', res.status)
-  }
-  return payload
-}
-
-/* =================================================================================================
- * MAIN CLIENT COMPONENT
- * =============================================================================================== */
-
-export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }> = () => {
-  const [today] = useState(() => getIndiaYmd())
-  const [activeTab, setActiveTab] = useState<TabId>('overview')
-  const [preset, setPreset] = useState<PeriodPreset>('month')
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
-  const [branch, setBranch] = useState<Branch>('ALL')
-
-  // Additional Global Multi-Dimensional Filters
-  const [globalPurpose, setGlobalPurpose] = useState<string>('ALL')
-  const [globalVehicleType, setGlobalVehicleType] = useState<'ALL' | 'DEMO' | 'OTHER'>('ALL')
-  const [globalEnergyType, setGlobalEnergyType] = useState<string>('ALL')
-  const [showDateModal, setShowDateModal] = useState(false)
-  const [tempPreset, setTempPreset] = useState<PeriodPreset>('month')
-  const [tempFrom, setTempFrom] = useState('')
-  const [tempTo, setTempTo] = useState('')
-  const [tempError, setTempError] = useState<string | null>(null)
-
-  // Modals & Drawers state
-  const [selectedVin, setSelectedVin] = useState<string | null>(null)
-  const [showMethodologyModal, setShowMethodologyModal] = useState(false)
-  const [selectedRequestDetails, setSelectedRequestDetails] = useState<any | null>(null)
-
-  const rangeResult: RangeResult = useMemo(
-    () =>
-      preset === 'custom'
-        ? validateCustomRange(customFrom, customTo)
-        : { range: presetRange(preset, today), error: null },
-    [preset, customFrom, customTo, today],
-  )
-  const range = rangeResult.range
-
-  const activeRangeDays = useMemo(() => {
-    if (!range) return 0
-    return getRangeDays(range.from, range.to)
-  }, [range])
-
-  const tempRangeDays = useMemo(() => {
-    if (!tempFrom || !tempTo) return 0
-    return getRangeDays(tempFrom, tempTo)
-  }, [tempFrom, tempTo])
-
+  const { from, to, branch, brand, purpose, department, energy, fleet, vehicle } = filters
   const query = useQuery({
-    queryKey: ['fuel-management', range?.from ?? null, range?.to ?? null, branch],
-    queryFn: () =>
-      range
-        ? loadFuelManagement(range.from, range.to, branch)
-        : Promise.reject(new FuelManagementLoadError('Choose a valid period first.', 400)),
-    enabled: range !== null,
+    queryKey: ['fuel-management', 'overview', from, to, branch, brand, purpose, department, energy, fleet, vehicle],
+    queryFn: () => fetchFuel<FuelManagementResponse>(`/api/fuel-management?${filterParams(filters)}`),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
-    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   })
+  const data = query.data
+  // With keepPreviousData a failed refetch still has figures — for the PREVIOUS selection. Say so.
+  const stale = query.isError && Boolean(data)
 
-  const { data, error, isError, isFetching, isPlaceholderData, refetch } = query
-  const loadError = error instanceof FuelManagementLoadError ? error : null
+  const exportQuery = filterParams(filters)
+  const download = React.useCallback((reportId: string) => {
+    const title = FUEL_REPORTS.find((r) => r.id === reportId)?.title ?? 'Report'
+    toast({ title: `Preparing ${title}…` })
+    downloadFuelReport(`/api/fuel-management/export?report=${reportId}&${exportQuery}`)
+      .catch((error) => toast({ title: `${title} could not be downloaded`, description: error instanceof Error ? error.message : undefined, variant: 'error' }))
+  }, [exportQuery])
 
-  const openDateModal = () => {
-    setTempPreset(preset)
+  const drillDepth = React.useRef(0)
+  React.useEffect(() => {
+    drillDepth.current = drill.length
+  }, [drill])
+  const openDrill = React.useCallback((target: DrillTarget) => {
+    // Remember what opened the FIRST drawer; a drawer opened from a drawer returns to the same place.
+    if (drillDepth.current === 0) opener.current = document.activeElement as HTMLElement | null
+    drillDepth.current += 1
+    setDrill((stack) => [...stack, target])
+  }, [])
+  const closeDrill = React.useCallback(() => {
+    setDrill([])
+    // Back to what opened the first drawer, once the sheet has gone.
+    window.setTimeout(() => {
+      const el = opener.current
+      if (el && document.contains(el)) el.focus()
+      opener.current = null
+    }, 0)
+  }, [])
+
+  const navigate: FuelNavigate = React.useMemo(() => ({
+    toTab: (next, options) => {
+      if (options?.recordState !== undefined) setRecordState(options.recordState)
+      if (options?.quality !== undefined) setQualityFilter(options.quality)
+      if (options?.exceptionKey !== undefined) setFocusException(options.exceptionKey)
+      changeTab(next)
+      setDrill([])
+      opener.current = null
+    },
+    openRecord: (id) => openDrill({ kind: 'record', id }),
+    openVehicle: (key) => openDrill({ kind: 'vehicle', key }),
+    recordsForVehicle: (key) => {
+      setFilters((f) => ({ ...f, vehicle: key }))
+      setRecordState('')
+      setQualityFilter('')
+      changeTab('records')
+      setDrill([])
+      opener.current = null
+    },
+    download,
+  }), [changeTab, openDrill, download])
+
+  const setPreset = (preset: PeriodPreset) => {
     if (preset === 'custom') {
-      setTempFrom(customFrom || today)
-      setTempTo(customTo || today)
-    } else {
-      const cur = presetRange(preset, today)
-      setTempFrom(cur.from)
-      setTempTo(cur.to)
-    }
-    setTempError(null)
-    setShowDateModal(true)
-  }
-
-  const handleSelectTempPreset = (next: PeriodPreset) => {
-    setTempPreset(next)
-    setTempError(null)
-    if (next !== 'custom') {
-      const cur = presetRange(next, today)
-      setTempFrom(cur.from)
-      setTempTo(cur.to)
-    }
-  }
-
-  const handleApplyDateModal = () => {
-    if (tempPreset === 'custom') {
-      const res = validateCustomRange(tempFrom, tempTo)
-      if (res.error) {
-        setTempError(res.error)
-        return
-      }
-      setPreset('custom')
-      setCustomFrom(tempFrom)
-      setCustomTo(tempTo)
-    } else {
-      setPreset(tempPreset)
-    }
-    setShowDateModal(false)
-  }
-
-  const handleResetDateModalToDefault = () => {
-    setPreset('month')
-    setCustomFrom('')
-    setCustomTo('')
-    setTempPreset('month')
-    const cur = presetRange('month', today)
-    setTempFrom(cur.from)
-    setTempTo(cur.to)
-    setTempError(null)
-    setShowDateModal(false)
-  }
-
-  const selectPreset = (next: PeriodPreset) => {
-    if (next === 'custom') {
-      openDateModal()
+      setFilters((f) => ({ ...f, preset }))
       return
     }
-    setPreset(next)
+    setFilters((f) => ({ ...f, preset, ...presetRange(preset) }))
+  }
+  // A typed start after the end (or the reverse) moves the other end, so the period is always a real one.
+  const setFrom = (value: string) => setFilters((f) => ({ ...f, from: value, to: value > f.to ? value : f.to }))
+  const setTo = (value: string) => setFilters((f) => ({ ...f, to: value, from: value < f.from ? value : f.from }))
+  const setFilter = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
+    setFilters((f) => ({ ...f, [key]: value }))
+  const clearFilters = () => {
+    setFilters((f) => ({ ...f, branch: '', brand: '', purpose: '', department: '', energy: '', fleet: '', vehicle: '' }))
+    // The button removes itself; keep the keyboard in the filter bar.
+    window.setTimeout(() => filterBar.current?.querySelector<HTMLElement>('button, select')?.focus(), 0)
   }
 
-  const handleShiftPeriod = (direction: 'prev' | 'next') => {
-    if (!range) return
-    const nextRange = shiftRange(range.from, range.to, direction)
-    setPreset('custom')
-    setCustomFrom(nextRange.from)
-    setCustomTo(nextRange.to)
+  const options = data?.options
+  const filterCount = activeFilterCount(filters)
+  const current = drill.at(-1) ?? null
+
+  const tabs: { value: FuelTab; label: string; count?: number | null }[] = [
+    { value: 'overview', label: 'Overview' },
+    { value: 'records', label: 'Fuel records' },
+    { value: 'vehicles', label: 'Vehicles', count: data?.headline.vehiclesNeedingAttention ?? null },
+    { value: 'exceptions', label: 'Exceptions', count: data?.headline.exceptions.open ?? null },
+    { value: 'reports', label: 'Reports' },
+    { value: 'quality', label: 'Data quality', count: data ? data.quality.filter((q) => q.count > 0).length : null },
+    { value: 'settings', label: 'Benchmarks' },
+  ]
+
+  // Arrow keys move between tabs; only the selected tab is a Tab stop.
+  const onTabKey = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const index = TAB_ORDER.indexOf(tab)
+    let next: FuelTab | null = null
+    if (event.key === 'ArrowRight') next = TAB_ORDER[(index + 1) % TAB_ORDER.length]
+    else if (event.key === 'ArrowLeft') next = TAB_ORDER[(index - 1 + TAB_ORDER.length) % TAB_ORDER.length]
+    else if (event.key === 'Home') next = TAB_ORDER[0]
+    else if (event.key === 'End') next = TAB_ORDER[TAB_ORDER.length - 1]
+    if (!next) return
+    event.preventDefault()
+    changeTab(next)
+    tabRefs.current[next]?.focus()
   }
 
-  const hasActiveFilters =
-    preset !== 'month' || branch !== 'ALL' || globalPurpose !== 'ALL' || globalVehicleType !== 'ALL' || globalEnergyType !== 'ALL'
-
-  const handleResetFilters = () => {
-    setPreset('month')
-    setBranch('ALL')
-    setGlobalPurpose('ALL')
-    setGlobalVehicleType('ALL')
-    setGlobalEnergyType('ALL')
-    setCustomFrom('')
-    setCustomTo('')
-    setShowDateModal(false)
+  const needsData = (node: React.ReactNode) => {
+    if (data) return node
+    if (query.isError) {
+      return (
+        <EmptyState
+          title="This view needs the fuel figures, which could not be loaded"
+          action={<RetryButton onClick={() => query.refetch()} />}
+        >
+          {query.error instanceof Error ? query.error.message : null}
+        </EmptyState>
+      )
+    }
+    return <ViewSkeleton />
   }
-
-  // 1. Filtered Demo Cars
-  const filteredDemoCars = useMemo(() => {
-    if (!data) return []
-    if (globalVehicleType === 'OTHER') return []
-    if (globalPurpose !== 'ALL' && globalPurpose !== 'DEMO') return []
-
-    return data.demoCars
-      .map((car) => {
-        const matchingFills = car.fills.filter((f) => {
-          if (globalEnergyType !== 'ALL' && (f.energyType || 'PETROL').toUpperCase() !== globalEnergyType) {
-            return false
-          }
-          return true
-        })
-
-        if (globalEnergyType !== 'ALL' && matchingFills.length === 0) {
-          return null
-        }
-
-        const approvedLitres = matchingFills
-          .filter((f) => f.status === 'approved')
-          .reduce((sum, f) => sum + (f.litres || 0), 0)
-
-        return {
-          ...car,
-          approvedLitres,
-          fills: matchingFills,
-        }
-      })
-      .filter((c): c is NonNullable<typeof c> => c !== null)
-  }, [data, globalVehicleType, globalPurpose, globalEnergyType])
-
-  // 2. Filtered Other Fuel
-  const filteredOtherFuel = useMemo(() => {
-    if (!data) return []
-    if (globalVehicleType === 'DEMO') return []
-
-    return data.otherFuel.filter((r) => {
-      if (globalPurpose !== 'ALL' && r.purpose !== globalPurpose) return false
-      if (globalEnergyType !== 'ALL' && (r.energyType || 'PETROL').toUpperCase() !== globalEnergyType) return false
-      return true
-    })
-  }, [data, globalVehicleType, globalPurpose, globalEnergyType])
-
-  // 3. Filtered All Requests (for requests table, recent activity, etc.)
-  const filteredAllRequests = useMemo(() => {
-    const list: Array<{
-      id: string
-      date: string
-      requestNumber: string
-      purpose: string
-      purposeLabel: string
-      energyType?: string
-      vehicleLabel: string
-      branchLabel: string
-      litres: number
-      status: string
-      statusLabel: string
-      isDemo: boolean
-      vin?: string | null
-      odometerKm?: number | null
-    }> = []
-
-    // From filtered otherFuel
-    filteredOtherFuel.forEach((r, idx) => {
-      list.push({
-        id: `other-${r.requestNumber}-${idx}`,
-        date: r.date,
-        requestNumber: r.requestNumber,
-        purpose: r.purpose,
-        purposeLabel: r.purposeLabel,
-        energyType: r.energyType || 'PETROL',
-        vehicleLabel: r.vehicleLabel,
-        branchLabel: r.branchLabel,
-        litres: r.litres,
-        status: r.status,
-        statusLabel: r.statusLabel,
-        isDemo: false,
-      })
-    })
-
-    // From filtered demoCars fills
-    filteredDemoCars.forEach((c) => {
-      c.fills.forEach((f, idx) => {
-        list.push({
-          id: `demo-${f.requestNumber}-${idx}`,
-          date: f.date,
-          requestNumber: f.requestNumber,
-          purpose: 'DEMO',
-          purposeLabel: 'Demo Vehicle',
-          energyType: f.energyType || 'PETROL',
-          vehicleLabel: [c.model, c.registrationNumber].filter(Boolean).join(' · ') || c.vin,
-          branchLabel: c.branchLabel,
-          litres: f.litres,
-          status: f.status,
-          statusLabel: f.statusLabel,
-          isDemo: true,
-          vin: c.vin,
-          odometerKm: f.odometerKm,
-        })
-      })
-    })
-
-    return list.sort((a, b) => b.date.localeCompare(a.date))
-  }, [filteredOtherFuel, filteredDemoCars])
-
-  // 4. Filtered Checks
-  const filteredChecks = useMemo(() => {
-    if (!data) return []
-    return data.checks.filter((c) => {
-      if (globalVehicleType === 'DEMO' && !c.vin) return false
-      if (globalVehicleType === 'OTHER' && c.vin) return false
-      if (globalPurpose !== 'ALL') {
-        const req = filteredAllRequests.find((r) => r.requestNumber === c.requestNumber)
-        if (!req && c.vin && globalPurpose !== 'DEMO') return false
-        if (req && req.purpose !== globalPurpose) return false
-      }
-      if (globalEnergyType !== 'ALL') {
-        const req = filteredAllRequests.find((r) => r.requestNumber === c.requestNumber)
-        if (req && (req.energyType || 'PETROL').toUpperCase() !== globalEnergyType) return false
-      }
-      return true
-    })
-  }, [data, filteredAllRequests, globalVehicleType, globalPurpose, globalEnergyType])
-
-  // 5. Filtered KPIs
-  const filteredKpis = useMemo(() => {
-    if (!data) {
-      return {
-        approvedLitres: 0,
-        approvedRequests: 0,
-        awaiting: { total: 0, byStage: [] },
-        demoDriveKm: 0,
-        demoDrives: 0,
-        gpsVerifiedKm: 0,
-        gpsVerifiedDrives: 0,
-        checksNeedingAttention: 0,
-      }
-    }
-
-    const approvedFills = filteredAllRequests.filter((r) => r.status === 'approved')
-    const approvedLitres = approvedFills.reduce((sum, r) => sum + (r.litres || 0), 0)
-    const approvedRequests = approvedFills.length
-
-    const awaitingFills = filteredAllRequests.filter((r) => r.status !== 'approved' && r.status !== 'rejected')
-    const awaitingTotal = awaitingFills.length
-
-    const byStageMap = new Map<string, number>()
-    awaitingFills.forEach((f) => {
-      const stage = f.status.replace(/_pending|_on_hold/g, '') || 'pending'
-      byStageMap.set(stage, (byStageMap.get(stage) || 0) + 1)
-    })
-    const awaitingByStage = Array.from(byStageMap.entries()).map(([stage, count]) => ({
-      stage,
-      label: stage.toUpperCase(),
-      count,
-    }))
-
-    let demoDriveKm = 0
-    let demoDrives = 0
-    let gpsVerifiedKm = 0
-    let gpsVerifiedDrives = 0
-
-    if (globalVehicleType !== 'OTHER' && (globalPurpose === 'ALL' || globalPurpose === 'DEMO')) {
-      filteredDemoCars.forEach((c) => {
-        demoDriveKm += c.driveKm || 0
-        demoDrives += c.drives?.length || 0
-        gpsVerifiedKm += c.gpsKm || 0
-        gpsVerifiedDrives += c.drives?.filter((d) => d.gpsKm !== null && d.gpsKm > 0).length || 0
-      })
-    }
-
-    return {
-      approvedLitres,
-      approvedRequests,
-      awaiting: { total: awaitingTotal, byStage: awaitingByStage },
-      demoDriveKm,
-      demoDrives,
-      gpsVerifiedKm,
-      gpsVerifiedDrives,
-      checksNeedingAttention: filteredChecks.filter((c) => c.severity === 'warning').length,
-    }
-  }, [data, filteredAllRequests, filteredDemoCars, filteredChecks, globalVehicleType, globalPurpose])
-
-  // 6. Filtered byEnergyType Breakdown
-  const filteredByEnergyType = useMemo<FuelEnergyTypeSummary[]>(() => {
-    if (!data) return []
-    const energyTotals: Record<string, { totalLitres: number; totalRequests: number; approvedLitres: number; approvedRequests: number }> = {
-      PETROL: { totalLitres: 0, totalRequests: 0, approvedLitres: 0, approvedRequests: 0 },
-      DIESEL: { totalLitres: 0, totalRequests: 0, approvedLitres: 0, approvedRequests: 0 },
-      CNG: { totalLitres: 0, totalRequests: 0, approvedLitres: 0, approvedRequests: 0 },
-      EV: { totalLitres: 0, totalRequests: 0, approvedLitres: 0, approvedRequests: 0 },
-    }
-
-    filteredAllRequests.forEach((r) => {
-      const type = (r.energyType || 'PETROL').toUpperCase()
-      if (!energyTotals[type]) {
-        energyTotals[type] = { totalLitres: 0, totalRequests: 0, approvedLitres: 0, approvedRequests: 0 }
-      }
-      energyTotals[type].totalLitres += r.litres || 0
-      energyTotals[type].totalRequests += 1
-      if (r.status === 'approved') {
-        energyTotals[type].approvedLitres += r.litres || 0
-        energyTotals[type].approvedRequests += 1
-      }
-    })
-
-    const grandTotalLitres = Object.values(energyTotals).reduce((sum, e) => sum + e.totalLitres, 0)
-
-    return Object.entries(energyTotals).map(([energyType, stats]) => ({
-      energyType,
-      label: energyType === 'PETROL' ? 'Petrol' : energyType === 'DIESEL' ? 'Diesel' : energyType,
-      approvedLitres: stats.approvedLitres,
-      totalLitres: stats.totalLitres,
-      approvedRequests: stats.approvedRequests,
-      totalRequests: stats.totalRequests,
-      avgFillSize: stats.totalRequests > 0 ? Math.round((stats.totalLitres / stats.totalRequests) * 10) / 10 : 0,
-      percentage: grandTotalLitres > 0 ? Math.round((stats.totalLitres / grandTotalLitres) * 1000) / 10 : 0,
-    }))
-  }, [data, filteredAllRequests])
-
-  // 7. Filtered byPurpose Breakdown
-  const filteredByPurpose = useMemo(() => {
-    if (!data) return []
-    const purposeMap = new Map<string, { purpose: string; label: string; approvedLitres: number; approvedRequests: number; awaitingRequests: number }>()
-
-    filteredAllRequests.forEach((r) => {
-      const p = r.purpose || 'OTHER'
-      const label = r.purposeLabel || p
-      if (!purposeMap.has(p)) {
-        purposeMap.set(p, { purpose: p, label, approvedLitres: 0, approvedRequests: 0, awaitingRequests: 0 })
-      }
-      const entry = purposeMap.get(p)!
-      if (r.status === 'approved') {
-        entry.approvedLitres += r.litres || 0
-        entry.approvedRequests += 1
-      } else if (r.status !== 'rejected') {
-        entry.awaitingRequests += 1
-      }
-    })
-
-    return Array.from(purposeMap.values()).sort((a, b) => b.approvedLitres - a.approvedLitres)
-  }, [data, filteredAllRequests])
-
-  // 8. Filtered Purpose vs Multi-Fuel Matrix
-  const filteredPurposeEnergyMatrix = useMemo(() => {
-    if (!data) return []
-    const matrixMap = new Map<string, {
-      purpose: string
-      purposeLabel: string
-      petrolLitres: number
-      dieselLitres: number
-      cngLitres: number
-      evKwh: number
-      totalLitres: number
-      requestsCount: number
-    }>()
-
-    filteredAllRequests.forEach((r) => {
-      const p = r.purpose || 'OTHER'
-      const label = r.purposeLabel || p
-      if (!matrixMap.has(p)) {
-        matrixMap.set(p, {
-          purpose: p,
-          purposeLabel: label,
-          petrolLitres: 0,
-          dieselLitres: 0,
-          cngLitres: 0,
-          evKwh: 0,
-          totalLitres: 0,
-          requestsCount: 0,
-        })
-      }
-      const entry = matrixMap.get(p)!
-      const energy = (r.energyType || 'PETROL').toUpperCase()
-      const litres = r.litres || 0
-      entry.totalLitres += litres
-      entry.requestsCount += 1
-      if (energy === 'PETROL') entry.petrolLitres += litres
-      else if (energy === 'DIESEL') entry.dieselLitres += litres
-      else if (energy === 'CNG') entry.cngLitres += litres
-      else if (energy === 'EV') entry.evKwh += litres
-    })
-
-    return Array.from(matrixMap.values()).sort((a, b) => b.totalLitres - a.totalLitres)
-  }, [data, filteredAllRequests])
-
-  // 9. Filtered Branch Energy Summary
-  const filteredByBranchEnergy = useMemo(() => {
-    if (!data) return []
-    const branchMap = new Map<string, {
-      branch: string
-      branchLabel: string
-      petrolLitres: number
-      dieselLitres: number
-      cngLitres: number
-      evKwh: number
-      totalLitres: number
-      petrolPct: number
-      dieselPct: number
-    }>()
-
-    filteredAllRequests.forEach((r) => {
-      const bLabel = r.branchLabel || 'Other'
-      const bKey = bLabel.toLowerCase().includes('udhampur') || bLabel.includes('501') ? 'JK501' : 'JK402'
-      if (!branchMap.has(bKey)) {
-        branchMap.set(bKey, {
-          branch: bKey,
-          branchLabel: bKey === 'JK501' ? 'KIA Udhampur' : 'KIA Jammu',
-          petrolLitres: 0,
-          dieselLitres: 0,
-          cngLitres: 0,
-          evKwh: 0,
-          totalLitres: 0,
-          petrolPct: 0,
-          dieselPct: 0,
-        })
-      }
-      const entry = branchMap.get(bKey)!
-      const energy = (r.energyType || 'PETROL').toUpperCase()
-      const litres = r.litres || 0
-      entry.totalLitres += litres
-      if (energy === 'PETROL') entry.petrolLitres += litres
-      else if (energy === 'DIESEL') entry.dieselLitres += litres
-      else if (energy === 'CNG') entry.cngLitres += litres
-      else if (energy === 'EV') entry.evKwh += litres
-    })
-
-    return Array.from(branchMap.values()).map((b) => {
-      const petrolPct = b.totalLitres > 0 ? Math.round((b.petrolLitres / b.totalLitres) * 100) : 0
-      const dieselPct = b.totalLitres > 0 ? Math.round((b.dieselLitres / b.totalLitres) * 100) : 0
-      return { ...b, petrolPct, dieselPct }
-    })
-  }, [data, filteredAllRequests])
-
-  // 10. Filtered Active Display Data
-  const displayData = useMemo<FuelManagementResponse | null>(() => {
-    if (!data) return null
-    return {
-      ...data,
-      kpis: filteredKpis,
-      demoCars: filteredDemoCars,
-      otherFuel: filteredOtherFuel,
-      checks: filteredChecks,
-      byEnergyType: filteredByEnergyType,
-      byPurpose: filteredByPurpose,
-      purposeEnergyMatrix: filteredPurposeEnergyMatrix,
-      byBranchEnergy: filteredByBranchEnergy,
-    }
-  }, [
-    data,
-    filteredKpis,
-    filteredChecks,
-    filteredDemoCars,
-    filteredOtherFuel,
-    filteredByEnergyType,
-    filteredByPurpose,
-    filteredPurposeEnergyMatrix,
-    filteredByBranchEnergy,
-  ])
-
-  // Selected vehicle for profile drawer
-  const activeVehicle = useMemo(() => {
-    if (!displayData || !selectedVin) return null
-    return displayData.demoCars.find((c) => c.vin === selectedVin) || null
-  }, [displayData, selectedVin])
-
-  // Derived Fleet Stats with multi-filter awareness
-  const derivedStats = useMemo(() => {
-    if (!displayData) return { fuelSpend: 0, costPerKm: 0, fleetAvgMileage: null, attentionCount: 0 }
-
-    const fuelSpend = displayData.kpis.approvedLitres * ESTIMATED_FUEL_PRICE_INR
-    const demoDriveKm = displayData.kpis.demoDriveKm
-    const costPerKm = demoDriveKm > 0 ? fuelSpend / demoDriveKm : 0
-
-    // Average calculated mileage across cars with valid mileage
-    const carsWithMileage = displayData.demoCars.filter((c) => c.kmPerLitre && c.kmPerLitre.value > 0)
-    const fleetAvgMileage =
-      carsWithMileage.length > 0
-        ? carsWithMileage.reduce((acc, c) => acc + (c.kmPerLitre?.value || 0), 0) / carsWithMileage.length
-        : null
-
-    const attentionCount = displayData.checks.filter((c) => c.severity === 'warning').length
-
-    return { fuelSpend, costPerKm, fleetAvgMileage, attentionCount }
-  }, [displayData])
 
   return (
-    <MainLayout title="Fuel Management" subtitle="Fuel usage, vehicle efficiency and requests">
-      <div className="mx-auto max-w-[1600px] space-y-4 pb-16">
-        {/* =========================================================================
-         * GLOBAL HEADER: MULTI-DIMENSIONAL CONTROLS & FILTER BAR
-         * ========================================================================= */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs space-y-3">
-          {/* Top Controls Row */}
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            {/* Primary Date Cluster */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Date Presets Group */}
-              <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
-                {PERIOD_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => selectPreset(opt.value)}
-                    className={cn(
-                      'rounded-lg px-2.5 py-1 text-xs font-semibold transition-all',
-                      preset === opt.value
-                        ? 'bg-white text-slate-900 font-bold shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900',
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Date Step Prev / Next Navigator & Direct Modal Trigger */}
-              <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white shadow-2xs">
-                <button
-                  type="button"
-                  onClick={() => handleShiftPeriod('prev')}
-                  disabled={!range}
-                  title="Shift to Previous Period"
-                  className="flex h-8 w-7 items-center justify-center text-slate-500 hover:bg-slate-50 hover:text-slate-900 rounded-l-xl transition-colors disabled:opacity-30"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={openDateModal}
-                  title="Click to open calendar and customize date range"
-                  className="flex items-center gap-2 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 border-x border-slate-100 transition-colors group"
-                >
-                  <Calendar className="h-3.5 w-3.5 text-[var(--dashboard-primary)]" />
-                  <span className="font-bold text-slate-900">
-                    {range ? `${formatYmd(range.from, false)} – ${formatYmd(range.to)}` : 'Select dates'}
-                  </span>
-                  {activeRangeDays > 0 && (
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 border border-slate-200/60">
-                      {activeRangeDays}d
-                    </span>
-                  )}
-                  <ChevronDown className="h-3 w-3 text-slate-400 group-hover:text-slate-600 transition-colors" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleShiftPeriod('next')}
-                  disabled={!range || (range.to >= today)}
-                  title="Shift to Next Period"
-                  className="flex h-8 w-7 items-center justify-center text-slate-500 hover:bg-slate-50 hover:text-slate-900 rounded-r-xl transition-colors disabled:opacity-30"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
+    <MainLayout title="Fuel Management" subtitle="Fleet fuel spend, usage efficiency and operational accountability">
+      <FuelTokens />
+      <div className="fm mx-auto max-w-[1520px] space-y-5 pb-16">
+        {/* ── Period, actions ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 pt-1">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xl sm:text-2xl font-black tracking-tight text-slate-950 font-mono">
+                {fmtRange(from, to)}
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full text-[10.5px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                Live Audit
+              </span>
             </div>
-
-            {/* Right Group: Branch & Refresh */}
-            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-              {/* Branch Selector */}
-              <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
-                {BRANCH_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setBranch(opt.value)}
-                    className={cn(
-                      'rounded-lg px-2.5 py-1 text-xs font-semibold transition-all',
-                      branch === opt.value
-                        ? 'bg-white text-slate-900 font-bold shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900',
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Refresh Button */}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void refetch()}
-                disabled={range === null || isFetching}
-                className="h-8 gap-1.5 rounded-xl border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs"
-              >
-                <RefreshCw className={cn('h-3.5 w-3.5 text-slate-500', isFetching && 'animate-spin')} />
-                <span>{isFetching ? 'Refreshing' : 'Refresh'}</span>
-              </Button>
-            </div>
+            <p className="mt-0.5 text-xs font-medium text-slate-500" aria-live="polite">
+              {data ? <>Compared with <span className="font-semibold text-slate-700">{fmtRange(data.previous.from, data.previous.to)}</span></> : 'Loading period data…'}
+              {query.isFetching && data && <span className="ml-2 text-teal-700 font-bold">· Updating…</span>}
+            </p>
           </div>
 
-          {/* Secondary Controls: Fuel Type, Purpose & Vehicle Type Filters + Reset */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-slate-100 pt-2.5">
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Energy / Fuel Type Pill Selector */}
-              <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
-                {[
-                  { id: 'ALL' as const, label: 'All Fuels' },
-                  { id: 'PETROL' as const, label: 'Petrol' },
-                  { id: 'DIESEL' as const, label: 'Diesel' },
-                  { id: 'CNG' as const, label: 'CNG' },
-                  { id: 'EV' as const, label: 'EV' },
-                ].map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setGlobalEnergyType(opt.id)}
-                    className={cn(
-                      'rounded-lg px-2.5 py-1 text-xs font-semibold transition-all',
-                      globalEnergyType === opt.id
-                        ? 'bg-white text-slate-900 font-bold shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900',
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Global Vehicle Type Pill Selector */}
-              <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
-                {[
-                  { id: 'ALL' as const, label: 'All Fleet' },
-                  { id: 'DEMO' as const, label: 'Demo Cars' },
-                  { id: 'OTHER' as const, label: 'Other Assets' },
-                ].map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setGlobalVehicleType(opt.id)}
-                    className={cn(
-                      'rounded-lg px-2.5 py-1 text-xs font-semibold transition-all',
-                      globalVehicleType === opt.id
-                        ? 'bg-white text-slate-900 font-bold shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900',
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Global Purpose Filter Dropdown */}
-              <select
-                value={globalPurpose}
-                onChange={(e) => setGlobalPurpose(e.target.value)}
-                className={cn(
-                  'h-8 rounded-xl border px-3 text-xs font-semibold transition-all focus:outline-none shadow-2xs',
-                  globalPurpose !== 'ALL'
-                    ? 'border-slate-400 bg-slate-50 text-slate-900 font-bold'
-                    : 'border-slate-200 bg-white text-slate-700',
-                )}
-              >
-                <option value="ALL">All Operational Purposes</option>
-                {data?.byPurpose.map((p) => (
-                  <option key={p.purpose} value={p.purpose}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Active Filters tags & Reset Button */}
-            {hasActiveFilters && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {preset !== 'month' && (
-                  <button
-                    type="button"
-                    onClick={openDateModal}
-                    className="inline-flex items-center gap-1 rounded-md bg-slate-100 hover:bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200 transition-colors"
-                  >
-                    <Calendar className="h-3 w-3 text-slate-400" />
-                    <span>{PERIOD_OPTIONS.find((p) => p.value === preset)?.label || 'Custom'}</span>
-                  </button>
-                )}
-                {branch !== 'ALL' && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200">
-                    <Building2 className="h-3 w-3 text-slate-400" />
-                    <span>{BRANCH_LABEL[branch]}</span>
-                  </span>
-                )}
-                {globalEnergyType !== 'ALL' && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200 font-bold">
-                    <Fuel className="h-3 w-3 text-slate-400" />
-                    <span>{globalEnergyType === 'PETROL' ? 'Petrol' : globalEnergyType === 'DIESEL' ? 'Diesel' : globalEnergyType}</span>
-                  </span>
-                )}
-                {globalPurpose !== 'ALL' && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200">
-                    <Tag className="h-3 w-3 text-slate-400" />
-                    <span>{data?.byPurpose.find((p) => p.purpose === globalPurpose)?.label || globalPurpose}</span>
-                  </span>
-                )}
-                {globalVehicleType !== 'ALL' && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200">
-                    <Car className="h-3 w-3 text-slate-400" />
-                    <span>{globalVehicleType === 'DEMO' ? 'Demo Cars' : 'Other Assets'}</span>
-                  </span>
-                )}
-                <Button
+          <div className="fm-noprint flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => query.refetch()}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-3.5 text-xs font-bold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 shadow-2xs active:scale-98 cursor-pointer"
+            >
+              <RefreshCw aria-hidden className={cn('size-3.5', query.isFetching && 'animate-spin motion-reduce:animate-none')} />
+              <span>Refresh</span>
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleResetFilters}
-                  className="h-7 px-2 text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1 transition-colors ml-1"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-3.5 text-xs font-bold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 shadow-2xs active:scale-98 cursor-pointer"
                 >
-                  <RotateCcw className="h-3 w-3 text-slate-400" />
-                  <span>Reset filters</span>
-                </Button>
-              </div>
-            )}
+                  <Download aria-hidden className="size-3.5" />
+                  <span>Export</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 rounded-2xl p-1.5 shadow-xl border border-slate-200">
+                <DropdownMenuLabel className="text-[11px] font-black uppercase tracking-wider text-slate-400 px-2.5 py-1.5">
+                  Excel Reports
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="my-1" />
+                {FUEL_REPORTS.map((report) => (
+                  <DropdownMenuItem key={report.id} className="text-xs font-semibold rounded-xl px-2.5 py-2 cursor-pointer" onSelect={() => download(report.id)}>
+                    {report.title}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Link
+              href="/fuel-approvals"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-4 text-xs font-bold text-white transition-all hover:bg-slate-800 shadow-xs active:scale-98 cursor-pointer"
+            >
+              <span>Fuel Approvals</span>
+              <ArrowUpRight aria-hidden className="size-3.5" />
+            </Link>
           </div>
-          {/* Tab Navigation */}
-          <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-            {[
-              { id: 'overview' as TabId, label: 'Overview', icon: LayoutGrid },
-              {
-                id: 'requests' as TabId,
-                label: 'Fuel Requests',
-                icon: FileText,
-                badge: displayData?.kpis.awaiting.total ? `${displayData.kpis.awaiting.total} pending` : null,
-                badgeTone: 'warning',
-              },
-              { id: 'mileage' as TabId, label: 'Vehicle Mileage', icon: Gauge },
-              { id: 'usage' as TabId, label: 'Fuel Consumption', icon: Fuel },
-              {
-                id: 'exceptions' as TabId,
-                label: 'Exceptions',
-                icon: TriangleAlert,
-                badge: displayData?.checks.filter((c) => c.severity === 'warning').length
-                  ? `${displayData.checks.filter((c) => c.severity === 'warning').length}`
-                  : null,
-                badgeTone: 'danger',
-              },
-              { id: 'reports' as TabId, label: 'Reports', icon: FileSpreadsheet },
-            ].map((tab) => {
-              const Icon = tab.icon
-              const isActive = activeTab === tab.id
+        </div>
+
+        {/* ── Period and filters ── */}
+        <div ref={filterBar} className="fm-noprint flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-2xs">
+          <Segmented value={filters.preset} onChange={setPreset} options={PERIOD_OPTIONS} label="Period" />
+          {filters.preset === 'custom' && (
+            <div className="flex items-center gap-1.5">
+              <label className="sr-only" htmlFor="fm-from">From</label>
+              <input
+                id="fm-from"
+                type="date"
+                value={from}
+                onChange={(e) => e.target.value && setFrom(e.target.value)}
+                className="h-9 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-2xs"
+              />
+              <span className="text-xs font-bold text-slate-400">to</span>
+              <label className="sr-only" htmlFor="fm-to">To</label>
+              <input
+                id="fm-to"
+                type="date"
+                value={to}
+                onChange={(e) => e.target.value && setTo(e.target.value)}
+                className="h-9 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-2xs"
+              />
+            </div>
+          )}
+          <span aria-hidden className="mx-1 hidden h-6 w-px bg-slate-200 lg:block" />
+          {options && (
+            <>
+              {(options.branches.length > 1 || branch) && (
+                <FilterSelect label="Branch" value={branch} onChange={(v) => setFilter('branch', v)} options={options.branches} allLabel="All branches" />
+              )}
+              {(options.brands.length > 1 || brand) && (
+                <FilterSelect label="Brand" value={brand} onChange={(v) => setFilter('brand', v)} options={options.brands} allLabel="All brands" />
+              )}
+              <FilterSelect label="Purpose" value={purpose} onChange={(v) => setFilter('purpose', v)} options={options.purposes} allLabel="All purposes" />
+              {(options.departments.length > 1 || department) && (
+                <FilterSelect label="Department" value={department} onChange={(v) => setFilter('department', v)} options={options.departments} allLabel="All departments" />
+              )}
+              {(options.energies.length > 1 || energy) && (
+                <FilterSelect
+                  label="Fuel type"
+                  value={energy}
+                  onChange={(v) => setFilter('energy', v as FilterState['energy'])}
+                  options={options.energies}
+                  allLabel="All fuel types"
+                />
+              )}
+              <FilterSelect
+                label="Fleet"
+                value={fleet}
+                onChange={(v) => setFilter('fleet', v as FilterState['fleet'])}
+                options={[{ value: 'demo', label: 'Demo cars' }, { value: 'other', label: 'Other fuel' }]}
+                allLabel="All vehicles"
+              />
+              {(options.vehicles.length > 0 || vehicle) && (
+                <FilterSelect
+                  label="Vehicle"
+                  value={vehicle}
+                  onChange={(v) => setFilter('vehicle', v)}
+                  options={vehicle && !options.vehicles.some((o) => o.value === vehicle)
+                    ? [{ value: vehicle, label: data?.vehicles.find((v) => v.key === vehicle)?.label ?? vehicle }, ...options.vehicles]
+                    : options.vehicles}
+                  allLabel="Any vehicle"
+                />
+              )}
+            </>
+          )}
+          {filterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex h-9 items-center gap-1 rounded-xl px-3 text-xs font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <RotateCcw aria-hidden className="size-3.5" />
+              Reset ({filterCount})
+            </button>
+          )}
+        </div>
+
+        {/* ── Headline Metric Strip ── */}
+        {stale && (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-xs font-bold text-amber-800">
+              These figures could not be updated for the selected period — showing previous selection.
+              {query.error instanceof Error ? ` ${query.error.message}` : ''}
+            </p>
+            <RetryButton onClick={() => query.refetch()} />
+          </div>
+        )}
+        {query.isError && !data ? (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+            <p className="text-xs font-bold text-rose-800">
+              {query.error instanceof Error ? query.error.message : 'Fuel figures could not be loaded.'}
+            </p>
+            <RetryButton onClick={() => query.refetch()} />
+          </div>
+        ) : data ? (
+          <div
+            aria-busy={query.isFetching || undefined}
+            className={cn('fm-noprint transition-opacity duration-150', (query.isFetching && query.isPlaceholderData) || stale ? 'opacity-60' : '')}
+          >
+            <HeadlineStrip data={data} navigate={navigate} />
+          </div>
+        ) : (
+          <Loading label="Loading the fuel figures"><Skeleton className="h-[140px] w-full rounded-2xl" /></Loading>
+        )}
+
+        {/* ── Modern Segmented Tab Ribbon ── */}
+        <div className="fm-noprint fm-scroll -mx-1 overflow-x-auto px-1 py-0.5">
+          <div role="tablist" aria-label="Fuel Management sections" className="inline-flex min-w-max items-center gap-1 p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 shadow-2xs">
+            {tabs.map((item) => {
+              const active = item.value === tab
               return (
                 <button
-                  key={tab.id}
+                  key={item.value}
+                  ref={(el) => { tabRefs.current[item.value] = el }}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  role="tab"
+                  id={`fm-tab-${item.value}`}
+                  aria-selected={active}
+                  aria-controls={active ? `fm-panel-${item.value}` : undefined}
+                  tabIndex={active ? 0 : -1}
+                  onKeyDown={onTabKey}
+                  onClick={() => changeTab(item.value)}
                   className={cn(
-                    'group flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all',
-                    isActive
-                      ? 'bg-[var(--dashboard-primary)] text-white shadow-xs'
-                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                    'fm-inset-focus inline-flex h-9 items-center gap-2 px-3.5 sm:px-4 rounded-xl text-xs font-bold transition-all duration-150 cursor-pointer active:scale-98',
+                    active
+                      ? 'bg-white text-slate-950 shadow-xs border border-slate-200/60 font-black'
+                      : 'text-slate-600 hover:text-slate-950 hover:bg-slate-200/50',
                   )}
                 >
-                  <Icon className={cn('h-3.5 w-3.5', isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600')} />
-                  <span>{tab.label}</span>
-                  {tab.badge && (
+                  <span>{item.label}</span>
+                  {item.count !== undefined && item.count !== null && item.count > 0 && (
                     <span
                       className={cn(
-                        'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
-                        isActive
-                          ? 'bg-white/20 text-white'
-                          : tab.badgeTone === 'warning'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-rose-100 text-rose-800',
+                        'rounded-full px-1.5 py-0.2 text-[10.5px] font-black tabular-nums',
+                        active ? 'bg-slate-100 text-slate-900' : 'bg-slate-200/70 text-slate-600',
                       )}
                     >
-                      {tab.badge}
+                      {item.count}
                     </span>
                   )}
                 </button>
@@ -1415,2265 +425,66 @@ export const FuelManagementClient: FC<{ currentUser?: Record<string, unknown> }>
           </div>
         </div>
 
-        {/* =========================================================================
-         * CONTENT ROUTING
-         * ========================================================================= */}
-        {range === null ? (
-          <StatePanel icon={<Hourglass className="h-5 w-5" />} title="Choose a date range to view fuel data">
-            Pick a start and end date above to display usage, mileage and requests.
-          </StatePanel>
-        ) : isError && !data ? (
-          <StatePanel
-            tone="warning"
-            icon={<TriangleAlert className="h-5 w-5" />}
-            title="Could not load fuel data"
-            action={<Button size="sm" onClick={() => void refetch()}>Try Again</Button>}
-          >
-            {loadError?.message || 'The server could not process the request.'}
-          </StatePanel>
-        ) : !displayData ? (
-          <LoadingSkeleton />
-        ) : (
-          <div className={cn('transition-opacity duration-200', isPlaceholderData && 'opacity-60')}>
-            {activeTab === 'overview' && (
-              <FuelOverviewTab
-                data={displayData}
-                derivedStats={derivedStats}
-                allRequests={filteredAllRequests}
-                onSelectVehicle={(vin) => setSelectedVin(vin)}
-                onOpenRequests={() => setActiveTab('requests')}
-                onOpenExceptions={() => setActiveTab('exceptions')}
-                onOpenMethodology={() => setShowMethodologyModal(true)}
-              />
-            )}
+        <div role="tabpanel" id={`fm-panel-${tab}`} aria-labelledby={`fm-tab-${tab}`} aria-busy={query.isFetching || undefined}>
+          {tab === 'overview' && needsData(data && <OverviewView data={data} navigate={navigate} />)}
+          {tab === 'records' && (
+            <RecordsView filters={filters} state={recordState} onStateChange={setRecordState} quality={qualityFilter} onQualityChange={setQualityFilter} navigate={navigate} />
+          )}
+          {tab === 'vehicles' && needsData(data && <VehiclesView data={data} navigate={navigate} />)}
+          {tab === 'exceptions' && needsData(data && (
+            <ExceptionsView data={data} navigate={navigate} focusKey={focusException} onFocusHandled={() => setFocusException('')} />
+          ))}
+          {tab === 'reports' && needsData(data && <ReportsView data={data} navigate={navigate} />)}
+          {tab === 'quality' && needsData(data && <QualityView data={data} navigate={navigate} />)}
+          {tab === 'settings' && <SettingsView />}
+        </div>
 
-            {activeTab === 'requests' && (
-              <FuelRequestsTab
-                data={displayData}
-                allRequests={filteredAllRequests}
-                onViewDetails={(req) => setSelectedRequestDetails(req)}
-              />
-            )}
-
-            {activeTab === 'mileage' && (
-              <VehicleMileageTab
-                data={displayData}
-                derivedStats={derivedStats}
-                onSelectVehicle={(vin) => setSelectedVin(vin)}
-                onOpenMethodology={() => setShowMethodologyModal(true)}
-              />
-            )}
-
-            {activeTab === 'usage' && <FuelConsumptionTab data={displayData} derivedStats={derivedStats} />}
-
-            {activeTab === 'exceptions' && (
-              <FuelExceptionsTab
-                data={displayData}
-                onSelectVehicle={(vin) => setSelectedVin(vin)}
-                onViewRequest={(reqNo) => {
-                  const match = filteredAllRequests.find((r) => r.requestNumber === reqNo)
-                  if (match) setSelectedRequestDetails(match)
-                }}
-              />
-            )}
-
-            {activeTab === 'reports' && <FuelReportsTab data={displayData} derivedStats={derivedStats} />}
-          </div>
+        {data && (
+          <p className="text-[11.5px] text-slate-500">
+            Figures as of {fmtWhen(data.generatedAt)}, refreshed at most once a minute and whenever a fuel record changes.
+          </p>
         )}
-
-        {/* =========================================================================
-         * VEHICLE PROFILE DRAWER / MODAL
-         * ========================================================================= */}
-        <VehicleProfileDrawer
-          vehicle={activeVehicle}
-          isOpen={Boolean(activeVehicle)}
-          onClose={() => setSelectedVin(null)}
-          onOpenMethodology={() => setShowMethodologyModal(true)}
-        />
-
-        {/* =========================================================================
-         * METHODOLOGY EXPLAINER MODAL
-         * ========================================================================= */}
-        <Dialog open={showMethodologyModal} onOpenChange={setShowMethodologyModal}>
-          <DialogContent className="max-w-lg rounded-2xl p-6">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                <HelpCircle className="h-5 w-5 text-[var(--dashboard-primary)]" />
-                How Mileage is Calculated
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">
-                True full-tank to full-tank measurement methodology
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="mt-4 space-y-4 text-sm text-slate-700">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="font-semibold text-slate-900">Full-Tank to Full-Tank Rule</p>
-                <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-                  To eliminate estimation bias, mileage is computed strictly using the distance between consecutive
-                  qualifying odometer readings divided by the fuel added after the initial baseline fill:
-                </p>
-                <div className="mt-3 rounded-lg bg-white p-3 font-mono text-xs text-slate-800 border border-slate-200">
-                  km/L = (Odometer_Latest − Odometer_Initial) ÷ Total_Litres_Added
-                </div>
-              </div>
-
-              <div className="space-y-2 text-xs text-slate-600">
-                <p className="flex items-start gap-2">
-                  <span className="font-bold text-slate-800">• Requires ≥ 2 Fills:</span> A car with only one fill
-                  shows &ldquo;Awaiting 2nd Fill&rdquo; because fuel consumed cannot be measured without a second
-                  odometer marker.
-                </p>
-                <p className="flex items-start gap-2">
-                  <span className="font-bold text-slate-800">• VIN Keyed:</span> Trade plates are often shared across
-                  multiple demo cars. All calculations are strictly isolated by unique 17-character VIN.
-                </p>
-                <p className="flex items-start gap-2">
-                  <span className="font-bold text-slate-800">• Honest Reporting:</span> No estimated or fabricated
-                  numbers are displayed when data is incomplete.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <Button
-                onClick={() => setShowMethodologyModal(false)}
-                className="rounded-xl bg-[var(--dashboard-primary)] text-white hover:opacity-90 font-semibold"
-              >
-                Got it
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* =========================================================================
-         * REQUEST DETAIL MODAL
-         * ========================================================================= */}
-        {selectedRequestDetails && (
-          <Dialog open={Boolean(selectedRequestDetails)} onOpenChange={() => setSelectedRequestDetails(null)}>
-            <DialogContent className="max-w-md rounded-2xl p-6">
-              <DialogHeader>
-                <DialogTitle className="flex items-center justify-between text-base font-bold text-slate-900">
-                  <span>Fuel Request #{selectedRequestDetails.requestNumber}</span>
-                  <StatusBadge status={selectedRequestDetails.status} label={selectedRequestDetails.statusLabel} />
-                </DialogTitle>
-                <DialogDescription className="text-xs text-slate-500">
-                  Submitted for {selectedRequestDetails.purposeLabel} on {formatYmd(selectedRequestDetails.date)}
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="mt-4 space-y-3 divide-y divide-slate-100 text-xs">
-                <div className="flex justify-between py-2">
-                  <span className="text-slate-500">Vehicle / Asset:</span>
-                  <span className="font-semibold text-slate-900">{selectedRequestDetails.vehicleLabel}</span>
-                </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-slate-500">Branch:</span>
-                  <span className="font-semibold text-slate-900">{selectedRequestDetails.branchLabel}</span>
-                </div>
-                <div className="flex justify-between py-2 items-center">
-                  <span className="text-slate-500">Fuel Type:</span>
-                  <EnergyTypeBadge energyType={selectedRequestDetails.energyType} />
-                </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-slate-500">Fuel Quantity:</span>
-                  <span className="font-bold text-slate-900">{formatLitres(selectedRequestDetails.litres)} Litres</span>
-                </div>
-                {selectedRequestDetails.odometerKm !== undefined && selectedRequestDetails.odometerKm !== null && (
-                  <div className="flex justify-between py-2">
-                    <span className="text-slate-500">Odometer Reading:</span>
-                    <span className="font-semibold text-slate-900">{formatKm(selectedRequestDetails.odometerKm)} km</span>
-                  </div>
-                )}
-                <div className="flex justify-between py-2">
-                  <span className="text-slate-500">Estimated Cost:</span>
-                  <span className="font-semibold text-slate-900">
-                    {formatCurrency(selectedRequestDetails.litres * ESTIMATED_FUEL_PRICE_INR)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end">
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedRequestDetails(null)}
-                  className="rounded-xl text-xs font-semibold"
-                >
-                  Close
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        )}
-
-        {/* =========================================================================
-         * DATE RANGE & CALENDAR MODAL
-         * ========================================================================= */}
-        <Dialog open={showDateModal} onOpenChange={setShowDateModal}>
-          <DialogContent className="max-w-2xl rounded-2xl p-6 sm:p-7">
-            <DialogHeader>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-[var(--dashboard-primary)] shadow-2xs border border-slate-200">
-                  <CalendarDays className="h-5 w-5" />
-                </div>
-                <div>
-                  <DialogTitle className="text-base font-bold text-slate-900">
-                    Select Date Range & Period
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-slate-500">
-                    Choose a period preset or pick custom start and end dates (up to 366 days)
-                  </DialogDescription>
-                </div>
-              </div>
-            </DialogHeader>
-
-            <div className="mt-4 grid gap-5 sm:grid-cols-12">
-              {/* Presets Grid */}
-              <div className="sm:col-span-5 space-y-1.5 border-b sm:border-b-0 sm:border-r border-slate-100 pb-4 sm:pb-0 sm:pr-4">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Quick Presets
-                </span>
-                <div className="grid grid-cols-2 sm:grid-cols-1 gap-1.5 mt-2">
-                  {PERIOD_OPTIONS.map((opt) => {
-                    const isSelected = tempPreset === opt.value
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => handleSelectTempPreset(opt.value)}
-                        className={cn(
-                          'flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition-all text-left',
-                          isSelected
-                            ? 'bg-[var(--dashboard-primary)] text-white shadow-xs font-bold'
-                            : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900',
-                        )}
-                      >
-                        <span>{opt.label}</span>
-                        {isSelected && <Check className="h-3.5 w-3.5" />}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Custom Range & Live Date Summary */}
-              <div className="sm:col-span-7 space-y-4">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Custom Period Dates
-                </span>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-slate-700">From Date</Label>
-                    <Input
-                      type="date"
-                      value={tempFrom}
-                      max={tempTo || today}
-                      onChange={(e) => {
-                        setTempPreset('custom')
-                        setTempFrom(e.target.value)
-                        setTempError(null)
-                      }}
-                      className="h-9 rounded-xl border-slate-200 text-xs font-semibold tabular-nums shadow-2xs"
-                    />
-                    <p className="text-[11px] text-slate-500 font-medium">
-                      {isValidYmd(tempFrom) ? formatYmd(tempFrom) : 'Select start'}
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-slate-700">To Date</Label>
-                    <Input
-                      type="date"
-                      value={tempTo}
-                      min={tempFrom || undefined}
-                      max={today}
-                      onChange={(e) => {
-                        setTempPreset('custom')
-                        setTempTo(e.target.value)
-                        setTempError(null)
-                      }}
-                      className="h-9 rounded-xl border-slate-200 text-xs font-semibold tabular-nums shadow-2xs"
-                    />
-                    <p className="text-[11px] text-slate-500 font-medium">
-                      {isValidYmd(tempTo) ? formatYmd(tempTo) : 'Select end'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Range Summary Card */}
-                <div className="rounded-xl border border-slate-200/90 bg-slate-50/80 p-3.5 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-600">Selected Duration:</span>
-                    <span className="rounded-md bg-white px-2 py-0.5 font-bold text-slate-900 border border-slate-200 shadow-2xs">
-                      {tempRangeDays} {tempRangeDays === 1 ? 'day' : 'days'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-600">Active Window:</span>
-                    <span className="font-bold text-[var(--dashboard-primary)]">
-                      {tempFrom && tempTo ? formatRange(tempFrom, tempTo) : 'Incomplete range'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Error Banner if any */}
-                {tempError && (
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-800 font-semibold flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-                    <span>{tempError}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Footer Buttons */}
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleResetDateModalToDefault}
-                className="gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>Reset to Default (This Month)</span>
-              </Button>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDateModal(false)}
-                  className="rounded-xl text-xs font-semibold"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleApplyDateModal}
-                  className="gap-1.5 rounded-xl bg-[var(--dashboard-primary)] text-white hover:opacity-90 text-xs font-bold shadow-xs px-4"
-                >
-                  <Check className="h-4 w-4" />
-                  <span>Apply Range</span>
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
+
+      <RecordDrawer
+        target={current?.kind === 'record' ? current.id : null}
+        filters={filters}
+        canGoBack={drill.length > 1}
+        onBack={() => setDrill((stack) => stack.slice(0, -1))}
+        onClose={closeDrill}
+        navigate={navigate}
+      />
+      <VehicleDrawer
+        target={current?.kind === 'vehicle' ? current.key : null}
+        filters={filters}
+        canGoBack={drill.length > 1}
+        onBack={() => setDrill((stack) => stack.slice(0, -1))}
+        onClose={closeDrill}
+        navigate={navigate}
+      />
     </MainLayout>
   )
 }
 
-/* =================================================================================================
- * TAB 1: OVERVIEW TAB (THE EXECUTIVE PULSE)
- * =============================================================================================== */
-
-function FuelOverviewTab({
-  data,
-  derivedStats,
-  allRequests,
-  onSelectVehicle,
-  onOpenRequests,
-  onOpenExceptions,
-  onOpenMethodology,
-}: {
-  data: FuelManagementResponse
-  derivedStats: { fuelSpend: number; costPerKm: number; fleetAvgMileage: number | null; attentionCount: number }
-  allRequests: any[]
-  onSelectVehicle: (vin: string) => void
-  onOpenRequests: () => void
-  onOpenExceptions: () => void
-  onOpenMethodology: () => void
-}) {
-  const [trendMetric, setTrendMetric] = useState<'fuel' | 'spend' | 'distance' | 'mileage'>('fuel')
-
-  const topChecks = useMemo(() => {
-    return data.checks.slice(0, 4)
-  }, [data.checks])
-
-  const topDemoCars = useMemo(() => {
-    return data.demoCars.slice(0, 4)
-  }, [data.demoCars])
-
-  const recentActivity = useMemo(() => {
-    return allRequests.slice(0, 6)
-  }, [allRequests])
-
+function RetryButton({ onClick }: { onClick: () => void }) {
   return (
-    <div className="space-y-4">
-      {/* 1. TOP 5 KPI SECTION */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {/* KPI 1: Fuel Used */}
-        <div className="rounded-2xl border-t-4 border-t-teal-500 border-x border-b border-slate-200/80 bg-white p-4.5 shadow-xs transition-all duration-200 hover:shadow-md hover:border-slate-300">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-teal-800">
-              Fuel Used
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-700 border border-teal-100 shadow-2xs">
-              <Fuel className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-2.5 flex items-baseline gap-1.5">
-            <span className="text-2xl font-black tabular-nums text-slate-900 tracking-tight">
-              {formatLitres(data.kpis.approvedLitres)}
-            </span>
-            <span className="text-xs font-bold text-teal-700">Litres</span>
-          </div>
-          <div className="mt-2.5 flex items-center gap-1.5">
-            <span className="inline-flex items-center rounded-md bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-800 border border-teal-200/70">
-              {formatCount(data.kpis.approvedRequests)} approved {plural(data.kpis.approvedRequests, 'fill', 'fills')}
-            </span>
-          </div>
-        </div>
-
-        {/* KPI 2: Fuel Spend */}
-        <div className="rounded-2xl border-t-4 border-t-indigo-500 border-x border-b border-slate-200/80 bg-white p-4.5 shadow-xs transition-all duration-200 hover:shadow-md hover:border-slate-300">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-800">
-              Fuel Spend
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100 shadow-2xs">
-              <IndianRupee className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-2.5 flex items-baseline gap-1">
-            <span className="text-2xl font-black tabular-nums text-slate-900 tracking-tight">
-              {formatCurrency(derivedStats.fuelSpend)}
-            </span>
-          </div>
-          <div className="mt-2.5 flex items-center gap-1.5">
-            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-800 border border-indigo-200/70">
-              {derivedStats.costPerKm > 0 ? `₹${derivedStats.costPerKm.toFixed(2)} / km` : 'Ref @ ₹95/L'}
-            </span>
-          </div>
-        </div>
-
-        {/* KPI 3: Distance Covered */}
-        <div className="rounded-2xl border-t-4 border-t-sky-500 border-x border-b border-slate-200/80 bg-white p-4.5 shadow-xs transition-all duration-200 hover:shadow-md hover:border-slate-300">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-sky-800">
-              Distance Covered
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-700 border border-sky-100 shadow-2xs">
-              <Gauge className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-2.5 flex items-baseline gap-1.5">
-            <span className="text-2xl font-black tabular-nums text-slate-900 tracking-tight">
-              {formatKm(data.kpis.demoDriveKm)}
-            </span>
-            <span className="text-xs font-bold text-sky-700">km</span>
-          </div>
-          <div className="mt-2.5 flex items-center gap-1.5">
-            <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 border border-sky-200/70">
-              {formatCount(data.kpis.demoDrives)} demo {plural(data.kpis.demoDrives, 'drive', 'drives')}
-            </span>
-          </div>
-        </div>
-
-        {/* KPI 4: Average Mileage */}
-        <div className="rounded-2xl border-t-4 border-t-emerald-500 border-x border-b border-slate-200/80 bg-white p-4.5 shadow-xs transition-all duration-200 hover:shadow-md hover:border-slate-300">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
-                Avg Mileage
-              </span>
-              <button
-                type="button"
-                onClick={onOpenMethodology}
-                className="text-emerald-600 hover:text-emerald-800 transition-colors"
-                title="How mileage is calculated"
-              >
-                <HelpCircle className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-2xs">
-              <Gauge className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-2.5 flex items-baseline gap-1.5">
-            <span className="text-2xl font-black tabular-nums text-slate-900 tracking-tight">
-              {derivedStats.fleetAvgMileage !== null ? formatKm(derivedStats.fleetAvgMileage) : '—'}
-            </span>
-            <span className="text-xs font-bold text-emerald-700">km/L</span>
-          </div>
-          <div className="mt-2.5 flex items-center gap-1.5">
-            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 border border-emerald-200/70">
-              {derivedStats.fleetAvgMileage !== null ? 'Full-tank verified' : 'Awaiting 2nd fills'}
-            </span>
-          </div>
-        </div>
-
-        {/* KPI 5: Needs Attention */}
-        <div
-          onClick={onOpenExceptions}
-          className={cn(
-            'rounded-2xl border-t-4 border-x border-b p-4.5 shadow-xs transition-all duration-200 cursor-pointer hover:shadow-md',
-            derivedStats.attentionCount > 0
-              ? 'border-t-amber-500 border-slate-200/80 bg-white'
-              : 'border-t-slate-400 border-slate-200/80 bg-white hover:border-slate-300',
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className={cn('text-[11px] font-bold uppercase tracking-wider', derivedStats.attentionCount > 0 ? 'text-amber-800' : 'text-slate-600')}>
-              Needs Action
-            </span>
-            <div
-              className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-xl shadow-2xs',
-                derivedStats.attentionCount > 0
-                  ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                  : 'bg-slate-50 text-slate-500 border border-slate-200',
-              )}
-            >
-              <TriangleAlert className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-2.5 flex items-baseline gap-1.5">
-            <span className={cn('text-2xl font-black tabular-nums tracking-tight', derivedStats.attentionCount > 0 ? 'text-amber-950' : 'text-slate-900')}>
-              {derivedStats.attentionCount}
-            </span>
-            <span className={cn('text-xs font-bold', derivedStats.attentionCount > 0 ? 'text-amber-800' : 'text-slate-500')}>issues</span>
-          </div>
-          <div className="mt-2.5 flex items-center gap-1.5">
-            <span
-              className={cn(
-                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold border',
-                derivedStats.attentionCount > 0
-                  ? 'bg-amber-50 text-amber-900 border-amber-200'
-                  : 'bg-slate-50 text-slate-600 border-slate-200/60',
-              )}
-            >
-              {derivedStats.attentionCount > 0 ? (
-                <>
-                  <span>Review issues</span>
-                  <ArrowRight className="h-3 w-3" />
-                </>
-              ) : (
-                'All records clear'
-              )}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. MULTI-FUEL & ENERGY INTELLIGENCE (PETROL vs DIESEL vs CNG vs EV) */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs">
-              <Fuel className="h-4 w-4" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <span>Fuel & Energy Intelligence</span>
-                <Badge variant="outline" className="text-[10px] font-bold bg-amber-50 text-amber-900 border-amber-200">
-                  Petrol vs. Diesel vs. EV
-                </Badge>
-              </h2>
-              <p className="text-xs text-slate-500">Multi-energy volume, fill metrics, purpose matrix, and branch split</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500">Total Monitored:</span>
-            <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-              {formatLitres(data.kpis.approvedLitres)} L
-            </span>
-          </div>
-        </div>
-
-        {/* Petrol vs Diesel vs Others Comparison Cards */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Petrol Card */}
-          {(() => {
-            const petrol = data.byEnergyType?.find((e) => e.energyType === 'PETROL')
-            const totalL = petrol?.totalLitres || 0
-            const pct = petrol?.percentage || 0
-            return (
-              <div className="rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50/60 to-amber-50/20 p-3.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-amber-500" /> Petrol
-                  </span>
-                  <span className="rounded-md bg-amber-100/80 px-2 py-0.5 text-[11px] font-black text-amber-950 border border-amber-200">
-                    {pct.toFixed(1)}% Share
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline gap-1.5">
-                  <span className="text-xl font-black text-slate-900 tabular-nums">
-                    {formatLitres(totalL)}
-                  </span>
-                  <span className="text-xs font-bold text-amber-800">Litres</span>
-                </div>
-                <div className="mt-2.5 grid grid-cols-2 gap-1.5 pt-2 border-t border-amber-200/50 text-[11px]">
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Vouchers</span>
-                    <span className="font-bold text-slate-800">{petrol?.totalRequests || 0} reqs</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Avg Fill</span>
-                    <span className="font-bold text-slate-800">{petrol?.avgFillSize || 0} L/fill</span>
-                  </div>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Diesel Card */}
-          {(() => {
-            const diesel = data.byEnergyType?.find((e) => e.energyType === 'DIESEL')
-            const totalL = diesel?.totalLitres || 0
-            const pct = diesel?.percentage || 0
-            return (
-              <div className="rounded-xl border border-blue-200/80 bg-gradient-to-br from-blue-50/60 to-blue-50/20 p-3.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-800 flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-blue-600" /> Diesel
-                  </span>
-                  <span className="rounded-md bg-blue-100/80 px-2 py-0.5 text-[11px] font-black text-blue-900 border border-blue-200">
-                    {pct.toFixed(1)}% Share
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline gap-1.5">
-                  <span className="text-xl font-black text-slate-900 tabular-nums">
-                    {formatLitres(totalL)}
-                  </span>
-                  <span className="text-xs font-bold text-blue-700">Litres</span>
-                </div>
-                <div className="mt-2.5 grid grid-cols-2 gap-1.5 pt-2 border-t border-blue-200/50 text-[11px]">
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Vouchers</span>
-                    <span className="font-bold text-slate-800">{diesel?.totalRequests || 0} reqs</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Avg Fill</span>
-                    <span className="font-bold text-slate-800">{diesel?.avgFillSize || 0} L/fill</span>
-                  </div>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* CNG & EV Status */}
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-3.5 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" /> CNG & EV
-              </span>
-              <span className="rounded-md bg-slate-200/60 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                Eco Fuels
-              </span>
-            </div>
-            <div className="mt-2 flex items-baseline gap-1.5">
-              <span className="text-xl font-black text-slate-900 tabular-nums">
-                0
-              </span>
-              <span className="text-xs font-bold text-slate-500">kg / kWh</span>
-            </div>
-            <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[11px] text-slate-500 flex items-center justify-between">
-              <span>Ready for EV / Hybrids</span>
-              <span className="font-semibold text-slate-700">0 requests</span>
-            </div>
-          </div>
-
-          {/* Genset / Stationary Diesel Card */}
-          {(() => {
-            const gensetRow = data.purposeEnergyMatrix?.find((m) => m.purpose === 'GENSET')
-            const gensetL = gensetRow?.totalLitres || 0
-            return (
-              <div className="rounded-xl border border-slate-300/80 bg-gradient-to-br from-slate-100/80 to-slate-50/30 p-3.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-slate-600" /> Genset Generator
-                  </span>
-                  <span className="rounded-md bg-slate-200/80 px-2 py-0.5 text-[10px] font-bold text-slate-800 border border-slate-300">
-                    Stationary Diesel
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline gap-1.5">
-                  <span className="text-xl font-black text-slate-900 tabular-nums">
-                    {formatLitres(gensetL)}
-                  </span>
-                  <span className="text-xs font-bold text-slate-700">Litres</span>
-                </div>
-                <div className="mt-2.5 pt-2 border-t border-slate-200/80 text-[11px] text-slate-600 flex items-center justify-between">
-                  <span>Showroom Backup Power</span>
-                  <span className="font-bold text-slate-800">{gensetRow?.requestsCount || 0} fill</span>
-                </div>
-              </div>
-            )
-          })()}
-        </div>
-
-        {/* Proportional Fuel Mix Visual Progress Bar */}
-        {(() => {
-          const petrol = data.byEnergyType?.find((e) => e.energyType === 'PETROL')
-          const diesel = data.byEnergyType?.find((e) => e.energyType === 'DIESEL')
-          const petrolPct = petrol?.percentage || 0
-          const dieselPct = diesel?.percentage || 0
-          return (
-            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-700 flex items-center gap-2">
-                  <span>Fleet Fuel Mix Ratio</span>
-                  <span className="font-normal text-slate-500">(Overall Period Volume)</span>
-                </span>
-                <div className="flex items-center gap-3 text-[11px]">
-                  <span className="flex items-center gap-1.5 font-bold text-amber-900">
-                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                    Petrol: {petrolPct.toFixed(1)}% ({formatLitres(petrol?.totalLitres || 0)} L)
-                  </span>
-                  <span className="flex items-center gap-1.5 font-bold text-blue-900">
-                    <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
-                    Diesel: {dieselPct.toFixed(1)}% ({formatLitres(diesel?.totalLitres || 0)} L)
-                  </span>
-                </div>
-              </div>
-              <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200/80 flex">
-                <div
-                  className="h-full bg-amber-500 transition-all duration-300"
-                  style={{ width: `${petrolPct}%` }}
-                  title={`Petrol: ${petrolPct.toFixed(1)}%`}
-                />
-                <div
-                  className="h-full bg-blue-600 transition-all duration-300"
-                  style={{ width: `${dieselPct}%` }}
-                  title={`Diesel: ${dieselPct.toFixed(1)}%`}
-                />
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* Purpose vs Multi-Fuel Matrix Table */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs overflow-hidden">
-          <div className="bg-slate-50/70 px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-              <Layers className="h-3.5 w-3.5 text-slate-500" />
-              Operational Purpose vs. Fuel Type Breakdown Matrix
-            </span>
-            <span className="text-[11px] text-slate-500 font-medium">Cross-tabulated volume analysis</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs fuel-clean-table">
-              <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                <tr>
-                  <th className="py-3 pl-4 pr-3">Purpose / Allocation</th>
-                  <th className="py-3 px-3 text-right text-amber-900">Petrol (L)</th>
-                  <th className="py-3 px-3 text-right text-blue-800">Diesel (L)</th>
-                  <th className="py-3 px-3 text-right text-slate-900">Total Volume</th>
-                  <th className="py-3 px-3 text-right text-slate-600">% Share</th>
-                  <th className="py-3 pl-3 pr-4 text-right text-slate-600">Requests</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {(data.purposeEnergyMatrix || []).map((row) => {
-                  const grandTotal = data.kpis.approvedLitres || 1
-                  const sharePct = (row.totalLitres / grandTotal) * 100
-                  return (
-                    <tr key={row.purpose} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 pl-4 pr-3 font-semibold text-slate-900 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span className="h-2 w-2 rounded-full bg-teal-600 shrink-0" />
-                          <span>{row.purposeLabel}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-amber-700">
-                        {row.petrolLitres > 0 ? `${formatLitres(row.petrolLitres)} L` : '—'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-blue-700">
-                        {row.dieselLitres > 0 ? `${formatLitres(row.dieselLitres)} L` : '—'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono font-black text-slate-900">
-                        {formatLitres(row.totalLitres)} L
-                      </td>
-                      <td className="py-3 px-3 text-right text-slate-600 font-semibold">
-                        {sharePct.toFixed(1)}%
-                      </td>
-                      <td className="py-3 pl-3 pr-4 text-right font-mono text-slate-700">
-                        {row.requestsCount}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Branch-wise Multi-Fuel Split (Jammu vs Udhampur) */}
-        {data.byBranchEnergy && data.byBranchEnergy.length > 0 && (
-          <div className="grid gap-3 sm:grid-cols-2 pt-1">
-            {data.byBranchEnergy.map((b) => (
-              <div key={b.branch} className="rounded-xl border border-slate-200/80 bg-slate-50/40 p-3.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <Building2 className="h-3.5 w-3.5 text-slate-500" />
-                    {b.branchLabel} Fuel Profile
-                  </span>
-                  <span className="font-mono text-xs font-black text-slate-900">
-                    {formatLitres(b.totalLitres)} L Total
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                  <div className="rounded-lg bg-amber-50/60 border border-amber-200/60 p-2">
-                    <span className="text-slate-400 text-[10px] uppercase font-bold block">Petrol Volume</span>
-                    <span className="font-bold text-amber-900">{formatLitres(b.petrolLitres)} L</span>
-                  </div>
-                  <div className="rounded-lg bg-blue-50/60 border border-blue-200/60 p-2">
-                    <span className="text-slate-400 text-[10px] uppercase font-bold block">Diesel Volume</span>
-                    <span className="font-bold text-blue-900">{formatLitres(b.dieselLitres)} L</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 2. ATTENTION REQUIRED COMPACT TABLE */}
-      {topChecks.length > 0 && (
-        <div className="rounded-2xl border border-amber-200/80 bg-amber-50/40 p-4 shadow-xs">
-          <div className="flex items-center justify-between border-b border-amber-200/60 pb-2.5">
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-100 text-amber-800 border border-amber-200/80 shadow-2xs">
-                <TriangleAlert className="h-3.5 w-3.5" />
-              </div>
-              <h2 className="text-xs font-extrabold uppercase tracking-wider text-amber-950">
-                Attention Required ({data.checks.length})
-              </h2>
-            </div>
-            <button
-              type="button"
-              onClick={onOpenExceptions}
-              className="text-xs font-bold text-amber-900 hover:text-amber-950 flex items-center gap-1 transition-colors"
-            >
-              <span>View all issues</span>
-              <ArrowRight className="h-3 w-3" />
-            </button>
-          </div>
-
-          <div className="mt-2.5 divide-y divide-amber-200/40">
-            {topChecks.map((chk, idx) => (
-              <div key={idx} className="flex flex-wrap items-center justify-between gap-3 py-2 text-xs">
-                <div className="flex items-center gap-3">
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'rounded-md text-[10px] font-semibold px-2 py-0.5',
-                      chk.severity === 'warning'
-                        ? 'border-amber-300 bg-amber-100 text-amber-950'
-                        : 'border-slate-200 bg-slate-100 text-slate-700',
-                    )}
-                  >
-                    {chk.severity === 'warning' ? 'Issue' : 'Note'}
-                  </Badge>
-                  <span className="font-semibold text-slate-900">{CHECK_TITLE[chk.kind] || chk.kind}</span>
-                  <span className="text-slate-600">{chk.message}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] font-medium text-slate-600 bg-white border border-amber-200/60 px-2 py-0.5 rounded-md whitespace-nowrap">
-                    {chk.requestNumber}
-                  </span>
-                  {chk.vin && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onSelectVehicle(chk.vin!)}
-                      className="h-7 rounded-lg text-[11px] font-semibold border-amber-200 bg-white hover:bg-amber-50 text-amber-900"
-                    >
-                      View Vehicle
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 3. COMPACT TREND & ANALYTICAL AREA */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">Fuel & Efficiency Summary</h2>
-            <p className="text-xs text-slate-500">Period performance metrics across fleet</p>
-          </div>
-          <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
-            {[
-              { id: 'fuel' as const, label: 'Fuel (L)' },
-              { id: 'spend' as const, label: 'Cost (₹)' },
-              { id: 'distance' as const, label: 'Distance (km)' },
-              { id: 'mileage' as const, label: 'Avg Mileage' },
-            ].map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTrendMetric(t.id)}
-                className={cn(
-                  'rounded-lg px-3 py-1 text-xs font-semibold transition-all',
-                  trendMetric === t.id
-                    ? 'bg-white text-slate-900 font-bold shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900',
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-teal-200/70 bg-teal-50/40 p-3.5 shadow-2xs">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-teal-800">Approved Volume</span>
-            <p className="mt-1 text-lg font-black text-slate-900">{formatLitres(data.kpis.approvedLitres)} L</p>
-            <p className="mt-0.5 text-[11px] text-teal-700 font-medium">Across {data.kpis.approvedRequests} approved vouchers</p>
-          </div>
-          <div className="rounded-xl border border-amber-200/70 bg-amber-50/40 p-3.5 shadow-2xs">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Awaiting Decision</span>
-            <p className="mt-1 text-lg font-black text-amber-900">{data.kpis.awaiting.total} requests</p>
-            <p className="mt-0.5 text-[11px] text-amber-700 font-medium">Pending CEO / Accounts</p>
-          </div>
-          <div className="rounded-xl border border-sky-200/70 bg-sky-50/40 p-3.5 shadow-2xs">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-sky-800">GPS Verified Trip Share</span>
-            <p className="mt-1 text-lg font-black text-slate-900">
-              {data.kpis.demoDriveKm > 0
-                ? `${((data.kpis.gpsVerifiedKm / data.kpis.demoDriveKm) * 100).toFixed(0)}%`
-                : '0%'}
-            </p>
-            <p className="mt-0.5 text-[11px] text-sky-700 font-medium">{formatKm(data.kpis.gpsVerifiedKm)} km tracked</p>
-          </div>
-          <div className="rounded-xl border border-purple-200/70 bg-purple-50/40 p-3.5 shadow-2xs">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-800">Demo Fleet Monitored</span>
-            <p className="mt-1 text-lg font-black text-slate-900">{data.demoCars.length} cars</p>
-            <p className="mt-0.5 text-[11px] text-purple-700 font-medium">With active drives or fills</p>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. TWO-COLUMN SPLIT: WHERE FUEL IS GOING vs VEHICLE EFFICIENCY PREVIEW */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Where Fuel Is Going */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Where Fuel Is Going</h2>
-              <p className="text-xs text-slate-500">Volume distribution by operational purpose</p>
-            </div>
-            <span className="inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-800">
-              Total: {formatLitres(data.kpis.approvedLitres)} L
-            </span>
-          </div>
-
-          <div className="mt-4 space-y-3.5">
-            {data.byPurpose.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-500">No fuel records in this period.</p>
-            ) : (
-              data.byPurpose.map((p) => {
-                const pct =
-                  data.kpis.approvedLitres > 0 ? (p.approvedLitres / data.kpis.approvedLitres) * 100 : 0
-                const conf = getPurposeConfig(p.purpose)
-                return (
-                  <div key={p.purpose} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className={cn('h-2.5 w-2.5 rounded-full', conf.dot)} />
-                        <span className="font-bold text-slate-800">{p.label}</span>
-                      </div>
-                      <span className="tabular-nums text-slate-600">
-                        <strong className="font-bold text-slate-900">{formatLitres(p.approvedLitres)} L</strong>{' '}
-                        · <span className="font-semibold text-slate-700">{pct.toFixed(0)}%</span>
-                      </span>
-                    </div>
-                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 p-0.5">
-                      <div
-                        className={cn('h-full rounded-full transition-all duration-300 shadow-2xs', conf.bar)}
-                        style={{ width: `${Math.max(4, pct)}%` }}
-                      />
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Vehicle Efficiency Highlights */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Vehicle Efficiency</h2>
-              <p className="text-xs text-slate-500">Demo fleet consumption & mileage status</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onSelectVehicle(data.demoCars[0]?.vin || '')}
-              className="text-xs font-bold text-[var(--dashboard-primary)] hover:opacity-80 transition-opacity"
-            >
-              Fleet details →
-            </button>
-          </div>
-
-          <div className="mt-3 divide-y divide-slate-100">
-            {topDemoCars.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-500">No active demo cars in this period.</p>
-            ) : (
-              topDemoCars.map((car) => (
-                <div
-                  key={car.vin}
-                  onClick={() => onSelectVehicle(car.vin)}
-                  className="group flex cursor-pointer items-center justify-between py-2.5 text-xs transition-colors hover:bg-slate-50/80 -mx-2 px-2.5 rounded-xl border border-transparent hover:border-slate-200"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-700 group-hover:bg-purple-100 transition-colors shadow-2xs border border-purple-100">
-                      <Car className="h-4.5 w-4.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-bold text-slate-900 truncate">{car.registrationNumber || 'Trade Plate'}</p>
-                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                        <span className="font-semibold text-slate-700">{car.model || 'Demo Car'}</span>
-                        <span>·</span>
-                        <BranchBadge branch={car.branchLabel} />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <MileageBadge value={car.kmPerLitre?.value} />
-                    <p className="text-[10px] font-semibold text-slate-500 mt-1">{formatLitres(car.approvedLitres)} L used</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 5. RECENT FUEL ACTIVITY (ALIGNED RESPONSIVE TABLE) */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">Recent Fuel Activity</h2>
-            <p className="text-xs text-slate-500">Latest transactions and approval requests</p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onOpenRequests}
-            className="h-8 gap-1.5 rounded-xl text-xs font-semibold"
-          >
-            <span>View all fuel requests</span>
-            <ArrowRight className="h-3 w-3" />
-          </Button>
-        </div>
-
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-left text-xs fuel-clean-table">
-            <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-              <tr>
-                <th className="py-3 px-3">Request #</th>
-                <th className="py-3 px-3">Date</th>
-                <th className="py-3 px-3">Purpose</th>
-                <th className="py-3 px-3">Vehicle / Description</th>
-                <th className="py-3 px-3">Branch</th>
-                <th className="py-3 px-3 text-right">Volume</th>
-                <th className="py-3 px-3 text-center">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {recentActivity.map((req) => (
-                <tr key={req.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-3 px-3 whitespace-nowrap">
-                    <span className="inline-block font-mono text-[11px] font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200/80 shadow-2xs">
-                      {req.requestNumber}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap text-slate-600 font-medium">
-                    {formatYmd(req.date, false)}
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap">
-                    <PurposeBadge purpose={req.purpose} label={req.purposeLabel} />
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap font-bold text-slate-900">
-                    {req.vehicleLabel}
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap">
-                    <BranchBadge branch={req.branchLabel} />
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap text-right font-black tabular-nums text-slate-900">
-                    {formatLitres(req.litres)} L
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap text-center">
-                    <StatusBadge status={req.status} label={req.statusLabel} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* =================================================================================================
- * TAB 2: FUEL REQUESTS TAB (OPERATIONAL WORKFLOW)
- * =============================================================================================== */
-
-function FuelRequestsTab({
-  data,
-  allRequests,
-  onViewDetails,
-}: {
-  data: FuelManagementResponse
-  allRequests: any[]
-  onViewDetails: (req: any) => void
-}) {
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
-  const [purposeFilter, setPurposeFilter] = useState<string>('all')
-  const [searchQuery, setSearchQuery] = useState('')
-
-  const filteredRequests = useMemo(() => {
-    return allRequests.filter((req) => {
-      // Status filter
-      if (statusFilter === 'pending' && req.status === 'approved') return false
-      if (statusFilter === 'approved' && req.status !== 'approved') return false
-      if (statusFilter === 'rejected' && req.status !== 'rejected') return false
-
-      // Purpose filter
-      if (purposeFilter !== 'all' && req.purpose !== purposeFilter) return false
-
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
-        const match =
-          req.requestNumber.toLowerCase().includes(q) ||
-          req.vehicleLabel.toLowerCase().includes(q) ||
-          req.purposeLabel.toLowerCase().includes(q) ||
-          req.branchLabel.toLowerCase().includes(q)
-        if (!match) return false
-      }
-
-      return true
-    })
-  }, [allRequests, statusFilter, purposeFilter, searchQuery])
-
-  const pendingCount = allRequests.filter((r) => r.status !== 'approved' && r.status !== 'rejected').length
-
-  return (
-    <div className="space-y-4">
-      {/* Workflow Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-sm font-bold text-slate-900">Fuel Requests Ledger</h2>
-            {pendingCount > 0 ? (
-              <Badge className="bg-amber-500 text-white hover:bg-amber-600 text-xs font-bold px-2.5 py-0.5 shadow-2xs">
-                {pendingCount} Awaiting Approval
-              </Badge>
-            ) : (
-              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs font-bold px-2.5 py-0.5">
-                All Cleared
-              </Badge>
-            )}
-          </div>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Manage, audit and process fuel requisition vouchers across all departments
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <a
-            href="/fuel-approvals"
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-[var(--dashboard-primary)] px-3 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition-opacity"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            <span>Open Approvals Desk</span>
-          </a>
-        </div>
-      </div>
-
-      {/* Filter Toolbar */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/90 bg-white p-3 shadow-xs sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Status Tabs */}
-          <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
-            {[
-              { id: 'all' as const, label: 'All Requests' },
-              { id: 'pending' as const, label: `Pending (${pendingCount})` },
-              { id: 'approved' as const, label: 'Approved' },
-              { id: 'rejected' as const, label: 'Rejected' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setStatusFilter(tab.id)}
-                className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
-                  statusFilter === tab.id
-                    ? 'bg-white text-[var(--dashboard-primary)] font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900',
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Purpose Filter */}
-          <select
-            value={purposeFilter}
-            onChange={(e) => setPurposeFilter(e.target.value)}
-            className="h-8 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--dashboard-primary)]"
-          >
-            <option value="all">All Purposes</option>
-            {data.byPurpose.map((p) => (
-              <option key={p.purpose} value={p.purpose}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Search */}
-        <div className="relative w-full sm:w-64">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <Input
-            type="text"
-            placeholder="Search request #, vehicle, branch…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 rounded-xl border-slate-200 pl-8 text-xs"
-          />
-        </div>
-      </div>
-
-      {/* Requests Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs fuel-clean-table">
-            <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-              <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Request #</th>
-                <th className="px-4 py-3">Purpose</th>
-                <th className="px-4 py-3">Vehicle / Asset</th>
-                <th className="px-4 py-3">Branch</th>
-                <th className="px-4 py-3 text-center">Fuel Type</th>
-                <th className="px-4 py-3 text-right">Quantity</th>
-                <th className="px-4 py-3 text-right">Odometer</th>
-                <th className="px-4 py-3 text-center">Status</th>
-                <th className="px-4 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredRequests.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="py-8 text-center text-slate-500">
-                    No requests found matching your filters.
-                  </td>
-                </tr>
-              ) : (
-                filteredRequests.map((req) => (
-                  <tr key={req.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600 font-medium">{formatYmd(req.date)}</td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <span className="font-mono text-[11px] font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200/60 shadow-2xs">
-                        {req.requestNumber}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <PurposeBadge purpose={req.purpose} label={req.purposeLabel} />
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-slate-900 max-w-[200px] truncate">
-                      {req.vehicleLabel}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <BranchBadge branch={req.branchLabel} />
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-center">
-                      <EnergyTypeBadge energyType={req.energyType} />
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-black tabular-nums text-teal-700">
-                      {formatLitres(req.litres)} L
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-600 font-medium">
-                      {req.odometerKm !== undefined && req.odometerKm !== null ? `${formatKm(req.odometerKm)} km` : '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-center">
-                      <StatusBadge status={req.status} label={req.statusLabel} />
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => onViewDetails(req)}
-                        className="h-7 rounded-lg px-2 text-xs font-semibold text-[var(--dashboard-primary)] hover:opacity-80"
-                      >
-                        <Eye className="h-3.5 w-3.5 mr-1" />
-                        Details
-                      </Button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* =================================================================================================
- * TAB 3: VEHICLE MILEAGE TAB (FLEET EFFICIENCY ENGINE)
- * =============================================================================================== */
-
-function VehicleMileageTab({
-  data,
-  derivedStats,
-  onSelectVehicle,
-  onOpenMethodology,
-}: {
-  data: FuelManagementResponse
-  derivedStats: { fleetAvgMileage: number | null }
-  onSelectVehicle: (vin: string) => void
-  onOpenMethodology: () => void
-}) {
-  const [searchQuery, setSearchQuery] = useState('')
-
-  const filteredCars = useMemo(() => {
-    return data.demoCars.filter((car) => {
-      if (!searchQuery.trim()) return true
-      const q = searchQuery.toLowerCase()
-      return (
-        car.vin.toLowerCase().includes(q) ||
-        (car.registrationNumber || '').toLowerCase().includes(q) ||
-        (car.model || '').toLowerCase().includes(q) ||
-        car.branchLabel.toLowerCase().includes(q)
-      )
-    })
-  }, [data.demoCars, searchQuery])
-
-  return (
-    <div className="space-y-4">
-      {/* Fleet Efficiency Banner with Clean Modern Card */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-50 text-teal-700 border border-teal-200/60">
-                <Gauge className="h-4 w-4" />
-              </div>
-              <h2 className="text-sm font-bold text-slate-900 tracking-tight">Fleet Mileage Intelligence</h2>
-              <button
-                type="button"
-                onClick={onOpenMethodology}
-                className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900 border border-slate-200/60 transition-colors"
-              >
-                <Info className="h-3 w-3 text-slate-500" />
-                <span>Methodology</span>
-              </button>
-            </div>
-            <p className="text-xs text-slate-500">
-              Verified odometer-based efficiency across {data.demoCars.length} demo fleet vehicles
-            </p>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-2 text-right shadow-2xs">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Fleet Average</span>
-              <div className="flex items-baseline justify-end gap-1.5">
-                <span className="text-2xl font-black text-emerald-700 tracking-tight">
-                  {derivedStats.fleetAvgMileage !== null ? formatKm(derivedStats.fleetAvgMileage) : '—'}
-                </span>
-                <span className="text-xs font-semibold text-slate-500">km/L</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Search Toolbar */}
-      <div className="flex justify-between items-center rounded-2xl border border-slate-200/90 bg-white p-3 shadow-xs">
-        <p className="text-xs font-semibold text-slate-800">Demo Vehicles ({filteredCars.length})</p>
-        <div className="relative w-72">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <Input
-            type="text"
-            placeholder="Search vehicle plate, model, VIN…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 rounded-xl border-slate-200 pl-8 text-xs font-medium"
-          />
-        </div>
-      </div>
-
-      {/* Vehicle Efficiency Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs fuel-clean-table">
-            <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-              <tr>
-                <th className="px-4 py-3">Vehicle</th>
-                <th className="px-4 py-3">Model & Branch</th>
-                <th className="px-4 py-3 text-right">Last Odometer</th>
-                <th className="px-4 py-3 text-right">Drive Distance</th>
-                <th className="px-4 py-3 text-right">Fuel Added</th>
-                <th className="px-4 py-3 text-left">Mileage Status</th>
-                <th className="px-4 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredCars.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-500">
-                    No demo vehicles found.
-                  </td>
-                </tr>
-              ) : (
-                filteredCars.map((car) => {
-                  return (
-                    <tr
-                      key={car.vin}
-                      onClick={() => onSelectVehicle(car.vin)}
-                      className="cursor-pointer hover:bg-slate-50/60 transition-colors"
-                    >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 shadow-2xs">
-                            <Car className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <span className="font-semibold text-slate-900 block">{car.registrationNumber || 'Trade Plate'}</span>
-                            <span className="font-mono text-[10px] text-slate-400">{vinTail(car.vin)}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-semibold text-slate-900 block">{car.model || 'Demo Car'}</span>
-                        <BranchBadge branch={car.branchLabel} />
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-slate-800 font-medium">
-                        {car.lastOdometerKm !== undefined && car.lastOdometerKm !== null
-                          ? `${formatKm(car.lastOdometerKm)} km`
-                          : car.lastFillOdometerKm !== null
-                          ? `${formatKm(car.lastFillOdometerKm)} km`
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-slate-800 font-medium">
-                        {formatKm(car.driveKm)} km
-                        <span className="block text-[10px] text-slate-400">{car.drives.length} drives</span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold tabular-nums text-slate-900">
-                        {formatLitres(car.approvedLitres)} L
-                      </td>
-                      <td className="px-4 py-3">
-                        <MileageBadge value={car.kmPerLitre?.value} />
-                        {!car.kmPerLitre && (
-                          <span className="block text-[10px] text-slate-400 mt-0.5">
-                            {car.kmPerLitreNote?.includes('backwards')
-                              ? 'Odometer discrepancy'
-                              : 'Requires another fuel fill with odometer'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onSelectVehicle(car.vin)
-                          }}
-                          className="h-7 rounded-lg text-xs font-medium"
-                        >
-                          Profile
-                        </Button>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* =================================================================================================
- * TAB 4: FUEL CONSUMPTION TAB (USAGE DEEP-DIVE)
- * =============================================================================================== */
-
-function FuelConsumptionTab({
-  data,
-  derivedStats,
-}: {
-  data: FuelManagementResponse
-  derivedStats: { fuelSpend: number }
-}) {
-  return (
-    <div className="space-y-4">
-      {/* Fuel Type Intelligence Cards */}
-      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Petrol */}
-        {(() => {
-          const petrol = data.byEnergyType?.find((e) => e.energyType === 'PETROL')
-          const totalL = petrol?.totalLitres || 0
-          const pct = petrol?.percentage || 0
-          const spend = totalL * ESTIMATED_FUEL_PRICE_INR
-          return (
-            <div className="rounded-2xl border border-amber-200/90 bg-white p-4 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" /> Petrol Ledger
-                </span>
-                <span className="rounded-md bg-amber-100/80 px-2 py-0.5 text-[11px] font-black text-amber-950 border border-amber-200">
-                  {pct.toFixed(1)}% Mix
-                </span>
-              </div>
-              <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
-                {formatLitres(totalL)} <span className="text-xs font-semibold text-slate-500">L</span>
-              </p>
-              <p className="text-xs font-bold text-amber-800">{formatCurrency(spend)} est.</p>
-              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px] text-slate-500">
-                <span>{petrol?.totalRequests || 0} vouchers</span>
-                <span className="font-semibold text-slate-700">{petrol?.avgFillSize || 0} L / fill</span>
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* Diesel */}
-        {(() => {
-          const diesel = data.byEnergyType?.find((e) => e.energyType === 'DIESEL')
-          const totalL = diesel?.totalLitres || 0
-          const pct = diesel?.percentage || 0
-          const spend = totalL * ESTIMATED_FUEL_PRICE_INR
-          return (
-            <div className="rounded-2xl border border-blue-200/90 bg-white p-4 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-800 flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-blue-600" /> Diesel Ledger
-                </span>
-                <span className="rounded-md bg-blue-100/80 px-2 py-0.5 text-[11px] font-black text-blue-900 border border-blue-200">
-                  {pct.toFixed(1)}% Mix
-                </span>
-              </div>
-              <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
-                {formatLitres(totalL)} <span className="text-xs font-semibold text-slate-500">L</span>
-              </p>
-              <p className="text-xs font-bold text-blue-700">{formatCurrency(spend)} est.</p>
-              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px] text-slate-500">
-                <span>{diesel?.totalRequests || 0} vouchers</span>
-                <span className="font-semibold text-slate-700">{diesel?.avgFillSize || 0} L / fill</span>
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* Stationary Genset Diesel */}
-        {(() => {
-          const gensetRow = data.purposeEnergyMatrix?.find((m) => m.purpose === 'GENSET')
-          const gensetL = gensetRow?.totalLitres || 0
-          const spend = gensetL * ESTIMATED_FUEL_PRICE_INR
-          return (
-            <div className="rounded-2xl border border-slate-300/80 bg-slate-50/50 p-4 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-slate-600" /> Genset Generator
-                </span>
-                <span className="rounded-md bg-slate-200/80 px-2 py-0.5 text-[10px] font-bold text-slate-700 border border-slate-300">
-                  Stationary
-                </span>
-              </div>
-              <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
-                {formatLitres(gensetL)} <span className="text-xs font-semibold text-slate-500">L</span>
-              </p>
-              <p className="text-xs font-bold text-slate-700">{formatCurrency(spend)} est.</p>
-              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px] text-slate-500">
-                <span>Showroom Backup</span>
-                <span className="font-semibold text-slate-700">{gensetRow?.requestsCount || 0} fills</span>
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* Alternative Eco Fuels */}
-        <div className="rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-violet-500" /> CNG & EV
-            </span>
-            <span className="rounded-md bg-slate-200/60 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-              Clean Energy
-            </span>
-          </div>
-          <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
-            0 <span className="text-xs font-semibold text-slate-500">kg / kWh</span>
-          </p>
-          <p className="text-xs font-medium text-slate-500">Future-ready analytics</p>
-          <div className="mt-3 flex items-center justify-between border-t border-slate-200/60 pt-2 text-[11px] text-slate-500">
-            <span>EV / Hybrid Fleet</span>
-            <span className="font-semibold text-slate-700">0 vouchers</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Purpose Allocation Matrix and Branch Split */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {/* Purpose Allocation Card */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Purpose Allocation Ledger</h2>
-              <p className="text-xs text-slate-500">Breakdown of litres and estimated cost across operational workflows</p>
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-xs fuel-clean-table">
-              <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                <tr>
-                  <th className="py-3 px-3">Purpose</th>
-                  <th className="py-3 px-3 text-right">Approved Fills</th>
-                  <th className="py-3 px-3 text-right">Litres</th>
-                  <th className="py-3 px-3 text-right">Share</th>
-                  <th className="py-3 px-3 text-right">Estimated Cost</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.byPurpose.map((p) => {
-                  const pct =
-                    data.kpis.approvedLitres > 0 ? (p.approvedLitres / data.kpis.approvedLitres) * 100 : 0
-                  const cost = p.approvedLitres * ESTIMATED_FUEL_PRICE_INR
-                  return (
-                    <tr key={p.purpose} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-3">
-                        <PurposeBadge purpose={p.purpose} label={p.label} />
-                      </td>
-                      <td className="py-3 px-3 text-right tabular-nums text-slate-600 font-medium">{p.approvedRequests}</td>
-                      <td className="py-3 px-3 text-right font-bold tabular-nums text-slate-900">
-                        {formatLitres(p.approvedLitres)} L
-                      </td>
-                      <td className="py-3 px-3 text-right tabular-nums text-slate-700 font-semibold">{pct.toFixed(1)}%</td>
-                      <td className="py-3 px-3 text-right font-bold tabular-nums text-slate-900">
-                        {formatCurrency(cost)}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Branch Multi-Fuel Distribution Card */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
-          <h2 className="text-sm font-bold text-slate-900">Branch Multi-Fuel Split</h2>
-          <p className="text-xs text-slate-500">Distribution across active dealerships</p>
-
-          <div className="mt-4 space-y-3">
-            {data.byBranchEnergy?.map((b) => (
-              <div key={b.branch} className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-900">{b.branchLabel}</span>
-                  <BranchBadge branch={b.branch} />
-                </div>
-                <p className="mt-1.5 text-xl font-bold text-slate-900">
-                  {formatLitres(b.totalLitres)} <span className="text-xs font-normal text-slate-500">L</span>
-                </p>
-                <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-200/60 pt-2 text-[11px]">
-                  <div>
-                    <span className="text-amber-800 font-semibold flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-amber-500" /> Petrol: {formatLitres(b.petrolLitres)} L
-                    </span>
-                    <span className="text-[10px] text-slate-400">({b.petrolPct.toFixed(1)}%)</span>
-                  </div>
-                  <div>
-                    <span className="text-blue-700 font-semibold flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-blue-600" /> Diesel: {formatLitres(b.dieselLitres)} L
-                    </span>
-                    <span className="text-[10px] text-slate-400">({b.dieselPct.toFixed(1)}%)</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Purpose vs Multi-Fuel Matrix */}
-      {data.purposeEnergyMatrix && data.purposeEnergyMatrix.length > 0 && (
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-4.5 shadow-xs">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                <Layers className="h-4 w-4 text-slate-600" />
-                Purpose × Fuel Type Volume Matrix
-              </h2>
-              <p className="text-xs text-slate-500">Deep-dive matrix showing exact Petrol and Diesel consumption across all operational purposes</p>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs fuel-clean-table">
-              <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                <tr>
-                  <th className="py-3 px-3.5">Operational Purpose</th>
-                  <th className="py-3 px-3 text-right text-amber-900">Petrol (L)</th>
-                  <th className="py-3 px-3 text-right text-blue-800">Diesel (L)</th>
-                  <th className="py-3 px-3 text-right text-slate-600">Other (L)</th>
-                  <th className="py-3 px-3 text-right text-slate-900 font-black">Total (L)</th>
-                  <th className="py-3 px-3.5 text-right">Vouchers</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.purposeEnergyMatrix.map((row) => (
-                  <tr key={row.purpose} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-3 px-3.5">
-                      <PurposeBadge purpose={row.purpose} label={row.purposeLabel} />
-                    </td>
-                    <td className="py-3 px-3 text-right font-semibold tabular-nums text-amber-800">
-                      {row.petrolLitres > 0 ? `${formatLitres(row.petrolLitres)} L` : '—'}
-                    </td>
-                    <td className="py-3 px-3 text-right font-semibold tabular-nums text-blue-700">
-                      {row.dieselLitres > 0 ? `${formatLitres(row.dieselLitres)} L` : '—'}
-                    </td>
-                    <td className="py-3 px-3 text-right font-medium tabular-nums text-slate-400">
-                      {row.cngLitres + row.evKwh > 0 ? `${formatLitres(row.cngLitres + row.evKwh)}` : '—'}
-                    </td>
-                    <td className="py-3 px-3 text-right font-black tabular-nums text-slate-900">
-                      {formatLitres(row.totalLitres)} L
-                    </td>
-                    <td className="py-3 px-3.5 text-right tabular-nums text-slate-600 font-medium">
-                      {row.requestsCount}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/* =================================================================================================
- * TAB 5: EXCEPTIONS TAB (ATTENTION REQUIRED & AUDIT)
- * =============================================================================================== */
-
-function FuelExceptionsTab({
-  data,
-  onSelectVehicle,
-  onViewRequest,
-}: {
-  data: FuelManagementResponse
-  onSelectVehicle: (vin: string) => void
-  onViewRequest: (reqNo: string) => void
-}) {
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'data_quality' | 'efficiency' | 'workflow'>('all')
-
-  const categorizedChecks = useMemo(() => {
-    return data.checks.filter((chk) => {
-      if (categoryFilter === 'all') return true
-      const cat = CHECK_CATEGORY[chk.kind] || 'data_quality'
-      return cat === categoryFilter
-    })
-  }, [data.checks, categoryFilter])
-
-  const issues = categorizedChecks.filter((c) => c.severity === 'warning')
-  const notes = categorizedChecks.filter((c) => c.severity === 'info')
-
-  return (
-    <div className="space-y-4">
-      {/* Category Tabs */}
-      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
-        <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
-          {[
-            { id: 'all' as const, label: `All Items (${data.checks.length})` },
-            { id: 'data_quality' as const, label: 'Data Quality' },
-            { id: 'efficiency' as const, label: 'Efficiency & Mileage' },
-            { id: 'workflow' as const, label: 'Workflow' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setCategoryFilter(tab.id)}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
-                categoryFilter === tab.id
-                  ? 'bg-white text-[var(--dashboard-primary)] font-bold shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900',
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Actionable Issues Section */}
-      <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-xs">
-        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-          <TriangleAlert className="h-4 w-4 text-amber-600" />
-          <h2 className="text-sm font-bold text-slate-900">Issues Requiring Action ({issues.length})</h2>
-        </div>
-
-        <div className="mt-3 divide-y divide-slate-100">
-          {issues.length === 0 ? (
-            <div className="py-6 text-center text-xs text-slate-500">
-              <CheckCircle2 className="mx-auto h-6 w-6 text-emerald-500 mb-1" />
-              <span>No critical exceptions or data quality issues in this period.</span>
-            </div>
-          ) : (
-            issues.map((chk, idx) => (
-              <div key={idx} className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs">
-                <div className="space-y-1 max-w-2xl">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-900">{CHECK_TITLE[chk.kind] || chk.kind}</span>
-                    <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900 text-[10px]">
-                      Action Needed
-                    </Badge>
-                  </div>
-                  <p className="text-slate-600">{chk.message}</p>
-                  <p className="font-mono text-[11px] text-slate-400">
-                    Request #{chk.requestNumber} {chk.vehicleLabel ? `· ${chk.vehicleLabel}` : ''}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onViewRequest(chk.requestNumber)}
-                    className="h-8 rounded-xl text-xs font-semibold"
-                  >
-                    View Request
-                  </Button>
-                  {chk.vin && (
-                    <Button
-                      size="sm"
-                      onClick={() => onSelectVehicle(chk.vin!)}
-                      className="h-8 rounded-xl text-xs font-semibold bg-[var(--dashboard-primary)] text-white hover:opacity-90"
-                    >
-                      View Vehicle
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Informational Notes Section */}
-      {notes.length > 0 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <Info className="h-4 w-4 text-blue-600" />
-            <h2 className="text-sm font-bold text-slate-900">Informational Notes ({notes.length})</h2>
-          </div>
-
-          <div className="mt-3 divide-y divide-slate-100">
-            {notes.map((chk, idx) => (
-              <div key={idx} className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-xs">
-                <div>
-                  <span className="font-semibold text-slate-900">{chk.message}</span>
-                  <p className="text-[11px] text-slate-400">Request #{chk.requestNumber}</p>
-                </div>
-                {chk.vin && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => onSelectVehicle(chk.vin!)}
-                    className="h-7 text-xs font-semibold text-[var(--dashboard-primary)] hover:opacity-80"
-                  >
-                    Vehicle →
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/* =================================================================================================
- * TAB 6: REPORTS TAB (PRINT & AUDIT LEDGER)
- * =============================================================================================== */
-
-function FuelReportsTab({
-  data,
-  derivedStats,
-}: {
-  data: FuelManagementResponse
-  derivedStats: { fuelSpend: number; costPerKm: number; fleetAvgMileage: number | null }
-}) {
-  const handlePrint = () => {
-    window.print()
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-        <div>
-          <h2 className="text-sm font-bold text-slate-900">Fuel Management Audit Report</h2>
-          <p className="text-xs text-slate-500">
-            Official summary for {formatRange(data.period.from, data.period.to)} ({BRANCH_LABEL[data.period.branch]})
-          </p>
-        </div>
-        <Button onClick={handlePrint} className="gap-2 rounded-xl text-xs font-semibold">
-          <Printer className="h-3.5 w-3.5" />
-          <span>Print / Export PDF</span>
-        </Button>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
-        {/* Executive Summary Grid */}
-        <div className="grid gap-4 sm:grid-cols-4 border-b border-slate-100 pb-6">
-          <div>
-            <span className="text-[11px] font-semibold text-slate-400 uppercase">Total Fuel Approved</span>
-            <p className="text-xl font-bold text-slate-900">{formatLitres(data.kpis.approvedLitres)} Litres</p>
-          </div>
-          <div>
-            <span className="text-[11px] font-semibold text-slate-400 uppercase">Total Estimated Spend</span>
-            <p className="text-xl font-bold text-slate-900">{formatCurrency(derivedStats.fuelSpend)}</p>
-          </div>
-          <div>
-            <span className="text-[11px] font-semibold text-slate-400 uppercase">Demo Gate Distance</span>
-            <p className="text-xl font-bold text-slate-900">{formatKm(data.kpis.demoDriveKm)} km</p>
-          </div>
-          <div>
-            <span className="text-[11px] font-semibold text-slate-400 uppercase">Fleet Avg Efficiency</span>
-            <p className="text-xl font-bold text-slate-900">
-              {derivedStats.fleetAvgMileage ? `${formatKm(derivedStats.fleetAvgMileage)} km/L` : 'Awaiting 2nd fills'}
-            </p>
-          </div>
-        </div>
-
-        {/* Purpose Table */}
-        <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-2xs">
-          <div className="bg-slate-50/70 px-4 py-2.5 border-b border-slate-100">
-            <h3 className="text-xs font-bold uppercase text-slate-800 tracking-wider">Departmental Breakdown</h3>
-          </div>
-          <div className="mt-0 overflow-x-auto">
-            <table className="w-full text-left text-xs fuel-clean-table">
-              <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                <tr>
-                  <th className="py-2.5 px-4">Category</th>
-                  <th className="py-2.5 px-3 text-right">Requests</th>
-                  <th className="py-2.5 px-3 text-right">Litres</th>
-                  <th className="py-2.5 px-4 text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.byPurpose.map((p) => (
-                  <tr key={p.purpose} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-2.5 px-4 font-semibold text-slate-900">{p.label}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums text-slate-600">{p.approvedRequests}</td>
-                    <td className="py-2.5 px-3 text-right font-bold tabular-nums text-slate-900">
-                      {formatLitres(p.approvedLitres)} L
-                    </td>
-                    <td className="py-2.5 px-4 text-right font-semibold tabular-nums text-slate-900">
-                      {formatCurrency(p.approvedLitres * ESTIMATED_FUEL_PRICE_INR)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* =================================================================================================
- * VEHICLE PROFILE DRAWER (DEEP VEHICLE EFFICIENCY PROFILE)
- * =============================================================================================== */
-
-function VehicleProfileDrawer({
-  vehicle,
-  isOpen,
-  onClose,
-  onOpenMethodology,
-}: {
-  vehicle: DemoCar | null
-  isOpen: boolean
-  onClose: () => void
-  onOpenMethodology: () => void
-}) {
-  if (!vehicle) return null
-
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl p-6">
-        <DialogHeader>
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <DialogTitle className="text-lg font-bold text-slate-900">
-                {vehicle.registrationNumber || 'Demo Vehicle'}
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">
-                {[vehicle.model, vehicle.branchLabel, vinTail(vehicle.vin)].filter(Boolean).join(' · ')}
-              </DialogDescription>
-            </div>
-            {vehicle.kmPerLitre ? (
-              <Badge className="bg-emerald-100 text-emerald-800 text-xs font-bold">
-                {formatKm(vehicle.kmPerLitre.value)} km/L
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-xs font-medium text-slate-500">
-                Awaiting Data
-              </Badge>
-            )}
-          </div>
-        </DialogHeader>
-
-        {/* 4 Summary Stat Tiles */}
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Fuel Used</span>
-            <p className="mt-1 text-lg font-bold text-slate-900">{formatLitres(vehicle.approvedLitres)} L</p>
-          </div>
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Fuel Cost</span>
-            <p className="mt-1 text-lg font-bold text-slate-900">
-              {formatCurrency(vehicle.approvedLitres * ESTIMATED_FUEL_PRICE_INR)}
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Distance</span>
-            <p className="mt-1 text-lg font-bold text-slate-900">{formatKm(vehicle.driveKm)} km</p>
-          </div>
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 shadow-2xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Last Odometer</span>
-            <p className="mt-1 text-lg font-bold text-slate-900">
-              {vehicle.lastOdometerKm !== undefined && vehicle.lastOdometerKm !== null
-                ? `${formatKm(vehicle.lastOdometerKm)} km`
-                : vehicle.lastFillOdometerKm
-                ? `${formatKm(vehicle.lastFillOdometerKm)} km`
-                : '—'}
-            </p>
-          </div>
-        </div>
-
-        {/* Fuel History */}
-        <div className="mt-6 space-y-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">Fuel Fills History</h3>
-          <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-2xs">
-            <table className="w-full text-left text-xs fuel-clean-table">
-              <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                <tr>
-                  <th className="px-3 py-2.5">Date</th>
-                  <th className="px-3 py-2.5">Request #</th>
-                  <th className="px-3 py-2.5 text-right">Quantity</th>
-                  <th className="px-3 py-2.5 text-right">Odometer</th>
-                  <th className="px-3 py-2.5 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {vehicle.fills.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-4 text-center text-slate-400">
-                      No fuel fills recorded.
-                    </td>
-                  </tr>
-                ) : (
-                  vehicle.fills.map((f, i) => (
-                    <tr key={i} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-3 py-2.5 text-slate-600">{formatYmd(f.date)}</td>
-                      <td className="px-3 py-2.5">
-                        <span className="font-mono text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
-                          {f.requestNumber}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">
-                        {formatLitres(f.litres)} L
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
-                        {f.odometerKm ? `${formatKm(f.odometerKm)} km` : '—'}
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        <StatusBadge status={f.status} label={f.statusLabel} />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Drives History */}
-        <div className="mt-6 space-y-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">Demo Drives History</h3>
-          <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-2xs">
-            <table className="w-full text-left text-xs fuel-clean-table">
-              <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                <tr>
-                  <th className="px-3 py-2.5">Gate Out Date</th>
-                  <th className="px-3 py-2.5">Pass #</th>
-                  <th className="px-3 py-2.5 text-right">Trip Distance</th>
-                  <th className="px-3 py-2.5 text-right">GPS Tracked</th>
-                  <th className="px-3 py-2.5 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {vehicle.drives.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-4 text-center text-slate-400">
-                      No gate passes recorded.
-                    </td>
-                  </tr>
-                ) : (
-                  vehicle.drives.map((d, i) => (
-                    <tr key={i} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-3 py-2.5 text-slate-600">{formatIndiaDateTime(d.gateOutAt)}</td>
-                      <td className="px-3 py-2.5">
-                        <span className="font-mono text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
-                          {d.passNo}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 font-medium">
-                        {d.odometerKm !== null ? `${formatKm(d.odometerKm)} km` : '—'}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
-                        {d.gpsKm !== null ? `${formatKm(d.gpsKm)} km` : '—'}
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        <Badge variant="outline" className="text-[10px] font-semibold">
-                          {d.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="mt-6 flex justify-end">
-          <Button variant="outline" onClick={onClose} className="rounded-xl">
-            Close
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-/* =================================================================================================
- * REUSABLE UI PRIMITIVES
- * =============================================================================================== */
-
-function LayoutGridIcon(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <button
+      type="button"
+      onClick={onClick}
+      className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[12.5px] font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
     >
-      <rect width="7" height="7" x="3" y="3" rx="1" />
-      <rect width="7" height="7" x="14" y="3" rx="1" />
-      <rect width="7" height="7" x="14" y="14" rx="1" />
-      <rect width="7" height="7" x="3" y="14" rx="1" />
-    </svg>
+      Try again
+    </button>
   )
 }
 
-function StatusBadge({ status, label }: { status: string; label: string }) {
-  const norm = (status || '').toLowerCase()
-  if (norm === 'approved') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-        <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
-        <span>{label}</span>
-      </span>
-    )
-  }
-  if (norm === 'rejected') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-800">
-        <X className="h-3 w-3 text-rose-600 shrink-0" />
-        <span>{label}</span>
-      </span>
-    )
-  }
-  if (norm === 'sent_back' || norm.includes('hold')) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900">
-        <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0" />
-        <span>{label}</span>
-      </span>
-    )
-  }
+function ViewSkeleton() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-      <Clock className="h-3 w-3 text-slate-400 shrink-0" />
-      <span>{label}</span>
-    </span>
+    <Loading>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Skeleton className="h-72 xl:col-span-2" />
+        <Skeleton className="h-72" />
+      </div>
+    </Loading>
   )
 }
-
-function StatePanel({
-  icon,
-  title,
-  children,
-  action,
-  tone = 'muted',
-}: {
-  icon: ReactNode
-  title: string
-  children: ReactNode
-  action?: ReactNode
-  tone?: Tone
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center shadow-xs">
-      <div
-        className="mx-auto flex h-10 w-10 items-center justify-center rounded-full"
-        style={{ backgroundColor: TONE[tone].bg, color: TONE[tone].fg }}
-      >
-        {icon}
-      </div>
-      <h2 className="mt-3 text-sm font-semibold text-slate-900">{title}</h2>
-      <div className="mx-auto mt-1 max-w-md text-xs text-slate-600">{children}</div>
-      {action && <div className="mt-4 flex justify-center">{action}</div>}
-    </div>
-  )
-}
-
-function LoadingSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-24 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs animate-pulse" />
-        ))}
-      </div>
-      <div className="h-44 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs animate-pulse" />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="h-64 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs animate-pulse" />
-        <div className="h-64 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs animate-pulse" />
-      </div>
-    </div>
-  )
-}
-

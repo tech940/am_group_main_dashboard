@@ -202,3 +202,54 @@ export function getFuelLifecycleState(
   }
   return 'in_review'
 }
+
+/**
+ * The department the fuel is FOR (migration 0071). A subset of the approvals department list, limited to
+ * departments that run vehicles or equipment. The requester's own department is not this: on 2026-09-16,
+ * 37 of 44 requests were raised by Human Resources for other departments' cars.
+ */
+export const FUEL_DEPARTMENTS = [
+  'Sales',
+  'Service',
+  'Body Shop',
+  'Spare Parts',
+  'Accessories',
+  'CRM',
+  'Insurance',
+  'Accounts',
+  'Admin',
+  'HR',
+] as const
+
+export type FuelDepartment = (typeof FUEL_DEPARTMENTS)[number]
+
+const quantityOf = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+/**
+ * Requested vs approved vs actual for one request — the ONE place these three are read (migration 0071).
+ *
+ * ⚠️ A missing figure stays null. `approved` is null until someone approves; `actual` is null until the bill
+ * or the linked pass's pump meter records it. Neither ever falls back to another figure, or "approved vs actual"
+ * would compare a number with itself and always read as matched.
+ */
+export function getFuelQuantities(record: {
+  fuelFilledLtrs?: unknown
+  approvedQuantity?: unknown
+  actualQuantity?: unknown
+}): { requested: number | null; approved: number | null; actual: number | null } {
+  return {
+    requested: quantityOf(record.fuelFilledLtrs),
+    approved: quantityOf(record.approvedQuantity),
+    actual: quantityOf(record.actualQuantity),
+  }
+}
+
+/** Purposes whose fuel never enters a road vehicle: no odometer, no mileage, no full-tank question. */
+export function isNonVehiclePurpose(purpose: unknown): boolean {
+  const text = String(purpose ?? '').trim().toUpperCase()
+  return text === 'GENSET' || text === 'STOCK YARD' || text.startsWith('PAINT BOOTH')
+}

@@ -129,6 +129,16 @@ export interface FuelApprovalRecord {
   stationName?: string | null
   stationLocation?: string | null
 
+  // ── Accountability (migration 0071) — read them through getFuelQuantities in ./constants ──
+  /** Set at approval; defaults to the requested litres. Null until approved. */
+  approvedQuantity?: string | number | null
+  /** From the bill when the order is closed, or the linked pass's pump meter. Null until recorded. */
+  actualQuantity?: string | number | null
+  /** The demo car's "Fuel filling" gate pass the requester picked. */
+  gatePassId?: string | null
+  /** The department the fuel is for (FUEL_DEPARTMENTS). */
+  department?: string | null
+
   submittedById?: string | null
   submittedByName: string
   submittedByEmail: string

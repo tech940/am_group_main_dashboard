@@ -5,6 +5,7 @@ import { fuelApprovals } from '@/lib/db/schema'
 import { inArray, eq } from 'drizzle-orm'
 import { canUserApproveStage } from '@/lib/fuel-approvals/access'
 import type { FuelApprovalStatus, FuelApprovalStage } from '@/lib/fuel-approvals/types'
+import { invalidateFuelManagementCache } from '@/lib/fuel-approvals/accountability'
 
 export const dynamic = 'force-dynamic'
 
@@ -94,6 +95,8 @@ export async function POST(request: NextRequest) {
       } else if (action === 'APPROVE') {
         newStatus = 'approved'
         newStage = 'completed'
+        // A bulk approval approves each request exactly as asked (migration 0071).
+        updatePayload.approvedQuantity = Number(record.fuelFilledLtrs).toFixed(2)
         if (currentStage === 'ceo' || currentStage === 'ed') {
           updatePayload.ceoApprovedBy = user.id
           updatePayload.ceoApprovedByName = user.fullName
@@ -138,6 +141,7 @@ export async function POST(request: NextRequest) {
         updatePayload.rejectStage = null
         updatePayload.rejectRemarks = null
         updatePayload.sendBackReason = null
+        updatePayload.approvedQuantity = null
       }
 
       updatePayload.status = newStatus
@@ -164,6 +168,8 @@ export async function POST(request: NextRequest) {
 
       processedCount++
     }
+
+    if (processedCount > 0) await invalidateFuelManagementCache()
 
     return NextResponse.json({
       success: true,

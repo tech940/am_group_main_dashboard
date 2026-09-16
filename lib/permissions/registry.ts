@@ -1032,6 +1032,21 @@ if (NON_INTEGER_SORT_ORDERS.length > 0) {
 // lib/permissions/navigation.ts), so adding a section means adding it here — not editing a
 // separate hand-maintained map in the sidebar. `aliases` are additional paths that resolve to
 // the same section (e.g. a Business Excellence landing page vs. its /overview route).
+/**
+ * Sections whose permission KEY has no brand prefix but which are filed under a brand on screen.
+ * Owner decision 2026-09-16: "these are for KIA, no need for them to be in common".
+ *
+ * ⚠️ DISPLAY ONLY. The Access Map reads this to put the column in the brand's band; the sidebar and
+ * search list the same three under AM Kia (scripts/verify-nav-map.ts checks they agree). It never
+ * feeds access: the keys keep their names — renaming one discards every grant made on it — and no
+ * brand scoping is applied to them, so nobody gains or loses a section.
+ */
+export const SECTION_DISPLAY_BRAND: Record<string, string> = {
+  gate_pass: 'kia',
+  fuel_approvals: 'kia',
+  fuel_management: 'kia',
+}
+
 export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }> = {
   // Grant-only sections — see GRANT_ONLY_SECTIONS below and the note on their groups above.
   targets: { href: '/targets' },

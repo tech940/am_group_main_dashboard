@@ -44,9 +44,23 @@ import {
   parseOdometerKm,
   resolveFuelManagementPeriod,
 } from '../lib/fuel-management/metrics'
+import {
+  ACCOUNTABILITY_SINCE,
+  buildLedger,
+  eventMatches,
+  ledgerTransaction,
+  ledgerWindow,
+  listLedgerEvents,
+  summariseLedger,
+  type LedgerInput,
+  type LedgerPassInput,
+  type LedgerRowInput,
+} from '../lib/fuel-management/ledger'
+import { DEFAULT_FUEL_SETTINGS } from '../lib/fuel-management/engine'
 import type {
   DemoFleetCarInput,
   DrivePassInput,
+  FuelFilters,
   FuelManagementPeriod,
   FuelRowInput,
   GateReadingInput,
@@ -139,7 +153,8 @@ console.log('\n1) Both fuel sections are registered in EVERY place a section has
      */
     assert(`${href} is in ALLOWED_SIDEBAR_HREFS`, ALLOWED_SIDEBAR_HREFS.has(href),
       'registered everywhere else but unreachable from search')
-    assert(`${href} is brand 'common' (the sidebar lists it with no brand test)`, entries[0]?.brand === 'common')
+    // 'kia' since 2026-09-16 — the sidebar lists both under AM Kia. Access is unchanged; see section 2.
+    assert(`${href} is filed under KIA, as the sidebar lists it`, entries[0]?.brand === 'kia')
   }
   const ids = ALL_SECTIONS.map((s) => s.id)
   assert('ALL_SECTIONS ids are still unique', new Set(ids).size === ids.length)
@@ -164,9 +179,12 @@ console.log('\n2) Search admits a user through the same keys the pages use:')
     }
     assert('/fuel-management is NOT found while the permission map is still loading',
       !canUserAccessSection(fm, 'viewer', 'kia', null))
-    assert('/fuel-management is found by a Hyundai login holding its key (the section is common)',
+    // ⚠️ The case that proves the move to KIA took nothing away: a non-KIA holder still finds it.
+    assert('/fuel-management is still found by a Hyundai login holding its key (filed under KIA, not scoped to it)',
       canUserAccessSection(fm, 'viewer', 'hyundai', only('fuel_management.view')))
     assert('a super admin finds /fuel-management before the map loads', canUserAccessSection(fm, 'md', null, null))
+    assert('/fuel-approvals is still found by a Platinum login holding its key',
+      canUserAccessSection(fa, 'viewer', 'platinum', only('fuel_approvals.view')))
     assert('/fuel-approvals is found with fuel_approvals.view',
       canUserAccessSection(fa, 'viewer', 'kia', only('fuel_approvals.view')))
     assert('/fuel-approvals is NOT found with only gate_pass.view (its page does not accept that key)',
@@ -210,17 +228,23 @@ console.log('\n4) Each section has ONE access predicate, called by its page AND 
     sameSet(fmRoles, FUEL_MANAGEMENT_AUDIENCE), `got [${fmRoles.join(', ')}]`)
 
   const page = stripComments(read('app/fuel-management/page.tsx'))
-  const api = stripComments(read('app/api/fuel-management/route.ts'))
+  // Since the redesign every /api/fuel-management route calls ONE guard (lib/fuel-management/api.ts), and the
+  // period is parsed by parseFuelFilters (lib/fuel-management/ledger-reads.ts). Section 11 checks every route uses it.
+  const route = stripComments(read('app/api/fuel-management/route.ts'))
+  const guard = stripComments(read('lib/fuel-management/api.ts'))
+  const parse = stripComments(read('lib/fuel-management/ledger-reads.ts'))
+  const api = route + guard
   assert('app/fuel-management/page.tsx calls canViewFuelManagement', page.includes('canViewFuelManagement('))
   assert("the page keeps the literal 'fuel_management.view' (verify:guard-parity greps page source)",
     page.includes("'fuel_management.view'"))
-  assert('GET /api/fuel-management calls canViewFuelManagement', api.includes('canViewFuelManagement('))
+  assert('GET /api/fuel-management calls canViewFuelManagement (through guardFuelManagement)',
+    route.includes('guardFuelManagement(') && guard.includes('canViewFuelManagement('))
   // Either spelling counts: a literal `status: 401`, or a helper called with the code (`refuse(401, …)`).
   const answers = (code: number) => new RegExp(`(?:status:\\s*|\\w+\\(\\s*)${code}\\b`).test(api)
   assert('the API answers 401 when signed out', answers(401))
   assert('the API answers 403 when the predicate says no', answers(403))
   assert('the API answers 400 for a bad period, validated by resolveFuelManagementPeriod against the India day',
-    answers(400) && api.includes('resolveFuelManagementPeriod(') && api.includes('getIndiaYmd('))
+    answers(400) && parse.includes('resolveFuelManagementPeriod(') && parse.includes('getIndiaYmd(') && route.includes('parseFuelFilters('))
   for (const [label, src] of [['page', page], ['API', api]] as const) {
     assert(`the Fuel Management ${label} does not restate the rule (no snapshot read, no role list)`,
       !src.includes('getUserPermissionSnapshot') && !/\[\s*'developer'/.test(src))
@@ -304,13 +328,24 @@ console.log('\n5) The API ships only what the screen shows, read from only the c
   assert('no type there carries an email, slip URL, remark, history, submitter or approver field', !leak,
     leak ? `found "${leak[0]}"` : '')
 
-  const serverFiles = [...walk('lib/fuel-management'), 'app/api/fuel-management/route.ts']
+  const serverFiles = [...walk('lib/fuel-management'), ...walk('app/api/fuel-management')]
   for (const rel of serverFiles) {
     const src = stripComments(read(rel))
+    /*
+     * ⚠️ 2026-09-16 (redesign): the control centre names the people behind a fuel record — requester, approver,
+     * who recorded the bill — because accountability needs a name, and the section is open to EA, MD and
+     * Developer only. What stays banned everywhere: slip URLs, free-text notes, email addresses, user ids.
+     */
     const column = src.match(
-      /fuelApprovals\.(?:fuelSlipUrl|remarks|history|submittedByName|submittedByEmail|submittedById|\w+ApprovedBy\w*|rejectedBy\w*|rejectRemarks|sendBackReason)\b|\b(?:fuel_slip_url|submitted_by_email|submitted_by_name)\b/,
+      /fuelApprovals\.(?:fuelSlipUrl|remarks|\w+Remarks|submittedByEmail|submittedById|\w+ApprovedBy(?!Name)\b|rejectedBy(?!Name)\w*|sendBackReason)\b|\b(?:fuel_slip_url|submitted_by_email)\b/,
     )
-    assert(`${rel} never reads a slip, remark, history, submitter or approver column`, !column, column?.[0] ?? '')
+    assert(`${rel} never reads a slip, note, email or user-id column`, !column, column?.[0] ?? '')
+    if (/fuelApprovals\.history\b/.test(src)) {
+      // The approval trail carries an email per actor. Only the ledger reads may touch it, and only to reduce it.
+      assert(`${rel} reads the approval trail only to reduce it to action, name, role and time`,
+        rel === 'lib/fuel-management/ledger-reads.ts' && /function toTrail\(/.test(src)
+          && !/userEmail|remarks/.test(src.slice(src.indexOf('function toTrail('), src.indexOf('function toTrail(') + 700)))
+    }
     assert(`${rel} never SELECT *s (a bare .select())`, !/\.select\(\s*\)/.test(src))
     // The old overview bucketed gate passes with toISOString().slice(0, 10) — a UTC day, wrong before 05:30 IST.
     assert(`${rel} never takes a calendar day from UTC`, !/toISOString\(\)\s*\.(?:slice|split|substring)\(/.test(src))
@@ -324,8 +359,13 @@ console.log('\n5) The API ships only what the screen shows, read from only the c
     const fabricated = src.match(/₹\s*\d|High Burn|high_consumption|Active across/i)
     assert(`${rel} invents no price, threshold label or coverage text`, !fabricated, fabricated?.[0] ?? '')
     if (rel !== 'lib/fuel-management/engine.ts') {
-      const derived = src.match(/costPer|fuelCost|pricePerL|efficiencyStatus/i)
-      assert(`${rel} leaves cost and efficiency status to the engine`, !derived, derived?.[0] ?? '')
+      /*
+       * Other files READ the engine's cost per km and efficiency status (the ledger passes them to the screen);
+       * none may COMPUTE one. A cost divided by a distance, or a status decided from a percentage, outside the
+       * engine is the thing this rule exists to stop.
+       */
+      const derived = src.match(/(?:cost|spend)\w*\s*\/\s*\(?\s*\w*(?:km|distance)\w*|efficiencyPct\s*>=|statusGoodMinPct|statusWatchMinPct/i)
+      assert(`${rel} leaves cost per km and efficiency status to the engine`, !derived, derived?.[0] ?? '')
     }
   }
 
@@ -355,8 +395,9 @@ console.log('\n5) The API ships only what the screen shows, read from only the c
 
 console.log('\n6) The screen asks for fresh data and stays inside the locked palette:')
 {
-  const client = stripComments(read('features/fuel-management/fuel-management-client.tsx'))
-  assert('features/fuel-management/fuel-management-client.tsx exists', client.length > 0)
+  // The screen is split across features/fuel-management/*; every rule below holds for all of it.
+  const client = walk('features/fuel-management').map((rel) => stripComments(read(rel))).join('\n')
+  assert('features/fuel-management/fuel-management-client.tsx exists', read('features/fuel-management/fuel-management-client.tsx').length > 0)
   const fetchCalls = [...client.matchAll(/\bfetch\(/g)].map((m) => client.slice(m.index ?? 0, (m.index ?? 0) + 400))
   // A patched window.fetch caches GET /api/* for 30 minutes unless the call opts out.
   assert("every fetch passes cache: 'no-store'",
@@ -1180,6 +1221,180 @@ console.log('\n8g) Approved is not one bucket — the pipeline has a finalisatio
     /state === 'to_finalise'/.test(client) && client.includes('/> To Finalise'))
 }
 
+console.log('\n10) The control-centre ledger (redesign, 2026-09-16) — pure fixtures:')
+{
+  const period = { from: '2026-09-01', to: '2026-09-16' }
+  const window = ledgerWindow(period.from, period.to, '2026-09-16')
+  assert('the previous period has the same length and ends the day before', window.prevTo === '2026-08-31' && window.prevFrom === '2026-08-16')
+  const vin = 'MZBEA812LTN000001'
+  const row = (over: Partial<LedgerRowInput>): LedgerRowInput => ({
+    id: over.id ?? `00000000-0000-0000-0000-${String(Math.random()).slice(2, 14).padStart(12, '0')}`,
+    requestNumber: 'KIA-FUEL-TEST', brand: 'kia', location: 'KIA JAMMU', purpose: 'DEMO',
+    vehRegNo: 'DEMO CAR', vinNo: '000001', vehicleVin: vin, assetCode: null, fuelType: 'PETROL', energyType: 'petrol',
+    quantityUnit: 'L', requested: 20, approved: 20, actual: null, totalCost: null, odometerKm: 1000, kmReadingText: '1000',
+    isFullTank: null, odometerOverride: false, stationName: null, department: null, gatePassId: null,
+    date: '2026-09-10', createdAt: '2026-09-10T05:00:00.000Z', status: 'approved', requesterName: 'Asha',
+    approverName: 'CEO', approvedAt: '2026-09-10T06:00:00.000Z',
+    trail: [{ action: 'SUBMIT', actorName: 'Asha', actorRole: 'hr', at: '2026-09-10T05:00:00.000Z' }],
+    ...over,
+  })
+  const pass = (over: Partial<LedgerPassInput>): LedgerPassInput => ({
+    id: over.id ?? '11111111-1111-1111-1111-111111111111', passNo: 'GP-TEST-1', vin, registrationNumber: 'JK02AA0001',
+    model: 'Sonet', dealerCode: 'JK402', branchKey: 'JAMMU', branchLabel: 'Jammu', purpose: 'Fuel filling',
+    isFuelFilling: true, status: 'returned', driverKind: 'staff', staffDriverName: 'Ravi', raisedByName: 'Ravi',
+    gateOutAt: '2026-09-12T04:00:00.000Z', gateOutYmd: '2026-09-12', gateInAt: '2026-09-12T05:00:00.000Z',
+    gateInYmd: '2026-09-12', gateOutOdo: 1100, gateInOdo: 1104, fuelLitres: 18, fuelAmount: 1900, trip: null,
+    ...over,
+  })
+  const base = (rows: LedgerRowInput[], passes: LedgerPassInput[] = []): LedgerInput => ({
+    window, rows, passes,
+    fleet: [{ vin, registrationNumber: 'JK02AA0001', model: 'Sonet', variant: null, branchLabel: 'Jammu', sharedPlate: false }],
+    benchmarks: [], settings: DEFAULT_FUEL_SETTINGS, settingsConfigured: false, reviews: [],
+    sync: { loconavLastRunAt: null, loconavStatus: null }, generatedAt: '2026-09-16T00:00:00.000Z',
+  })
+  const filters: FuelFilters = { ...period, branch: null, brand: null, purpose: null, department: null, energy: null, fleet: null, vehicle: null }
+
+  // Requested, approved and actual are three facts; a missing one stays missing.
+  const noActual = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-000000000001', requested: 20, approved: 15 })]))
+  const e0 = noActual.events[0]
+  assert('an approved record without a bill keeps actual = null (never borrowed from approved)', e0.actual === null && e0.variance === null)
+  assert('approved is its own figure, not the requested one', e0.requested === 20 && e0.approved === 15)
+  const s0 = summariseLedger(noActual, filters)
+  assert('the headline says no actual is recorded rather than showing a matched total',
+    s0.headline.actualQty.recordedEvents === 0 && s0.headline.reconciled.events === 0)
+  assert('the narrative says approved and actual cannot be compared yet', s0.narrative.some((t) => /cannot be compared/.test(t)))
+
+  // Approved vs actual beyond the tolerance, and within it.
+  const over = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-000000000002', approved: 20, actual: 24 })]))
+  assert('actual 20% over approved raises actual_over_approved', over.exceptions.some((x) => x.kind === 'actual_over_approved'))
+  const within = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-000000000003', approved: 20, actual: 20.5 })]))
+  assert('actual 0.5 L over approved raises nothing', !within.exceptions.some((x) => x.kind.startsWith('actual_')))
+
+  // Fuel on a gate pass that no request names — and not once a request names it.
+  const orphan = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-000000000004', date: '2026-09-12' })], [pass({})]))
+  const orphanRow = orphan.exceptions.find((x) => x.kind === 'pass_without_request')
+  assert('a returned fuel-filling pass with pump litres and no request is an exception', Boolean(orphanRow))
+  assert('it points at the request for the same car and day', Boolean(orphanRow && /KIA-FUEL-TEST/.test(orphanRow.message)))
+  const linked = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-000000000005', gatePassId: '11111111-1111-1111-1111-111111111111', actual: 18 })], [pass({})]))
+  assert('once a request names the pass, the exception is gone', !linked.exceptions.some((x) => x.kind === 'pass_without_request'))
+  assert('the linked pass puts its pump litres on the record', linked.events[0].pumpLitres === 18 && linked.events[0].passNo === 'GP-TEST-1')
+
+  // A pump reading that cannot be real (litres and rupees typed the wrong way round).
+  const swapped = buildLedger(base([], [pass({ id: '22222222-2222-2222-2222-222222222222', fuelLitres: 2103, fuelAmount: 105 })]))
+  const swappedRow = swapped.exceptions.find((x) => x.kind === 'implausible_pump_reading')
+  assert('2,103 L for ₹105 is flagged as not possible', Boolean(swappedRow))
+  assert('…and says the two may be swapped', Boolean(swappedRow && /wrong way round/.test(swappedRow.message)))
+  assert('…without claiming the 2,103 L as fuel filled', Boolean(swapped.exceptions.find((x) => x.kind === 'pass_without_request' && /needs checking/.test(x.message))))
+
+  // Data gaps count only records that could have carried the new fields.
+  const legacy = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-000000000006', createdAt: '2026-09-10T05:00:00.000Z' })]))
+  assert(`a demo fill raised before ${ACCOUNTABILITY_SINCE} is not counted as missing its gate pass`, !legacy.events[0].quality.includes('pass_missing'))
+  const fresh = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-000000000007', date: '2026-09-16', createdAt: '2026-09-16T05:00:00.000Z' })]))
+  assert('a demo fill raised after it is', fresh.events[0].quality.includes('pass_missing'))
+
+  // Identity: a genset is equipment, never a car; a typed label is never a car.
+  const genset = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-000000000008', purpose: 'GENSET', vehicleVin: null, vehRegNo: 'Genset', vinNo: 'GENSET', location: 'KIA UDHAMPUR' })]))
+  assert('a genset fill is equipment keyed by branch', genset.events[0].identity === 'asset' && genset.events[0].vehicleKey === 'ASSET:GENSET:UDHAMPUR')
+  const label = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-000000000009', purpose: 'STOCK TRANSFER', vehicleVin: null, vehRegNo: 'Stock transfer', vinNo: '317707' })]))
+  assert('a stock-transfer label is not tied to a car and gets no mileage', label.events[0].identity === 'label'
+    && label.vehicles[label.events[0].vehicleKey].mileage.unavailableReason !== null)
+
+  // Mileage comes only from two readings; one fill says why there is none.
+  const one = buildLedger(base([row({ id: 'a0000000-0000-0000-0000-00000000000a' })]))
+  assert('one fill gives no mileage, with the reason', one.vehicles[vin].mileage.average === null && Boolean(one.vehicles[vin].mileage.unavailableReason))
+  const two = buildLedger(base([
+    row({ id: 'a0000000-0000-0000-0000-00000000000b', date: '2026-09-02', createdAt: '2026-09-02T05:00:00.000Z', odometerKm: 1000, isFullTank: true, approved: 30, actual: 30 }),
+    row({ id: 'a0000000-0000-0000-0000-00000000000c', date: '2026-09-12', createdAt: '2026-09-12T05:00:00.000Z', odometerKm: 1300, isFullTank: true, approved: 20, actual: 20 }),
+  ]))
+  assert('two full tanks 300 km and 20 L apart give 15 km/L, measured', two.vehicles[vin].mileage.average === 15 && two.vehicles[vin].mileage.basis === 'full_tank')
+  const trace = ledgerTransaction(two, 'a0000000-0000-0000-0000-00000000000c', null)
+  assert('the second fill traces back to the first', trace?.analysis.previousFillDate === '2026-09-02' && trace?.analysis.distanceSincePreviousKm === 300)
+  assert('the trace never names a customer: the steps carry only staff names', Boolean(trace && trace.steps.every((s) => s.actor === null || ['Asha', 'CEO', 'Ravi'].includes(s.actor))))
+
+  // Filters and pages are applied on the server.
+  const many = buildLedger(base(Array.from({ length: 30 }, (_, i) => row({
+    id: `b0000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
+    requestNumber: `KIA-FUEL-${i}`,
+    location: i % 2 ? 'KIA UDHAMPUR' : 'KIA JAMMU',
+    date: `2026-09-${String((i % 15) + 1).padStart(2, '0')}`,
+  }))))
+  const page = listLedgerEvents(many, filters, { state: null, quality: null, q: null, sort: 'date', direction: 'desc', page: 2, pageSize: 10 })
+  assert('the record list is paginated on the server', page.rows.length === 10 && page.total === 30 && page.page === 2)
+  const udhampur = listLedgerEvents(many, { ...filters, branch: 'UDHAMPUR' }, { state: null, quality: null, q: null, sort: 'date', direction: 'desc', page: 1, pageSize: 100 })
+  assert('the branch filter keeps only that branch', udhampur.total === 15 && udhampur.rows.every((r) => r.branchKey === 'UDHAMPUR'))
+  assert('eventMatches refuses a record outside the period', !eventMatches({ ...many.events[0], date: '2026-08-01' }, filters))
+}
+
+console.log('\n11) Migration 0071, the routes and the screen agree:')
+{
+  const m71 = read('lib/db/migrations/0071_add_fuel_accountability.sql')
+  const r71 = read('lib/db/migrations/0071_rollback_add_fuel_accountability.sql')
+  const sqlOnly = (sql: string) => sql.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n')
+  assert('0071 and its rollback exist', m71.length > 0 && r71.length > 0)
+  for (const column of ['approved_quantity', 'actual_quantity', 'gate_pass_id', 'department']) {
+    assert(`0071 adds ${column}`, new RegExp(`ADD COLUMN IF NOT EXISTS ${column}\\b`).test(sqlOnly(m71)))
+    assert(`the rollback drops ${column}`, new RegExp(`DROP COLUMN IF EXISTS ${column}\\b`).test(sqlOnly(r71)))
+    assert(`schema.ts maps fuel_approvals.${column}`, read('lib/db/schema.ts').includes(`('${column}'`))
+  }
+  assert('0071 backfills approved = requested only for approved rows, and never backfills actual',
+    /SET approved_quantity = fuel_filled_ltrs[\s\S]*WHERE status = 'approved'/.test(sqlOnly(m71)) && !/SET actual_quantity/.test(sqlOnly(m71)))
+  assert('one gate pass backs at most one request', /UNIQUE INDEX IF NOT EXISTS fuel_approvals_gate_pass_id_key/.test(m71))
+  assert('the review log is append-only, RLS on, anon/authenticated revoked',
+    /fuel_exception_reviews_append_only/.test(m71) && /BEFORE TRUNCATE/.test(m71)
+    && /ENABLE ROW LEVEL SECURITY/.test(m71) && /FROM anon, authenticated, PUBLIC/.test(sqlOnly(m71)))
+  assert('the review log has no foreign key to fuel_approvals (it would block deletes)', !/fuel_approval_id uuid REFERENCES/.test(sqlOnly(m71)))
+  assert('0071 warns that DDL belongs on 5432, not the pooler', /5432/.test(m71) && /6543/.test(m71))
+  assert('the 0071 rollback says it destroys data and exports first', /DESTROYS DATA/.test(r71) && /\\copy/.test(r71))
+
+  const action = stripComments(read('app/api/fuel-approvals/[id]/action/route.ts'))
+  assert('APPROVE writes the approved quantity, defaulting to the requested litres',
+    /approvedQuantity = approved\.toFixed\(2\)/.test(action) && /approvedParsed\.value \?\? requested/.test(action))
+  assert('RESET clears the approved quantity', /approvedQuantity = null/.test(action))
+  const bulk = stripComments(read('app/api/fuel-approvals/bulk-action/route.ts'))
+  assert('a bulk approval approves each request as asked', /approvedQuantity = Number\(record\.fuelFilledLtrs\)/.test(bulk))
+  const close = stripComments(read('app/api/fuel-approvals/[id]/finalize/route.ts'))
+  assert('closing an order requires the actual litres the first time', /Enter the actual litres/.test(close) && /actualQuantity: actualToStore/.test(close))
+  assert('closing a car order requires odometer and full tank; a correction may omit them',
+    /isVehicle && !isCorrection/.test(close) && /Say whether the tank was filled full/.test(close))
+  assert('the close route no longer returns a raw driver message', !/details:/.test(close))
+  const resubmit = stripComments(read('app/api/fuel-approvals/[id]/resubmit/route.ts'))
+  assert('a re-submission clears the old approved quantity', /approvedQuantity: null/.test(resubmit))
+  assert('the re-submit route no longer returns a raw driver message', !/details:/.test(resubmit))
+  const accountability = stripComments(read('lib/fuel-approvals/accountability.ts'))
+  assert('a gate pass is checked before it is linked: fuel purpose, left the gate, not claimed',
+    /isFuelFillingPurpose/.test(accountability) && /never left the gate/.test(accountability) && /already linked to/.test(accountability))
+  for (const rel of ['app/api/fuel-approvals/route.ts', 'app/api/fuel-approvals/[id]/resubmit/route.ts', 'app/api/fuel-approvals/[id]/finalize/route.ts']) {
+    assert(`${rel} links a pass only through resolveFuelGatePass`, /resolveFuelGatePass\(/.test(stripComments(read(rel))))
+  }
+  for (const rel of ['app/api/fuel-approvals/route.ts', 'app/api/fuel-approvals/[id]/action/route.ts', 'app/api/fuel-approvals/bulk-action/route.ts',
+    'app/api/fuel-approvals/[id]/finalize/route.ts', 'app/api/fuel-approvals/[id]/resubmit/route.ts', 'app/api/fuel-management/exceptions/review/route.ts']) {
+    assert(`${rel} clears the Fuel Management cache after writing`, /invalidateFuelManagementCache\(\)/.test(stripComments(read(rel))))
+  }
+
+  const routes = walk('app/api/fuel-management').filter((rel) => rel.endsWith('route.ts'))
+  assert('the control centre has its sub-routes', routes.length >= 7, routes.join(', '))
+  for (const rel of routes) {
+    const src = stripComments(read(rel))
+    assert(`${rel} guards itself with guardFuelManagement (the page's predicate)`, /guardFuelManagement\(/.test(src))
+    assert(`${rel} is force-dynamic`, /export\s+const\s+dynamic\s*=\s*'force-dynamic'/.test(src))
+  }
+  const settings = stripComments(read('app/api/fuel-management/settings/route.ts'))
+  assert('changing benchmarks or thresholds needs the edit permission', /PUT[\s\S]*guardFuelManagement\(\{ needEdit: true \}\)/.test(settings))
+  const api = stripComments(read('lib/fuel-management/api.ts'))
+  assert('the guard is canViewFuelManagement, and edits need canEditFuelManagement',
+    /canViewFuelManagement\(appUser\)/.test(api) && /canEditFuelManagement\(appUser\)/.test(api))
+
+  const reads = stripComments(read('lib/fuel-management/ledger-reads.ts'))
+  assert('a customer who drove a car is never named', /driverKind === 'staff' && row\.driverName/.test(reads))
+  assert('the ledger is cached per period and cleared on every fuel write', /getCachedData\(/.test(reads) && /fuel-management:ledger:/.test(reads))
+
+  const screen = walk('features/fuel-management').map((rel) => stripComments(read(rel))).join('\n')
+  assert('the screen invents no price: every rupee figure comes from the API', !/₹\s*\d/.test(screen))
+  assert('the old invented ₹95 per litre is gone', !/\b95\b[^\n]*(?:per|\/)\s*L/i.test(screen) && !/REFERENCE_PRICE|ESTIMATED_PRICE/.test(screen))
+  assert('the screen asks the server to paginate the record list', /\/api\/fuel-management\/transactions\?/.test(screen) && /pageSize/.test(screen))
+  assert('no eyebrow or section numbers above headings', !/\b0[1-9]\s*\/\s*0[1-9]\b/.test(screen))
+}
+
 console.log('\n9) Live database (read-only):')
 async function liveChecks() {
   const url = process.env.DATABASE_URL
@@ -1193,6 +1408,7 @@ async function liveChecks() {
   // since it does not see assignments made in a callback.
   let defaultPeriod = null as FuelManagementPeriod | null
   let expected = null as { litres: number; requests: number } | null
+  let expectedApproved = null as { litres: number; actual: number; missingApproved: number } | null
   try {
     await sql.begin('read only', async (tx) => {
       /*
@@ -1228,6 +1444,14 @@ async function liveChecks() {
         WHERE status = 'approved'
           AND fuel_filled_date BETWEEN ${periodResult.period.from}::date AND ${periodResult.period.to}::date`
       expected = { litres: Number(sum.litres), requests: sum.n }
+      const [acc] = await tx<{ litres: string; actual: string; missing: number }[]>`
+        SELECT COALESCE(SUM(approved_quantity) FILTER (WHERE quantity_unit = 'L'), 0)::text AS litres,
+               COALESCE(SUM(actual_quantity) FILTER (WHERE quantity_unit = 'L' AND status <> 'rejected'), 0)::text AS actual,
+               COUNT(*) FILTER (WHERE status = 'approved' AND approved_quantity IS NULL)::int AS missing
+        FROM fuel_approvals
+        WHERE fuel_filled_date BETWEEN ${periodResult.period.from}::date AND ${periodResult.period.to}::date
+          AND status <> 'rejected'`
+      expectedApproved = { litres: Number(acc.litres), actual: Number(acc.actual), missingApproved: acc.missing }
     })
 
     if (defaultPeriod && expected) {
@@ -1246,6 +1470,24 @@ async function liveChecks() {
         `API ${overview.kpis.approvedRequests} vs SQL ${expected.requests}`)
       console.log(`  [INFO] ${defaultPeriod.from}..${defaultPeriod.to}: ${overview.demoCars.length} demo car(s), `
         + `${overview.kpis.awaiting.total} awaiting, ${overview.checks.length} check(s) (${overview.kpis.checksNeedingAttention} warning(s))`)
+
+      // The control centre's ledger, read the way the API reads it, against SQL on the new columns.
+      const { loadLedgerUncached } = await import('../lib/fuel-management/ledger-reads')
+      const ledger = await loadLedgerUncached(defaultPeriod.from, defaultPeriod.to)
+      const summary = summariseLedger(ledger, {
+        from: defaultPeriod.from, to: defaultPeriod.to, branch: null, brand: null, purpose: null,
+        department: null, energy: null, fleet: null, vehicle: null,
+      })
+      assert(`the ledger's approved litres equal SQL on approved_quantity (${expectedApproved?.litres} L)`,
+        expectedApproved !== null && Math.abs(summary.headline.approvedQty.current - expectedApproved.litres) < 0.005,
+        `ledger ${summary.headline.approvedQty.current} L vs SQL ${expectedApproved?.litres} L`)
+      assert(`the ledger's actual litres equal SQL on actual_quantity (${expectedApproved?.actual} L)`,
+        expectedApproved !== null && Math.abs(summary.headline.actualQty.current - expectedApproved.actual) < 0.005,
+        `ledger ${summary.headline.actualQty.current} L vs SQL ${expectedApproved?.actual} L`)
+      assert('every approved record carries an approved quantity (0071 backfill)', expectedApproved !== null && expectedApproved.missingApproved === 0,
+        `${expectedApproved?.missingApproved} approved without one`)
+      console.log(`  [INFO] ledger: ${ledger.events.length} records in the read window, ${summary.exceptions.length} exception(s), `
+        + `${summary.vehicles.length} vehicle row(s), ${summary.quality.filter((q) => q.count > 0).length} data gap type(s)`)
     }
   } finally {
     await sql.end()

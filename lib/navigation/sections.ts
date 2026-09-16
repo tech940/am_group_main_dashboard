@@ -185,27 +185,31 @@ export const ALL_SECTIONS: SearchSection[] = [
     description: 'Raise and approve demo car gate passes, and see the QR-verified exit and entry log for every demo vehicle.',
     href: '/gate-pass',
     department: 'sales',
-    // 'common', not 'kia': the tables carry a brand column from day one and the section is meant to
-    // widen. Marking it 'kia' would make canUserAccessSection apply the brand check and hide it
-    // from anyone whose users.brand does not literally contain 'kia'.
-    brand: 'common',
+    /*
+     * 'kia' since 2026-09-16, with both fuel sections below: the owner moved all three out of Common
+     * and under AM Kia in the sidebar. SEARCH PLACEMENT ONLY — nobody gains or loses them.
+     *
+     * ⚠️ This used to say a 'kia' tag would hide the section from anyone whose users.brand is not
+     * 'kia'. That stopped being true when canUserAccessSection learned `grantedAcrossBrand`: these
+     * keys carry no brand prefix, so constrainSnapshotToBranch never zeroes them, and a Hyundai login
+     * holding gate_pass.view still passes the brand step exactly as before. The section's own key
+     * remains the whole test. scripts/verify-fuel-management.ts pins the Hyundai case.
+     */
+    brand: 'kia',
     iconName: 'ScanLine',
     initials: 'GP',
-    category: 'general_modules',
+    category: 'kia',
   },
-  // Both fuel sections are 'common' for the same reason as the gate pass above: the sidebar lists them
-  // under its common nodes with no brand test, and neither page checks brand. A 'kia' tag here would
-  // hide them from search for anyone whose users.brand does not literally contain 'kia'.
   {
     id: 'fuel_approvals',
     name: 'Fuel Approvals',
     description: 'Raise fuel requests for demo, stock, display and yard vehicles with the fuel slip attached, and approve them.',
     href: '/fuel-approvals',
     department: 'finance',
-    brand: 'common',
+    brand: 'kia',
     iconName: 'Fuel',
     initials: 'FA',
-    category: 'general_modules',
+    category: 'kia',
   },
   {
     id: 'fuel_management',
@@ -213,10 +217,10 @@ export const ALL_SECTIONS: SearchSection[] = [
     description: 'Fuel approved by purpose and branch, demo car fuel set against gate pass and GPS distance, and fuel records that need a look.',
     href: '/fuel-management',
     department: 'finance',
-    brand: 'common',
+    brand: 'kia',
     iconName: 'Fuel',
     initials: 'FM',
-    category: 'general_modules',
+    category: 'kia',
   },
   {
     id: 'finance',

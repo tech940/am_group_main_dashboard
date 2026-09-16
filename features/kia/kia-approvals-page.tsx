@@ -457,9 +457,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const discountSummaryQuery = useQuery({
     queryKey: ['kia-discount-requests-summary'],
     queryFn: async () => {
-      const res = await fetch('/api/brands/kia/bookings/discounts')
-      if (!res.ok) return { discounts: [], rows: [] }
-      return res.json()
+      try {
+        const res = await fetch('/api/brands/kia/bookings/discounts')
+        if (!res.ok) return { discounts: [], rows: [] }
+        const text = await res.text().catch(() => '')
+        return text ? JSON.parse(text) : { discounts: [], rows: [] }
+      } catch {
+        return { discounts: [], rows: [] }
+      }
     },
     staleTime: 30000,
   })
@@ -478,9 +483,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const fuelSummaryQuery = useQuery({
     queryKey: ['fuel-approvals-summary-badge'],
     queryFn: async () => {
-      const res = await fetch('/api/fuel-approvals?tab=pending')
-      if (!res.ok) return { counts: { pending: 0, all: 0 } }
-      return res.json()
+      try {
+        const res = await fetch('/api/fuel-approvals?tab=pending')
+        if (!res.ok) return { counts: { pending: 0, all: 0 } }
+        const text = await res.text().catch(() => '')
+        return text ? JSON.parse(text) : { counts: { pending: 0, all: 0 } }
+      } catch {
+        return { counts: { pending: 0, all: 0 } }
+      }
     },
     staleTime: 30000,
   })
@@ -554,6 +564,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const [isMigratingEA, setIsMigratingEA] = useState(false)
   const [activeTab, setActiveTab] = useState<'timeline' | 'remarks'>('timeline')
   const [showTimeline, setShowTimeline] = useState(false)
+  const [mobileDocsExpanded, setMobileDocsExpanded] = useState(false)
   const [remarkText, setRemarkText] = useState('')
   const [addRemarkPending, setAddRemarkPending] = useState(false)
   const [selectedDepartment, setSelectedDepartment] = useState('All')
@@ -577,8 +588,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
   useEffect(() => {
     fetch('/api/brands/kia/gl-accounts')
-      .then(res => res.json())
-      .then(data => setGlAccounts(data.rows || []))
+      .then(async res => {
+        if (!res.ok) return { rows: [] }
+        const text = await res.text().catch(() => '')
+        return text ? JSON.parse(text) : { rows: [] }
+      })
+      .then(data => setGlAccounts(data?.rows || []))
       .catch(err => console.error('Error fetching GL accounts:', err))
   }, [])
 
@@ -638,16 +653,20 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     queryKey: ['kia-approval-requests'],
     queryFn: async () => {
       const res = await fetch('/api/brands/kia/approvals/list')
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        let errMessage = 'Failed to load approvals list'
-        try {
-          const json = JSON.parse(text)
-          if (json?.error) errMessage = json.error
-        } catch {}
-        throw new Error(errMessage)
+      const text = await res.text().catch(() => '')
+      let json: any = null
+      try {
+        json = text ? JSON.parse(text) : null
+      } catch {
+        if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+          throw new Error('Received HTML response instead of JSON. Please check login session.')
+        }
+        throw new Error('Invalid response from server')
       }
-      return res.json()
+      if (!res.ok) {
+        throw new Error(json?.error || 'Failed to load approvals list')
+      }
+      return json || { rows: [] }
     }
   })
   const { data, isLoading, isFetching, refetch, error } = queryResult
@@ -696,7 +715,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, stage, remarks, invoiceNumber, invoiceDocUrl, glAccountId, utrNumber, paymentProofUrl })
       })
-      const resData = await res.json()
+      const text = await res.text().catch(() => '')
+      let resData: any = {}
+      try {
+        resData = text ? JSON.parse(text) : {}
+      } catch {}
       if (!res.ok || resData.error) throw new Error(resData.error || 'Failed to complete approval action')
       return resData
     },
@@ -730,7 +753,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/brands/kia/approvals/${id}`, { method: 'DELETE' })
-      const resData = await res.json().catch(() => ({}))
+      const text = await res.text().catch(() => '')
+      let resData: any = {}
+      try {
+        resData = text ? JSON.parse(text) : {}
+      } catch {}
       if (!res.ok || resData.error) throw new Error(resData.error || 'Failed to delete payment order')
       return resData as { requestNo?: string | null }
     },
@@ -786,7 +813,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         body: fd
       })
 
-      const data = await res.json()
+      const text = await res.text().catch(() => '')
+      let data: any = {}
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {}
       if (!res.ok || data.error) {
         throw new Error(data.error || 'Upload failed')
       }
@@ -819,7 +850,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         body: fd
       })
 
-      const data = await res.json()
+      const text = await res.text().catch(() => '')
+      let data: any = {}
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {}
       if (!res.ok || data.error) {
         throw new Error(data.error || 'Upload failed')
       }
@@ -843,7 +878,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, action, remarks })
       })
-      const resData = await res.json()
+      const text = await res.text().catch(() => '')
+      let resData: any = {}
+      try {
+        resData = text ? JSON.parse(text) : {}
+      } catch {}
       if (!res.ok || resData.error) throw new Error(resData.error || 'Failed to complete bulk approval action')
       return resData
     },
@@ -4370,8 +4409,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       </div>
 
       {/* 4. DETAIL & ACTION CENTER OVERLAY MODAL */}
-      <Dialog open={Boolean(detailRow)} onOpenChange={(open) => { if (!open) setDetailRow(null) }}>
-        <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl sm:rounded-[2.5rem] w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] sm:max-w-6xl bg-slate-50 p-0 overflow-hidden shadow-2xl border border-slate-200/80 max-h-[calc(100dvh-1.5rem)] sm:max-h-[92vh] flex flex-col z-50">
+      <Dialog open={Boolean(detailRow)} onOpenChange={(open) => { if (!open) { setDetailRow(null); setMobileDocsExpanded(false); } }}>
+        <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl sm:rounded-[2rem] w-[calc(100vw-0.75rem)] max-w-full sm:w-[calc(100vw-2rem)] sm:max-w-6xl bg-slate-50 p-0 overflow-hidden shadow-2xl border border-slate-200/80 h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] sm:h-auto sm:max-h-[90vh] flex flex-col z-50 overscroll-contain">
           {detailRow && (() => {
             const pendingLabel = getPendingStageLabel(detailRow)
             const isApproved = pendingLabel === 'Fully Approved'
@@ -4554,7 +4593,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ remarks: remarkText })
                 })
-                const result = await response.json()
+                const text = await response.text().catch(() => '')
+                let result: any = {}
+                try {
+                  result = text ? JSON.parse(text) : {}
+                } catch {}
                 if (response.ok && result.success) {
                   toast({
                     title: 'Success',
@@ -4575,11 +4618,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     variant: 'error'
                   })
                 }
-              } catch (error) {
-                console.error(error)
+              } catch (err) {
                 toast({
                   title: 'Error',
-                  description: 'Failed to connect to the server.',
+                  description: err instanceof Error ? err.message : 'Failed to add remark.',
                   variant: 'error'
                 })
               } finally {
@@ -4761,15 +4803,29 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 return { date: istShortDate(req.updatedAt), time: istTime(req.updatedAt), user: column.desk }
               }
 
+              const activeKey = getActiveStageKey(req)
+              const activeIndex = stages.findIndex(s => s.key === activeKey || (pendingLabel === 'Pending Payment' && s.key === 'paid'))
+              const activeStageObj = stages[activeIndex >= 0 ? activeIndex : 0]
+
               return (
-                <div className="bg-white border border-slate-200/80 rounded-2xl px-3.5 py-2 sm:px-4 sm:py-2.5 shadow-2xs overflow-hidden">
-                  <div className="flex items-center justify-between gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar py-0.5">
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-2.5 sm:px-4 sm:py-2.5 shadow-2xs">
+                  {/* Mobile Status Header */}
+                  <div className="flex sm:hidden items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100 text-[10px] font-bold">
+                    <span className="text-slate-500 uppercase tracking-wider">
+                      Stage {activeIndex >= 0 ? activeIndex + 1 : 1} of {stages.length}: <span className="text-slate-900 font-black">{activeStageObj?.label || 'In Progress'}</span>
+                    </span>
+                    <span className="text-blue-600 font-extrabold flex items-center gap-0.5">
+                      Swipe →
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 sm:gap-3 overflow-x-auto no-scrollbar py-0.5 scroll-px-2">
                     {stages.map((stg, i) => {
                       const isApproved = stg.status === 'APPROVED'
                       const isRejected = stg.status === 'NOT APPROVED'
                       const isHeld = stg.status === 'HELD'
                       
-                      const isActive = getActiveStageKey(req) === stg.key || (pendingLabel === 'Pending Payment' && stg.key === 'paid')
+                      const isActive = activeKey === stg.key || (pendingLabel === 'Pending Payment' && stg.key === 'paid')
 
                       let circleColor = 'bg-slate-100 text-slate-400 border-slate-200'
                       let textColor = 'text-slate-500 font-semibold'
@@ -4791,18 +4847,24 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       const stageInfo = getStageInfo(stg.key)
 
                       return (
-                        <div key={stg.key} className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                          <div className={cn("h-5 w-5 rounded-full border flex items-center justify-center text-[10px] font-black shrink-0 transition-all", circleColor)}>
+                        <div 
+                          key={stg.key} 
+                          className={cn(
+                            "flex items-center gap-1.5 sm:gap-2 shrink-0 transition-all rounded-xl",
+                            isActive ? "bg-blue-50/70 p-1 sm:p-0 border border-blue-100 sm:border-transparent" : ""
+                          )}
+                        >
+                          <div className={cn("h-5.5 w-5.5 sm:h-6 sm:w-6 rounded-full border flex items-center justify-center text-[10px] sm:text-[11px] font-black shrink-0 transition-all", circleColor)}>
                             {isApproved ? '✓' : isRejected ? '✗' : isHeld ? '‖' : i + 1}
                           </div>
                           
-                          <div className="flex flex-col text-left justify-center min-w-[75px]">
-                            <div className="flex items-center gap-1">
-                              <span className={cn("text-[10px] uppercase font-bold tracking-tight leading-tight", textColor)}>
+                          <div className="flex flex-col text-left justify-center min-w-[68px] sm:min-w-[85px]">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className={cn("text-[9.5px] sm:text-xs uppercase font-extrabold tracking-tight leading-tight", textColor)}>
                                 {stg.label}
                               </span>
                               {stageInfo.date && (
-                                <span className="text-[8px] sm:text-[9px] font-semibold text-slate-500 font-sans tabular-nums whitespace-nowrap">
+                                <span className="text-[8px] sm:text-[9.5px] font-bold text-slate-500 font-mono tabular-nums whitespace-nowrap">
                                   ({stageInfo.date})
                                 </span>
                               )}
@@ -4810,23 +4872,23 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
                             {stageInfo.user ? (
                               <div className="flex items-center gap-1 mt-0.5">
-                                <span className="text-[9px] sm:text-[10px] font-medium text-slate-700 leading-none truncate max-w-[100px]" title={`${stageInfo.user} · ${stageInfo.date || ''} ${stageInfo.time || ''}`}>
+                                <span className="text-[9px] sm:text-[10px] font-bold text-slate-700 leading-none truncate max-w-[85px] sm:max-w-[120px]" title={`${stageInfo.user} · ${stageInfo.date || ''} ${stageInfo.time || ''}`}>
                                   {stageInfo.user}
                                 </span>
                                 {stageInfo.time && (
-                                  <span className="text-[8px] text-slate-400 font-normal leading-none whitespace-nowrap hidden sm:inline">
+                                  <span className="text-[8px] sm:text-[8.5px] text-slate-400 font-medium leading-none whitespace-nowrap hidden sm:inline font-mono">
                                     {stageInfo.time}
                                   </span>
                                 )}
                               </div>
                             ) : (
-                              <span className="text-[9px] text-slate-300 font-medium leading-none mt-0.5">—</span>
+                              <span className="text-[9.5px] text-slate-300 font-bold leading-none mt-0.5">—</span>
                             )}
                           </div>
 
                           {i < stages.length - 1 && (
                             <div className={cn(
-                              "w-2 sm:w-4 h-[1.5px] shrink-0 mx-0.5",
+                              "w-2 sm:w-4 h-[1.5px] sm:h-[2px] shrink-0 mx-0.5 rounded-full",
                               isApproved ? "bg-blue-500" : "bg-slate-200"
                             )} />
                           )}
@@ -4852,87 +4914,97 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
             return (
               <>
-                {/* ── COMPACT DIALOG HEADER ── */}
-                <DialogHeader className="px-4 py-3 sm:px-6 sm:py-3.5 bg-white border-b border-slate-200/80 flex flex-col gap-1.5 shrink-0 sticky top-0 z-30 shadow-2xs relative">
+                {/* ── RESPONSIVE DIALOG HEADER ── */}
+                <DialogHeader className="px-3 py-2 sm:px-6 sm:py-3.5 bg-white border-b border-slate-200/80 flex flex-col gap-1.5 sm:gap-2 shrink-0 sticky top-0 z-30 shadow-2xs relative">
                   {/* Sticky Close Button */}
                   <button
                     type="button"
                     onClick={() => setDetailRow(null)}
-                    className="absolute right-3 top-3 sm:right-5 sm:top-3.5 z-40 flex h-8 w-8 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-2xs border border-slate-200/80"
+                    className="absolute right-3 top-2.5 sm:right-5 sm:top-3.5 z-40 flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-2xs border border-slate-200/80 active:scale-95"
                     aria-label="Close modal"
                     title="Close"
                   >
-                    <X className="h-4 w-4 stroke-[2.5]" />
+                    <X className="h-3.5 w-3.5 sm:h-4 sm:w-4 stroke-[2.5]" />
                   </button>
 
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pr-10 sm:pr-12">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge className="bg-slate-900 text-white hover:bg-slate-900 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{canonicalBranchLabel(brandKeyOf(detailRow), detailRow.location)}</Badge>
-                      <Badge className="bg-slate-100 hover:bg-slate-100 border border-slate-200 text-slate-800 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{detailRow.department}</Badge>
-                      <Badge className="bg-blue-50 hover:bg-blue-50 border border-blue-100 text-blue-700 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
-                      
-                      <div className="flex items-center gap-1.5 pl-1">
-                        <DialogTitle className="text-sm sm:text-base font-black tracking-tight text-slate-950">
-                          Payment Details
-                        </DialogTitle>
-                        <DialogDescription className="sr-only">
-                          Vendor payment request details, attached invoices, and workflow timeline tracking.
-                        </DialogDescription>
-                        {detailRow.requestNo && (
-                          <span className="text-xs font-bold text-slate-500 font-sans tabular-nums">· {detailRow.requestNo}</span>
-                        )}
+                  {/* Row 1: Badges & ID */}
+                  <div className="flex flex-wrap items-center gap-1.5 pr-9 sm:pr-12">
+                    <Badge className="bg-slate-900 text-white hover:bg-slate-900 px-2 py-0.5 text-[9px] sm:text-[9.5px] font-black uppercase tracking-wider rounded-full">{canonicalBranchLabel(brandKeyOf(detailRow), detailRow.location)}</Badge>
+                    <Badge className="bg-slate-100 hover:bg-slate-100 border border-slate-200 text-slate-800 px-2 py-0.5 text-[9px] sm:text-[9.5px] font-black uppercase tracking-wider rounded-full">{detailRow.department}</Badge>
+                    <Badge className="bg-blue-50 hover:bg-blue-50 border border-blue-100 text-blue-700 px-2 py-0.5 text-[9px] sm:text-[9.5px] font-black uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
+                    {detailRow.requestNo && (
+                      <span className="text-xs font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md font-mono border border-slate-200">{detailRow.requestNo}</span>
+                    )}
+                  </div>
+
+                  {/* Row 2: Title, Total & Action Buttons */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-0.5">
+                    <div className="flex items-baseline justify-between sm:justify-start gap-3">
+                      <DialogTitle className="text-base sm:text-lg font-black tracking-tight text-slate-950">
+                        Payment Details
+                      </DialogTitle>
+                      <DialogDescription className="sr-only">
+                        Vendor payment request details, attached invoices, and workflow timeline tracking.
+                      </DialogDescription>
+                      <div className="flex items-baseline gap-1 sm:hidden">
+                        <span className="text-[10px] font-black uppercase text-slate-400">Total:</span>
+                        <span className="text-lg font-black text-slate-950 font-mono tabular-nums">
+                          ₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                      <div className="flex items-baseline gap-1 mr-1">
+                    <div className="flex items-center gap-2 sm:gap-3 justify-between sm:justify-end w-full sm:w-auto">
+                      <div className="hidden sm:flex items-baseline gap-1 mr-1">
                         <span className="text-[10px] font-bold uppercase text-slate-400">Total:</span>
-                        <span className="text-lg sm:text-xl font-black text-slate-900 font-sans tabular-nums">
+                        <span className="text-xl font-black text-slate-900 font-mono tabular-nums">
                           ₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}
                         </span>
                       </div>
 
-                      {/* Top Action Buttons */}
-                      <Button
-                        onClick={() => printPaymentOrder(detailRow)}
-                        variant="outline"
-                        size="sm"
-                        className="h-8 rounded-xl text-xs font-bold flex items-center gap-1.5 px-3 cursor-pointer border bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Print</span>
-                      </Button>
+                      {/* Action Buttons Toolbar */}
+                      <div className="grid grid-cols-3 sm:flex sm:items-center gap-1.5 w-full sm:w-auto">
+                        <Button
+                          onClick={() => printPaymentOrder(detailRow)}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 px-2.5 sm:px-3 cursor-pointer border bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs"
+                        >
+                          <Printer className="w-3.5 h-3.5 shrink-0" />
+                          <span>Print</span>
+                        </Button>
 
-                      <Button
-                        onClick={() => setShowTimeline(!showTimeline)}
-                        size="sm"
-                        className={cn(
-                          "h-8 rounded-xl text-xs font-bold flex items-center gap-1.5 px-3 cursor-pointer border shadow-2xs",
-                          showTimeline
-                            ? "bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200"
-                            : "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
-                        )}
-                        variant="outline"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>{showTimeline ? 'Hide' : `Remarks (${remarksCount})`}</span>
-                      </Button>
-                      
-                      <Button
-                        onClick={() => handlePrintVoucher(detailRow, pendingLabel)}
-                        size="sm"
-                        className="h-8 rounded-xl text-xs font-bold border-slate-200 hover:bg-slate-50 flex items-center gap-1.5 px-3 cursor-pointer shadow-2xs"
-                        variant="outline"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Export</span>
-                      </Button>
+                        <Button
+                          onClick={() => setShowTimeline(!showTimeline)}
+                          size="sm"
+                          className={cn(
+                            "h-8 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 px-2.5 sm:px-3 cursor-pointer border shadow-2xs",
+                            showTimeline
+                              ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+                              : "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                          )}
+                          variant="outline"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{showTimeline ? 'Details' : `Remarks (${remarksCount})`}</span>
+                        </Button>
+                        
+                        <Button
+                          onClick={() => handlePrintVoucher(detailRow, pendingLabel)}
+                          size="sm"
+                          className="h-8 rounded-xl text-xs font-bold border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 px-2.5 sm:px-3 cursor-pointer shadow-2xs"
+                          variant="outline"
+                        >
+                          <Download className="w-3.5 h-3.5 shrink-0" />
+                          <span>Export</span>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </DialogHeader>
 
                 {/* ── DIALOG BODY (ZERO-SCROLL DESKTOP GRID) ── */}
-                <div className="flex-1 overflow-y-auto lg:overflow-hidden p-3.5 sm:p-5 flex flex-col gap-3 min-h-0 bg-slate-50/50">
+                <div className="flex-1 overflow-y-auto lg:overflow-hidden p-2.5 sm:p-5 flex flex-col gap-2.5 sm:gap-3 min-h-0 bg-slate-50/50 overscroll-contain">
                   {/* Stepper Ribbon */}
                   {renderNewWorkflowStepper(detailRow)}
 
@@ -4943,24 +5015,24 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       ? "grid-cols-1 lg:grid-cols-12" 
                       : "grid-cols-1 lg:grid-cols-12"
                   )}>
-                    {/* Left Column (Metadata & Remarks) */}
+                    {/* Left Column (Metadata & Remarks) - Hidden on mobile when Remarks/Timeline is active */}
                     <div className={cn(
-                      "flex flex-col gap-3 h-full overflow-y-auto pr-0.5",
-                      showTimeline ? "lg:col-span-7" : "lg:col-span-7 xl:col-span-7"
+                      "flex-col gap-3 h-full overflow-y-auto pr-0.5",
+                      showTimeline ? "hidden lg:flex lg:col-span-7" : "flex lg:col-span-7 xl:col-span-7"
                     )}>
                       {/* ── SUBMITTER REMARKS (PROMINENT AT TOP) ── */}
                       {detailRow.remarks && (
-                        <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl p-3.5 space-y-1.5 shadow-2xs shrink-0">
+                        <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl p-3.5 sm:p-4 space-y-2 shadow-2xs shrink-0">
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 text-amber-900 text-xs font-bold uppercase tracking-wider">
-                              <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
-                              <span>Submitter Remarks & Justification</span>
+                            <div className="flex items-center gap-1.5 text-amber-900 text-xs font-black uppercase tracking-wider">
+                              <MessageSquare className="w-4 h-4 text-amber-600" />
+                              <span>Submitter Remarks &amp; Justification</span>
                             </div>
-                            <span className="text-[10px] font-semibold text-amber-800/80">
+                            <span className="text-[11px] sm:text-xs font-bold text-amber-900/90">
                               {detailRow.name} · {istDate(detailRow.createdAt)}
                             </span>
                           </div>
-                          <p className="text-xs font-medium text-slate-800 leading-relaxed whitespace-pre-wrap bg-white p-2.5 rounded-xl border border-amber-100/90 shadow-2xs">
+                          <p className="text-xs sm:text-sm font-semibold text-slate-900 leading-relaxed whitespace-pre-wrap bg-white p-3 rounded-xl border border-amber-200 shadow-2xs">
                             “{detailRow.remarks}”
                           </p>
                         </div>
@@ -5105,73 +5177,55 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     {/* Right Column: Attached Documents or Activity Timeline */}
                     {!showTimeline ? (
                       <div className="flex flex-col gap-3 h-full overflow-y-auto pl-0.5 lg:col-span-5">
-                        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex flex-col gap-3 h-full">
-                          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                            <div className="flex items-center gap-1.5 text-slate-800 text-xs font-bold uppercase tracking-wider">
-                              <FileText className="w-4 h-4 text-slate-600" />
-                              <span>Attached Documents ({allDocs.length})</span>
+                        {/* Mobile Compact Direct View Card (< lg) */}
+                        <div className="lg:hidden bg-white border border-slate-200/90 rounded-2xl p-3 sm:p-3.5 space-y-2 shadow-2xs">
+                          <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-blue-600" />
+                              <span className="text-xs font-black uppercase tracking-wider text-slate-900">
+                                Documents ({allDocs.length})
+                              </span>
                             </div>
-                            <span className="text-[10px] font-semibold text-slate-400">Click to preview</span>
+                            <span className="text-[10px] font-bold text-slate-400">Tap to View</span>
                           </div>
 
                           {allDocs.length === 0 ? (
-                            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400 text-xs font-medium">
-                              <FileText className="w-8 h-8 text-slate-300 mb-1" />
-                              <span>No documents attached</span>
-                            </div>
+                            <p className="text-xs text-slate-400 font-medium py-1">No documents attached</p>
                           ) : (
-                            <div className="grid grid-cols-1 gap-2.5 overflow-y-auto pr-1">
+                            <div className="space-y-2">
                               {allDocs.map((doc, idx) => {
                                 const url = doc.url!
-                                const isImage = /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(url) || !url.toLowerCase().endsWith('.pdf')
+                                const isPdf = url.toLowerCase().endsWith('.pdf')
                                 return (
-                                  <div key={idx} className="border border-slate-200/90 bg-slate-50/60 hover:bg-slate-50 rounded-xl p-2.5 transition-all flex flex-col gap-2">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-xs font-bold text-slate-800 truncate">{doc.label}</span>
-                                      <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">{isImage ? 'Image' : 'PDF'}</span>
+                                  <div 
+                                    key={idx} 
+                                    onClick={() => setPreviewDocUrl(url)}
+                                    className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50/70 border border-slate-200/80 cursor-pointer transition-all active:scale-[0.99]"
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <div className="h-8 w-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                                        <FileText className="w-4 h-4" />
+                                      </div>
+                                      <div className="flex flex-col min-w-0">
+                                        <span className="text-xs font-black text-slate-900 truncate">{doc.label}</span>
+                                        <span className="text-[10px] font-semibold text-slate-500">{isPdf ? 'PDF Document' : 'Image Attachment'}</span>
+                                      </div>
                                     </div>
 
-                                    {isImage ? (
-                                      <div 
-                                        onClick={() => setPreviewDocUrl(url)}
-                                        className="relative h-28 sm:h-32 w-full rounded-lg overflow-hidden bg-slate-900/5 border border-slate-200 cursor-pointer group flex items-center justify-center"
-                                      >
-                                        <img 
-                                          src={url} 
-                                          alt={doc.label} 
-                                          loading="lazy"
-                                          decoding="async"
-                                          className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
-                                        />
-                                        <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-bold">
-                                          <Eye className="w-3.5 h-3.5" />
-                                          <span>Click to Expand</span>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div 
-                                        onClick={() => setPreviewDocUrl(url)}
-                                        className="h-20 w-full rounded-lg bg-slate-100 border border-slate-200 cursor-pointer group flex flex-col items-center justify-center p-2 gap-1 hover:bg-slate-200/70 transition-colors"
-                                      >
-                                        <FileText className="w-6 h-6 text-slate-600 group-hover:scale-110 transition-transform" />
-                                        <span className="text-[11px] font-bold text-slate-700 truncate">{doc.label}</span>
-                                      </div>
-                                    )}
-
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                                       <button
                                         type="button"
                                         onClick={() => setPreviewDocUrl(url)}
-                                        className="flex-1 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                                        className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
                                       >
                                         <Eye className="w-3.5 h-3.5" />
-                                        <span>View Document</span>
+                                        <span>View</span>
                                       </button>
                                       <a
                                         href={url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-xs font-bold bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1 transition-colors"
+                                        className="h-8 w-8 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center transition-colors shadow-2xs"
                                         title="Open in new tab"
                                       >
                                         <ExternalLink className="w-3.5 h-3.5" />
@@ -5183,17 +5237,101 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             </div>
                           )}
                         </div>
+
+                        {/* Desktop Full Preview Panel (>= lg) */}
+                        <div className="hidden lg:flex bg-white border border-slate-200/90 rounded-2xl shadow-2xs flex-col overflow-hidden h-full">
+                          <div className="p-4 flex items-center justify-between border-b border-slate-100 bg-white">
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-slate-700" />
+                              <span className="text-sm font-black uppercase tracking-wider text-slate-900">
+                                Documents ({allDocs.length})
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-semibold text-slate-400">Click to preview</span>
+                          </div>
+
+                          <div className="p-4 flex-col gap-3 flex-1 flex overflow-y-auto">
+                            {allDocs.length === 0 ? (
+                              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400 text-xs font-medium">
+                                <FileText className="w-8 h-8 text-slate-300 mb-1" />
+                                <span>No documents attached</span>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 gap-2.5 overflow-y-auto pr-1">
+                                {allDocs.map((doc, idx) => {
+                                  const url = doc.url!
+                                  const isImage = /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(url) || !url.toLowerCase().endsWith('.pdf')
+                                  return (
+                                    <div key={idx} className="border border-slate-200/90 bg-slate-50/60 hover:bg-slate-50 rounded-xl p-2.5 transition-all flex flex-col gap-2">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-xs font-bold text-slate-800 truncate">{doc.label}</span>
+                                        <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">{isImage ? 'Image' : 'PDF'}</span>
+                                      </div>
+
+                                      {isImage ? (
+                                        <div 
+                                          onClick={() => setPreviewDocUrl(url)}
+                                          className="relative h-28 sm:h-32 w-full rounded-lg overflow-hidden bg-slate-900/5 border border-slate-200 cursor-pointer group flex items-center justify-center"
+                                        >
+                                          <img 
+                                            src={url} 
+                                            alt={doc.label} 
+                                            loading="lazy"
+                                            decoding="async"
+                                            className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+                                          />
+                                          <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-bold">
+                                            <Eye className="w-3.5 h-3.5" />
+                                            <span>Click to Expand</span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div 
+                                          onClick={() => setPreviewDocUrl(url)}
+                                          className="h-20 w-full rounded-lg bg-slate-100 border border-slate-200 cursor-pointer group flex flex-col items-center justify-center p-2 gap-1 hover:bg-slate-200/70 transition-colors"
+                                        >
+                                          <FileText className="w-6 h-6 text-slate-600 group-hover:scale-110 transition-transform" />
+                                          <span className="text-[11px] font-bold text-slate-700 truncate">{doc.label}</span>
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => setPreviewDocUrl(url)}
+                                          className="flex-1 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 px-2.5 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs active:scale-[0.98]"
+                                        >
+                                          <Eye className="w-3.5 h-3.5" />
+                                          <span>View Document</span>
+                                        </button>
+                                        <a
+                                          href={url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-xs font-bold bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg py-2 px-2.5 flex items-center justify-center gap-1 transition-colors"
+                                          title="Open in new tab"
+                                        >
+                                          <ExternalLink className="w-3.5 h-3.5" />
+                                        </a>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       /* Right Column - Activity Timeline Panel */
-                      <div className="bg-white border border-slate-200/90 rounded-2xl flex flex-col overflow-hidden shadow-2xs w-full lg:col-span-5 h-full animate-in slide-in-from-right duration-200">
+                      <div className="bg-white border border-slate-200/90 rounded-2xl flex flex-col overflow-hidden shadow-2xs w-full lg:col-span-5 h-full min-h-[380px] animate-in fade-in duration-200">
                         {/* Panel Tabs */}
-                        <div className="flex border-b border-slate-100 shrink-0 bg-slate-50/40">
+                        <div className="flex border-b border-slate-100 shrink-0 bg-slate-50/50">
                           <button
                             onClick={() => setActiveTab('timeline')}
                             className={cn(
-                              "flex-1 py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer",
-                              activeTab === 'timeline' ? "border-blue-600 text-blue-700 bg-white" : "border-transparent text-slate-400 hover:text-slate-600"
+                              "flex-1 py-3 px-3.5 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer",
+                              activeTab === 'timeline' ? "border-blue-600 text-blue-700 bg-white shadow-2xs" : "border-transparent text-slate-400 hover:text-slate-600"
                             )}
                           >
                             <Activity className="w-3.5 h-3.5" />
@@ -5202,39 +5340,42 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           <button
                             onClick={() => setActiveTab('remarks')}
                             className={cn(
-                              "flex-1 py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer",
-                              activeTab === 'remarks' ? "border-blue-600 text-blue-700 bg-white" : "border-transparent text-slate-400 hover:text-slate-600"
+                              "flex-1 py-3 px-3.5 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer",
+                              activeTab === 'remarks' ? "border-blue-600 text-blue-700 bg-white shadow-2xs" : "border-transparent text-slate-400 hover:text-slate-600"
                             )}
                           >
                             <MessageSquare className="w-3.5 h-3.5" />
                             <span>Remarks</span>
-                            <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.2 rounded-full shrink-0">
+                            <span className="bg-blue-100 text-blue-800 text-[10px] font-black px-2 py-0.5 rounded-full shrink-0">
                               {remarksCount}
                             </span>
                           </button>
                         </div>
 
-                        {/* Timeline List */}
-                        <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
+                        {/* Timeline / Remarks Content List */}
+                        <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-3">
                           {displayedEvents.length === 0 ? (
-                            <p className="text-center text-xs text-slate-400 font-medium py-6">No events to display.</p>
+                            <div className="text-center py-10 space-y-2">
+                              <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />
+                              <p className="text-xs text-slate-400 font-bold">No remarks or timeline events recorded yet.</p>
+                            </div>
                           ) : (
                             displayedEvents.map((evt, idx) => {
                               let IconComponent = MessageSquare
-                              let iconBgColor = 'bg-slate-50 text-slate-500 border-slate-100'
+                              let iconBgColor = 'bg-slate-50 text-slate-500 border-slate-200'
                               
                               if (evt.iconType === 'phone') {
                                 IconComponent = Phone
-                                iconBgColor = 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                iconBgColor = 'bg-emerald-50 text-emerald-600 border-emerald-200'
                               } else if (evt.iconType === 'create') {
                                 IconComponent = FileText
-                                iconBgColor = 'bg-blue-50 text-blue-600 border-blue-100'
+                                iconBgColor = 'bg-blue-50 text-blue-600 border-blue-200'
                               } else if (evt.iconType === 'clip') {
                                 IconComponent = Paperclip
-                                iconBgColor = 'bg-blue-50 text-blue-600 border-blue-100'
+                                iconBgColor = 'bg-blue-50 text-blue-600 border-blue-200'
                               } else if (evt.iconType === 'remark') {
                                 IconComponent = MessageSquare
-                                iconBgColor = 'bg-amber-50 text-amber-600 border-amber-100'
+                                iconBgColor = 'bg-amber-50 text-amber-600 border-amber-200'
                               } else if (evt.iconType === 'approve') {
                                 IconComponent = Check
                                 iconBgColor = 'bg-emerald-500 text-white border-emerald-500 shadow-xs'
@@ -5246,25 +5387,30 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                 iconBgColor = 'bg-amber-500 text-white border-amber-500 shadow-xs'
                               } else if (evt.iconType === 'gl') {
                                 IconComponent = RefreshCw
-                                iconBgColor = 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                                iconBgColor = 'bg-indigo-50 text-indigo-600 border-indigo-200'
                               }
 
                               return (
-                                <div key={evt.id} className="flex gap-2.5 relative">
-                                  {idx < displayedEvents.length - 1 && (
-                                    <div className="absolute top-6 left-3 w-0.5 h-[calc(100%+0.75rem)] bg-slate-100" />
-                                  )}
-
-                                  <div className={cn("h-6 w-6 rounded-full border flex items-center justify-center shrink-0 z-10", iconBgColor)}>
-                                    <IconComponent className="w-3 h-3" />
+                                <div key={evt.id} className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 sm:p-3.5 space-y-2 transition-all">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className={cn("h-6 w-6 rounded-full border flex items-center justify-center shrink-0", iconBgColor)}>
+                                        <IconComponent className="w-3.5 h-3.5" />
+                                      </div>
+                                      <span className="font-black text-slate-900 text-xs sm:text-sm">
+                                        {evt.user || 'System'}
+                                      </span>
+                                      <span className="text-[9.5px] font-bold uppercase px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
+                                        {evt.title}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 font-mono">
+                                      {istDate(evt.timestamp)}
+                                    </span>
                                   </div>
 
-                                  <div className="space-y-0.5 text-xs">
-                                    <span className="font-bold text-slate-800 block leading-tight">{evt.title}</span>
-                                    <div className="font-medium text-slate-600 leading-relaxed text-[11px]">{evt.description}</div>
-                                    <span className="text-[9px] font-semibold text-slate-400 block">
-                                      {evt.user} · {istDate(evt.timestamp)}
-                                    </span>
+                                  <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/80 text-xs sm:text-sm font-semibold text-slate-900 leading-relaxed whitespace-pre-wrap shadow-2xs">
+                                    {evt.description}
                                   </div>
                                 </div>
                               )
@@ -5273,29 +5419,29 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         </div>
 
                         {/* Timeline Text Area Footer */}
-                        <div className="p-3 border-t border-slate-100 bg-slate-50/40 space-y-2 shrink-0">
+                        <div className="p-3 sm:p-3.5 border-t border-slate-100 bg-slate-50/60 space-y-2 shrink-0">
                           <textarea
-                            placeholder="Add a remark..."
+                            placeholder="Type a remark or instruction..."
                             value={remarkText}
                             maxLength={500}
                             onChange={e => setRemarkText(e.target.value)}
-                            className="w-full min-h-[60px] p-2.5 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            className="w-full min-h-[65px] p-2.5 sm:p-3 text-xs sm:text-sm font-medium text-slate-900 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 placeholder:text-slate-400"
                           />
                           <div className="flex justify-between items-center">
-                            <span className="text-[9px] font-medium text-slate-400">
+                            <span className="text-[10px] font-bold text-slate-400 font-mono">
                               {remarkText.length} / 500
                             </span>
                             <Button
                               size="sm"
                               disabled={!remarkText.trim() || addRemarkPending}
                               onClick={handleAddRemark}
-                              className="h-7 rounded-lg bg-blue-600 hover:bg-blue-700 text-[10px] font-bold flex items-center gap-1.5 px-2.5 cursor-pointer"
+                              className="h-8 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold flex items-center gap-1.5 px-3.5 cursor-pointer shadow-xs active:scale-[0.98]"
                             >
                               {addRemarkPending ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
                                 <>
-                                  <Send className="w-3 h-3" />
+                                  <Send className="w-3.5 h-3.5" />
                                   <span>Send Remark</span>
                                 </>
                               )}
@@ -5308,14 +5454,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 </div>
 
                 {/* Dialog Footer */}
-                <div className="px-4 py-2.5 sm:px-6 sm:py-3 border-t border-slate-200/90 bg-white flex flex-col sm:flex-row justify-between items-center gap-2.5 w-full shrink-0">
-                  <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center sm:text-left">
-                    <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>Created by {detailRow.name} on {istDateTime(detailRow.createdAt)}</span>
+                <div className="px-2.5 py-2 sm:px-6 sm:py-3 border-t border-slate-200/90 bg-white flex flex-col sm:flex-row justify-between items-center gap-1.5 sm:gap-3 w-full shrink-0">
+                  <div className="flex items-center gap-1 text-[9.5px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider text-center sm:text-left">
+                    <Info className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span className="truncate max-w-[280px] sm:max-w-none">Created by {detailRow.name} on {istDateTime(detailRow.createdAt)}</span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+
+                  <div className="w-full sm:w-auto">
                     {isUserEligibleForPendingStage && !isApproved && !isRejected ? (
-                      <>
+                      <div className="grid grid-cols-4 sm:flex sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
                         <button
                           type="button"
                           disabled={actionMutation.isPending}
@@ -5327,15 +5474,16 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               remarks: remarkText || ''
                             })
                           }}
-                          className="text-white text-xs font-bold rounded-xl h-9 px-4 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+                          className="text-white text-[11px] sm:text-xs font-black rounded-xl h-8.5 sm:h-9 px-1.5 sm:px-4 flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
                           style={{ backgroundColor: 'var(--dashboard-action-bg)', color: '#ffffff' }}
                         >
                           {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <>
-                              <Check className="w-3.5 h-3.5" />
-                              <span>{pendingStageKey === 'payment_done' ? 'Record Payment' : 'Approve & Forward'}</span>
+                              <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                              <span className="truncate">{pendingStageKey === 'payment_done' ? 'Pay' : 'Approve'}</span>
+                              <span className="hidden sm:inline">{pendingStageKey === 'payment_done' ? 'ment Record' : ' & Forward'}</span>
                             </>
                           )}
                         </button>
@@ -5347,11 +5495,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             setActionStage(pendingStageKey!)
                             setActionDecision('SEND_BACK')
                           }}
-                          className="text-white text-xs font-bold rounded-xl h-9 px-3.5 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                          className="text-white text-[11px] sm:text-xs font-black rounded-xl h-8.5 sm:h-9 px-1 sm:px-3.5 flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
                           style={{ backgroundColor: 'var(--dashboard-warning-text)', color: '#ffffff' }}
                         >
-                          <CornerUpLeft className="w-3.5 h-3.5" />
-                          <span>Send Back</span>
+                          <CornerUpLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                          <span className="truncate">Back</span>
+                          <span className="hidden sm:inline">&nbsp;Submitter</span>
                         </button>
 
                         <button
@@ -5361,11 +5510,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             setActionStage(pendingStageKey!)
                             setActionDecision('REJECT')
                           }}
-                          className="text-white text-xs font-bold rounded-xl h-9 px-3.5 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                          className="text-white text-[11px] sm:text-xs font-black rounded-xl h-8.5 sm:h-9 px-1 sm:px-3 flex items-center justify-center gap-1 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
                           style={{ backgroundColor: 'var(--dashboard-danger)', color: '#ffffff' }}
                         >
-                          <X className="w-3.5 h-3.5" />
-                          <span>Reject</span>
+                          <X className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Reject</span>
                         </button>
 
                         <button
@@ -5375,25 +5524,27 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             setActionStage(pendingStageKey!)
                             setActionDecision('HOLD')
                           }}
-                          className="bg-slate-600 hover:bg-slate-700 text-white text-xs font-bold rounded-xl h-9 px-3.5 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                          className="bg-slate-700 hover:bg-slate-800 text-white text-[11px] sm:text-xs font-black rounded-xl h-8.5 sm:h-9 px-1 sm:px-3 flex items-center justify-center gap-1 cursor-pointer shadow-xs transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
                         >
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>Hold</span>
+                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Hold</span>
                         </button>
-                      </>
+                      </div>
                     ) : (
-                      <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
-                        Status: {pendingLabel}
-                      </span>
+                      <div className="flex items-center justify-between sm:justify-end gap-2 w-full">
+                        <span className="text-[11px] sm:text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl border border-slate-200 truncate">
+                          Status: {pendingLabel}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setDetailRow(null)}
+                          className="text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs font-black rounded-xl h-8.5 sm:h-9 px-3.5 sm:px-4 flex items-center justify-center gap-1.5 cursor-pointer transition-all border border-slate-200 shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Close</span>
+                        </button>
+                      </div>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => setDetailRow(null)}
-                      className="text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs font-bold rounded-xl h-9 px-3.5 flex items-center justify-center gap-1.5 cursor-pointer transition-all border border-slate-200 shrink-0"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      <span>Close</span>
-                    </button>
                   </div>
                 </div>
               </>
@@ -5805,10 +5956,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             
             return (
               <>
-                <DialogHeader className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
+                <DialogHeader className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <DialogTitle className="text-xl font-black tracking-tight text-slate-950">
+                      <DialogTitle className="text-lg sm:text-xl font-black tracking-tight text-slate-950">
                         Document Preview
                       </DialogTitle>
                       <DialogDescription className="text-xs text-slate-400 font-semibold mt-1">
@@ -5819,7 +5970,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       href={previewDocUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 h-10 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-xs font-black text-white transition-all shadow-md shadow-indigo-100"
+                      className="inline-flex items-center justify-center gap-2 h-9 sm:h-10 px-4 rounded-xl sm:rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-xs font-black text-white transition-all shadow-md shadow-indigo-100 shrink-0"
                     >
                       <ExternalLink className="w-4 h-4" />
                       <span>Open Original</span>
@@ -6037,8 +6188,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         onOpenChange={setShowAddGlDialog}
         onSuccess={() => {
           fetch('/api/brands/kia/gl-accounts')
-            .then(res => res.json())
-            .then(data => setGlAccounts(data.rows || []))
+            .then(async res => {
+              if (!res.ok) return { rows: [] }
+              const text = await res.text().catch(() => '')
+              return text ? JSON.parse(text) : { rows: [] }
+            })
+            .then(data => setGlAccounts(data?.rows || []))
             .catch(err => console.error('Error fetching GL accounts:', err))
           toast({ title: 'GL Category added', description: 'New GL category saved successfully.', variant: 'success' })
         }}
@@ -6229,7 +6384,11 @@ function AddGlDialog({ open, onOpenChange, onSuccess }: AddGlDialogProps) {
           monthlyBudget: '0.00'
         })
       })
-      const data = await res.json()
+      const text = await res.text().catch(() => '')
+      let data: any = {}
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {}
       if (!res.ok || data.error) {
         throw new Error(data.error || 'Failed to create GL category')
       }

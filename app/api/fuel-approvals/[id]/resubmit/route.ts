@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { fuelApprovals } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { canViewFuelApprovals } from '@/lib/fuel-approvals/view-access'
+import { invalidateFuelManagementCache, parseDepartment, resolveFuelGatePass } from '@/lib/fuel-approvals/accountability'
 
 export async function POST(
   request: NextRequest,
@@ -39,6 +40,8 @@ export async function POST(
       totalCost,
       fuelSlipUrl,
       remarks,
+      gatePassId,
+      department,
     } = body
 
     const [existing] = await db
@@ -77,6 +80,22 @@ export async function POST(
       }
     }
 
+    // Absent keys keep what is stored; a present key (even blank) is the requester's new answer.
+    let departmentToStore = existing.department
+    if ('department' in body) {
+      const result = parseDepartment(department)
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
+      departmentToStore = result.value
+    }
+    let passToStore = existing.gatePassId
+    let vinToStore = existing.vehicleVin
+    if ('gatePassId' in body) {
+      const result = await resolveFuelGatePass(gatePassId, existing.id)
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
+      passToStore = result.pass?.id ?? null
+      if (result.pass?.vin && !existing.assetCode) vinToStore = result.pass.vin
+    }
+
     const nowIso = new Date().toISOString()
     const nowTimestamp = new Date()
 
@@ -105,6 +124,11 @@ export async function POST(
         currentKmReading: currentKmReading !== undefined ? String(currentKmReading) : existing.currentKmReading,
         fuelFilledDate: fuelFilledDate ? String(fuelFilledDate).slice(0, 10) : existing.fuelFilledDate,
         fuelFilledLtrs: parsedLtrs.toFixed(2),
+        // A re-submission is a new request: whatever was approved before no longer applies.
+        approvedQuantity: null,
+        gatePassId: passToStore,
+        vehicleVin: vinToStore,
+        department: departmentToStore,
         totalCost: parsedCost,
         fuelSlipUrl: fuelSlipUrl || existing.fuelSlipUrl,
         remarks: remarks || existing.remarks,
@@ -117,15 +141,15 @@ export async function POST(
       .where(eq(fuelApprovals.id, id))
       .returning()
 
+    await invalidateFuelManagementCache()
+
     return NextResponse.json({
       item: updated,
       message: 'Fuel request re-submitted successfully to CEO for review',
     })
   } catch (error) {
     console.error('Error re-submitting fuel approval:', error)
-    return NextResponse.json(
-      { error: 'Failed to re-submit fuel approval', details: error instanceof Error ? error.message : 'Unknown' },
-      { status: 500 }
-    )
+    // ⚠️ No `details`: a raw driver message names columns and constraints to any caller.
+    return NextResponse.json({ error: 'Failed to re-submit fuel approval' }, { status: 500 })
   }
 }

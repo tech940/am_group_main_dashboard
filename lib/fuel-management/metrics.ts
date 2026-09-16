@@ -37,7 +37,7 @@ import type {
   FuelManagementBranch,
   FuelManagementInput,
   FuelManagementPeriod,
-  FuelManagementResponse,
+  DemoFuelReconciliation,
   FuelPurposeEnergyMatrixRow,
   FuelPurposeSummary,
   FuelRowInput,
@@ -473,7 +473,7 @@ const KIND_RANK: Record<FuelCheckKind, number> = {
  *    branch. Otherwise a fill hidden by the branch filter would inflate km per litre, and the same Jammu fill would
  *    be flagged under "All" but not under "Jammu".
  */
-export function buildFuelManagementResponse(input: FuelManagementInput): FuelManagementResponse {
+export function buildFuelManagementResponse(input: FuelManagementInput): DemoFuelReconciliation {
   const { period } = input
   const fleet = indexDemoFleet(input.demoFleet)
   const inPeriod = (date: string) => date >= period.from && date <= period.to

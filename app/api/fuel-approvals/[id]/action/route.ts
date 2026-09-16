@@ -5,6 +5,7 @@ import { fuelApprovals } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { canUserApproveStage } from '@/lib/fuel-approvals/access'
 import type { FuelApprovalStatus, FuelApprovalStage } from '@/lib/fuel-approvals/types'
+import { invalidateFuelManagementCache, parseQuantity } from '@/lib/fuel-approvals/accountability'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -20,10 +21,20 @@ export async function POST(
     }
 
     const { id } = await context.params
-    const body = await request.json()
-    const { action, remarks } = body as {
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
+    const { action, remarks, approvedQuantity } = body as {
       action: 'APPROVE' | 'HOLD' | 'SEND_BACK' | 'REJECT' | 'RESET'
       remarks?: string
+      /** Litres approved. Absent → the requested litres (owner decision 2026-09-16). */
+      approvedQuantity?: unknown
+    }
+
+    const approvedParsed = parseQuantity(approvedQuantity, 'Approved litres')
+    if (!approvedParsed.ok) {
+      return NextResponse.json({ error: approvedParsed.error }, { status: 400 })
     }
 
     if (!action || !['APPROVE', 'HOLD', 'SEND_BACK', 'REJECT', 'RESET'].includes(action)) {
@@ -72,6 +83,7 @@ export async function POST(
 
     const nowIso = new Date().toISOString()
     const nowTimestamp = new Date()
+    let approvalNote = ''
 
     let newStatus: FuelApprovalStatus = currentStatus
     let newStage: FuelApprovalStage = currentStage
@@ -98,6 +110,17 @@ export async function POST(
     } else if (action === 'APPROVE') {
       newStatus = 'approved'
       newStage = 'completed'
+      /*
+       * ⚠️ APPROVED IS ITS OWN FACT (migration 0071). The approver may approve fewer — or more — litres than
+       * were asked for; with no figure given, what was asked for is what was approved. Either way the number is
+       * written here, at the moment of approval, so "requested vs approved" never compares a figure with itself.
+       */
+      const requested = Number(existing.fuelFilledLtrs)
+      const approved = approvedParsed.value ?? requested
+      updatePayload.approvedQuantity = approved.toFixed(2)
+      if (approvedParsed.value !== null && Math.abs(approved - requested) >= 0.005) {
+        approvalNote = `Approved ${approved} L of the ${requested} L requested.`
+      }
       if (currentStage === 'ceo' || currentStage === 'ed') {
         updatePayload.ceoApprovedBy = user.id
         updatePayload.ceoApprovedByName = user.fullName
@@ -142,6 +165,8 @@ export async function POST(
       updatePayload.rejectStage = null
       updatePayload.rejectRemarks = null
       updatePayload.sendBackReason = null
+      // An approval that is undone takes its approved figure with it.
+      updatePayload.approvedQuantity = null
     }
 
     updatePayload.status = newStatus
@@ -157,7 +182,7 @@ export async function POST(
       userName: user.fullName,
       userEmail: user.email,
       userRole: user.role,
-      remarks: remarks || '',
+      remarks: [approvalNote, remarks || ''].filter(Boolean).join(' '),
       timestamp: nowIso,
     }
 
@@ -168,6 +193,8 @@ export async function POST(
       .set(updatePayload)
       .where(eq(fuelApprovals.id, id))
       .returning()
+
+    await invalidateFuelManagementCache()
 
     return NextResponse.json({
       item: updated,

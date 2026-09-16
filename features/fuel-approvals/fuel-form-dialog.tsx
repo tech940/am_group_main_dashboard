@@ -31,6 +31,7 @@ import {
   FUEL_REQUIRED_FOR_OPTIONS,
   PRECONFIGURED_VEHICLES,
   FUEL_TYPES,
+  FUEL_DEPARTMENTS,
   detectFuelType,
   parseFuelSlipUrls,
 } from '@/lib/fuel-approvals/constants'
@@ -39,6 +40,28 @@ import type { FuelApprovalRecord, FuelLocation, FuelRequiredFor, FuelType } from
 interface SlipItem {
   url: string
   name: string
+}
+
+/** A "Fuel filling" gate pass the request can be linked to — GET /api/fuel-approvals/gate-passes. */
+interface FuelPassOption {
+  id: string
+  passNo: string
+  vin: string
+  registrationNumber: string | null
+  model: string | null
+  status: string
+  gateOutAt: string | null
+  fuelLitres: number | null
+  fuelAmount: number | null
+}
+
+function describePass(pass: FuelPassOption): string {
+  const car = [pass.registrationNumber || `VIN …${pass.vin.slice(-6)}`, pass.model].filter(Boolean).join(' · ')
+  const when = pass.gateOutAt
+    ? new Date(pass.gateOutAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : ''
+  const pump = pass.fuelLitres !== null ? ` · pump ${pass.fuelLitres} L` : pass.status === 'out' ? ' · still out' : ''
+  return `${pass.passNo} — ${car}${when ? ` · ${when}` : ''}${pump}`
 }
 
 interface FuelFormDialogProps {
@@ -129,6 +152,11 @@ export function FuelFormDialog({
   const [totalCost, setTotalCost] = useState<string>('')
   const [slips, setSlips] = useState<SlipItem[]>([])
   const [remarks, setRemarks] = useState<string>('')
+  // Accountability (migration 0071): who the fuel is for, and the gate pass that shows the pump reading.
+  const [department, setDepartment] = useState<string>('')
+  const [gatePassId, setGatePassId] = useState<string>('')
+  const [passOptions, setPassOptions] = useState<FuelPassOption[]>([])
+  const [passesLoading, setPassesLoading] = useState(false)
 
   // State for auto-detecting last fuel date
   const [checkingLastFuel, setCheckingLastFuel] = useState(false)
@@ -168,6 +196,8 @@ export function FuelFormDialog({
       setFuelFilledLtrs(String(initialData.fuelFilledLtrs || ''))
       setTotalCost(initialData.totalCost !== undefined && initialData.totalCost !== null ? String(initialData.totalCost) : '')
       setRemarks(initialData.remarks || '')
+      setDepartment(initialData.department || '')
+      setGatePassId(initialData.gatePassId || '')
 
       const parsedUrls = parseFuelSlipUrls(initialData.fuelSlipUrl)
       setSlips(
@@ -202,9 +232,37 @@ export function FuelFormDialog({
     setTotalCost('')
     setSlips([])
     setRemarks('')
+    setDepartment('')
+    setGatePassId('')
     setLastFuelAutoDetected(null)
     lastFetchedQueryRef.current = ''
   }
+
+  // The fuel-filling gate passes this request could be linked to. Loaded when the form opens; a re-submit
+  // keeps its own pass in the list.
+  const forRequestId = initialData?.id ?? null
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setPassesLoading(true)
+    const query = forRequestId ? `?forRequest=${encodeURIComponent(forRequestId)}` : ''
+    fetch(`/api/fuel-approvals/gate-passes${query}`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : { passes: [] }))
+      .then((data: { passes?: FuelPassOption[] }) => {
+        if (!cancelled) setPassOptions(Array.isArray(data.passes) ? data.passes : [])
+      })
+      .catch(() => {
+        if (!cancelled) setPassOptions([])
+      })
+      .finally(() => {
+        if (!cancelled) setPassesLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, forRequestId])
+
+  const selectedPass = passOptions.find((pass) => pass.id === gatePassId) ?? null
 
   // Auto-check last fuel date and VIN when vehicle changes (or VIN changes when no vehicle set)
   useEffect(() => {
@@ -436,6 +494,8 @@ export function FuelFormDialog({
         totalCost: costNum !== null && !isNaN(costNum) && costNum > 0 ? costNum : null,
         fuelSlipUrl,
         remarks: remarks.trim() || null,
+        department: department || null,
+        gatePassId: gatePassId || null,
       }
 
       const url = isEditing
@@ -524,6 +584,64 @@ export function FuelFormDialog({
                   </option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          {/* Row 1b: who the fuel is for, and the gate pass behind it (migration 0071) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="fuel-department" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Department using the fuel
+                </label>
+                <span className="text-[11px] text-slate-400 font-normal">optional</span>
+              </div>
+              <select
+                id="fuel-department"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="w-full h-10 px-3 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-600"
+              >
+                <option value="">Not specified</option>
+                {FUEL_DEPARTMENTS.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="fuel-gate-pass" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Fuel-filling gate pass
+                </label>
+                <span className="text-[11px] text-slate-400 font-normal">
+                  {passesLoading ? 'loading…' : fuelRequiredFor === 'DEMO' ? 'for demo cars' : 'optional'}
+                </span>
+              </div>
+              <select
+                id="fuel-gate-pass"
+                value={gatePassId}
+                onChange={(e) => setGatePassId(e.target.value)}
+                disabled={passesLoading}
+                className="w-full h-10 px-3 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:opacity-60"
+              >
+                <option value="">No gate pass</option>
+                {passOptions.map((pass) => (
+                  <option key={pass.id} value={pass.id}>{describePass(pass)}</option>
+                ))}
+                {gatePassId && !selectedPass && !passesLoading && (
+                  <option value={gatePassId}>Linked pass (no longer listed)</option>
+                )}
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                {selectedPass
+                  ? selectedPass.fuelLitres !== null
+                    ? `The pump meter on ${selectedPass.passNo} shows ${selectedPass.fuelLitres} L — it becomes the actual litres for this request.`
+                    : `${selectedPass.passNo} has no pump reading yet; it is added when the car returns.`
+                  : passOptions.length === 0 && !passesLoading
+                    ? 'No fuel-filling passes in the last 3 weeks.'
+                    : 'Pick the pass the car went out on to fill fuel.'}
+              </p>
             </div>
           </div>
 
@@ -774,7 +892,7 @@ export function FuelFormDialog({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Quantity (Liters) <span className="text-rose-500">*</span>
+                Requested litres <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <Input

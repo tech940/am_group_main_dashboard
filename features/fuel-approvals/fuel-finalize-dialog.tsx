@@ -28,7 +28,7 @@ import {
   Calendar,
   PencilLine,
 } from 'lucide-react'
-import { parseFuelSlipUrls, getFuelFinalization } from '@/lib/fuel-approvals/constants'
+import { parseFuelSlipUrls, getFuelFinalization, getFuelQuantities, isNonVehiclePurpose } from '@/lib/fuel-approvals/constants'
 import type { FuelApprovalRecord } from '@/lib/fuel-approvals/types'
 
 interface SlipItem {
@@ -102,6 +102,15 @@ export function FuelFinalizeDialog({
   const [totalCost, setTotalCost] = useState<string>('')
   const [slips, setSlips] = useState<SlipItem[]>([])
   const [remarks, setRemarks] = useState<string>('')
+  // Migration 0071: what actually went in, where, and whether the tank was filled.
+  const [actualLitres, setActualLitres] = useState<string>('')
+  const [odometer, setOdometer] = useState<string>('')
+  const [fullTank, setFullTank] = useState<boolean | null>(null)
+  const [station, setStation] = useState<string>('')
+  const [pumpLitres, setPumpLitres] = useState<{ passNo: string; litres: number } | null>(null)
+  // The gate pass this order is (or will be) tied to. Older requests had no way to pick one when raised.
+  const [passId, setPassId] = useState<string>('')
+  const [passOptions, setPassOptions] = useState<{ id: string; passNo: string; registrationNumber: string | null; model: string | null; vin: string; fuelLitres: number | null; fuelAmount: number | null }[]>([])
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -119,12 +128,54 @@ export function FuelFinalizeDialog({
         }))
       )
       setRemarks('')
+      const quantities = getFuelQuantities(record)
+      setActualLitres(quantities.actual !== null ? String(quantities.actual) : '')
+      const odo = record.odometerKm ?? null
+      setOdometer(odo !== null && odo !== undefined && String(odo) !== '' ? String(Number(odo)) : (record.currentKmReading || '').replace(/[^0-9.]/g, ''))
+      setFullTank(typeof record.isFullTank === 'boolean' ? record.isFullTank : null)
+      setStation(record.stationName || '')
     } else if (!open) {
       setTotalCost('')
       setSlips([])
       setRemarks('')
+      setActualLitres('')
+      setOdometer('')
+      setFullTank(null)
+      setStation('')
+      setPumpLitres(null)
     }
   }, [record, open])
+
+  /*
+   * The linked "Fuel filling" gate pass carries a pump-meter reading. When the order has no actual yet, that
+   * reading is the best evidence there is, so it is offered — never silently saved.
+   */
+  const linkedPassId = record?.gatePassId ?? null
+  const recordId = record?.id ?? null
+  useEffect(() => {
+    setPassId(linkedPassId ?? '')
+    if (!open || !recordId) {
+      setPassOptions([])
+      return
+    }
+    let cancelled = false
+    fetch(`/api/fuel-approvals/gate-passes?forRequest=${encodeURIComponent(recordId)}`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : { passes: [] }))
+      .then((data: { passes?: typeof passOptions }) => {
+        if (!cancelled) setPassOptions(Array.isArray(data.passes) ? data.passes : [])
+      })
+      .catch(() => {
+        if (!cancelled) setPassOptions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, linkedPassId, recordId])
+
+  useEffect(() => {
+    const pass = passOptions.find((p) => p.id === passId)
+    setPumpLitres(pass && pass.fuelLitres !== null ? { passNo: pass.passNo, litres: pass.fuelLitres } : null)
+  }, [passId, passOptions])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files
@@ -204,6 +255,31 @@ export function FuelFinalizeDialog({
       return
     }
 
+    const actualNum = actualLitres.trim() ? Number(actualLitres) : null
+    const alreadyClosed = getFuelFinalization(record).finalized
+    if (actualNum === null && !alreadyClosed) {
+      toast({ title: 'Actual litres required', description: 'Enter the litres on the bill or the pump meter.', variant: 'error' })
+      return
+    }
+    if (actualNum !== null && (!Number.isFinite(actualNum) || actualNum <= 0)) {
+      toast({ title: 'Invalid actual litres', description: 'Enter a number above zero.', variant: 'error' })
+      return
+    }
+    const vehicleFill = !isNonVehiclePurpose(record.fuelRequiredFor)
+    const odoNum = odometer.trim() ? Number(odometer.replace(/[,\s]/g, '')) : null
+    if (odoNum !== null && (!Number.isFinite(odoNum) || odoNum < 0)) {
+      toast({ title: 'Invalid odometer', description: 'Enter the reading in kilometres.', variant: 'error' })
+      return
+    }
+    if (vehicleFill && !alreadyClosed && (odoNum === null || fullTank === null)) {
+      toast({
+        title: odoNum === null ? 'Odometer required' : 'Full tank?',
+        description: odoNum === null ? 'Enter the odometer reading at the fill.' : 'Say whether the tank was filled full.',
+        variant: 'error',
+      })
+      return
+    }
+
     setSubmitting(true)
     try {
       const fuelSlipUrl =
@@ -217,6 +293,11 @@ export function FuelFinalizeDialog({
         totalCost: costNum,
         fuelSlipUrl,
         remarks: remarks.trim() || undefined,
+        actualQuantity: actualNum ?? undefined,
+        odometerKm: odoNum ?? undefined,
+        isFullTank: fullTank ?? undefined,
+        stationName: station.trim(),
+        ...(passId !== (record.gatePassId ?? '') ? { gatePassId: passId || null } : {}),
       }
 
       const res = await fetch(`/api/fuel-approvals/${record.id}/finalize`, {
@@ -264,6 +345,16 @@ export function FuelFinalizeDialog({
    * about to do something that already happened.
    */
   const isEdit = getFuelFinalization(record).finalized
+  const quantities = getFuelQuantities(record)
+  const isVehicleFill = !isNonVehiclePurpose(record.fuelRequiredFor)
+  const actualPreview = actualLitres.trim() && Number(actualLitres) > 0 ? Number(actualLitres) : null
+  const approvedBase = quantities.approved ?? quantities.requested
+  const variance = actualPreview !== null && approvedBase !== null ? actualPreview - approvedBase : null
+  const trio: { label: string; value: number | null; note?: string }[] = [
+    { label: 'Requested', value: quantities.requested },
+    { label: 'Approved', value: quantities.approved, note: quantities.approved === null ? 'not recorded' : undefined },
+    { label: 'Actual', value: actualPreview, note: actualPreview === null ? 'enter below' : undefined },
+  ]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -314,8 +405,130 @@ export function FuelFinalizeDialog({
           </div>
         </div>
 
+        {/* Requested → Approved → Actual (migration 0071) */}
+        <div className="mx-6 mt-3 grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+          {trio.map((item, index) => (
+            <div key={item.label} className={`px-3 py-2.5 ${index > 0 ? 'border-l border-slate-200 dark:border-slate-700' : ''}`}>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{item.label}</p>
+              <p className="mt-0.5 text-sm font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                {item.value !== null ? `${item.value} L` : <span className="font-medium text-slate-400">{item.note}</span>}
+              </p>
+            </div>
+          ))}
+        </div>
+        {variance !== null && Math.abs(variance) >= 0.01 && (
+          <p className="mx-6 mt-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+            Actual is {Math.abs(variance).toFixed(2)} L {variance > 0 ? 'more' : 'less'} than approved.
+          </p>
+        )}
+
         {/* Form Body */}
         <form onSubmit={handleFinalizeSubmit} className="p-6 pt-4 space-y-4.5">
+          {/* Actual litres, odometer, full tank, station */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="finalize-actual" className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Actual litres filled {!isEdit && <span className="text-rose-500">*</span>}
+              </label>
+              <Input
+                id="finalize-actual"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="From the bill or pump meter"
+                value={actualLitres}
+                onChange={(e) => setActualLitres(e.target.value)}
+                className="h-10 text-xs rounded-xl font-bold text-slate-900"
+                autoFocus
+              />
+              {pumpLitres && String(pumpLitres.litres) !== actualLitres.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setActualLitres(String(pumpLitres.litres))}
+                  className="mt-1 text-[11px] font-semibold text-teal-700 hover:underline cursor-pointer"
+                >
+                  Use pump meter on {pumpLitres.passNo}: {pumpLitres.litres} L
+                </button>
+              )}
+            </div>
+            <div>
+              <label htmlFor="finalize-odometer" className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Odometer at fill (km) {isVehicleFill && !isEdit && <span className="text-rose-500">*</span>}
+                {!isVehicleFill && <span className="font-normal text-slate-400"> not needed</span>}
+              </label>
+              <Input
+                id="finalize-odometer"
+                type="number"
+                step="1"
+                min="0"
+                placeholder="e.g. 12450"
+                value={odometer}
+                onChange={(e) => setOdometer(e.target.value)}
+                disabled={!isVehicleFill}
+                className="h-10 text-xs rounded-xl font-medium"
+              />
+            </div>
+            {isVehicleFill && (
+              <fieldset>
+                <legend className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Tank filled full? {!isEdit && <span className="text-rose-500">*</span>}
+                </legend>
+                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Tank filled full">
+                  {([['Yes, full tank', true], ['No, partial', false]] as const).map(([label, value]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      role="radio"
+                      aria-checked={fullTank === value}
+                      onClick={() => setFullTank(value)}
+                      className={`h-10 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                        fullTank === value
+                          ? 'border-teal-700 bg-teal-700 text-white'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">Mileage is only measured between full tanks.</p>
+              </fieldset>
+            )}
+            <div className="sm:col-span-2">
+              <label htmlFor="finalize-pass" className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Fuel-filling gate pass <span className="font-normal text-slate-400">links the pump-meter reading</span>
+              </label>
+              <select
+                id="finalize-pass"
+                value={passId}
+                onChange={(e) => setPassId(e.target.value)}
+                className="w-full h-10 px-3 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-600"
+              >
+                <option value="">No gate pass</option>
+                {passOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {`${p.passNo} — ${p.registrationNumber || `VIN …${p.vin.slice(-6)}`}${p.model ? ` · ${p.model}` : ''}${p.fuelLitres !== null ? ` · pump ${p.fuelLitres} L` : ''}${p.fuelAmount !== null ? ` · ₹${p.fuelAmount}` : ''}`}
+                  </option>
+                ))}
+                {passId && !passOptions.some((p) => p.id === passId) && <option value={passId}>Linked pass</option>}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="finalize-station" className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Fuel station <span className="font-normal text-slate-400">optional</span>
+              </label>
+              <Input
+                id="finalize-station"
+                type="text"
+                maxLength={120}
+                placeholder="e.g. IOCL Gangyal"
+                value={station}
+                onChange={(e) => setStation(e.target.value)}
+                className="h-10 text-xs rounded-xl"
+              />
+            </div>
+          </div>
+
           {/* Fuel Cost Input */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -334,13 +547,12 @@ export function FuelFinalizeDialog({
                 value={totalCost}
                 onChange={(e) => setTotalCost(e.target.value)}
                 className="h-10 text-xs rounded-xl pr-8 font-bold text-slate-900"
-                autoFocus
               />
               <span className="absolute right-3 top-2.5 text-xs text-slate-500 font-bold">₹</span>
             </div>
-            {totalCost && !isNaN(parseFloat(totalCost)) && parseFloat(totalCost) > 0 && parseFloat(String(record.fuelFilledLtrs)) > 0 && (
+            {totalCost && !isNaN(parseFloat(totalCost)) && parseFloat(totalCost) > 0 && (actualPreview ?? 0) > 0 && (
               <p className="mt-1 text-[11px] text-teal-700 dark:text-teal-400 font-medium">
-                Effective Rate: ₹{(parseFloat(totalCost) / parseFloat(String(record.fuelFilledLtrs))).toFixed(2)} / Litre
+                Effective rate: ₹{(parseFloat(totalCost) / (actualPreview as number)).toFixed(2)} per litre actually filled
               </p>
             )}
           </div>

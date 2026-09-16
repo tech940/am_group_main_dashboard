@@ -2274,6 +2274,19 @@ export const fuelApprovals = pgTable('fuel_approvals', {
   stationName: text('station_name'),
   stationLocation: text('station_location'),
 
+  // ── Accountability (migration 0071, owner decision 2026-09-16) ──────────────
+  // Three different facts, recorded by three different people — not copies of one number:
+  //   fuelFilledLtrs    REQUESTED, typed by the requester (unchanged, never renamed);
+  //   approvedQuantity  APPROVED, set by the approver, defaulting to the requested figure;
+  //   actualQuantity    ACTUAL, from the bill when the order is closed, or the linked pass's pump meter.
+  // NULL actual means "not recorded yet" and is never read as zero or as the approved figure.
+  approvedQuantity: decimal('approved_quantity', { precision: 10, scale: 2 }),
+  actualQuantity: decimal('actual_quantity', { precision: 10, scale: 2 }),
+  // The demo car's "Fuel filling" gate pass, picked by the requester. One pass backs at most one request.
+  gatePassId: uuid('gate_pass_id').references(() => demoGatePasses.id, { onDelete: 'set null' }),
+  // The department the fuel is FOR — not the requester's own department. NULL = not recorded.
+  department: text('department'),
+
   ceoApprovedBy: uuid('ceo_approved_by').references(() => users.id),
   ceoApprovedByName: text('ceo_approved_by_name'),
   ceoApprovedAt: timestamp('ceo_approved_at', { withTimezone: true }),
@@ -2320,6 +2333,73 @@ export const fuelApprovals = pgTable('fuel_approvals', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
+
+/*
+ * ── Fuel Management configuration (migration 0064) ──────────────────────────────────────────
+ * These tables existed in Postgres from 2026-09-11 with no Drizzle model, so nothing could read them.
+ * Every threshold's meaning lives in lib/fuel-management/engine.ts DEFAULT_FUEL_SETTINGS; a missing row
+ * here means "not overridden", never zero.
+ */
+export const fuelBenchmarks = pgTable('fuel_benchmarks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  scope: text('scope').notNull(),
+  vin: text('vin'),
+  model: text('model'),
+  variant: text('variant'),
+  energyType: text('energy_type').notNull(),
+  unit: text('unit').notNull(),
+  expectedEfficiency: decimal('expected_efficiency', { precision: 6, scale: 2 }),
+  tankCapacity: decimal('tank_capacity', { precision: 6, scale: 2 }),
+  notes: text('notes'),
+  setBy: uuid('set_by').references(() => users.id),
+  setByName: text('set_by_name'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const fuelIntelligenceSettings = pgTable('fuel_intelligence_settings', {
+  key: text('key').primaryKey(),
+  value: decimal('value', { precision: 12, scale: 4 }).notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedByName: text('updated_by_name'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// Append-only by trigger (0064): insert only.
+export const fuelConfigEvents = pgTable('fuel_config_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  target: text('target').notNull(),
+  action: text('action').notNull(),
+  targetKey: text('target_key').notNull(),
+  targetLabel: text('target_label'),
+  previousValue: jsonb('previous_value'),
+  newValue: jsonb('new_value'),
+  actorId: uuid('actor_id').references(() => users.id),
+  actorName: text('actor_name').notNull(),
+  actorRole: text('actor_role'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+/*
+ * A person looked at a fuel exception and said what it was (migration 0071). Append-only by trigger; the
+ * newest row per exceptionKey is the current review. The exceptions themselves are computed, never stored.
+ * ⚠️ fuelApprovalId deliberately has no foreign key — see the migration.
+ */
+export const fuelExceptionReviews = pgTable('fuel_exception_reviews', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  exceptionKey: text('exception_key').notNull(),
+  kind: text('kind').notNull(),
+  fuelApprovalId: uuid('fuel_approval_id'),
+  subjectLabel: text('subject_label'),
+  outcome: text('outcome').notNull(),
+  note: text('note').notNull(),
+  actorId: uuid('actor_id').references(() => users.id),
+  actorName: text('actor_name').notNull(),
+  actorRole: text('actor_role'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  keyIdx: index('fuel_exception_reviews_key_idx').on(table.exceptionKey, table.createdAt),
+}))
 
 export const fuelApprovalsRelations = relations(fuelApprovals, ({ one }) => ({
   submittedBy: one(users, {

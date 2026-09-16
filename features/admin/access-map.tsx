@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BRANCH_OPTIONS } from '@/lib/branches'
+import { SECTION_DISPLAY_BRAND } from '@/lib/permissions/registry'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
@@ -79,7 +80,10 @@ function columnKeys(columnKey: string): string[] {
 }
 
 function groupOf(sectionKey: string) {
-  return sectionKey === ADMIN_PRIMARY_KEY ? 'admin' : sectionKey.split('.')[0]
+  if (sectionKey === ADMIN_PRIMARY_KEY) return 'admin'
+  // Demo Car GatePass and the two fuel sections sit in the KIA band, as they do in the sidebar,
+  // although their keys carry no `kia.` prefix. Display only — the key saved is unchanged.
+  return SECTION_DISPLAY_BRAND[sectionKey] ?? sectionKey.split('.')[0]
 }
 
 /**

@@ -78,6 +78,16 @@ export type FuelIntelligenceSettings = {
   decliningTrendSegments: number
   /** A rise in cost per km at or above this % marks a vehicle for attention. */
   costPerKmRisePct: number
+  /** Actual fuel this far above the approved quantity is a mismatch (migration 0071). */
+  actualVariancePct: number
+  /** …and at least this many units, so a 0.4 L rounding on a 5 L fill says nothing. */
+  actualVarianceMinQty: number
+  /** A vehicle using this % more than in the previous period of the same length is a spike. */
+  consumptionSpikePct: number
+  /** …when this period's quantity is at least this many units. */
+  consumptionSpikeMinQty: number
+  /** An approved order whose bill is still unrecorded after this many days needs chasing. */
+  closeOverdueDays: number
 }
 
 /**
@@ -98,6 +108,43 @@ export const DEFAULT_FUEL_SETTINGS: FuelIntelligenceSettings = {
   priceMinSamples: 5,
   decliningTrendSegments: 4,
   costPerKmRisePct: 10,
+  actualVariancePct: 5,
+  actualVarianceMinQty: 1,
+  consumptionSpikePct: 50,
+  consumptionSpikeMinQty: 20,
+  closeOverdueDays: 7,
+}
+
+/** What each setting means, for the settings screen. Keys match FuelIntelligenceSettings exactly. */
+export const FUEL_SETTING_DESCRIPTIONS: Record<keyof FuelIntelligenceSettings, { label: string; unit: string }> = {
+  minSegmentDistanceKm: { label: 'Shortest stretch that gives a mileage figure', unit: 'km' },
+  statusGoodMinPct: { label: 'Mileage counted as on target at or above', unit: '% of expected' },
+  statusWatchMinPct: { label: 'Mileage counted as watch at or above', unit: '% of expected' },
+  tankTolerancePct: { label: 'Fill allowed above tank capacity before flagging', unit: '%' },
+  mileageDropPct: { label: "Mileage drop against the vehicle's own recent median", unit: '%' },
+  mileageBaselineSegments: { label: 'Earlier stretches needed before comparing', unit: 'stretches' },
+  refuelWindowDays: { label: 'Refuelling window', unit: 'days' },
+  refuelMaxFillsInWindow: { label: 'Fills allowed inside the window', unit: 'fills' },
+  impossibleMileageMultiplier: { label: 'Mileage above expected × this is likely a typing error', unit: '×' },
+  pricePctFromMedian: { label: "Unit price away from the period's median", unit: '%' },
+  priceMinSamples: { label: 'Priced fills needed before comparing prices', unit: 'fills' },
+  decliningTrendSegments: { label: 'Consecutive falling stretches that count as a decline', unit: 'stretches' },
+  costPerKmRisePct: { label: 'Rise in cost per km that needs attention', unit: '%' },
+  actualVariancePct: { label: 'Actual fuel above approved before flagging', unit: '%' },
+  actualVarianceMinQty: { label: '…and by at least', unit: 'L' },
+  consumptionSpikePct: { label: 'Rise against the previous period that counts as a spike', unit: '%' },
+  consumptionSpikeMinQty: { label: '…when the period uses at least', unit: 'L' },
+  closeOverdueDays: { label: 'Days an approved order may wait for its bill', unit: 'days' },
+}
+
+/** A stored override, or the default. Unknown keys and non-finite values are ignored — never a silent zero. */
+export function resolveFuelSettings(overrides: Readonly<Record<string, number | null | undefined>>): FuelIntelligenceSettings {
+  const out: FuelIntelligenceSettings = { ...DEFAULT_FUEL_SETTINGS }
+  for (const key of Object.keys(DEFAULT_FUEL_SETTINGS) as (keyof FuelIntelligenceSettings)[]) {
+    const value = overrides[key]
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) out[key] = value
+  }
+  return out
 }
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────── helpers */
@@ -384,6 +431,63 @@ export function summariseVehicleMileage(
     declining,
     unavailableReason,
   }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────────────────────── fleet figures */
+
+export type FleetEfficiency = {
+  unit: EnergyUnit
+  /** Usable segments that CLOSED inside the window. */
+  segments: number
+  distanceKm: number
+  quantity: number
+  /** Σ distance ÷ Σ fuel — never an average of per-vehicle ratios. Null without a usable segment. */
+  efficiency: number | null
+  /** Σ cost ÷ Σ distance over the usable segments whose every fill has a receipt total. */
+  costPerKm: number | null
+  /** How many of those segments carried a full cost. */
+  costedSegments: number
+  basis: MileageBasis
+}
+
+/**
+ * The fleet's mileage and cost per km for one energy unit, over segments that close inside [from, to].
+ * Full-tank segments are used whenever any exists in the window; provisional ones only when there are none.
+ */
+export function fleetEfficiency(
+  segments: readonly MileageSegment[],
+  unit: EnergyUnit,
+  from: string,
+  to: string,
+  vehicleKeys?: ReadonlySet<string>,
+): FleetEfficiency {
+  const inWindow = segments.filter(
+    (s) => s.usable && s.unit === unit && s.closedOn >= from && s.closedOn <= to && (!vehicleKeys || vehicleKeys.has(s.vehicleKey)),
+  )
+  const full = inWindow.filter((s) => s.kind === 'full_tank')
+  const chosen = full.length ? full : inWindow
+  const basis: MileageBasis = full.length ? 'full_tank' : chosen.length ? 'provisional' : 'none'
+  const distanceKm = sum(chosen.map((s) => s.distanceKm ?? 0))
+  const quantity = sum(chosen.map((s) => s.quantity))
+  const costed = chosen.filter((s) => isNum(s.cost))
+  const costedDistance = sum(costed.map((s) => s.distanceKm ?? 0))
+  const costedSpend = sum(costed.map((s) => s.cost as number))
+  return {
+    unit,
+    segments: chosen.length,
+    distanceKm,
+    quantity,
+    efficiency: quantity > 0 && distanceKm > 0 ? distanceKm / quantity : null,
+    costPerKm: costedDistance > 0 ? costedSpend / costedDistance : null,
+    costedSegments: costed.length,
+    basis,
+  }
+}
+
+/** Litres a stretch of `distanceKm` should have used at the expected mileage. Null without both. */
+export function expectedQuantity(distanceKm: number | null, expectedEfficiency: number | null): number | null {
+  if (!isNum(distanceKm) || distanceKm <= 0 || !isNum(expectedEfficiency) || expectedEfficiency <= 0) return null
+  return distanceKm / expectedEfficiency
 }
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────── expected vs actual */

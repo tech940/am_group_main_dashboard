@@ -559,11 +559,20 @@ async function fetchJson<T>(url: string, label: string, init?: RequestInit): Pro
       },
       signal: controller.signal,
     })
+    const text = await response.text().catch(() => '')
+    let payload: any = null
+    try {
+      payload = text ? JSON.parse(text) : null
+    } catch {
+      if (text.trim().startsWith('<') || text.includes('<!DOCTYPE')) {
+        throw new Error(`Server returned HTML for ${label} (${response.status}). Please check your login session or reload the page.`)
+      }
+      throw new Error(`Malformed response from server for ${label}`)
+    }
     if (!response.ok) {
-      const payload = await response.json().catch(() => null) as { error?: string; reason?: string } | null
       throw new Error(payload?.error || payload?.reason || `Request failed for ${label} (${response.status})`)
     }
-    return await response.json() as T
+    return payload as T
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new Error(`${label} timed out. Please refresh once; the server did not respond in time.`)

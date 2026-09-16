@@ -12,7 +12,7 @@ import type {
   DemoFleetCarInput,
   DrivePassInput,
   FuelManagementPeriod,
-  FuelManagementResponse,
+  DemoFuelReconciliation,
   FuelRowInput,
   GateReadingInput,
   PriorDemoFillInput,
@@ -146,7 +146,7 @@ const isPresent = <T,>(value: T | null): value is T => value !== null
  * provider (listDemoVehiclesForGatePass — read once, outside any transaction, and never branch-filtered: a plate's
  * "shared" flag is counted across the whole fleet, and a Jammu fill of an Udhampur car must still match).
  */
-export async function getFuelManagementOverview(period: FuelManagementPeriod): Promise<FuelManagementResponse> {
+export async function getFuelManagementOverview(period: FuelManagementPeriod): Promise<DemoFuelReconciliation> {
   const start = indiaDayBounds(period.from).start
   const end = indiaDayBounds(period.to).end
   if (!start || !end) throw new Error(`[fuel-management] unusable period ${period.from}..${period.to}`)

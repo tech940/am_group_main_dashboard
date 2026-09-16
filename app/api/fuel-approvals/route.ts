@@ -8,6 +8,7 @@ import type { FuelApprovalRecord } from '@/lib/fuel-approvals/types'
 
 import { canViewFuelApprovals } from '@/lib/fuel-approvals/view-access'
 import { getFuelLifecycleState } from '@/lib/fuel-approvals/constants'
+import { invalidateFuelManagementCache, parseDepartment, resolveFuelGatePass } from '@/lib/fuel-approvals/accountability'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -77,7 +78,9 @@ export async function GET(request: NextRequest) {
         approvedCount++
         if (getFuelLifecycleState(row) === 'completed') completedCount++
         else toFinaliseCount++
-        totalLitersApproved += parseFloat(row.fuelFilledLtrs as string) || 0
+        // What was APPROVED, not what was asked for (migration 0071). Every approved row carries it; the
+        // requested figure is only a fallback for a row written by something that bypassed the action route.
+        totalLitersApproved += parseFloat(String(row.approvedQuantity ?? row.fuelFilledLtrs)) || 0
       } else if (row.status.includes('on_hold')) {
         heldCount++
       } else if (row.status === 'sent_back') {
@@ -249,6 +252,9 @@ export async function POST(request: NextRequest) {
       stationName,
       stationLocation,
       odometerOverride,
+      // ── Accountability (migration 0071) ──
+      gatePassId,
+      department,
     } = body as Record<string, unknown>
 
     if (!location || !fuelRequiredFor || !vehRegNo || !vinNo || !fuelType || !fuelFilledDate || !fuelFilledLtrs || !fuelSlipUrl) {
@@ -307,6 +313,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'An entry belongs to a vehicle or an asset, not both' }, { status: 400 })
     }
 
+    const departmentResult = parseDepartment(department)
+    if (!departmentResult.ok) {
+      return NextResponse.json({ error: departmentResult.error }, { status: 400 })
+    }
+    // The requester PICKS the pass (owner decision 2026-09-16). It must be a fuel-filling pass nobody else claims.
+    const passResult = await resolveFuelGatePass(gatePassId, null)
+    if (!passResult.ok) {
+      return NextResponse.json({ error: passResult.error }, { status: passResult.status })
+    }
+    const linkedPass = passResult.pass
+    // A linked pass names the car exactly — its VIN is better evidence than any label on the form.
+    const vinForRecord = resolvedVin ?? (linkedPass && !resolvedAsset ? linkedPass.vin || null : null)
+
     const requestNumber = await generateFuelRequestNumber()
     const nowIso = new Date().toISOString()
     const trimmedRemarks = remarks == null || String(remarks).trim() === '' ? null : String(remarks).trim()
@@ -364,14 +383,18 @@ export async function POST(request: NextRequest) {
         odometerKm: odometer === null ? null : odometer.toFixed(1),
         // Only a real boolean counts. Anything else is "not recorded", never a silent "no".
         isFullTank: typeof isFullTank === 'boolean' ? isFullTank : null,
-        vehicleVin: resolvedVin,
+        vehicleVin: vinForRecord,
         assetCode: resolvedAsset,
+        gatePassId: linkedPass?.id ?? null,
+        department: departmentResult.value,
         driverUserId: text(driverUserId),
         driverName: text(driverName),
         stationName: text(stationName),
         stationLocation: text(stationLocation),
       })
       .returning()
+
+    await invalidateFuelManagementCache()
 
     return NextResponse.json({
       item: inserted,

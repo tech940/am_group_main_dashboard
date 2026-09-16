@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -48,6 +48,7 @@ import {
   parseFuelSlipUrls,
   getFuelFinalization,
   getFuelLifecycleState,
+  getFuelQuantities,
   type FuelFinalization,
 } from '@/lib/fuel-approvals/constants'
 import type { FuelApprovalRecord, FuelApprovalStatus } from '@/lib/fuel-approvals/types'
@@ -114,6 +115,13 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
   const [formDialogOpen, setFormDialogOpen] = useState(false)
   const [editRecord, setEditRecord] = useState<FuelApprovalRecord | null>(null)
   const [actionRemarks, setActionRemarks] = useState('')
+  // Litres the approver approves. Blank = approve what was requested (migration 0071).
+  const [approveLitres, setApproveLitres] = useState('')
+  // A figure typed for one request must never carry over to the next one opened.
+  const selectedRecordId = selectedRecord?.id ?? null
+  useEffect(() => {
+    setApproveLitres('')
+  }, [selectedRecordId])
   const [actionLoading, setActionLoading] = useState(false)
   const [inlineActionId, setInlineActionId] = useState<string | null>(null)
   const [lightboxImage, setLightboxImage] = useState<{ title: string; url: string } | null>(null)
@@ -218,9 +226,14 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
   const handleStageAction = async (
     recordId: string,
     action: 'APPROVE' | 'HOLD' | 'SEND_BACK' | 'REJECT' | 'RESET',
-    customRemarks?: string
+    customRemarks?: string,
+    approvedQuantity?: number
   ) => {
     const finalRemarks = customRemarks !== undefined ? customRemarks : actionRemarks.trim()
+    if (approvedQuantity !== undefined && (!Number.isFinite(approvedQuantity) || approvedQuantity <= 0)) {
+      toast({ title: 'Invalid litres', description: 'Approved litres must be a number above zero.', variant: 'error' })
+      return
+    }
 
     if ((action === 'SEND_BACK' || action === 'REJECT') && !finalRemarks) {
       const promptValue = window.prompt(`Please enter remark / reason for ${action === 'SEND_BACK' ? 'Send Back' : 'Reject'}:`)
@@ -232,7 +245,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
         })
         return
       }
-      return handleStageAction(recordId, action, promptValue.trim())
+      return handleStageAction(recordId, action, promptValue.trim(), approvedQuantity)
     }
 
     setActionLoading(true)
@@ -241,7 +254,11 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
       const res = await fetch(`/api/fuel-approvals/${recordId}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, remarks: finalRemarks }),
+        body: JSON.stringify({
+          action,
+          remarks: finalRemarks,
+          ...(action === 'APPROVE' && approvedQuantity !== undefined ? { approvedQuantity } : {}),
+        }),
       })
 
       const result = await res.json()
@@ -256,6 +273,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
       })
 
       setActionRemarks('')
+      setApproveLitres('')
       if (selectedRecord && selectedRecord.id === recordId) {
         setSelectedRecord(null)
       }
@@ -1584,7 +1602,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
 
                   <div className="divide-y divide-slate-100 text-xs">
                     <div className="py-2 flex justify-between items-center">
-                      <span className="text-slate-500">Quantity</span>
+                      <span className="text-slate-500">Requested</span>
                       <div className="flex items-center gap-1.5">
                         <span className="font-black text-slate-900">
                           {recordLitersLabel(selectedRecord.fuelFilledLtrs)}
@@ -1592,6 +1610,34 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                         {getFuelTypeTag(selectedRecord.fuelType)}
                       </div>
                     </div>
+                    {(() => {
+                      // Approved and actual are separate facts (migration 0071); a missing one says so.
+                      const q = getFuelQuantities(selectedRecord)
+                      return (
+                        <>
+                          <div className="py-2 flex justify-between items-center">
+                            <span className="text-slate-500">Approved</span>
+                            <span className={q.approved !== null ? 'font-bold text-slate-900' : 'text-slate-400'}>
+                              {q.approved !== null ? `${q.approved} Ltrs` : 'Not approved yet'}
+                            </span>
+                          </div>
+                          <div className="py-2 flex justify-between items-center">
+                            <span className="text-slate-500">Actual</span>
+                            <span className={q.actual !== null ? 'font-bold text-slate-900' : 'text-slate-400'}>
+                              {q.actual !== null
+                                ? `${q.actual} Ltrs${q.approved !== null && Math.abs(q.actual - q.approved) >= 0.01 ? ` (${q.actual > q.approved ? '+' : '−'}${Math.abs(q.actual - q.approved).toFixed(2)} vs approved)` : ''}`
+                                : 'Recorded when finalised'}
+                            </span>
+                          </div>
+                          {selectedRecord.department && (
+                            <div className="py-2 flex justify-between items-center">
+                              <span className="text-slate-500">Department</span>
+                              <span className="font-semibold text-slate-900">{selectedRecord.department}</span>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
 
                     {selectedRecord.totalCost !== undefined && selectedRecord.totalCost !== null && (
                       <div className="py-2 flex justify-between items-center">
@@ -1810,6 +1856,25 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                     </span>
                   </div>
 
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="approve-litres" className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+                      Litres to approve
+                    </label>
+                    <Input
+                      id="approve-litres"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder={String(Number(selectedRecord.fuelFilledLtrs))}
+                      value={approveLitres}
+                      onChange={(e) => setApproveLitres(e.target.value)}
+                      className="h-8 text-xs rounded-lg bg-white border-slate-200 font-bold"
+                    />
+                    <span className="text-[11px] text-slate-500 whitespace-nowrap">
+                      {approveLitres.trim() ? `of ${Number(selectedRecord.fuelFilledLtrs)} requested` : 'blank = as requested'}
+                    </span>
+                  </div>
+
                   <Textarea
                     placeholder="Enter approval remark or reason..."
                     value={actionRemarks}
@@ -1821,7 +1886,12 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                     <button
                       type="button"
                       disabled={actionLoading}
-                      onClick={() => handleStageAction(selectedRecord.id, 'APPROVE')}
+                      onClick={() => handleStageAction(
+                        selectedRecord.id,
+                        'APPROVE',
+                        undefined,
+                        approveLitres.trim() ? Number(approveLitres) : undefined,
+                      )}
                       style={{ backgroundColor: '#055B65', color: '#ffffff' }}
                       className="rounded-xl text-xs font-black h-9 px-2 cursor-pointer shadow-sm flex items-center justify-center gap-1 border-none hover:brightness-110 disabled:opacity-40"
                     >

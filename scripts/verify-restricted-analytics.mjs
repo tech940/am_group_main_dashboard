@@ -23,9 +23,19 @@ const ALL_ROLES = [
 ]
 const ALLOWED = new Set(['md', 'developer', 'assistant_manager', 'ea', 'eba'])
 
-// The adversarial case: a permission map where EVERY key is granted, i.e. someone ticked every box
-// in the Access Map. A permission-backed gate would open here; a role gate must not.
+// Every key granted. Used by section 4 only.
 const ALL_GRANTED = new Proxy({}, { get: () => true, has: () => true })
+
+/*
+ * ⚠️ OWNER DECISION 2026-09-16: "nothing should be fixed by role". Call Analysis now opens for the
+ * role rule OR an explicit `call_analysis.view` tick. That key is in GRANT_ONLY_SECTIONS, so no
+ * role template, tier bundle or blanket can set it. The adversarial case is therefore
+ * "every OTHER key granted": whatever the defaults hand out, the role gate must still hold.
+ * The only way past it is the section's own hand-ticked key, which is checked separately.
+ */
+const OWN_KEY = 'call_analysis.view'
+const ALL_BUT_OWN = new Proxy({}, { get: (_t, key) => key !== OWN_KEY, has: () => true })
+const ONLY_OWN = { [OWN_KEY]: true }
 
 let failures = 0
 const fail = (msg) => { failures++; console.log(`  ✗ ${msg}`) }
@@ -43,14 +53,18 @@ for (const href of RESTRICTED_ANALYTICS_HREFS) {
   if (!section) continue
   for (const role of ALL_ROLES) {
     const expected = ALLOWED.has(role)
-    for (const [label, perms] of [['no perms', null], ['ALL perms granted', ALL_GRANTED]]) {
+    for (const [label, perms] of [['no perms', null], ['every other key granted', ALL_BUT_OWN]]) {
       const actual = canUserAccessSection(section, role, 'common', perms)
       if (actual !== expected) {
         fail(`${href}  role=${role}  perms=${label}  ->  got ${actual}, expected ${expected}`)
       }
     }
+    // An explicit Access-Map tick opens it for anyone.
+    if (!canUserAccessSection(section, role, 'common', ONLY_OWN)) {
+      fail(`${href}  role=${role}  explicit ${OWN_KEY} grant  ->  still refused`)
+    }
   }
-  console.log(`  ✓ ${href}: allowed for md+developer+assistant_manager, denied for the other ${ALL_ROLES.length - ALLOWED.size} roles, even with every permission granted`)
+  console.log(`  ✓ ${href}: role rule holds for the other ${ALL_ROLES.length - ALLOWED.size} roles whatever else they hold; an explicit ${OWN_KEY} tick opens it for any role`)
 }
 
 console.log('\n3. The role helper itself')
