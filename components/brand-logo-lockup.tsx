@@ -34,28 +34,35 @@ interface BrandLogoLockupProps {
 }
 
 /**
- * AM stylized geometric logo SVG mark.
- * Authentic geometric monogram matching corporate brand assets.
+ * Simple AM text mark replacing stylized SVG.
  */
-export function AmGlyph({ className, color = 'currentColor' }: { className?: string; color?: string }) {
+export function AmGlyph({
+  className,
+  color = 'currentColor',
+  size = 'md',
+}: {
+  className?: string
+  color?: string
+  size?: 'xs' | 'sm' | 'md' | 'lg'
+}) {
   return (
-    <svg
-      viewBox="0 0 66 26"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={cn('h-6.5 sm:h-7.5 w-auto shrink-0 drop-shadow-2xs', className)}
+    <span
+      className={cn(
+        'font-bold tracking-tight shrink-0 select-none inline-flex items-center justify-center leading-none',
+        size === 'xs'
+          ? 'text-[10px] sm:text-[11px]'
+          : size === 'sm'
+          ? 'text-xs sm:text-[13px]'
+          : size === 'lg'
+          ? 'text-xl sm:text-2xl'
+          : 'text-base sm:text-lg',
+        className
+      )}
+      style={{ color }}
       aria-label="AM"
     >
-      {/* Letter 'A' with inner triangle counter */}
-      <path
-        d="M20 0.5 L39 24.5 L31 24.5 L20 10.5 L9 24.5 L1 24.5 Z"
-        fill={color}
-      />
-      {/* Letter 'M' with left diagonal, center valley, and right vertical bar */}
-      <polygon points="31,0.5 39,0.5 53,20.5 45,20.5" fill={color} />
-      <polygon points="45,20.5 53,20.5 64,0.5 56,0.5" fill={color} />
-      <polygon points="56,0.5 64,0.5 64,24.5 56,24.5" fill={color} />
-    </svg>
+      AM
+    </span>
   )
 }
 
@@ -106,12 +113,12 @@ function BrandMark({
   if (spec) {
     const height =
       size === 'xs'
-        ? 'h-3 sm:h-3.5'
+        ? 'h-2.5 sm:h-3'
         : size === 'sm'
         ? 'h-3.5 sm:h-4'
         : size === 'lg'
-        ? 'h-8'
-        : 'h-6 sm:h-7'
+        ? 'h-6 sm:h-7'
+        : 'h-4.5 sm:h-5'
     return (
       <div className="flex items-center gap-1 sm:gap-1.5">
         <img
@@ -122,11 +129,19 @@ function BrandMark({
             'w-auto shrink-0 object-contain',
             spec.wide
               ? size === 'xs'
+                ? 'max-w-[55px] sm:max-w-[65px]'
+                : size === 'sm'
                 ? 'max-w-[70px] sm:max-w-[85px]'
-                : 'max-w-[100px] sm:max-w-[120px]'
+                : size === 'lg'
+                ? 'max-w-[120px] sm:max-w-[140px]'
+                : 'max-w-[80px] sm:max-w-[95px]'
               : size === 'xs'
-              ? 'max-w-[50px] sm:max-w-[65px]'
-              : 'max-w-[70px] sm:max-w-[85px]',
+              ? 'max-w-[40px] sm:max-w-[50px]'
+              : size === 'sm'
+              ? 'max-w-[50px] sm:max-w-[60px]'
+              : size === 'lg'
+              ? 'max-w-[80px] sm:max-w-[95px]'
+              : 'max-w-[60px] sm:max-w-[70px]',
             // On a dark header the coloured mark is repainted white, the same treatment the AM glyph gets.
             isLight && '[filter:brightness(0)_invert(1)]',
           )}
@@ -135,14 +150,14 @@ function BrandMark({
           <span
             className={cn(
               // nowrap: a two-word name like DIAMOND HONDA otherwise wraps and makes its row taller than the rest.
-              'font-black tracking-wider whitespace-nowrap',
+              'font-bold tracking-wider whitespace-nowrap leading-none',
               size === 'xs'
-                ? 'text-[9.5px] sm:text-[10.5px]'
+                ? 'text-[10px] sm:text-[11px]'
                 : size === 'sm'
-                ? 'text-[11px] sm:text-xs'
+                ? 'text-xs sm:text-[13px]'
                 : size === 'lg'
-                ? 'text-lg'
-                : 'text-sm sm:text-base',
+                ? 'text-xl sm:text-2xl'
+                : 'text-base sm:text-lg',
               isLight ? 'text-white' : undefined,
             )}
             style={isLight ? undefined : { color: spec.wordmarkColor }}
@@ -163,15 +178,15 @@ function BrandMark({
   return (
     <span
       className={cn(
-        'font-black uppercase tracking-[0.15em]',
+        'font-bold uppercase tracking-[0.12em] leading-none',
         isLight ? 'text-white' : 'text-slate-800',
         size === 'xs'
-          ? 'text-[9.5px] sm:text-[10.5px]'
+          ? 'text-[10px] sm:text-[11px]'
           : size === 'sm'
-          ? 'text-[11px] sm:text-xs'
+          ? 'text-xs sm:text-[13px]'
           : size === 'lg'
-          ? 'text-lg'
-          : 'text-sm sm:text-base',
+          ? 'text-xl sm:text-2xl'
+          : 'text-base sm:text-lg',
       )}
     >
       {displayName}
@@ -182,7 +197,7 @@ function BrandMark({
 /**
  * Main BrandLogoLockup component.
  * Produces the official:
- * [ AM Monogram ] | [ Brand Logo / Badge ]
+ * [ AM ] | [ Brand Logo / Badge ]
  */
 export function BrandLogoLockup({
   brand = 'group',
@@ -200,23 +215,21 @@ export function BrandLogoLockup({
       className={cn(
         'inline-flex items-center select-none',
         isCard &&
-          'rounded-lg bg-white px-3 py-1.5 sm:px-4 sm:py-2 shadow-xs border border-slate-200/90',
+          (size === 'xs'
+            ? 'rounded-md bg-white px-2 py-1 shadow-2xs border border-slate-200/90'
+            : size === 'sm'
+            ? 'rounded-lg bg-white px-2.5 py-1.5 shadow-2xs border border-slate-200/90'
+            : size === 'lg'
+            ? 'rounded-xl bg-white px-4 py-2.5 shadow-xs border border-slate-200/90'
+            : 'rounded-lg bg-white px-3 py-1.5 sm:px-3.5 sm:py-2 shadow-xs border border-slate-200/90'),
         className
       )}
     >
-      {/* Left: AM Monogram */}
-      <div className="flex items-center">
+      {/* Left: Simple AM Text */}
+      <div className="flex items-center justify-center">
         <AmGlyph
           color={amColor}
-          className={cn(
-            size === 'xs'
-              ? 'h-3 sm:h-3.5'
-              : size === 'sm'
-              ? 'h-3.5 sm:h-4'
-              : size === 'lg'
-              ? 'h-8 sm:h-9'
-              : 'h-6 sm:h-7'
-          )}
+          size={size}
         />
       </div>
 
@@ -224,17 +237,19 @@ export function BrandLogoLockup({
       <div
         className={cn(
           size === 'xs'
-            ? 'mx-1.5 sm:mx-2 min-h-[11px] sm:min-h-[13px]'
+            ? 'mx-1.5 min-h-[10px] sm:min-h-[11px]'
             : size === 'sm'
-            ? 'mx-2 sm:mx-2.5 min-h-[13px] sm:min-h-[15px]'
-            : 'mx-3 sm:mx-4.5 min-h-[24px] sm:min-h-[28px]',
+            ? 'mx-2 min-h-[12px] sm:min-h-[14px]'
+            : size === 'lg'
+            ? 'mx-3.5 sm:mx-4 min-h-[22px] sm:min-h-[24px]'
+            : 'mx-2.5 sm:mx-3 min-h-[16px] sm:min-h-[18px]',
           'w-px self-stretch',
           isLight ? 'bg-white/30' : 'bg-slate-300'
         )}
       />
 
       {/* Right: Brand Mark (KIA, MG, DIAMOND, HYUNDAI, TATA, etc.) */}
-      <div className="flex items-center">
+      <div className="flex items-center justify-center">
         <BrandMark brand={brand} isLight={isLight} size={size} />
       </div>
     </div>

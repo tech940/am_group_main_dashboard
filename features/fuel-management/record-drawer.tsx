@@ -87,7 +87,7 @@ export function RecordDrawer({
           )}
           <Link
             href="/fuel-approvals"
-            className="inline-flex h-8 items-center gap-1 rounded-lg bg-[var(--fm-accent)] px-3 text-[12.5px] font-semibold text-white hover:brightness-110"
+            className="inline-flex h-8 items-center gap-1 rounded-lg bg-slate-900 px-3 text-xs font-medium text-white hover:bg-slate-800"
           >
             Open in Fuel Approvals <ArrowUpRight aria-hidden className="size-3.5" />
           </Link>

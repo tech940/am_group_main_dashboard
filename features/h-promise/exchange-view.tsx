@@ -146,12 +146,12 @@ export function BonusDialog({ bonus, onClose }: { bonus: HpExchangeBonus | null;
   return (
     <DialogPrimitive.Root open onOpenChange={(open) => !open && !save.isPending && onClose()}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="hp-overlay fixed inset-0 z-50 bg-slate-950/45" />
-        <DialogPrimitive.Content className="hp fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-2xl focus:outline-none">
-          <form onSubmit={submit} noValidate className="space-y-4">
-            <div>
-              <DialogPrimitive.Title className="text-base font-semibold text-slate-900">{bonus ? 'Edit exchange bonus' : 'Add exchange bonus'}</DialogPrimitive.Title>
-              <DialogPrimitive.Description className="text-sm text-slate-500">The old car taken in exchange and the bonus given on the new one.</DialogPrimitive.Description>
+        <DialogPrimitive.Overlay className="hp-overlay fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[2px]" />
+        <DialogPrimitive.Content className="hp fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-3rem)] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-slate-200/90 bg-white p-6 sm:p-7 shadow-2xl focus:outline-none">
+          <form onSubmit={submit} noValidate className="space-y-6">
+            <div className="border-b border-slate-100 pb-4">
+              <DialogPrimitive.Title className="text-base sm:text-lg font-semibold text-slate-900 tracking-tight">{bonus ? 'Edit exchange bonus' : 'Add exchange bonus'}</DialogPrimitive.Title>
+              <DialogPrimitive.Description className="text-xs sm:text-[13px] text-slate-500 mt-0.5">The old car taken in exchange and the bonus given on the new one.</DialogPrimitive.Description>
             </div>
             <FormGrid>
               <FormField label="Date" htmlFor="xb-date" error={errors.entryDate}>
@@ -181,12 +181,12 @@ export function BonusDialog({ bonus, onClose }: { bonus: HpExchangeBonus | null;
               </FormField>
             </FormGrid>
             {serverError && <Notice tone="rejected" icon={<AlertTriangle className="h-4 w-4" />}>{serverError}</Notice>}
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
               <HpButton variant="ghost" onClick={onClose} disabled={save.isPending}>Cancel</HpButton>
-              <HpButton type="submit" variant="accent" busy={save.isPending}>{bonus ? 'Save' : 'Add bonus'}</HpButton>
+              <HpButton type="submit" variant="accent" busy={save.isPending}>{bonus ? 'Save changes' : 'Add bonus'}</HpButton>
             </div>
           </form>
-          <DialogPrimitive.Close className="absolute right-3 top-3 rounded-md p-1 text-slate-400 hover:text-slate-700" aria-label="Close">
+          <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors" aria-label="Close">
             <X className="h-4 w-4" aria-hidden="true" />
           </DialogPrimitive.Close>
         </DialogPrimitive.Content>

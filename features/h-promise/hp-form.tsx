@@ -32,11 +32,11 @@ export function validate<T extends z.ZodType>(schema: T, value: unknown): { ok: 
 
 export function FormSection({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <fieldset className="min-w-0 space-y-3 border-t border-slate-100 pt-4 first:border-t-0 first:pt-0">
+    <fieldset className="min-w-0 space-y-4 border-t border-slate-100 pt-5 first:border-t-0 first:pt-0">
       <legend className="sr-only">{title}</legend>
       <div>
-        <p className="text-[13px] font-semibold text-slate-900">{title}</p>
-        {description && <p className="text-xs text-slate-500">{description}</p>}
+        <p className="text-[13.5px] font-semibold text-slate-900">{title}</p>
+        {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
       </div>
       {children}
     </fieldset>
@@ -44,7 +44,7 @@ export function FormSection({ title, description, children }: { title: string; d
 }
 
 export function FormGrid({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn('grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2', className)}>{children}</div>
+  return <div className={cn('grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2', className)}>{children}</div>
 }
 
 export function FormField({
@@ -494,18 +494,18 @@ export function ReasonDialog({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="hp-overlay fixed inset-0 z-[60] bg-slate-950/50" />
-        <DialogPrimitive.Content className="hp fixed left-1/2 top-1/2 z-[60] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-5 shadow-2xl focus:outline-none">
-          <form onSubmit={submit} className="space-y-4">
+        <DialogPrimitive.Overlay className="hp-overlay fixed inset-0 z-[60] bg-slate-950/45 backdrop-blur-[2px]" />
+        <DialogPrimitive.Content className="hp fixed left-1/2 top-1/2 z-[60] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-200/90 bg-white p-6 sm:p-7 shadow-2xl focus:outline-none">
+          <form onSubmit={submit} className="space-y-5">
             <div>
-              <DialogPrimitive.Title className="text-base font-semibold text-slate-900">{title}</DialogPrimitive.Title>
-              <DialogPrimitive.Description className="mt-1 text-sm text-slate-500">{description ?? 'This is recorded in the history.'}</DialogPrimitive.Description>
+              <DialogPrimitive.Title className="text-base sm:text-lg font-semibold text-slate-900 tracking-tight">{title}</DialogPrimitive.Title>
+              <DialogPrimitive.Description className="mt-1 text-xs sm:text-[13px] text-slate-500">{description ?? 'This is recorded in the history.'}</DialogPrimitive.Description>
             </div>
             <FormField label={label} htmlFor={id} required={!optional}>
               <TextArea id={id} value={reason} onValue={setReason} rows={3} maxLength={500} invalid={Boolean(error)} />
             </FormField>
             {error && <Notice tone="rejected">{error}</Notice>}
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
               <DialogPrimitive.Close asChild>
                 <HpButton variant="outline" disabled={busy}>Cancel</HpButton>
               </DialogPrimitive.Close>
@@ -514,7 +514,7 @@ export function ReasonDialog({
               </HpButton>
             </div>
           </form>
-          <DialogPrimitive.Close className="absolute right-3 top-3 rounded-md p-1 text-slate-400 hover:text-slate-700" aria-label="Close" disabled={busy}>
+          <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors" aria-label="Close" disabled={busy}>
             <X className="h-4 w-4" aria-hidden="true" />
           </DialogPrimitive.Close>
         </DialogPrimitive.Content>

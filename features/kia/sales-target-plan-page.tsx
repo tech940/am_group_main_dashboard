@@ -21,6 +21,7 @@ import {
   Sparkles
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
+import { BrandLogoLockup } from '@/components/brand-logo-lockup'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from '@/hooks/use-toast'
@@ -177,21 +178,21 @@ const METRICS: MetricTheme[] = [
     key: 'bookings',
     label: 'Bookings',
     icon: Target,
-    accentHex: '#0d9488', // Teal
-    borderStyle: 'border-slate-200/80 hover:border-teal-300 dark:border-slate-800 dark:hover:border-teal-800',
-    badgeBg: 'bg-teal-50 dark:bg-teal-950/40 border border-teal-200/80 dark:border-teal-800',
-    badgeText: 'text-teal-700 dark:text-teal-300',
-    iconColor: '#0d9488',
+    accentHex: '#2563eb', // Royal Blue
+    borderStyle: 'border-slate-200/80 hover:border-blue-300 dark:border-slate-800 dark:hover:border-blue-800',
+    badgeBg: 'bg-blue-50 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-800',
+    badgeText: 'text-blue-700 dark:text-blue-300',
+    iconColor: '#2563eb',
   },
   {
     key: 'retails',
     label: 'Retails',
     icon: TrendingUp,
-    accentHex: '#047857', // Emerald
-    borderStyle: 'border-slate-200/80 hover:border-emerald-300 dark:border-slate-800 dark:hover:border-emerald-800',
-    badgeBg: 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800',
-    badgeText: 'text-slate-800 dark:text-slate-200',
-    iconColor: '#047857',
+    accentHex: '#4338ca', // Indigo
+    borderStyle: 'border-slate-200/80 hover:border-indigo-300 dark:border-slate-800 dark:hover:border-indigo-800',
+    badgeBg: 'bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800',
+    badgeText: 'text-indigo-900 dark:text-indigo-200',
+    iconColor: '#4338ca',
   },
 ]
 
@@ -202,11 +203,7 @@ const OUTLETS = [
 ]
 type TabKey = 'month' | 'targets' | 'daily'
 
-/*
- * ⚠️ Inline hex, not utility classes, for every state colour. app/globals.css retints emerald, amber
- * and rose with `!important`, so `text-emerald-600` does not render the colour it names here.
- */
-const INK = { ahead: '#047857', behind: '#b45309', bad: '#be123c', none: '#94a3b8', teal: '#055B65' }
+const INK = { ahead: '#4338ca', behind: '#b45309', bad: '#be123c', none: '#64748b', teal: '#055B65' }
 
 function ModernMonthPicker({
   value,
@@ -349,7 +346,7 @@ function ModernMonthPicker({
                     isSelected
                       ? 'bg-[var(--dashboard-action-bg,#055B65)] text-white shadow-xs font-black'
                       : isCurrent
-                        ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800 font-bold hover:bg-teal-100'
+                        ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold hover:bg-indigo-100'
                         : hasData
                           ? 'text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                           : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-850'
@@ -357,7 +354,7 @@ function ModernMonthPicker({
                 >
                   <span>{m.short}</span>
                   {isCurrent && !isSelected && (
-                    <span className="absolute bottom-1.5 w-1.5 h-1.5 rounded-full bg-teal-600" />
+                    <span className="absolute bottom-1.5 w-1.5 h-1.5 rounded-full bg-indigo-600" />
                   )}
                 </button>
               )
@@ -404,6 +401,12 @@ function paceInk(gap: number | null) {
   return gap <= -3 ? INK.bad : INK.behind
 }
 
+function fmtNum(val: number | null | undefined): string {
+  if (val === null || val === undefined || isNaN(val)) return '0'
+  const rounded = Math.round(val * 10) / 10
+  return String(rounded)
+}
+
 /** "+3" / "−2" / "—". The minus is a real minus sign, which lines up under a digit; a hyphen does not. */
 function paceText(gap: number | null) {
   if (gap === null) return '—'
@@ -426,7 +429,7 @@ function MetricTile({ theme, cell }: { theme: MetricTheme; cell: Cell }) {
       <div>
         <div className="flex items-center justify-between">
           <span
-            className="text-xs sm:text-sm font-black uppercase tracking-wider"
+            className="text-xs sm:text-sm font-bold uppercase tracking-wider"
             style={{ color: theme.accentHex }}
           >
             {theme.label}
@@ -440,10 +443,10 @@ function MetricTile({ theme, cell }: { theme: MetricTheme; cell: Cell }) {
         </div>
 
         <div className="mt-3 flex items-baseline gap-2">
-          <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white font-mono tabular-nums tracking-tight">
+          <span className="text-3xl sm:text-4xl font-bold text-slate-900 dark:text-white tabular-nums tracking-tight">
             {cell.actual}
           </span>
-          <span className="text-sm font-bold text-slate-500 dark:text-slate-400 tabular-nums">
+          <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
             {cell.target > 0 ? `/ ${cell.target} committed` : hasCommitment ? 'committed nil' : 'no target set'}
           </span>
         </div>
@@ -460,27 +463,27 @@ function MetricTile({ theme, cell }: { theme: MetricTheme; cell: Cell }) {
             <div
               className="absolute -top-1 h-4.5 w-1.5 rounded-full shadow-xs transition-all duration-500"
               style={{ left: `calc(${marker * 100}% - 3px)`, backgroundColor: '#334155' }}
-              title={`${cell.committedToDate} committed for elapsed days`}
+              title={`${fmtNum(cell.committedToDate)} committed for elapsed days`}
             />
           )}
         </div>
 
-        <div className="flex items-center justify-between text-xs font-bold">
+        <div className="flex items-center justify-between text-xs font-semibold">
           <span
-            className="tabular-nums"
+            className="tabular-nums font-semibold"
             style={{ color: ink }}
           >
             {hasCommitment
               ? cell.gap === null || cell.gap === 0
-                ? `On plan · ${cell.committedToDate} so far`
+                ? `On plan · ${fmtNum(cell.committedToDate)} so far`
                 : cell.gap > 0
-                  ? `Ahead by ${Math.round(cell.gap * 10) / 10} (${cell.committedToDate} so far)`
-                  : `Behind by ${Math.abs(Math.round(cell.gap * 10) / 10)} (${cell.committedToDate} so far)`
+                  ? `Ahead by ${fmtNum(cell.gap)} (${fmtNum(cell.committedToDate)} so far)`
+                  : `Behind by ${fmtNum(Math.abs(cell.gap))} (${fmtNum(cell.committedToDate)} so far)`
               : 'No commitment recorded'}
           </span>
           {cell.target > 0 && cell.achievement !== null && (
             <span
-              className="font-mono text-xs font-black text-slate-600 dark:text-slate-300"
+              className="text-xs font-bold text-slate-600 dark:text-slate-300 tabular-nums"
             >
               {Math.round(cell.achievement * 100)}%
             </span>
@@ -491,9 +494,9 @@ function MetricTile({ theme, cell }: { theme: MetricTheme; cell: Cell }) {
           <div className="pt-1 text-xs flex items-center justify-between font-medium">
             <span className="text-slate-500 dark:text-slate-400">Target status:</span>
             {cell.actual >= cell.target ? (
-              <span className="font-extrabold text-emerald-600 dark:text-emerald-400">Target Achieved! ✓</span>
+              <span className="font-semibold text-indigo-900 dark:text-indigo-300">Target Achieved! ✓</span>
             ) : (
-              <span className="font-extrabold text-amber-700 dark:text-amber-400">
+              <span className="font-semibold text-amber-800 dark:text-amber-400">
                 Need {cell.target - cell.actual} more to hit target
               </span>
             )}
@@ -511,10 +514,10 @@ function PlanMetricCell({ cell, metricKey }: { cell: Cell; metricKey?: MetricKey
   const gap = cell.gap
 
   return (
-    <td className="py-3 px-3.5 text-center whitespace-nowrap">
-      <div className="font-mono font-black text-sm text-slate-900 dark:text-white flex items-center justify-center gap-1.5">
+    <td className="py-3 px-3.5 text-center whitespace-nowrap border-r border-slate-200/70 dark:border-slate-800">
+      <div className="font-semibold text-sm text-slate-900 dark:text-white flex items-center justify-center gap-1.5 tabular-nums">
         <span>{cell.actual}</span>
-        <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold">
+        <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
           / {hasTgt ? cell.target : '—'}
         </span>
       </div>
@@ -522,7 +525,7 @@ function PlanMetricCell({ cell, metricKey }: { cell: Cell; metricKey?: MetricKey
       <div className="mt-1 flex flex-col items-center gap-1">
         {gap !== null ? (
           <span
-            className="text-xs font-black tabular-nums"
+            className="text-xs font-semibold tabular-nums"
             style={{ color: paceInk(gap) }}
           >
             {paceText(gap)}
@@ -533,10 +536,10 @@ function PlanMetricCell({ cell, metricKey }: { cell: Cell; metricKey?: MetricKey
 
         {hasTgt && (
           <span
-            className={`text-[11px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
+            className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
               isMet
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                ? 'bg-indigo-50 text-indigo-900 border-indigo-200/80 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
+                : 'bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
             }`}
           >
             {isMet ? 'Met ✓' : `Need ${need}`}
@@ -591,23 +594,13 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
       {/* ── 1. Top Executive Masthead ───────────────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <span
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-black uppercase tracking-wider border"
-              style={{
-                backgroundColor: `${INK.teal}10`,
-                borderColor: `${INK.teal}30`,
-                color: INK.teal,
-              }}
-            >
-              <Building2 className="h-3.5 w-3.5" />
-              AM KIA
-            </span>
+          <div className="flex items-center gap-3">
+            <BrandLogoLockup brand="kia" variant="card" size="md" />
             <span className="text-slate-300 dark:text-slate-700 font-bold text-sm">/</span>
-            <span className="text-sm font-bold text-slate-600 dark:text-slate-400">Sales Command</span>
+            <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">Sales Target Plan</span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight mt-1.5 flex items-center gap-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight mt-2 flex items-center gap-2">
             Sales Target Plan
           </h1>
 
@@ -626,7 +619,7 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
             <select
               value={outlet}
               onChange={(e) => setOutlet(e.target.value)}
-              className="h-11 pl-4 pr-9 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-white shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer appearance-none outline-hidden focus:ring-2 focus:ring-[var(--dashboard-action-bg,#055B65)]"
+              className="h-11 pl-4 pr-9 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer appearance-none outline-hidden focus:ring-2 focus:ring-[var(--dashboard-action-bg,#055B65)]"
               aria-label="Outlet"
             >
               {OUTLETS.map((o) => (
@@ -650,7 +643,7 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
             variant="outline"
             size="sm"
             onClick={() => query.refetch()}
-            className="h-11 px-3.5 rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm font-bold shadow-2xs hover:bg-slate-50 dark:hover:bg-slate-850 cursor-pointer active:scale-95"
+            className="h-11 px-3.5 rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm font-semibold shadow-2xs hover:bg-slate-50 dark:hover:bg-slate-850 cursor-pointer active:scale-95"
             title="Refresh Feed"
           >
             <RefreshCw
@@ -666,17 +659,17 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
         <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-1.5">
             <div className="flex items-center gap-2.5">
-              <span className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <span className="text-base sm:text-lg font-bold uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-[var(--dashboard-action-bg,#055B65)]" />
                 {ctx.outletLabel}
               </span>
               <span className="text-slate-300 dark:text-slate-700 font-bold">·</span>
-              <span className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-300">
+              <span className="text-sm sm:text-base font-semibold text-slate-700 dark:text-slate-300">
                 {ctx.label}
               </span>
               {ctx.isCurrentMonth && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-black bg-teal-50 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300 border border-teal-200/80 dark:border-teal-800">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800">
+                  <span className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse" />
                   Live Month
                 </span>
               )}
@@ -684,9 +677,9 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
 
             {ctx.isCurrentMonth && (
               <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
-                Elapsed: <strong className="font-black text-slate-900 dark:text-white">{ctx.workingDaysElapsed}</strong> of{' '}
-                <strong className="font-black text-slate-900 dark:text-white">{ctx.workingDays} working days</strong>{' '}
-                <span className="text-teal-700 dark:text-teal-400 font-extrabold">({Math.round(ctx.elapsedShare * 100)}% of month completed)</span>
+                Elapsed: <strong className="font-semibold text-slate-900 dark:text-white">{ctx.workingDaysElapsed}</strong> of{' '}
+                <strong className="font-semibold text-slate-900 dark:text-white">{ctx.workingDays} working days</strong>{' '}
+                <span className="text-indigo-900 dark:text-indigo-300 font-semibold">({Math.round(ctx.elapsedShare * 100)}% of month completed)</span>
               </p>
             )}
           </div>
@@ -706,18 +699,18 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
                 <TrendingUp className="h-5 w-5" />
               </div>
               <div>
-                <span className="text-xs font-black uppercase tracking-wider block text-slate-400 dark:text-slate-500">
+                <span className="text-xs font-bold uppercase tracking-wider block text-slate-400 dark:text-slate-500">
                   Retail Pace Status
                 </span>
-                <p className="text-xs sm:text-sm font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                <p className="text-xs sm:text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
                   {data.totals.retails.gap !== null ? (
                     <>
-                      <span className="font-black">{data.totals.retails.actual} retails</span> against{' '}
-                      <span className="text-slate-600 dark:text-slate-300 font-semibold">{data.totals.retails.committedToDate} committed so far</span> —{' '}
-                      <span style={{ color: paceInk(data.totals.retails.gap) }} className="font-black">
+                      <span className="font-bold">{data.totals.retails.actual} retails</span> against{' '}
+                      <span className="text-slate-600 dark:text-slate-300 font-medium">{fmtNum(data.totals.retails.committedToDate)} committed so far</span> —{' '}
+                      <span style={{ color: paceInk(data.totals.retails.gap) }} className="font-bold">
                         {data.totals.retails.gap >= 0
-                          ? `ahead by ${Math.round(data.totals.retails.gap * 10) / 10}`
-                          : `behind by ${Math.abs(Math.round(data.totals.retails.gap * 10) / 10)}`}
+                          ? `ahead by ${fmtNum(data.totals.retails.gap)}`
+                          : `behind by ${fmtNum(Math.abs(data.totals.retails.gap))}`}
                       </span>
                       {data.totals.retails.target > 0 && (
                         <span className="text-slate-400 dark:text-slate-500 font-normal"> · {data.totals.retails.target} month target</span>
@@ -815,11 +808,11 @@ function MonthTab({ data }: { data: Payload }) {
       {data.models && data.models.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
               <Layers className="h-4.5 w-4.5 text-[var(--dashboard-action-bg,#055B65)]" />
               Dealership Model-Wise Performance
             </h3>
-            <span className="text-xs font-bold text-slate-500">
+            <span className="text-xs font-semibold text-slate-500">
               {data.models.length} Models Tracked
             </span>
           </div>
@@ -836,20 +829,20 @@ function MonthTab({ data }: { data: Payload }) {
                 >
                   <div>
                     <div className="flex items-center justify-between gap-1 mb-1.5">
-                      <span className="text-sm font-black text-slate-900 dark:text-white truncate">
+                      <span className="text-sm font-semibold text-slate-900 dark:text-white truncate">
                         {m.model}
                       </span>
                       {hasTgt && (
-                        <span className="text-xs font-mono font-bold text-slate-400">
+                        <span className="text-xs font-semibold text-slate-400 tabular-nums">
                           {pct}%
                         </span>
                       )}
                     </div>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-2xl font-black font-mono text-slate-900 dark:text-white tabular-nums">
+                      <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
                         {m.retails}
                       </span>
-                      <span className="text-xs text-slate-500 dark:text-slate-400 font-bold tabular-nums">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium tabular-nums">
                         / {hasTgt ? m.target : '—'} retails
                       </span>
                     </div>
@@ -858,25 +851,25 @@ function MonthTab({ data }: { data: Payload }) {
                   <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
                     <div className="relative h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                       <div
-                        className="absolute inset-y-0 left-0 bg-emerald-600 rounded-full transition-all duration-500"
+                        className="absolute inset-y-0 left-0 bg-indigo-600 rounded-full transition-all duration-500"
                         style={{ width: `${hasTgt ? pct : m.retails > 0 ? 100 : 0}%` }}
                       />
                     </div>
-                    <div className="flex items-center justify-between text-xs font-bold">
-                      <span className="text-teal-700 dark:text-teal-400 font-bold">
+                    <div className="flex items-center justify-between text-xs font-semibold">
+                      <span className="text-indigo-900 dark:text-indigo-300 font-semibold">
                         {m.bookings} bkg
                       </span>
-                      <span style={{ color: paceInk(m.gap) }} className="font-extrabold">
+                      <span style={{ color: paceInk(m.gap) }} className="font-semibold tabular-nums">
                         {paceText(m.gap)}
                       </span>
                     </div>
                     {hasTgt && (
-                      <div className="text-xs font-bold flex items-center justify-between pt-1 border-t border-slate-100/60 dark:border-slate-800/60">
-                        <span className="text-slate-400 font-normal">Remaining:</span>
+                      <div className="text-xs font-medium flex items-center justify-between pt-1 border-t border-slate-100/60 dark:border-slate-800/60">
+                        <span className="text-slate-400">Remaining:</span>
                         {m.retails >= m.target ? (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">Met ✓</span>
+                          <span className="text-indigo-900 dark:text-indigo-300 font-semibold">Met ✓</span>
                         ) : (
-                          <span className="text-amber-600 dark:text-amber-400 font-extrabold">Need {need}</span>
+                          <span className="text-amber-800 dark:text-amber-400 font-semibold">Need {need}</span>
                         )}
                       </div>
                     )}
@@ -892,11 +885,11 @@ function MonthTab({ data }: { data: Payload }) {
       {data.weeks && data.weeks.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
               <CalendarDays className="h-4.5 w-4.5 text-[var(--dashboard-action-bg,#055B65)]" />
               Weekly Target vs. Actuals Milestone Breakdown (4 Weeks)
             </h3>
-            <span className="text-xs font-bold text-slate-500">
+            <span className="text-xs font-semibold text-slate-500">
               Monthly targets divided across W1–W4
             </span>
           </div>
@@ -904,7 +897,7 @@ function MonthTab({ data }: { data: Payload }) {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {data.weeks.map((w) => {
               const statusBg = w.isCurrent
-                ? 'bg-teal-50 border-teal-200 text-teal-800 dark:bg-teal-950/40 dark:border-teal-800 dark:text-teal-300'
+                ? 'bg-indigo-50 border-indigo-200/80 text-indigo-900 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-300'
                 : w.isPast
                   ? 'bg-slate-100 border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
                   : 'bg-slate-50 border-slate-200/60 text-slate-500 dark:bg-slate-900/50 dark:border-slate-800 dark:text-slate-500'
@@ -921,20 +914,20 @@ function MonthTab({ data }: { data: Payload }) {
                   key={w.scope}
                   className={`p-4.5 rounded-2xl bg-white dark:bg-slate-900 border transition-all ${
                     w.isCurrent
-                      ? 'border-teal-400 dark:border-teal-600 shadow-md ring-1 ring-teal-400/30'
+                      ? 'border-indigo-400 dark:border-indigo-600 shadow-md ring-1 ring-indigo-400/30'
                       : 'border-slate-200/80 dark:border-slate-800 shadow-xs'
                   }`}
                 >
                   <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-slate-100 dark:border-slate-800">
                     <div>
-                      <span className="text-sm font-black text-slate-900 dark:text-white">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">
                         Week {w.weekNumber}
                       </span>
-                      <span className="block text-xs font-bold text-slate-400">
+                      <span className="block text-xs font-medium text-slate-400">
                         Day {w.startDay}–{w.endDay}
                       </span>
                     </div>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusBg}`}>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${statusBg}`}>
                       {statusLabel}
                     </span>
                   </div>
@@ -942,26 +935,26 @@ function MonthTab({ data }: { data: Payload }) {
                   {/* Primary Retail Highlight */}
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-850/60 border border-slate-100 dark:border-slate-800 mb-3">
                     <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                        <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <TrendingUp className="h-3.5 w-3.5 text-indigo-600" />
                         Retails
                       </span>
-                      <span className="font-black font-mono tabular-nums text-slate-900 dark:text-white text-sm">
-                        {retailAct} <span className="text-slate-400 font-bold text-xs">/ {retailTgt > 0 ? retailTgt : '—'}</span>
+                      <span className="font-bold tabular-nums text-slate-900 dark:text-white text-sm">
+                        {retailAct} <span className="text-slate-400 font-medium text-xs">/ {retailTgt > 0 ? retailTgt : '—'}</span>
                       </span>
                     </div>
                     <div className="relative h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden mb-1.5">
                       <div
-                        className="absolute inset-y-0 left-0 bg-emerald-600 rounded-full transition-all duration-500"
+                        className="absolute inset-y-0 left-0 bg-indigo-600 rounded-full transition-all duration-500"
                         style={{ width: `${retailPct}%` }}
                       />
                     </div>
-                    <div className="flex items-center justify-between text-xs font-bold">
-                      <span style={{ color: paceInk(retailGap) }} className="font-extrabold">
+                    <div className="flex items-center justify-between text-xs font-semibold">
+                      <span style={{ color: paceInk(retailGap) }} className="font-semibold tabular-nums">
                         {paceText(retailGap)}
                       </span>
                       {retailTgt > 0 && (
-                        <span className={retailAct >= retailTgt ? 'text-emerald-600 font-black' : 'text-amber-600 font-extrabold'}>
+                        <span className={retailAct >= retailTgt ? 'text-indigo-900 dark:text-indigo-300 font-semibold' : 'text-amber-800 dark:text-amber-400 font-semibold'}>
                           {retailAct >= retailTgt ? 'Week Met ✓' : `Need ${retailNeed}`}
                         </span>
                       )}
@@ -971,44 +964,44 @@ function MonthTab({ data }: { data: Payload }) {
                   {/* Mini Secondary Metrics Grid */}
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="p-2 rounded-xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/30">
-                      <span className="block text-[10px] font-black uppercase text-sky-700 dark:text-sky-300">Enq</span>
-                      <span className="text-sm font-black font-mono text-slate-800 dark:text-slate-200 tabular-nums">
+                      <span className="block text-[10px] font-bold uppercase text-sky-700 dark:text-sky-300">Enq</span>
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
                         {w.enquiries.actual}
                         <span className="text-[10px] text-slate-400 font-normal">/{w.enquiries.target || '—'}</span>
                       </span>
                       {w.enquiries.target > 0 && (
-                        <span className="block text-[9.5px] font-bold text-slate-500 mt-0.5">
+                        <span className="block text-[9.5px] font-medium text-slate-500 mt-0.5">
                           {w.enquiries.actual >= w.enquiries.target ? 'Met ✓' : `Need ${w.enquiries.target - w.enquiries.actual}`}
                         </span>
                       )}
                     </div>
                     <div className="p-2 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/30">
-                      <span className="block text-[10px] font-black uppercase text-purple-700 dark:text-purple-300">TD</span>
-                      <span className="text-sm font-black font-mono text-slate-800 dark:text-slate-200 tabular-nums">
+                      <span className="block text-[10px] font-bold uppercase text-purple-700 dark:text-purple-300">TD</span>
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
                         {w.testDrives.actual}
                         <span className="text-[10px] text-slate-400 font-normal">/{w.testDrives.target || '—'}</span>
                       </span>
                       {w.testDrives.target > 0 && (
-                        <span className="block text-[9.5px] font-bold text-slate-500 mt-0.5">
+                        <span className="block text-[9.5px] font-medium text-slate-500 mt-0.5">
                           {w.testDrives.actual >= w.testDrives.target ? 'Met ✓' : `Need ${w.testDrives.target - w.testDrives.actual}`}
                         </span>
                       )}
                     </div>
-                    <div className="p-2 rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/30">
-                      <span className="block text-[10px] font-black uppercase text-teal-700 dark:text-teal-300">Bkg</span>
-                      <span className="text-sm font-black font-mono text-slate-800 dark:text-slate-200 tabular-nums">
+                    <div className="p-2 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30">
+                      <span className="block text-[10px] font-bold uppercase text-blue-700 dark:text-blue-300">Bkg</span>
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
                         {w.bookings.actual}
                         <span className="text-[10px] text-slate-400 font-normal">/{w.bookings.target || '—'}</span>
                       </span>
                       {w.bookings.target > 0 && (
-                        <span className="block text-[9.5px] font-bold text-slate-500 mt-0.5">
+                        <span className="block text-[9.5px] font-medium text-slate-500 mt-0.5">
                           {w.bookings.actual >= w.bookings.target ? 'Met ✓' : `Need ${w.bookings.target - w.bookings.actual}`}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400 font-semibold">
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400 font-medium">
                     <span>{w.workingDays} work days</span>
                     <span>{w.workingDaysElapsed} elapsed</span>
                   </div>
@@ -1023,46 +1016,46 @@ function MonthTab({ data }: { data: Payload }) {
       {data.teams.length > 0 && (
         <div className="overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
           <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900">
-            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
               <Users className="h-4.5 w-4.5 text-[var(--dashboard-action-bg,#055B65)]" />
               Team Performance Breakdown
             </h3>
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+            <span className="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
               {data.teams.length} Team{data.teams.length === 1 ? '' : 's'}
             </span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm kia-plan-table">
-              <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-                <tr className="text-slate-700 dark:text-slate-200 font-black uppercase tracking-wider text-xs">
-                  <th scope="col" className="py-3.5 px-4">Team Leader</th>
-                  <th scope="col" className="py-3.5 px-4">Headcount</th>
+            <table className="w-full text-left text-sm kia-plan-table border-collapse">
+              <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-800/90">
+                <tr className="text-slate-800 dark:text-slate-100 font-semibold uppercase tracking-wider text-xs">
+                  <th scope="col" className="py-3 px-4 border-r border-slate-200 dark:border-slate-700">Team Leader</th>
+                  <th scope="col" className="py-3 px-4 border-r border-slate-200 dark:border-slate-700">Headcount</th>
                   {METRICS.map((m) => (
-                    <th scope="col" key={m.key} className="py-3.5 px-3.5 text-center">
-                      <span className="block font-black" style={{ color: m.accentHex }}>{m.label}</span>
-                      <span className="block text-[10px] text-slate-400 font-medium">Act / Tgt · Gap</span>
+                    <th scope="col" key={m.key} className="py-3 px-3.5 text-center border-r border-slate-200 dark:border-slate-700">
+                      <span className="block font-semibold" style={{ color: m.accentHex }}>{m.label}</span>
+                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-medium">Act / Tgt · Gap</span>
                     </th>
                   ))}
-                  <th scope="col" className="py-3.5 px-4 text-right">Retail Pace & Deficit</th>
+                  <th scope="col" className="py-3 px-4 text-right">Retail Pace & Deficit</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+              <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/60">
                 {data.teams.map((t) => {
                   const hasRetTgt = t.retails.target > 0
                   const retNeed = hasRetTgt ? Math.max(0, t.retails.target - t.retails.actual) : 0
                   return (
-                    <tr key={t.teamLeader} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
-                      <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base">
+                    <tr key={t.teamLeader} className="odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-900 dark:even:bg-slate-850/50 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition-colors">
+                      <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base border-r border-slate-200/70 dark:border-slate-800">
                         {t.teamLeader}
                       </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 font-mono font-bold text-sm">{t.consultants}</td>
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 font-semibold text-sm tabular-nums border-r border-slate-200/70 dark:border-slate-800">{t.consultants}</td>
                       {METRICS.map((m) => (
                         <PlanMetricCell key={m.key} cell={t[m.key]} metricKey={m.key} />
                       ))}
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex flex-col items-end gap-1">
                           <span
-                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-black font-mono tabular-nums border shadow-2xs"
+                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tabular-nums border shadow-2xs"
                             style={{
                               backgroundColor: `${paceInk(t.retails.gap)}12`,
                               borderColor: `${paceInk(t.retails.gap)}30`,
@@ -1072,7 +1065,7 @@ function MonthTab({ data }: { data: Payload }) {
                             {paceText(t.retails.gap)}
                           </span>
                           {hasRetTgt && (
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
                               {t.retails.actual >= t.retails.target
                                 ? 'Team Goal Met ✓'
                                 : `Need ${retNeed} more`}
@@ -1093,20 +1086,20 @@ function MonthTab({ data }: { data: Payload }) {
       <div className="overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
         <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900">
           <div>
-            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
               <Target className="h-4.5 w-4.5 text-[var(--dashboard-action-bg,#055B65)]" />
               Consultant Performance Leaderboard
             </h3>
           </div>
           <div className="flex items-center gap-2.5">
             {/* View Switcher: Weekly Breakdown vs Model Wise Targets vs Full Funnel */}
-            <div className="inline-flex rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 p-0.5 text-xs font-bold">
+            <div className="inline-flex rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 p-0.5 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => setConsultantView('weeks')}
                 className={`px-3.5 py-1.5 rounded-lg transition-all cursor-pointer ${
                   consultantView === 'weeks'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-black'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -1117,7 +1110,7 @@ function MonthTab({ data }: { data: Payload }) {
                 onClick={() => setConsultantView('models')}
                 className={`px-3.5 py-1.5 rounded-lg transition-all cursor-pointer ${
                   consultantView === 'models'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-black'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -1128,14 +1121,14 @@ function MonthTab({ data }: { data: Payload }) {
                 onClick={() => setConsultantView('funnel')}
                 className={`px-3.5 py-1.5 rounded-lg transition-all cursor-pointer ${
                   consultantView === 'funnel'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-black'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 Full Funnel
               </button>
             </div>
-            <span className="text-xs text-slate-600 dark:text-slate-400 font-bold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hidden md:inline-block">
+            <span className="text-xs text-slate-600 dark:text-slate-400 font-semibold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hidden md:inline-block">
               Sorted by gap
             </span>
           </div>
@@ -1144,44 +1137,44 @@ function MonthTab({ data }: { data: Payload }) {
         <div className="overflow-x-auto">
           {/* VIEW 1: WEEKLY BREAKDOWN (W1 to W4) */}
           {consultantView === 'weeks' && (
-            <table className="w-full text-left text-sm kia-plan-table">
-              <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-                <tr className="text-slate-700 dark:text-slate-200 font-black uppercase tracking-wider text-xs">
-                  <th scope="col" className="py-3.5 px-4">Consultant</th>
-                  <th scope="col" className="py-3.5 px-4">Team Leader</th>
+            <table className="w-full text-left text-sm kia-plan-table border-collapse">
+              <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-800/90">
+                <tr className="text-slate-800 dark:text-slate-100 font-semibold uppercase tracking-wider text-xs">
+                  <th scope="col" className="py-3 px-4 border-r border-slate-200 dark:border-slate-700">Consultant</th>
+                  <th scope="col" className="py-3 px-4 border-r border-slate-200 dark:border-slate-700">Team Leader</th>
                   {data.weeks.map((w) => (
-                    <th scope="col" key={w.scope} className="py-3.5 px-3 text-center">
-                      <span className="block font-black text-slate-800 dark:text-slate-200">W{w.weekNumber} Retail</span>
-                      <span className="block text-[10px] text-slate-400 font-medium">Day {w.startDay}–{w.endDay}</span>
+                    <th scope="col" key={w.scope} className="py-3 px-3 text-center border-r border-slate-200 dark:border-slate-700">
+                      <span className="block font-semibold text-slate-800 dark:text-slate-200">W{w.weekNumber} Retail</span>
+                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-medium">Day {w.startDay}–{w.endDay}</span>
                     </th>
                   ))}
-                  <th scope="col" className="py-3.5 px-3.5 text-center font-black">
+                  <th scope="col" className="py-3 px-3.5 text-center font-semibold border-r border-slate-200 dark:border-slate-700">
                     <span className="block text-slate-800 dark:text-slate-200">Month Retail</span>
-                    <span className="block text-[10px] text-slate-400 font-medium">Act / Target</span>
+                    <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-medium">Act / Target</span>
                   </th>
-                  <th scope="col" className="py-3.5 px-4 text-right">Retail Gap & Deficit</th>
+                  <th scope="col" className="py-3 px-4 text-right">Retail Gap & Deficit</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+              <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/60">
                 {data.consultants.map((row) => {
                   const hasRetTgt = row.retails.target > 0
                   const retNeed = hasRetTgt ? Math.max(0, row.retails.target - row.retails.actual) : 0
                   const isRetMet = hasRetTgt && row.retails.actual >= row.retails.target
 
                   return (
-                    <tr key={row.consultant} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
-                      <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base">
+                    <tr key={row.consultant} className="odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-900 dark:even:bg-slate-850/50 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition-colors">
+                      <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base border-r border-slate-200/70 dark:border-slate-800">
                         {row.consultant}
                         {row.isTeamLeader && (
                           <span
-                            className="ml-2 align-middle px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide border shadow-2xs"
+                            className="ml-2 align-middle px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide border shadow-2xs"
                             style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#a5b4fc' }}
                           >
                             Lead
                           </span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 font-semibold whitespace-nowrap text-xs sm:text-sm">
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap text-xs sm:text-sm border-r border-slate-200/70 dark:border-slate-800">
                         {row.teamLeader || '—'}
                       </td>
                       {(row.weeks || []).map((cw) => {
@@ -1193,17 +1186,17 @@ function MonthTab({ data }: { data: Payload }) {
                         const isMet = hasTgt && act >= tgt
 
                         return (
-                          <td key={cw.scope} className="py-3.5 px-3 text-center whitespace-nowrap">
-                            <div className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                          <td key={cw.scope} className="py-3 px-3 text-center whitespace-nowrap border-r border-slate-200/70 dark:border-slate-800">
+                            <div className="font-semibold text-sm text-slate-900 dark:text-white tabular-nums">
                               {act}{' '}
-                              <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold">
+                              <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
                                 / {hasTgt ? tgt : '—'}
                               </span>
                             </div>
                             <div className="mt-1 flex flex-col items-center gap-1">
                               {gap !== null && (
                                 <span
-                                  className="inline-block text-xs font-extrabold tabular-nums"
+                                  className="inline-block text-xs font-semibold tabular-nums"
                                   style={{ color: paceInk(gap) }}
                                 >
                                   {paceText(gap)}
@@ -1211,10 +1204,10 @@ function MonthTab({ data }: { data: Payload }) {
                               )}
                               {hasTgt && (
                                 <span
-                                  className={`text-[11px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
+                                  className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
                                     isMet
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                                      : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                      ? 'bg-indigo-50 text-indigo-900 border-indigo-200/80 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
+                                      : 'bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
                                   }`}
                                 >
                                   {isMet ? 'Met ✓' : `Need ${need}`}
@@ -1224,18 +1217,18 @@ function MonthTab({ data }: { data: Payload }) {
                           </td>
                         )
                       })}
-                      <td className="py-3.5 px-3.5 text-center whitespace-nowrap font-mono">
-                        <div className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
+                      <td className="py-3 px-3.5 text-center whitespace-nowrap border-r border-slate-200/70 dark:border-slate-800">
+                        <div className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white tabular-nums">
                           {row.retails.actual}
-                          <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold"> / {row.retails.target > 0 ? row.retails.target : '—'}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 font-medium"> / {row.retails.target > 0 ? row.retails.target : '—'}</span>
                         </div>
                         {hasRetTgt && (
                           <div className="mt-1">
                             <span
-                              className={`text-[11px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
+                              className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
                                 isRetMet
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                                  : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                  ? 'bg-indigo-50 text-indigo-900 border-indigo-200/80 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
+                                  : 'bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
                               }`}
                             >
                               {isRetMet ? 'Goal Met ✓' : `Need ${retNeed}`}
@@ -1243,10 +1236,10 @@ function MonthTab({ data }: { data: Payload }) {
                           </div>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex flex-col items-end gap-1">
                           <span
-                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-black font-mono tabular-nums border shadow-2xs"
+                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tabular-nums border shadow-2xs"
                             style={{
                               backgroundColor: `${paceInk(row.retails.gap)}15`,
                               borderColor: `${paceInk(row.retails.gap)}40`,
@@ -1256,7 +1249,7 @@ function MonthTab({ data }: { data: Payload }) {
                             {paceText(row.retails.gap)}
                           </span>
                           {hasRetTgt && (
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
                               {isRetMet
                                 ? 'Target Met ✓'
                                 : `Need ${retNeed} to hit`}
@@ -1273,44 +1266,44 @@ function MonthTab({ data }: { data: Payload }) {
 
           {/* VIEW 2: MODEL-WISE TARGETS & ACHIEVED */}
           {consultantView === 'models' && (
-            <table className="w-full text-left text-sm kia-plan-table">
-              <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-                <tr className="text-slate-700 dark:text-slate-200 font-black uppercase tracking-wider text-xs">
-                  <th scope="col" className="py-3.5 px-4">Consultant</th>
-                  <th scope="col" className="py-3.5 px-4">Team Leader</th>
+            <table className="w-full text-left text-sm kia-plan-table border-collapse">
+              <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-800/90">
+                <tr className="text-slate-800 dark:text-slate-100 font-semibold uppercase tracking-wider text-xs">
+                  <th scope="col" className="py-3 px-4 border-r border-slate-200 dark:border-slate-700">Consultant</th>
+                  <th scope="col" className="py-3 px-4 border-r border-slate-200 dark:border-slate-700">Team Leader</th>
                   {data.allModels.map((m) => (
-                    <th scope="col" key={m} className="py-3.5 px-3 text-center">
-                      <span className="block font-black text-slate-800 dark:text-slate-200">{m}</span>
-                      <span className="block text-[10px] text-slate-400 font-medium">Act / Tgt · Gap</span>
+                    <th scope="col" key={m} className="py-3 px-3 text-center border-r border-slate-200 dark:border-slate-700">
+                      <span className="block font-semibold text-slate-800 dark:text-slate-200">{m}</span>
+                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-medium">Act / Tgt · Gap</span>
                     </th>
                   ))}
-                  <th scope="col" className="py-3.5 px-3.5 text-center font-black">
+                  <th scope="col" className="py-3 px-3.5 text-center font-semibold border-r border-slate-200 dark:border-slate-700">
                     <span className="block text-slate-800 dark:text-slate-200">Total Retail</span>
-                    <span className="block text-[10px] text-slate-400 font-medium">Act / Target</span>
+                    <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-medium">Act / Target</span>
                   </th>
-                  <th scope="col" className="py-3.5 px-4 text-right">Retail Gap & Deficit</th>
+                  <th scope="col" className="py-3 px-4 text-right">Retail Gap & Deficit</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+              <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/60">
                 {data.consultants.map((row) => {
                   const hasRetTgt = row.retails.target > 0
                   const retNeed = hasRetTgt ? Math.max(0, row.retails.target - row.retails.actual) : 0
                   const isRetMet = hasRetTgt && row.retails.actual >= row.retails.target
 
                   return (
-                    <tr key={row.consultant} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
-                      <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base">
+                    <tr key={row.consultant} className="odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-900 dark:even:bg-slate-850/50 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition-colors">
+                      <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base border-r border-slate-200/70 dark:border-slate-800">
                         {row.consultant}
                         {row.isTeamLeader && (
                           <span
-                            className="ml-2 align-middle px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide border shadow-2xs"
+                            className="ml-2 align-middle px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide border shadow-2xs"
                             style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#a5b4fc' }}
                           >
                             Lead
                           </span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 font-semibold whitespace-nowrap text-xs sm:text-sm">
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap text-xs sm:text-sm border-r border-slate-200/70 dark:border-slate-800">
                         {row.teamLeader || '—'}
                       </td>
                       {data.allModels.map((mName) => {
@@ -1322,17 +1315,17 @@ function MonthTab({ data }: { data: Payload }) {
                         const isMet = hasTgt && act >= tgt
 
                         return (
-                          <td key={mName} className="py-3.5 px-3 text-center whitespace-nowrap">
-                            <div className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                          <td key={mName} className="py-3 px-3 text-center whitespace-nowrap border-r border-slate-200/70 dark:border-slate-800">
+                            <div className="font-semibold text-sm text-slate-900 dark:text-white tabular-nums">
                               {act}{' '}
-                              <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold">
+                              <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
                                 / {hasTgt ? tgt : '—'}
                               </span>
                             </div>
                             <div className="mt-1 flex flex-col items-center gap-1">
                               {hasTgt && mItem && mItem.gap !== null ? (
                                 <span
-                                  className="inline-block text-xs font-extrabold tabular-nums"
+                                  className="inline-block text-xs font-semibold tabular-nums"
                                   style={{ color: paceInk(mItem.gap) }}
                                 >
                                   {paceText(mItem.gap)}
@@ -1340,10 +1333,10 @@ function MonthTab({ data }: { data: Payload }) {
                               ) : null}
                               {hasTgt && (
                                 <span
-                                  className={`text-[11px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
+                                  className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
                                     isMet
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                                      : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                      ? 'bg-indigo-50 text-indigo-900 border-indigo-200/80 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
+                                      : 'bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
                                   }`}
                                 >
                                   {isMet ? 'Met ✓' : `Need ${need}`}
@@ -1353,18 +1346,18 @@ function MonthTab({ data }: { data: Payload }) {
                           </td>
                         )
                       })}
-                      <td className="py-3.5 px-3.5 text-center whitespace-nowrap font-mono">
-                        <div className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
+                      <td className="py-3 px-3.5 text-center whitespace-nowrap border-r border-slate-200/70 dark:border-slate-800">
+                        <div className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white tabular-nums">
                           {row.retails.actual}
-                          <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold"> / {row.retails.target > 0 ? row.retails.target : '—'}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 font-medium"> / {row.retails.target > 0 ? row.retails.target : '—'}</span>
                         </div>
                         {hasRetTgt && (
                           <div className="mt-1">
                             <span
-                              className={`text-[11px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
+                              className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md border shadow-2xs ${
                                 isRetMet
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                                  : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                  ? 'bg-indigo-50 text-indigo-900 border-indigo-200/80 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
+                                  : 'bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
                               }`}
                             >
                               {isRetMet ? 'Goal Met ✓' : `Need ${retNeed}`}
@@ -1372,10 +1365,10 @@ function MonthTab({ data }: { data: Payload }) {
                           </div>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex flex-col items-end gap-1">
                           <span
-                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-black font-mono tabular-nums border shadow-2xs"
+                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tabular-nums border shadow-2xs"
                             style={{
                               backgroundColor: `${paceInk(row.retails.gap)}15`,
                               borderColor: `${paceInk(row.retails.gap)}40`,
@@ -1385,7 +1378,7 @@ function MonthTab({ data }: { data: Payload }) {
                             {paceText(row.retails.gap)}
                           </span>
                           {hasRetTgt && (
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
                               {isRetMet
                                 ? 'Target Met ✓'
                                 : `Need ${retNeed} to hit`}
@@ -1402,33 +1395,33 @@ function MonthTab({ data }: { data: Payload }) {
 
           {/* VIEW 3: FULL FUNNEL OVERVIEW */}
           {consultantView === 'funnel' && (
-            <table className="w-full text-left text-sm kia-plan-table">
-              <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-                <tr className="text-slate-700 dark:text-slate-200 font-black uppercase tracking-wider text-xs">
-                  <th scope="col" className="py-3.5 px-4">Consultant</th>
-                  <th scope="col" className="py-3.5 px-4">Team Leader</th>
+            <table className="w-full text-left text-sm kia-plan-table border-collapse">
+              <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-800/90">
+                <tr className="text-slate-800 dark:text-slate-100 font-semibold uppercase tracking-wider text-xs">
+                  <th scope="col" className="py-3 px-4 border-r border-slate-200 dark:border-slate-700">Consultant</th>
+                  <th scope="col" className="py-3 px-4 border-r border-slate-200 dark:border-slate-700">Team Leader</th>
                   {METRICS.map((m) => (
-                    <th scope="col" key={m.key} className="py-3.5 px-3 text-center">
-                      <span className="block font-black" style={{ color: m.accentHex }}>{m.label}</span>
-                      <span className="block text-[10px] text-slate-400 font-medium">Act / Tgt · Gap</span>
+                    <th scope="col" key={m.key} className="py-3 px-3.5 text-center border-r border-slate-200 dark:border-slate-700">
+                      <span className="block font-semibold" style={{ color: m.accentHex }}>{m.label}</span>
+                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-medium">Act / Tgt · Gap</span>
                     </th>
                   ))}
-                  <th scope="col" className="py-3.5 px-4 text-right">Pace Gap & Deficit</th>
+                  <th scope="col" className="py-3 px-4 text-right">Pace Gap & Deficit</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+              <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/60">
                 {data.consultants.map((row) => {
                   const hasRetTgt = row.retails.target > 0
                   const retNeed = hasRetTgt ? Math.max(0, row.retails.target - row.retails.actual) : 0
                   const isRetMet = hasRetTgt && row.retails.actual >= row.retails.target
 
                   return (
-                    <tr key={row.consultant} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors">
-                      <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base">
+                    <tr key={row.consultant} className="odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-900 dark:even:bg-slate-850/50 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition-colors">
+                      <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base border-r border-slate-200/70 dark:border-slate-800">
                         {row.consultant}
                         {row.isTeamLeader && (
                           <span
-                            className="ml-2 align-middle px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide border shadow-2xs"
+                            className="ml-2 align-middle px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide border shadow-2xs"
                             style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#a5b4fc' }}
                             title="Team leader"
                           >
@@ -1436,16 +1429,16 @@ function MonthTab({ data }: { data: Payload }) {
                           </span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 font-semibold whitespace-nowrap text-xs sm:text-sm">
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap text-xs sm:text-sm border-r border-slate-200/70 dark:border-slate-800">
                         {row.teamLeader || '—'}
                       </td>
                       {METRICS.map((m) => (
                         <PlanMetricCell key={m.key} cell={row[m.key]} metricKey={m.key} />
                       ))}
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex flex-col items-end gap-1">
                           <span
-                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-black font-mono tabular-nums border shadow-2xs"
+                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tabular-nums border shadow-2xs"
                             style={{
                               backgroundColor: `${paceInk(row.worstGap)}15`,
                               borderColor: `${paceInk(row.worstGap)}40`,
@@ -1456,10 +1449,10 @@ function MonthTab({ data }: { data: Payload }) {
                             {paceText(row.worstGap)}
                           </span>
                           {hasRetTgt && (
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
                               {isRetMet
-                                ? 'Goal Met ✓'
-                                : `Need ${retNeed} retails`}
+                                ? 'Target Met ✓'
+                                : `Need ${retNeed} to hit`}
                             </span>
                           )}
                         </div>
@@ -1786,7 +1779,7 @@ function CommitmentsTab({
       {/* Matrix Controls Header */}
       <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-950/40">
         <div>
-          <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
             <Target className="h-4.5 w-4.5 text-[var(--dashboard-action-bg,#055B65)]" />
             Monthly Targets & Model Matrix — {data.context.outletLabel}
           </h3>
@@ -1804,21 +1797,21 @@ function CommitmentsTab({
                   value={newModelName}
                   onChange={(e) => setNewModelName(e.target.value)}
                   placeholder="e.g. CARNIVAL, EV6"
-                  className="h-8 w-36 text-xs sm:text-sm font-bold uppercase rounded-lg border-slate-200 dark:border-slate-700"
+                  className="h-8 w-36 text-xs sm:text-sm font-semibold uppercase rounded-lg border-slate-200 dark:border-slate-700"
                   onKeyDown={(e) => e.key === 'Enter' && handleAddModel()}
                   autoFocus
                 />
                 <button
                   type="button"
                   onClick={handleAddModel}
-                  className="h-8 px-3 rounded-lg text-xs font-black bg-teal-600 text-white cursor-pointer hover:bg-teal-700"
+                  className="h-8 px-3 rounded-lg text-xs font-semibold bg-teal-600 text-white cursor-pointer hover:bg-teal-700"
                 >
                   Add
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowAddModel(false)}
-                  className="h-8 px-2.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800"
+                  className="h-8 px-2.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800"
                 >
                   Cancel
                 </button>
@@ -1827,15 +1820,15 @@ function CommitmentsTab({
               <button
                 type="button"
                 onClick={() => setShowAddModel(true)}
-                className="h-10 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center gap-2 shadow-2xs transition-all"
+                className="h-10 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center gap-2 shadow-2xs transition-all"
               >
-                <span className="font-black text-base">+</span>
+                <span className="font-bold text-base">+</span>
                 <span>Add Model Column</span>
               </button>
             )}
           </div>
 
-          <span className="h-10 px-4 inline-flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 font-mono">
+          <span className="h-10 px-4 inline-flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 tabular-nums">
             {data.context.label}
           </span>
 
@@ -1843,7 +1836,7 @@ function CommitmentsTab({
             onClick={save}
             disabled={saving || loading}
             style={{ backgroundColor: INK.teal, color: '#ffffff' }}
-            className="h-10 px-5 rounded-xl text-xs sm:text-sm font-black border-none cursor-pointer hover:opacity-90 shadow-2xs active:scale-95 disabled:opacity-50"
+            className="h-10 px-5 rounded-xl text-xs sm:text-sm font-semibold border-none cursor-pointer hover:opacity-90 shadow-2xs active:scale-95 disabled:opacity-50"
           >
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             Save Month Targets
@@ -1853,20 +1846,20 @@ function CommitmentsTab({
 
       {/* Info & Status Strip with Totals Summary */}
       <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs sm:text-sm bg-white dark:bg-slate-900">
-        <span className="font-black" style={{ color: INK.teal }}>
+        <span className="font-bold" style={{ color: INK.teal }}>
           Monthly Target & Model Breakdown
         </span>
         <span className="text-slate-500 font-medium">
           {loading ? 'Reading commitments…' : `${committedCount} of ${data.consultants.length} consultants committed`}
         </span>
         {unsavedCount > 0 && (
-          <span className="font-black px-2.5 py-0.5 rounded-md border text-xs" style={{ backgroundColor: `${INK.behind}15`, borderColor: `${INK.behind}30`, color: INK.behind }}>
+          <span className="font-semibold px-2.5 py-0.5 rounded-md border text-xs" style={{ backgroundColor: `${INK.behind}15`, borderColor: `${INK.behind}30`, color: INK.behind }}>
             {unsavedCount} row{unsavedCount === 1 ? '' : 's'} not saved yet
           </span>
         )}
         <div className="ml-auto flex items-center gap-3">
-          <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">
-            Total Retails: <strong className="text-emerald-600 font-black">{totals.ret}</strong> · Model Targets Sum: <strong className={totals.totalModelSum === totals.ret ? 'text-teal-600 font-black' : 'text-amber-600 font-black'}>{totals.totalModelSum}</strong>
+          <span className="text-slate-700 dark:text-slate-300 font-semibold tabular-nums text-xs sm:text-sm">
+            Total Retails: <strong className="text-indigo-900 dark:text-indigo-300 font-bold">{totals.ret}</strong> · Model Targets Sum: <strong className={totals.totalModelSum === totals.ret ? 'text-teal-700 dark:text-teal-400 font-bold' : 'text-amber-800 dark:text-amber-400 font-bold'}>{totals.totalModelSum}</strong>
           </span>
         </div>
       </div>
@@ -1877,50 +1870,50 @@ function CommitmentsTab({
 
       {/* Table Data Entry Grid */}
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm kia-plan-table">
-          <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-            <tr className="text-slate-700 dark:text-slate-200 font-black uppercase tracking-wider text-xs">
-              <th scope="col" className="py-3.5 px-4">Consultant</th>
-              <th scope="col" className="py-3.5 px-3">Team Leader</th>
+        <table className="w-full text-left text-sm kia-plan-table border-collapse">
+          <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-800/90">
+            <tr className="text-slate-800 dark:text-slate-100 font-semibold uppercase tracking-wider text-xs">
+              <th scope="col" className="py-3 px-4 border-r border-slate-200 dark:border-slate-700">Consultant</th>
+              <th scope="col" className="py-3 px-3 border-r border-slate-200 dark:border-slate-700">Team Leader</th>
               {/* Funnel Targets */}
               {METRICS.map((m) => (
-                <th scope="col" key={m.key} className="py-3.5 px-2.5 text-center" style={{ color: m.accentHex }}>
+                <th scope="col" key={m.key} className="py-3 px-2.5 text-center font-bold border-r border-slate-200 dark:border-slate-700" style={{ color: m.accentHex }}>
                   {m.label}
                 </th>
               ))}
               {/* Model Targets */}
               {activeModels.map((mName) => (
-                <th scope="col" key={mName} className="py-3.5 px-2.5 text-center bg-slate-50/60 dark:bg-slate-900/40">
-                  <span className="font-black text-slate-800 dark:text-slate-200">{mName}</span>
+                <th scope="col" key={mName} className="py-3 px-2.5 text-center bg-slate-200/50 dark:bg-slate-700/50 border-r border-slate-200 dark:border-slate-700">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{mName}</span>
                 </th>
               ))}
-              <th scope="col" className="py-3.5 px-3">Note</th>
-              <th scope="col" className="py-3.5 px-4 text-right">Clear</th>
+              <th scope="col" className="py-3 px-3 border-r border-slate-200 dark:border-slate-700">Note</th>
+              <th scope="col" className="py-3 px-4 text-right">Clear</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+          <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/60">
             {data.consultants.map((row) => {
               const d = drafts[row.consultant] || EMPTY_DRAFT
               return (
-                <tr key={row.consultant} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition-colors">
-                  <td className="py-3 px-4 font-black text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base">
+                <tr key={row.consultant} className="odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-900 dark:even:bg-slate-850/50 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition-colors">
+                  <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white whitespace-nowrap text-sm sm:text-base border-r border-slate-200/70 dark:border-slate-800">
                     {row.consultant}
                     {row.isTeamLeader && (
                       <span
-                        className="ml-2 align-middle px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide border shadow-2xs"
+                        className="ml-2 align-middle px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide border shadow-2xs"
                         style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#a5b4fc' }}
                       >
                         Lead
                       </span>
                     )}
                   </td>
-                  <td className="py-3 px-3">
+                  <td className="py-3 px-3 border-r border-slate-200/70 dark:border-slate-800">
                     <Input
                       list="kia-team-leaders"
                       value={teams[row.consultant] ?? ''}
                       onChange={(e) => setTeams((prev) => ({ ...prev, [row.consultant]: e.target.value }))}
                       placeholder="Unassigned"
-                      className="h-9 w-32 text-xs sm:text-sm font-semibold rounded-lg border-slate-200 dark:border-slate-800"
+                      className="h-9 w-32 text-xs sm:text-sm font-medium rounded-lg border-slate-200 dark:border-slate-800"
                       aria-label={`Team leader for ${row.consultant}`}
                     />
                   </td>
@@ -1928,7 +1921,7 @@ function CommitmentsTab({
                   {METRICS.map((m) => {
                     const hasVal = d[m.key as 'enquiries' | 'testDrives' | 'bookings' | 'retails'] !== '' && d[m.key as 'enquiries' | 'testDrives' | 'bookings' | 'retails'] !== undefined
                     return (
-                      <td key={m.key} className="py-3 px-2 text-center">
+                      <td key={m.key} className="py-3 px-2 text-center border-r border-slate-200/70 dark:border-slate-800">
                         <Input
                           type="number"
                           min="0"
@@ -1941,7 +1934,7 @@ function CommitmentsTab({
                             backgroundColor: hasVal ? `${m.accentHex}0a` : undefined,
                             color: hasVal ? m.accentHex : undefined,
                           }}
-                          className="h-9 w-16 mx-auto text-sm font-mono font-black rounded-lg tabular-nums border-slate-200 dark:border-slate-800 text-center transition-all"
+                          className="h-9 w-16 mx-auto text-sm font-semibold rounded-lg tabular-nums border-slate-200 dark:border-slate-800 text-center transition-all"
                           aria-label={`${m.label} target for ${row.consultant}`}
                         />
                       </td>
@@ -1952,7 +1945,7 @@ function CommitmentsTab({
                     const val = d.modelTargets?.[mName] ?? ''
                     const hasVal = val !== '' && val !== '0'
                     return (
-                      <td key={mName} className="py-3 px-2 text-center bg-slate-50/40 dark:bg-slate-900/30">
+                      <td key={mName} className="py-3 px-2 text-center bg-slate-50/40 dark:bg-slate-900/30 border-r border-slate-200/70 dark:border-slate-800">
                         <Input
                           type="number"
                           min="0"
@@ -1965,18 +1958,18 @@ function CommitmentsTab({
                             backgroundColor: hasVal ? `${INK.teal}0d` : undefined,
                             color: hasVal ? INK.teal : undefined,
                           }}
-                          className="h-9 w-16 mx-auto text-sm font-mono font-black rounded-lg tabular-nums border-slate-200 dark:border-slate-800 text-center transition-all"
+                          className="h-9 w-16 mx-auto text-sm font-semibold rounded-lg tabular-nums border-slate-200 dark:border-slate-800 text-center transition-all"
                           aria-label={`${mName} target for ${row.consultant}`}
                         />
                       </td>
                     )
                   })}
-                  <td className="py-3 px-3">
+                  <td className="py-3 px-3 border-r border-slate-200/70 dark:border-slate-800">
                     <Input
                       value={d.note}
                       onChange={(e) => setFunnel(row.consultant, 'note', e.target.value)}
                       placeholder="special focus, notes…"
-                      className="h-9 w-36 text-xs sm:text-sm font-medium rounded-lg border-slate-200 dark:border-slate-800"
+                      className="h-9 w-36 text-xs sm:text-sm font-normal rounded-lg border-slate-200 dark:border-slate-800"
                       aria-label={`Note for ${row.consultant}`}
                     />
                   </td>
@@ -1985,7 +1978,7 @@ function CommitmentsTab({
                       type="button"
                       onClick={() => clearOne(row.consultant)}
                       disabled={!d.present}
-                      className="h-8 px-3 rounded-lg text-xs font-extrabold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-30 disabled:cursor-default transition-all"
+                      className="h-8 px-3 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 cursor-pointer disabled:opacity-30 disabled:cursor-default transition-all"
                       title={d.present ? 'Remove commitment' : 'Nothing committed'}
                     >
                       Clear
@@ -1996,25 +1989,25 @@ function CommitmentsTab({
             })}
           </tbody>
           {/* Totals Summary Footer */}
-          <tfoot className="border-t-2 border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950 font-black">
+          <tfoot className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-950 font-semibold">
             <tr>
-              <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white uppercase text-xs tracking-wider">
+              <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white uppercase text-xs tracking-wider border-r border-slate-200 dark:border-slate-700">
                 Total Month Targets
               </td>
-              <td className="py-3.5 px-3 text-slate-500 font-mono text-xs font-bold">
+              <td className="py-3.5 px-3 text-slate-600 dark:text-slate-400 text-xs font-medium tabular-nums border-r border-slate-200 dark:border-slate-700">
                 {data.consultants.length} Cons
               </td>
               {METRICS.map((m) => (
-                <td key={m.key} className="py-3.5 px-2 text-center font-mono text-sm font-black" style={{ color: m.accentHex }}>
+                <td key={m.key} className="py-3.5 px-2 text-center text-sm font-bold tabular-nums border-r border-slate-200 dark:border-slate-700" style={{ color: m.accentHex }}>
                   {totals[m.key as 'enq' | 'td' | 'bkg' | 'ret']}
                 </td>
               ))}
               {activeModels.map((mName) => (
-                <td key={mName} className="py-3.5 px-2 text-center font-mono text-sm font-black text-teal-700 dark:text-teal-300">
+                <td key={mName} className="py-3.5 px-2 text-center text-sm font-bold tabular-nums text-slate-900 dark:text-white border-r border-slate-200 dark:border-slate-700">
                   {totals.models[mName] || 0}
                 </td>
               ))}
-              <td colSpan={2} className="py-3.5 px-4 text-right text-xs text-slate-500 font-bold">
+              <td colSpan={2} className="py-3.5 px-4 text-right text-xs text-slate-500 font-medium">
                 Sum: {totals.totalModelSum} models
               </td>
             </tr>
@@ -2098,7 +2091,7 @@ function DailyTab({ data, metric, onMetric }: { data: Payload; metric: MetricKey
               }
               className={`h-10 px-4 rounded-xl text-xs sm:text-sm font-bold border transition-all cursor-pointer shadow-2xs active:scale-95 flex items-center gap-2 ${
                 isSelected
-                  ? 'shadow-xs font-black'
+                  ? 'shadow-xs font-bold ring-2 ring-slate-900/10 dark:ring-white/20'
                   : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
               }`}
             >
@@ -2113,7 +2106,7 @@ function DailyTab({ data, metric, onMetric }: { data: Payload; metric: MetricKey
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-[0_4px_20px_rgba(15,23,42,0.03)] p-5 sm:p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
               <CalendarDays className="h-4.5 w-4.5" style={{ color: activeTheme.accentHex }} />
               {activeTheme.label} — Trajectory & Daily Volume
             </h3>
@@ -2299,7 +2292,7 @@ function DailyTab({ data, metric, onMetric }: { data: Payload; metric: MetricKey
         {/* Weekly Milestone Summary for chosen metric */}
         {data.weeks && data.weeks.length > 0 && (
           <div className="mt-4 pt-3.5 border-t border-slate-100 dark:border-slate-800">
-            <h4 className="text-xs sm:text-sm font-black uppercase text-slate-700 dark:text-slate-300 mb-2.5">
+            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2.5">
               Weekly {activeTheme.label} Milestone Pace
             </h4>
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
@@ -2310,27 +2303,27 @@ function DailyTab({ data, metric, onMetric }: { data: Payload; metric: MetricKey
                     key={w.scope}
                     className={`p-3 rounded-xl border text-xs ${
                       w.isCurrent
-                        ? 'bg-teal-50/60 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800'
+                        ? 'bg-indigo-50/60 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800'
                         : 'bg-slate-50 dark:bg-slate-850/50 border-slate-100 dark:border-slate-800'
                     }`}
                   >
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-1">
                       <span>Week {w.weekNumber}</span>
                       <span className="text-[10px] text-slate-400">{w.startDay}–{w.endDay}</span>
                     </div>
-                    <div className="font-black font-mono tabular-nums text-slate-900 dark:text-white text-sm">
+                    <div className="font-bold tabular-nums text-slate-900 dark:text-white text-sm">
                       {mCell.actual}{' '}
                       <span className="text-xs text-slate-400 font-normal">
                         / {mCell.target > 0 ? mCell.target : '—'}
                       </span>
                     </div>
-                    <div className="mt-1 text-xs font-bold" style={{ color: paceInk(mCell.gap) }}>
+                    <div className="mt-1 text-xs font-semibold" style={{ color: paceInk(mCell.gap) }}>
                       {paceText(mCell.gap)}
                     </div>
                     {mCell.target > 0 && (
                       <div className="mt-0.5 text-[10px] font-bold">
                         {mCell.actual >= mCell.target ? (
-                          <span className="text-emerald-600 dark:text-emerald-400">Met ✓</span>
+                          <span className="text-indigo-900 dark:text-indigo-300">Met ✓</span>
                         ) : (
                           <span className="text-amber-600 dark:text-amber-400">Need {mCell.target - mCell.actual}</span>
                         )}

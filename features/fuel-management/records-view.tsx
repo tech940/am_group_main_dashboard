@@ -54,12 +54,12 @@ function SortHeader({
     <th
       scope="col"
       aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-      className={cn('px-5 py-3.5 font-bold', align === 'right' ? 'text-right' : 'text-left')}
+      className={cn('px-4 py-3 font-semibold text-xs text-slate-600', align === 'right' ? 'text-right' : 'text-left')}
     >
       <button
         type="button"
         onClick={() => onSort(value)}
-        className={cn('inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-slate-900', active && 'text-slate-950 font-black')}
+        className={cn('inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-slate-900', active ? 'text-slate-950 font-semibold' : 'text-slate-600')}
       >
         {label}
         {active
@@ -151,7 +151,7 @@ export function RecordsView({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search request #, registration, VIN…"
-            className="h-9 w-72 max-w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs font-bold text-slate-800 placeholder:font-normal placeholder:text-slate-400 shadow-2xs focus:outline-none focus:ring-2 focus:ring-slate-950/10"
+            className="h-9 w-72 max-w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-800 placeholder:font-normal placeholder:text-slate-400 shadow-2xs focus:outline-none focus:ring-1 focus:ring-slate-400"
           />
         </div>
         <Segmented size="sm" value={state} onChange={onStateChange} options={STATE_OPTIONS} label="Record state" />
@@ -162,7 +162,7 @@ export function RecordsView({
               onQualityChange('')
               searchRef.current?.focus()
             }}
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:text-slate-900 shadow-2xs cursor-pointer"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:text-slate-900 shadow-2xs cursor-pointer"
           >
             <span>Only: {QUALITY_WORDS[quality]}</span>
             <X aria-hidden className="size-3.5 text-slate-400" />
@@ -174,7 +174,7 @@ export function RecordsView({
       {query.isError ? (
         <div className="p-6">
           <EmptyState title="Fuel records could not be loaded" action={
-            <button type="button" onClick={() => query.refetch()} className="h-9 rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer">Try again</button>
+            <button type="button" onClick={() => query.refetch()} className="h-9 rounded-xl border border-slate-200 px-4 text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer">Try again</button>
           }>
             {query.error instanceof Error ? query.error.message : null}
           </EmptyState>
@@ -194,69 +194,69 @@ export function RecordsView({
       ) : (
         <div aria-busy={query.isFetching || undefined} className={cn('fm-scroll overflow-x-auto transition-opacity duration-150', query.isFetching && 'opacity-60')}>
           <table className="w-full min-w-[1020px] text-left border-collapse">
-            <thead className="border-b border-teal-100/80 bg-gradient-to-r from-slate-50/90 via-teal-50/40 to-slate-50/90 text-[11px] font-black uppercase tracking-wider text-slate-600">
+            <thead className="border-b border-slate-200/80 bg-slate-50/70 text-[12px] font-semibold text-slate-600">
               <tr>
                 <SortHeader label="Date" value="date" align="left" {...sortProps} />
-                <th scope="col" className="px-4 py-3.5 text-left font-black">Request #</th>
-                <th scope="col" className="px-4 py-3.5 text-left font-black">Vehicle</th>
-                <th scope="col" className="px-4 py-3.5 text-left font-black">Purpose</th>
-                <th scope="col" className="px-4 py-3.5 text-right font-black">Requested</th>
-                <th scope="col" className="px-4 py-3.5 text-right font-black text-teal-900">Approved</th>
+                <th scope="col" className="px-4 py-3 text-left font-semibold">Request #</th>
+                <th scope="col" className="px-4 py-3 text-left font-semibold">Vehicle</th>
+                <th scope="col" className="px-4 py-3 text-left font-semibold">Purpose</th>
+                <th scope="col" className="px-4 py-3 text-right font-semibold">Requested</th>
+                <th scope="col" className="px-4 py-3 text-right font-semibold text-slate-700">Approved</th>
                 <SortHeader label="Actual" value="quantity" {...sortProps} />
                 <SortHeader label="Variance" value="variance" {...sortProps} />
                 <SortHeader label="Bill" value="cost" {...sortProps} />
-                <th scope="col" className="px-4 py-3.5 text-left font-black">Status</th>
-                <th scope="col" className="px-5 py-3.5 text-left font-black">Notes</th>
+                <th scope="col" className="px-4 py-3 text-left font-semibold">Status</th>
+                <th scope="col" className="px-5 py-3 text-left font-semibold">Notes</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs sm:text-[12.5px] font-medium text-slate-700">
+            <tbody className="divide-y divide-slate-100 text-[12.5px] sm:text-[13px] font-normal text-slate-700">
               {data.rows.map((row) => (
-                <tr key={row.id} className="transition-colors duration-100 hover:bg-teal-50/30">
-                  <td className="whitespace-nowrap px-5 py-4 tabular-nums font-semibold text-slate-600">{fmtDay(row.date)}</td>
-                  <td className="whitespace-nowrap px-4 py-4">
+                <tr key={row.id} className="transition-colors duration-100 hover:bg-slate-50/80">
+                  <td className="whitespace-nowrap px-4 py-3.5 tabular-nums font-medium text-slate-600">{fmtDay(row.date)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5">
                     <button
                       type="button"
                       onClick={() => navigate.openRecord(row.id)}
-                      className="font-mono text-xs font-black text-teal-800 underline-offset-2 hover:underline cursor-pointer bg-teal-50/90 px-2.5 py-1 rounded-lg border border-teal-200/90 shadow-2xs transition-all hover:bg-teal-100"
+                      className="font-mono text-xs font-semibold text-slate-900 underline-offset-2 hover:underline cursor-pointer bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 transition-colors hover:bg-slate-200"
                     >
                       {row.requestNumber}
                     </button>
                   </td>
-                  <td className="max-w-[18rem] px-4 py-4">
+                  <td className="max-w-[18rem] px-4 py-3.5">
                     {row.identity === 'label' ? (
-                      <span className="block truncate font-bold text-slate-900" title={row.identityNote ?? undefined}>{row.vehicleLabel}</span>
+                      <span className="block truncate font-semibold text-slate-900" title={row.identityNote ?? undefined}>{row.vehicleLabel}</span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => navigate.openVehicle(row.vehicleKey)}
-                        className="block max-w-full truncate text-left font-bold text-slate-900 underline-offset-2 hover:text-teal-900 hover:underline cursor-pointer"
+                        className="block max-w-full truncate text-left font-semibold text-slate-900 underline-offset-2 hover:text-slate-950 hover:underline cursor-pointer"
                       >
                         {row.vehicleLabel}
                       </button>
                     )}
-                    <span className="inline-block bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded text-[10.5px] font-semibold mt-1 border border-slate-200/70">
+                    <span className="inline-block bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded text-[11px] font-normal mt-0.5 border border-slate-200/70">
                       {row.branchLabel}{row.passNo ? ` · ${row.passNo}` : ''}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-4">
-                    <span className="inline-block bg-blue-50 text-blue-800 border border-blue-200/80 px-2 py-0.5 rounded-md font-bold text-[11.5px] shadow-2xs">
+                  <td className="whitespace-nowrap px-4 py-3.5">
+                    <span className="inline-block bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11.5px]">
                       {row.purposeLabel}
                     </span>
-                    {row.department && <span className="block text-[11px] text-slate-500 font-semibold mt-0.5">{row.department}</span>}
+                    {row.department && <span className="block text-[11px] text-slate-500 font-normal mt-0.5">{row.department}</span>}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-slate-600 tabular-nums">{fmtQty(row.requested, row.unit)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-black text-teal-950 tabular-nums">{row.approved === null ? <NoValue label="not approved yet" /> : fmtQty(row.approved, row.unit)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-slate-900 tabular-nums">{row.actual === null ? <NoValue /> : fmtQty(row.actual, row.unit)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold tabular-nums">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right font-medium text-slate-600 tabular-nums">{fmtQty(row.requested, row.unit)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold text-slate-900 tabular-nums">{row.approved === null ? <NoValue label="not approved yet" /> : fmtQty(row.approved, row.unit)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right font-medium text-slate-900 tabular-nums">{row.actual === null ? <NoValue /> : fmtQty(row.actual, row.unit)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right font-medium tabular-nums">
                     {row.variance === null || Math.abs(row.variance) < 0.005
                       ? <NoValue label="no difference recorded" />
-                      : <span className={cn('px-2 py-0.5 rounded-md text-[11.5px] font-black border shadow-2xs', row.variance > 0 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-blue-50 text-blue-800 border-blue-200')}>
+                      : <span className={cn('px-2 py-0.5 rounded-md text-[11.5px] font-medium border', row.variance > 0 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200')}>
                           {row.variance > 0 ? '+' : '−'}{fmtQty(Math.abs(row.variance), row.unit)}
                         </span>}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-black text-blue-950 tabular-nums">{row.cost === null ? <NoValue /> : fmtInr(row.cost)}</td>
-                  <td className="whitespace-nowrap px-4 py-4"><LifecycleChip lifecycle={row.lifecycle} /></td>
-                  <td className="px-5 py-4">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold text-slate-900 tabular-nums">{row.cost === null ? <NoValue /> : fmtInr(row.cost)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5"><LifecycleChip lifecycle={row.lifecycle} /></td>
+                  <td className="px-5 py-3.5">
                     <span className="flex flex-wrap gap-1">
                       {row.openExceptions > 0 && <Chip tone="review">{row.openExceptions} exception{row.openExceptions === 1 ? '' : 's'}</Chip>}
                       {row.quality.slice(0, 2).map((key) => <Chip key={key} tone="muted">{QUALITY_WORDS[key]}</Chip>)}

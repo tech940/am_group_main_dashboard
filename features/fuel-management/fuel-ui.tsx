@@ -15,19 +15,19 @@ import type { FuelExceptionSeverity, FuelLifecycle, FuelTraceStep, FuelUnit } fr
  */
 export const FUEL_TOKENS_CSS = `
 .fm {
-  --fm-ok: #0f766e; --fm-ok-bg: #f0fdfa; --fm-ok-line: #99f6e4;
+  --fm-ok: #047857; --fm-ok-bg: #ecfdf5; --fm-ok-line: #a7f3d0;
   --fm-review: #b45309; --fm-review-bg: #fffbeb; --fm-review-line: #fde68a;
   --fm-critical: #be123c; --fm-critical-bg: #fff1f2; --fm-critical-line: #fecdd3;
   --fm-info: #334155; --fm-info-bg: #f8fafc; --fm-info-line: #cbd5e1;
   --fm-muted: #64748b;
   --fm-rule: #e2e8f0;
-  --fm-accent: var(--dashboard-action-bg, #055B65);
-  --fm-accent-rgb: 5, 91, 101;
+  --fm-accent: var(--dashboard-primary, #0f172a);
+  --fm-accent-rgb: 15, 23, 42;
   --fm-ink: #0f172a;
   --fm-bar-track: #f1f5f9;
 }
 .dark .fm {
-  --fm-ok: #5eead4; --fm-ok-bg: rgba(20, 184, 166, 0.12); --fm-ok-line: rgba(94, 234, 212, 0.3);
+  --fm-ok: #34d399; --fm-ok-bg: rgba(52, 211, 153, 0.12); --fm-ok-line: rgba(52, 211, 153, 0.3);
   --fm-review: #fde047; --fm-review-bg: rgba(234, 179, 8, 0.12); --fm-review-line: rgba(253, 224, 71, 0.3);
   --fm-critical: #fda4af; --fm-critical-bg: rgba(244, 63, 94, 0.12); --fm-critical-line: rgba(253, 164, 175, 0.3);
   --fm-info: #cbd5e1; --fm-info-bg: rgba(148, 163, 184, 0.12); --fm-info-line: rgba(148, 163, 184, 0.3);
@@ -37,8 +37,8 @@ export const FUEL_TOKENS_CSS = `
   --fm-bar-track: rgba(148, 163, 184, 0.16);
 }
 .fm table thead tr, .fm thead tr { background-color: #f8fafc !important; border-bottom: 1px solid #e2e8f0 !important; }
-.fm table thead th, .fm thead th, .fm table th, .fm th { background-color: transparent !important; color: #475569 !important; font-weight: 700 !important; letter-spacing: 0.04em !important; font-size: 11px !important; }
-.fm table tbody th, .fm tbody th { background-color: transparent !important; color: #0f172a !important; font-weight: 600 !important; letter-spacing: normal !important; text-transform: none !important; font-size: 13px !important; }
+.fm table thead th, .fm thead th, .fm table th, .fm th { background-color: transparent !important; color: #475569 !important; font-weight: 600 !important; letter-spacing: normal !important; font-size: 12px !important; }
+.fm table tbody th, .fm tbody th { background-color: transparent !important; color: #0f172a !important; font-weight: 500 !important; letter-spacing: normal !important; text-transform: none !important; font-size: 13px !important; }
 .dark .fm table thead tr, .dark .fm thead tr { background-color: #0f172a !important; border-bottom: 1px solid #1e293b !important; }
 .dark .fm table thead th, .dark .fm thead th, .dark .fm table th, .dark .fm th { color: #94a3b8 !important; }
 .dark .fm table tbody th, .dark .fm tbody th { color: #f8fafc !important; }
@@ -155,17 +155,17 @@ export function changePct(current: number, previous: number | null | undefined):
 
 export type Tone = 'ok' | 'review' | 'critical' | 'info' | 'muted'
 
-/* Refined class strings with subtle borders and shadows */
+/* Refined class strings with subtle borders and clean backgrounds */
 const TONE_CHIP: Record<Tone, string> = {
-  ok: 'text-teal-800 bg-teal-50/90 border-teal-200/90 dark:text-teal-300 dark:bg-teal-950/40 dark:border-teal-800/80',
-  review: 'text-amber-800 bg-amber-50/90 border-amber-200/90 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/80',
-  critical: 'text-rose-800 bg-rose-50/90 border-rose-200/90 dark:text-rose-300 dark:bg-rose-950/40 dark:border-rose-800/80',
+  ok: 'text-emerald-800 bg-emerald-50/90 border-emerald-200/80 dark:text-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-800/80',
+  review: 'text-amber-800 bg-amber-50/90 border-amber-200/80 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/80',
+  critical: 'text-rose-800 bg-rose-50/90 border-rose-200/80 dark:text-rose-300 dark:bg-rose-950/40 dark:border-rose-800/80',
   info: 'text-slate-800 bg-slate-100/80 border-slate-200 dark:text-slate-200 dark:bg-slate-800/60 dark:border-slate-700',
-  muted: 'text-slate-500 bg-slate-50/60 border border-dashed border-slate-300 dark:text-slate-500 dark:bg-slate-900/40 dark:border-slate-700',
+  muted: 'text-slate-600 bg-slate-50/60 border border-slate-200 dark:text-slate-400 dark:bg-slate-900/40 dark:border-slate-700',
 }
 
 const TONE_TEXT: Record<Tone, string> = {
-  ok: 'text-teal-700 dark:text-teal-400',
+  ok: 'text-emerald-700 dark:text-emerald-400',
   review: 'text-amber-700 dark:text-amber-400',
   critical: 'text-rose-700 dark:text-rose-400',
   info: 'text-slate-700 dark:text-slate-300',
@@ -173,7 +173,7 @@ const TONE_TEXT: Record<Tone, string> = {
 }
 
 const TONE_DOT: Record<Tone, string> = {
-  ok: 'bg-teal-600',
+  ok: 'bg-emerald-600',
   review: 'bg-amber-600',
   critical: 'bg-rose-600',
   info: 'bg-slate-600',
@@ -189,7 +189,7 @@ export function Chip({ tone, children, className, title }: { tone: Tone; childre
     <span
       title={title}
       className={cn(
-        'inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-bold leading-none shadow-2xs transition-all',
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-0.5 text-[11.5px] font-medium leading-none transition-all',
         TONE_CHIP[tone],
         className,
       )}
@@ -207,7 +207,7 @@ export function Dot({ tone, className }: { tone: Tone; className?: string }) {
 export function NoValue({ label = 'not recorded' }: { label?: string }) {
   return (
     <>
-      <span aria-hidden className="text-slate-300 font-bold">—</span>
+      <span aria-hidden className="text-slate-300 font-medium">—</span>
       <span className="sr-only">{label}</span>
     </>
   )
@@ -294,10 +294,10 @@ export function Panel({
   return (
     <section
       aria-labelledby={headingId}
-      className={cn('min-w-0 rounded-2xl border border-slate-200/80 bg-white shadow-xs overflow-hidden', className)}
+      className={cn('min-w-0 rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden', className)}
     >
-      <header className="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-100 bg-slate-50/50 px-5 py-3.5">
-        <h2 id={headingId} className="text-[14px] sm:text-[15px] font-black tracking-tight text-slate-900 [text-wrap:balance]">
+      <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-100 bg-slate-50/70 px-5 py-3">
+        <h2 id={headingId} className="text-sm font-semibold tracking-tight text-slate-900 [text-wrap:balance]">
           {title}
         </h2>
         {action}
@@ -310,8 +310,8 @@ export function Panel({
 export function EmptyState({ title, children, action }: { title: string; children?: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center text-center gap-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-8 sm:p-12">
-      <p className="text-sm font-black text-slate-800">{title}</p>
-      {children && <p className="max-w-[55ch] text-xs font-medium leading-relaxed text-slate-500">{children}</p>}
+      <p className="text-sm font-semibold text-slate-800">{title}</p>
+      {children && <p className="max-w-[55ch] text-xs font-normal leading-relaxed text-slate-500">{children}</p>}
       {action && <div className="pt-2">{action}</div>}
     </div>
   )
@@ -328,12 +328,12 @@ export function Bar({ pct, tone = 'accent', label, decorative = false }: { pct: 
       role={decorative ? undefined : 'img'}
       aria-hidden={decorative || undefined}
       aria-label={decorative ? undefined : label ?? `${Math.round(pct)}%`}
-      className="relative block h-2.5 w-full overflow-hidden rounded-full bg-slate-100 shadow-2xs"
+      className="relative block h-2 w-full overflow-hidden rounded-full bg-slate-100"
     >
       <span
         className={cn(
-          'absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ease-out motion-reduce:transition-none shadow-xs',
-          tone === 'accent' ? 'bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-500' : TONE_DOT[tone],
+          'absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ease-out motion-reduce:transition-none',
+          tone === 'accent' ? 'bg-slate-700' : TONE_DOT[tone],
         )}
         style={{ width }}
       />
@@ -358,7 +358,7 @@ export function Segmented<T extends string>({
   size?: 'sm' | 'md'
 }) {
   return (
-    <div role="group" aria-label={label} className="fm-scroll inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 shadow-2xs">
+    <div role="group" aria-label={label} className="fm-scroll inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-100/80 p-0.5">
       {options.map((option) => {
         const active = option.value === value
         return (
@@ -368,14 +368,14 @@ export function Segmented<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              'fm-inset-focus inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg font-bold transition-all duration-150 active:scale-98 cursor-pointer',
-              size === 'sm' ? 'h-7 px-2.5 text-[11.5px]' : 'h-8 px-3 text-xs',
-              active ? 'bg-white text-slate-950 shadow-xs border border-slate-200/60' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50',
+              'fm-inset-focus inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-all duration-150 active:scale-98 cursor-pointer',
+              size === 'sm' ? 'h-7 px-2.5 text-[11.5px]' : 'h-7.5 px-3 text-xs',
+              active ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60 font-semibold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50',
             )}
           >
             <span>{option.label}</span>
             {option.count !== undefined && option.count !== null && (
-              <span className={cn('tabular-nums text-[10.5px] px-1.5 py-0.2 rounded-full font-black', active ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-slate-200/70 text-slate-600')}>
+              <span className={cn('tabular-nums text-[10.5px] px-1.5 py-0.2 rounded-full font-medium', active ? 'bg-slate-100 text-slate-800' : 'bg-slate-200/70 text-slate-600')}>
                 {option.count}
               </span>
             )}
@@ -409,10 +409,10 @@ export function FilterSelect({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
-          'h-9 max-w-[14rem] truncate rounded-xl border bg-white pl-3 pr-8 text-xs font-bold transition-all shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-950/10',
+          'h-8.5 max-w-[14rem] truncate rounded-lg border bg-white pl-3 pr-8 text-xs font-medium transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-slate-400',
           active
-            ? 'border-teal-600 text-teal-950 bg-teal-50/50 font-black'
-            : 'border-slate-200/90 text-slate-700 hover:border-slate-300 hover:bg-slate-50/30',
+            ? 'border-slate-400 text-slate-900 bg-slate-50/80 font-semibold'
+            : 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50/50',
         )}
       >
         <option value="">{allLabel}</option>
@@ -429,16 +429,16 @@ export function FilterSelect({
 /** Change against the previous period of the same length, in words and a sign — never colour alone. */
 export function Change({ current, previous, invert = false, unit = '%' }: { current: number; previous: number | null | undefined; invert?: boolean; unit?: string }) {
   const pct = changePct(current, previous)
-  if (pct === null) return <span className="text-slate-500 text-xs font-medium">no earlier period</span>
-  if (Math.abs(pct) < 0.5) return <span className="text-slate-500 text-xs font-medium">same as previous</span>
+  if (pct === null) return <span className="text-slate-500 text-xs font-normal">no earlier period</span>
+  if (Math.abs(pct) < 0.5) return <span className="text-slate-500 text-xs font-normal">same as previous</span>
   const up = pct > 0
   const tone: Tone = (up !== invert) ? 'review' : 'ok'
   return (
-    <span className={cn('inline-flex items-center gap-0.5 text-xs font-bold', toneText(tone))}>
-      {up ? <ArrowUpRight aria-hidden className="size-3.5 stroke-[2.5]" /> : <ArrowDownRight aria-hidden className="size-3.5 stroke-[2.5]" />}
+    <span className={cn('inline-flex items-center gap-0.5 text-xs font-semibold', toneText(tone))}>
+      {up ? <ArrowUpRight aria-hidden className="size-3.5 stroke-[2]" /> : <ArrowDownRight aria-hidden className="size-3.5 stroke-[2]" />}
       <span className="sr-only">{up ? 'Up' : 'Down'}</span>
       <span>{Math.abs(Math.round(pct))}{unit}</span>
-      <span className="ml-1 text-slate-500 font-medium">vs prev</span>
+      <span className="ml-1 text-slate-500 font-normal">vs prev</span>
     </span>
   )
 }
@@ -446,12 +446,12 @@ export function Change({ current, previous, invert = false, unit = '%' }: { curr
 // ── The fuel trace ──────────────────────────────────────────────────────────────────────────────
 
 const STEP_THEMES: Record<string, { bg: string; border: string; text: string; dot: string }> = {
-  requested: { bg: 'bg-gradient-to-br from-blue-50/80 via-white to-white', border: 'border-blue-200/80', text: 'text-blue-950', dot: 'bg-blue-600' },
-  approved: { bg: 'bg-gradient-to-br from-teal-50/80 via-white to-white', border: 'border-teal-200/80', text: 'text-teal-950', dot: 'bg-teal-600' },
-  filled: { bg: 'bg-gradient-to-br from-emerald-50/80 via-white to-white', border: 'border-emerald-200/80', text: 'text-emerald-950', dot: 'bg-emerald-600' },
-  closed: { bg: 'bg-gradient-to-br from-violet-50/80 via-white to-white', border: 'border-violet-200/80', text: 'text-violet-950', dot: 'bg-violet-600' },
-  driven: { bg: 'bg-gradient-to-br from-sky-50/80 via-white to-white', border: 'border-sky-200/80', text: 'text-sky-950', dot: 'bg-sky-600' },
-  verified: { bg: 'bg-gradient-to-br from-indigo-50/80 via-white to-white', border: 'border-indigo-200/80', text: 'text-indigo-950', dot: 'bg-indigo-600' },
+  requested: { bg: 'bg-white', border: 'border-slate-200', text: 'text-slate-900', dot: 'bg-slate-500' },
+  approved: { bg: 'bg-white', border: 'border-slate-200', text: 'text-slate-900', dot: 'bg-emerald-600' },
+  filled: { bg: 'bg-white', border: 'border-slate-200', text: 'text-slate-900', dot: 'bg-emerald-600' },
+  closed: { bg: 'bg-white', border: 'border-slate-200', text: 'text-slate-900', dot: 'bg-slate-600' },
+  driven: { bg: 'bg-white', border: 'border-slate-200', text: 'text-slate-900', dot: 'bg-sky-600' },
+  verified: { bg: 'bg-white', border: 'border-slate-200', text: 'text-slate-900', dot: 'bg-indigo-600' },
 }
 
 const STEP_WORD: Record<FuelTraceStep['state'], string> = {
@@ -480,35 +480,35 @@ export function FuelTrace({
       {steps.map((step, index) => {
         const link = links?.[index] ?? null
         const isDone = step.state === 'done'
-        const theme = STEP_THEMES[step.key] ?? { bg: 'bg-slate-50/70', border: 'border-slate-200', text: 'text-slate-900', dot: 'bg-slate-500' }
+        const theme = STEP_THEMES[step.key] ?? { bg: 'bg-white', border: 'border-slate-200', text: 'text-slate-900', dot: 'bg-slate-500' }
         return (
-          <li key={step.key} className={cn('relative flex flex-col justify-between p-4 rounded-2xl border transition-all shadow-2xs hover:shadow-xs', theme.bg, theme.border)}>
+          <li key={step.key} className={cn('relative flex flex-col justify-between p-4 rounded-xl border transition-all hover:border-slate-300', theme.bg, theme.border)}>
             <div>
               <div className="flex items-center justify-between gap-2 mb-2">
-                <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">{step.label}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{step.label}</span>
                 <span
                   aria-hidden
-                  className={cn('size-2.5 rounded-full ring-2 ring-white', isDone ? theme.dot : step.state === 'mismatch' ? 'bg-rose-600' : 'bg-amber-500')}
+                  className={cn('size-2 rounded-full', isDone ? theme.dot : step.state === 'mismatch' ? 'bg-rose-500' : 'bg-amber-500')}
                 />
               </div>
 
-              <p className={cn('text-xl font-black tabular-nums tracking-tight font-mono', step.value ? theme.text : 'text-slate-400')}>
+              <p className={cn('text-lg font-semibold tabular-nums tracking-tight', step.value ? theme.text : 'text-slate-400')}>
                 {step.value ?? STEP_WORD[step.state]}
               </p>
 
               {step.value && !isDone && (
-                <span className={cn('inline-block mt-1 text-[10.5px] font-black uppercase px-2 py-0.5 rounded-md shadow-2xs', step.state === 'mismatch' ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-amber-100 text-amber-800 border border-amber-200')}>
+                <span className={cn('inline-block mt-1 text-[10.5px] font-medium uppercase px-2 py-0.5 rounded-md', step.state === 'mismatch' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-amber-50 text-amber-700 border border-amber-200')}>
                   {STEP_WORD[step.state]}
                 </span>
               )}
 
-              {step.detail && <p className="mt-1.5 text-[11.5px] font-medium leading-snug text-slate-600">{step.detail}</p>}
+              {step.detail && <p className="mt-1.5 text-xs font-normal leading-snug text-slate-600">{step.detail}</p>}
             </div>
 
             {(step.actor || step.at || link) && (
-              <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-[10.5px] font-semibold text-slate-500">
+              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] font-medium text-slate-500">
                 <span>{[step.actor, step.at ? fmtWhen(step.at) : null].filter(Boolean).join(' · ')}</span>
-                {link && <span className="font-mono text-teal-800 font-bold bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200/80">{link}</span>}
+                {link && <span className="font-mono text-slate-700 font-medium bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{link}</span>}
               </div>
             )}
           </li>

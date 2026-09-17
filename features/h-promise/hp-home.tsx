@@ -111,7 +111,7 @@ function HPromiseScreen({ initialTab }: { initialTab: HpTab | null }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3.5">
       <FormsBar />
       <div role="tablist" aria-label="H Promise" className="hp-noscrollbar flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200">
         {visible.map((tab) => {
@@ -129,29 +129,29 @@ function HPromiseScreen({ initialTab }: { initialTab: HpTab | null }) {
               aria-controls={`hp-tab-${tab.id}`}
               onClick={() => choose(tab.id)}
               className={cn(
-                '-mb-px inline-flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-[13.5px] font-semibold transition-colors',
+                '-mb-px inline-flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 text-xs font-semibold transition-colors',
                 selected
                   ? isOverdueAlert
-                    ? 'border-rose-600 text-rose-700 font-bold bg-rose-50/70'
+                    ? 'border-rose-600 text-rose-800 font-semibold bg-rose-50/60'
                     : 'hp-accent-text border-current'
                   : isOverdueAlert
-                    ? 'border-transparent text-rose-600 font-bold hover:text-rose-800 hover:bg-rose-50/40'
+                    ? 'border-transparent text-rose-700 font-semibold hover:text-rose-900 hover:bg-rose-50/30'
                     : 'border-transparent text-slate-500 hover:text-slate-800',
               )}
             >
-              <tab.icon className={cn('h-4 w-4 shrink-0', isOverdueAlert && 'text-rose-600 animate-pulse')} aria-hidden="true" />
+              <tab.icon className={cn('h-3.5 w-3.5 shrink-0', isOverdueAlert && 'text-rose-600 animate-pulse')} aria-hidden="true" />
               <span>{tab.label}</span>
               {typeof count === 'number' && count > 0 && (
                 isOverdueAlert ? (
                   <span
-                    className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-black text-white shadow-xs ring-2 ring-rose-400 animate-pulse"
+                    className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10.5px] font-semibold text-white shadow-2xs animate-pulse"
                   >
                     🚨 {count}
                   </span>
                 ) : (
                   <span
                     data-tone={tab.id === 'vehicles' ? 'neutral' : 'pending'}
-                    className="hp-tone hp-num rounded-full px-1.5 text-[11px] leading-4"
+                    className="hp-tone hp-num rounded-full px-1.5 text-[10.5px] leading-4"
                   >
                     {count}
                   </span>
@@ -174,7 +174,7 @@ function HPromiseScreen({ initialTab }: { initialTab: HpTab | null }) {
   )
 }
 
-// ── The forms: the old app's menu ────────────────────────────────────────────────────────────────
+// ── The forms: Streamlined Action Bar ────────────────────────────────────────────────────────────
 
 type FormId = 'purchase' | 'sale' | 'booking' | 'documents' | 'rc' | 'bonus'
 type PickPurpose = 'sale' | 'booking' | 'documents' | 'rc'
@@ -182,12 +182,12 @@ type PickPurpose = 'sale' | 'booking' | 'documents' | 'rc'
 type FormDef = { id: FormId; label: string; hint: string; icon: LucideIcon; tone: Tone; allowed: (caps: HPromiseCapabilities) => boolean }
 
 const FORMS: readonly FormDef[] = [
-  { id: 'purchase', label: 'Purchase', hint: 'Record a car we bought', icon: ShoppingCart, tone: 'stock', allowed: (caps) => caps.register.create },
-  { id: 'sale', label: 'Sale', hint: 'Sell a car from stock', icon: Handshake, tone: 'sold', allowed: (caps) => caps.register.edit },
-  { id: 'booking', label: 'Booking', hint: 'Take a booking on a car', icon: CalendarClock, tone: 'booked', allowed: (caps) => caps.register.edit },
-  { id: 'documents', label: 'Documents', hint: 'RC, KYC, insurance, RTO', icon: FileCheck2, tone: 'pending', allowed: (caps) => caps.register.edit },
-  { id: 'rc', label: 'RC status (broker)', hint: 'RC transfer on broker sales', icon: FileKey2, tone: 'rejected', allowed: (caps) => caps.register.edit },
-  { id: 'bonus', label: 'Exchange bonus', hint: 'Bonus on an exchanged car', icon: Gift, tone: 'accent', allowed: (caps) => caps.register.create },
+  { id: 'purchase', label: 'Purchase Car', hint: 'Record a car bought', icon: ShoppingCart, tone: 'stock', allowed: (caps) => caps.register.create },
+  { id: 'sale', label: 'Record Sale', hint: 'Sell a car from stock', icon: Handshake, tone: 'sold', allowed: (caps) => caps.register.edit },
+  { id: 'booking', label: 'New Booking', hint: 'Take booking on stock', icon: CalendarClock, tone: 'booked', allowed: (caps) => caps.register.edit },
+  { id: 'documents', label: 'Documents', hint: 'RC, KYC, insurance', icon: FileCheck2, tone: 'pending', allowed: (caps) => caps.register.edit },
+  { id: 'rc', label: 'Broker RC Transfer', hint: 'Broker sales transfer', icon: FileKey2, tone: 'rejected', allowed: (caps) => caps.register.edit },
+  { id: 'bonus', label: 'Exchange Bonus', hint: 'Bonus on exchange', icon: Gift, tone: 'accent', allowed: (caps) => caps.register.create },
 ]
 
 function FormsBar() {
@@ -206,32 +206,35 @@ function FormsBar() {
   }
 
   return (
-    <section aria-label="Forms" className="hp-noprint">
-      <div className={cn('grid gap-2 sm:gap-3', forms.length >= 6 ? 'grid-cols-2 md:grid-cols-3 2xl:grid-cols-6' : forms.length === 5 ? 'grid-cols-2 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-4')}>
-        {forms.map((form, index) => (
-          <button
-            key={form.id}
-            type="button"
-            onClick={() => open(form.id)}
-            data-tone={form.tone}
-            className={cn(
-              // Phones: icon on top so the whole name fits a half-width tile. Wider: one row with a chevron.
-              'group flex min-w-0 flex-col items-start gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-left transition-shadow hover:shadow-md focus-visible:shadow-md sm:flex-row sm:items-center sm:gap-3 sm:px-3.5',
-              forms.length % 2 === 1 && index === forms.length - 1 && 'col-span-2 md:col-span-1',
-            )}
-          >
-            <span className="hp-tone inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" aria-hidden="true">
-              <form.icon className="h-5 w-5" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[14px] font-semibold leading-snug text-slate-900 sm:truncate">{form.label}</span>
-              <span className="line-clamp-2 block text-[11.5px] text-slate-500 sm:line-clamp-none sm:truncate">
-                {form.id === 'rc' && rcDue > 0 ? `${rcDue} ${rcDue === 1 ? 'car' : 'cars'} waiting for transfer` : form.hint}
-              </span>
-            </span>
-            <ChevronRight className="hp-tone-text hidden h-4 w-4 shrink-0 opacity-60 transition-transform group-hover:translate-x-0.5 sm:block" aria-hidden="true" />
-          </button>
-        ))}
+    <section aria-label="Quick Actions" className="hp-noprint">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
+        <span className="px-2 text-xs font-semibold text-slate-500 hidden sm:inline-block">Quick Desk Actions:</span>
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          {forms.map((form) => {
+            const isPurchase = form.id === 'purchase'
+            return (
+              <button
+                key={form.id}
+                type="button"
+                onClick={() => open(form.id)}
+                className={cn(
+                  'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-all',
+                  isPurchase
+                    ? 'hp-accent-bg border-transparent text-white shadow-2xs hover:opacity-95'
+                    : 'border-slate-200/80 bg-slate-50/70 text-slate-700 hover:border-slate-300 hover:bg-white',
+                )}
+              >
+                <form.icon className={cn('h-3.5 w-3.5', isPurchase ? 'text-white' : 'text-slate-500')} aria-hidden="true" />
+                <span>{form.label}</span>
+                {form.id === 'rc' && rcDue > 0 && (
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.2 text-[10px] font-semibold text-amber-800 border border-amber-300/60">
+                    {rcDue} due
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
       </div>
       {picking && <VehiclePicker purpose={picking} onClose={() => setPicking(null)} />}
       {bonusOpen && <BonusDialog bonus={null} onClose={() => setBonusOpen(false)} />}
@@ -309,20 +312,16 @@ function VehiclePicker({ purpose, onClose }: { purpose: PickPurpose; onClose: ()
   return (
     <DialogPrimitive.Root open onOpenChange={(next) => !next && onClose()}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="hp-overlay fixed inset-0 z-50 bg-slate-950/45" />
+        <DialogPrimitive.Overlay className="hp-overlay fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[2px]" />
         <DialogPrimitive.Content
-          className="hp fixed left-1/2 top-[8vh] z-50 flex max-h-[84vh] w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl focus:outline-none"
+          className="hp fixed left-1/2 top-[7vh] z-50 flex max-h-[86vh] w-[calc(100vw-2rem)] max-w-2xl sm:max-w-3xl -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl focus:outline-none"
         >
-          <div className="border-b border-slate-100 px-5 pb-3 pt-4">
-            <DialogPrimitive.Title className="text-base font-semibold text-slate-900">{config.title}</DialogPrimitive.Title>
-            <DialogPrimitive.Description className="text-[12.5px] text-slate-500">{config.description}</DialogPrimitive.Description>
-            <div className="hp-plate relative mt-3 h-10 w-full">
-              <span className="hp-plate-strip w-6 text-[6.5px]" aria-hidden="true">
-                <span className="hp-plate-dot" />
-                IND
-              </span>
-              <label htmlFor="hp-pick-search" className="sr-only">Search by plate, model or stock number</label>
-              <Search className="pointer-events-none absolute left-9 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+          <div className="border-b border-slate-100 bg-white px-6 pb-4 pt-5">
+            <DialogPrimitive.Title className="text-base sm:text-lg font-semibold text-slate-900 tracking-tight">{config.title}</DialogPrimitive.Title>
+            <DialogPrimitive.Description className="text-xs sm:text-[13px] text-slate-500 mt-0.5">{config.description}</DialogPrimitive.Description>
+            <div className="relative mt-3.5">
+              <label htmlFor="hp-pick-search" className="sr-only">Search by registration number, model or stock number</label>
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <input
                 id="hp-pick-search"
                 autoFocus
@@ -331,64 +330,81 @@ function VehiclePicker({ purpose, onClose }: { purpose: PickPurpose; onClose: ()
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && matches.length === 1) pick(matches[0])
                 }}
-                placeholder="Plate, model or HP number"
-                className="h-full min-w-0 flex-1 bg-transparent pl-9 pr-3 text-[14px] font-semibold uppercase tracking-[0.06em] text-slate-900 placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 focus:outline-none"
+                placeholder="Search by registration number, model, or stock ID..."
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-4 text-xs sm:text-[13px] font-medium text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:bg-white focus:border-slate-400 focus:outline-none transition-colors"
                 autoComplete="off"
               />
             </div>
           </div>
-          <div className="hp-scroll min-h-0 flex-1 overflow-y-auto p-2">
+          <div className="hp-scroll min-h-0 flex-1 overflow-y-auto p-3.5 sm:p-4">
             {list.isLoading ? (
-              <p role="status" className="p-4 text-sm text-slate-500">Loading the register…</p>
+              <p role="status" className="p-6 text-center text-xs text-slate-500">Loading register…</p>
             ) : matches.length === 0 ? (
-              <div className="p-3">
-                <EmptyState title={needle ? 'No car matches that' : 'Nothing to choose'}>
-                  {needle ? 'Check the plate, or search by model or HP number.' : config.empty}
+              <div className="p-4">
+                <EmptyState title={needle ? 'No car matches that search' : 'Nothing to choose'}>
+                  {needle ? 'Check the registration plate number, or search by model or stock number.' : config.empty}
                 </EmptyState>
               </div>
             ) : (
-              <ul className="space-y-1">
+              <ul className="space-y-2">
                 {matches.slice(0, 80).map((row) => (
                   <li key={row.id}>
                     <button
                       type="button"
                       onClick={() => pick(row)}
-                      className="hp-hover flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left"
+                      className="group flex w-full items-center justify-between gap-4 rounded-xl border border-slate-100 bg-white p-3 sm:px-4 sm:py-3.5 text-left transition-all hover:border-slate-200 hover:bg-slate-50/80 hover:shadow-[0_2px_8px_rgba(0,0,0,0.03)]"
                     >
-                      <RegPlate regNo={row.regNo} size="sm" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13.5px] font-semibold text-slate-900">{row.model}</span>
-                        <span className="hp-mono block truncate text-[11px] text-slate-500">
-                          {purpose === 'rc'
-                            ? `${formatStockNo(row.stockNo)} · ${row.buyerName ?? 'Broker'} · sold ${day(row.saleDate, false)}`
-                            : `${formatStockNo(row.stockNo)} · ${label(row.location)} · bought ${day(row.purchaseDate, false)} · ${inr(row.purchasePrice)}`}
-                        </span>
-                      </span>
-                      <span className="flex shrink-0 flex-col items-end gap-1">
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <RegPlate regNo={row.regNo} size="sm" />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-xs sm:text-[13.5px] font-semibold text-slate-900 group-hover:text-slate-950">
+                              {row.model}
+                            </span>
+                            <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10.5px] font-mono font-medium text-slate-600">
+                              {formatStockNo(row.stockNo)}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 truncate text-[11.5px] text-slate-500">
+                            {purpose === 'rc'
+                              ? `${row.buyerName ?? 'Broker'} · Sold ${day(row.saleDate, false)}`
+                              : `${label(row.location)} · Bought ${day(row.purchaseDate, false)} · ${inr(row.purchasePrice)}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
                         <StageChip stage={row.stage} />
-                        {purpose === 'sale' && row.saleStatus === 'rejected' && <ToneChip tone="rejected" className="text-[10px]">Sale rejected</ToneChip>}
-                        {purpose === 'rc' && (row.flags.brokerRcPending
-                          ? <ToneChip tone="pending" className="text-[10px]">Transfer due</ToneChip>
-                          : <ToneChip tone="approved" className="text-[10px]">Transferred</ToneChip>)}
-                        {purpose === 'documents' && row.flags.docsMissing && <ToneChip tone="rejected" className="text-[10px]">{row.flags.missingDocs.length} missing</ToneChip>}
-                      </span>
+                        {purpose === 'sale' && row.saleStatus === 'rejected' && (
+                          <ToneChip tone="rejected" className="text-[10px]">Sale rejected</ToneChip>
+                        )}
+                        {purpose === 'rc' && (
+                          row.flags.brokerRcPending
+                            ? <ToneChip tone="pending" className="text-[10px]">Transfer due</ToneChip>
+                            : <ToneChip tone="approved" className="text-[10px]">Transferred</ToneChip>
+                        )}
+                        {purpose === 'documents' && row.flags.docsMissing && (
+                          <ToneChip tone="rejected" className="text-[10px]">{row.flags.missingDocs.length} missing</ToneChip>
+                        )}
+                      </div>
                     </button>
                   </li>
                 ))}
               </ul>
             )}
           </div>
-          <div className="hp-sunken-bg flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3">
-            <span className="text-[12px] text-slate-500">{matches.length} {matches.length === 1 ? 'car' : 'cars'}</span>
-            <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/70 px-6 py-3.5">
+            <span className="text-xs font-medium text-slate-500">
+              {matches.length} {matches.length === 1 ? 'vehicle' : 'vehicles'}
+            </span>
+            <div className="flex items-center gap-2">
               {caps.register.create && (purpose === 'sale' || purpose === 'booking') && (
                 <HpButton size="sm" variant="ghost" onClick={() => { onClose(); openNewPurchase() }}>
-                  <ShoppingCart /> Not on the register? Record the purchase
+                  <ShoppingCart className="h-3.5 w-3.5 mr-1" /> Not on register? Record purchase
                 </HpButton>
               )}
             </div>
           </div>
-          <DialogPrimitive.Close className="hp-hover absolute right-3 top-3 rounded-md p-1.5 text-slate-400" aria-label="Close">
+          <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors" aria-label="Close">
             <X className="h-4 w-4" aria-hidden="true" />
           </DialogPrimitive.Close>
         </DialogPrimitive.Content>

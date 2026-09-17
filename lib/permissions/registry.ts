@@ -417,6 +417,21 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     sortOrder: 43,
     actions: ['view'],
   },
+  /*
+   * AM Kia · Sales · Walk-in Leads (owner, 2026-09-17). Showroom staff add leads through a NO-LOGIN link;
+   * this key governs only the signed-in section. Create = hand out the form link; Edit = follow-up
+   * (remarks, expected booking, booked); Delete = remove spam with a reason. Restricted by default (not in
+   * DEFAULT_VISIBLE_SECTIONS): tick people in the Access Map. Phones stay masked outside the KIA PII roles.
+   * `name` must equal the sidebar label (verify:permissions scenario 8).
+   */
+  {
+    key: 'kia.walk_in_leads',
+    name: 'Walk-in Leads',
+    parentKey: 'kia.sales',
+    description: 'AM KIA showroom walk-ins captured from the no-login form: visits, test drives, exchange and booking intent.',
+    sortOrder: 47,
+    actions: ['view', 'create', 'edit', 'delete'],
+  },
   {
     key: 'kia.h_promise',
     name: 'H Promise',
@@ -1151,6 +1166,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   'kia.sales_performance': { href: '/brands/kia/sales-performance' },
   'kia.call_center': { href: '/brands/kia/call-center' },
   'kia.lead_followups': { href: '/brands/kia/follow-ups' },
+  'kia.walk_in_leads': { href: '/brands/kia/walk-in-leads' },
   // Lives as a TAB inside Bookings (the Kia Proforma shell), not as its own sidebar item. The old
   // standalone route still resolves and redirects here, so existing links keep working.
   'kia.allocation_history': { href: '/brands/kia/proforma/allocation-history', aliases: ['/brands/kia/allocation-history'] },

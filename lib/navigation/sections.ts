@@ -327,6 +327,17 @@ export const ALL_SECTIONS: SearchSection[] = [
     category: 'kia',
   },
   {
+    id: 'kia_walk_in_leads',
+    name: 'Walk-in Leads',
+    description: 'Showroom walk in register: customers who visited, test drives, exchange, booking intent — filled from the no-login form link.',
+    href: '/brands/kia/walk-in-leads',
+    department: 'sales',
+    brand: 'kia',
+    iconName: 'Users',
+    initials: 'WL',
+    category: 'kia',
+  },
+  {
     id: 'kia_allocation_history',
     name: 'Vehicle Allocation History',
     description: 'Audit trail of every vehicle allocation: who allotted it, when the countdown expired, and why it went back to free stock.',
@@ -755,6 +766,7 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/brands/kia/call-center',
   '/brands/kia/follow-ups',
   '/brands/kia/call-analytics',
+  '/brands/kia/walk-in-leads',
   '/brands/kia/booking-payment-history',
   '/customer-360',
   // Reached as a tab inside Bookings; the old standalone path stays allowed because it still

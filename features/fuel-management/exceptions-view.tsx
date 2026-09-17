@@ -244,7 +244,7 @@ function ReviewForm({ row, again }: { row: FuelExceptionRow; again: boolean }) {
           openedByToggle.current = true
           setShow(true)
         }}
-        className="inline-flex min-h-7 items-center text-[12.5px] font-semibold text-teal-700 hover:text-teal-800 hover:underline"
+        className="inline-flex min-h-7 items-center text-xs font-medium text-slate-700 hover:text-slate-900 hover:underline cursor-pointer"
       >
         Review again
       </button>

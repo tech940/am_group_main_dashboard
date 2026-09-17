@@ -133,7 +133,7 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
         id="fm-attention"
         title={
           <div className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-rose-100 text-rose-700 shadow-2xs">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-rose-50 text-rose-700">
               <AlertCircle className="size-4" />
             </div>
             <span>What needs attention</span>
@@ -143,7 +143,7 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
         bodyClassName="p-0"
         action={
           data.attention.length ? (
-            <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-0.5 text-[11.5px] font-bold text-rose-700 ring-1 ring-rose-200/60 ring-inset shadow-2xs">
+            <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-0.5 text-[11.5px] font-medium text-rose-700 ring-1 ring-rose-200/60 ring-inset">
               {data.attention.length} item{data.attention.length === 1 ? '' : 's'}
             </span>
           ) : null
@@ -162,14 +162,14 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
                 <button
                   type="button"
                   onClick={() => open(item)}
-                  className="group flex w-full items-start gap-3.5 px-5 py-4 text-left transition-colors duration-150 hover:bg-slate-50/90"
+                  className="group flex w-full items-start gap-3.5 px-5 py-4 text-left transition-colors duration-150 hover:bg-slate-50/90 cursor-pointer"
                 >
-                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-rose-50/80 ring-1 ring-rose-200/60 shadow-2xs">
+                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-rose-50/80 ring-1 ring-rose-200/60">
                     <SeverityIcon severity={item.severity} className="size-4" />
                   </div>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[13.5px] font-bold text-slate-900 group-hover:text-rose-950">{item.title}</span>
-                    <span className="mt-0.5 block text-[12.5px] leading-relaxed text-slate-500">{item.detail}</span>
+                    <span className="block text-[13.5px] font-semibold text-slate-900 group-hover:text-rose-950">{item.title}</span>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-slate-500 font-normal">{item.detail}</span>
                   </span>
                   <ChevronRight aria-hidden className="mt-1 size-4 shrink-0 text-slate-400 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-slate-600 motion-reduce:transition-none" />
                 </button>
@@ -183,7 +183,7 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
         id="fm-summary"
         title={
           <div className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-teal-100 text-teal-700 shadow-2xs">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
               <Sparkles className="size-4" />
             </div>
             <span>In short</span>
@@ -194,7 +194,7 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
           <ul className="space-y-3">
             {data.narrative.map((sentence) => (
               <li key={sentence} className="flex gap-2.5 text-[13px] leading-relaxed text-slate-700">
-                <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-teal-600 ring-4 ring-teal-50" />
+                <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-slate-400 ring-2 ring-slate-100" />
                 <span>{sentence}</span>
               </li>
             ))}
@@ -203,7 +203,7 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
           <p className="text-[13px] text-slate-500">No fuel records in this period.</p>
         )}
         <div className="mt-5 border-t border-slate-100 pt-3.5 text-[11.5px] leading-relaxed text-slate-500">
-          <span className="font-semibold text-slate-700">
+          <span className="font-medium text-slate-700">
             {data.settingsSource === 'defaults' ? 'Standard thresholds' : 'Custom team thresholds'}
           </span>
           {' · '}
@@ -220,14 +220,14 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
         id="fm-trend"
         title={
           <div className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-blue-100 text-blue-700 shadow-2xs">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
               <TrendingUp className="size-4" />
             </div>
             <span>Fuel over time</span>
           </div>
         }
         className="xl:col-span-2"
-        action={<span className="text-[12px] font-semibold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">Grouped by {data.trend.granularity}</span>}
+        action={<span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">Grouped by {data.trend.granularity}</span>}
       >
         {data.trend.points.some((p) => p.events > 0) ? (
           <TrendChart data={trendData} primaryLabel="Approved litres" secondaryLabel="Actual litres" extraLabel="Billed" />
@@ -240,7 +240,7 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
         id="fm-activity"
         title={
           <div className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-violet-100 text-violet-700 shadow-2xs">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
               <Activity className="size-4" />
             </div>
             <span>Recent activity</span>
@@ -257,20 +257,20 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
                 <button
                   type="button"
                   onClick={() => navigate.openRecord(item.eventId)}
-                  className="group flex w-full flex-col gap-1 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-slate-50/80"
+                  className="group flex w-full flex-col gap-1 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-slate-50/80 cursor-pointer"
                 >
                   <div className="flex items-center justify-between gap-2 text-[11.5px] text-slate-500">
-                    <time dateTime={item.at} className="font-semibold text-slate-600">{fmtWhen(item.at)}</time>
+                    <time dateTime={item.at} className="font-medium text-slate-600">{fmtWhen(item.at)}</time>
                     <LifecycleChip lifecycle={item.lifecycle} />
                   </div>
-                  <span className="truncate text-[13.5px] font-bold text-slate-900 group-hover:text-teal-900">{item.vehicleLabel}</span>
-                  <div className="text-[12px] tabular-nums text-slate-500">
-                    <span className="font-semibold text-slate-700">{ACTIVITY_VERB[item.kind]}</span>
+                  <span className="truncate text-sm font-semibold text-slate-900 group-hover:text-slate-950">{item.vehicleLabel}</span>
+                  <div className="text-xs tabular-nums text-slate-500 font-normal">
+                    <span className="font-medium text-slate-700">{ACTIVITY_VERB[item.kind]}</span>
                     {item.qty !== null ? ` · ${fmtQty(item.qty, item.unit)}` : ''}
                     {item.cost !== null ? ` · ${fmtInr(item.cost)}` : ''}
                     {' · '}
                     <span>{item.branchLabel}</span>
-                    {item.openExceptions > 0 && <span className="font-bold text-amber-700"> · {item.openExceptions} to review</span>}
+                    {item.openExceptions > 0 && <span className="font-medium text-amber-700"> · {item.openExceptions} to review</span>}
                   </div>
                 </button>
               </li>
@@ -283,7 +283,7 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
         id="fm-where"
         title={
           <div className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 shadow-2xs">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
               <Layers className="size-4" />
             </div>
             <span>Where the fuel goes</span>
@@ -300,7 +300,7 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
         id="fm-efficiency"
         title={
           <div className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 shadow-2xs">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
               <Gauge className="size-4" />
             </div>
             <span>Demo car efficiency</span>
@@ -308,7 +308,7 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
         }
         bodyClassName="p-0"
         action={
-          <button type="button" onClick={() => navigate.toTab('vehicles')} className="inline-flex min-h-7 items-center px-1 text-[12px] font-bold text-teal-700 hover:text-teal-800 hover:underline">
+          <button type="button" onClick={() => navigate.toTab('vehicles')} className="inline-flex min-h-7 items-center px-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline cursor-pointer">
             All vehicles →
           </button>
         }
@@ -322,19 +322,19 @@ export function OverviewView({ data, navigate }: { data: FuelManagementResponse;
                 <button
                   type="button"
                   onClick={() => navigate.openVehicle(v.key)}
-                  className="group flex w-full items-center gap-3.5 px-5 py-3 text-left transition-colors duration-150 hover:bg-slate-50/80"
+                  className="group flex w-full items-center gap-3.5 px-5 py-3 text-left transition-colors duration-150 hover:bg-slate-50/80 cursor-pointer"
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] font-semibold text-slate-900 group-hover:text-teal-900">{v.label}</span>
-                    <span className="block text-[12px] tabular-nums text-slate-500">
+                    <span className="block truncate text-sm font-semibold text-slate-900 group-hover:text-slate-950">{v.label}</span>
+                    <span className="block text-xs tabular-nums text-slate-500 font-normal">
                       {fmtQty(v.approvedQty)} · {fmtKm(v.gateKm)}
                     </span>
                     {v.mileage.average === null && v.mileage.unavailableReason && (
-                      <span className="block text-[11.5px] leading-snug text-slate-500">{v.mileage.unavailableReason}</span>
+                      <span className="block text-[11.5px] leading-snug text-slate-500 font-normal">{v.mileage.unavailableReason}</span>
                     )}
                   </span>
                   <span className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="font-mono text-[13.5px] font-bold tabular-nums text-slate-900">
+                    <span className="text-[13.5px] font-semibold tabular-nums text-slate-900">
                       {v.mileage.average === null ? <NoValue label="no mileage yet" /> : fmtEff(v.mileage.average, v.unit)}
                     </span>
                     <DataStateTag
@@ -358,35 +358,35 @@ export function BreakdownTable({ rows, maxQty, label }: { rows: FuelBreakdownRow
     <div className="fm-scroll overflow-x-auto">
       <table className="w-full min-w-[580px] text-[13px]">
         <thead>
-          <tr className="border-b border-teal-100/80 bg-gradient-to-r from-slate-50/90 via-teal-50/50 to-slate-50/90 text-left text-[11px] font-black uppercase tracking-wider text-slate-600">
-            <th scope="col" className="px-5 py-3.5 font-black">{label}</th>
-            <th scope="col" className="w-[34%] px-4 py-3.5 font-black">Share of approved</th>
-            <th scope="col" className="px-4 py-3.5 text-right font-black text-teal-900">Approved</th>
-            <th scope="col" className="px-4 py-3.5 text-right font-black">Actual</th>
-            <th scope="col" className="px-4 py-3.5 text-right font-black text-blue-900">Billed</th>
-            <th scope="col" className="px-5 py-3.5 text-right font-black">Records</th>
+          <tr className="border-b border-slate-200/80 bg-slate-50/70 text-left text-[12px] font-semibold text-slate-600">
+            <th scope="col" className="px-5 py-3 font-semibold">{label}</th>
+            <th scope="col" className="w-[34%] px-4 py-3 font-semibold">Share of approved</th>
+            <th scope="col" className="px-4 py-3 text-right font-semibold text-slate-700">Approved</th>
+            <th scope="col" className="px-4 py-3 text-right font-semibold">Actual</th>
+            <th scope="col" className="px-4 py-3 text-right font-semibold text-slate-700">Billed</th>
+            <th scope="col" className="px-5 py-3 text-right font-semibold">Records</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-slate-100 text-[12.5px] sm:text-[13px] font-normal text-slate-700">
           {rows.map((row) => (
-            <tr key={row.key} className="transition-colors hover:bg-teal-50/30">
-              <td className="px-5 py-4 text-left">
+            <tr key={row.key} className="transition-colors hover:bg-slate-50/80">
+              <td className="px-5 py-3.5 text-left">
                 <div className="flex items-center gap-2.5">
-                  <span className="size-2 rounded-full bg-teal-500 ring-4 ring-teal-50 shrink-0" />
-                  <span className="block max-w-[14rem] truncate font-bold text-slate-900" title={row.label}>{row.label}</span>
+                  <span className="size-2 rounded-full bg-slate-400 shrink-0" />
+                  <span className="block max-w-[14rem] truncate font-medium text-slate-900" title={row.label}>{row.label}</span>
                 </div>
               </td>
-              <td className="px-4 py-4">
+              <td className="px-4 py-3.5">
                 <div className="flex items-center gap-2.5">
                   <Bar pct={(row.approvedQty / maxQty) * 100} decorative />
-                  <span className="w-13 shrink-0 text-right font-mono text-[11.5px] font-black tabular-nums text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/80">{row.sharePct}%</span>
+                  <span className="w-13 shrink-0 text-right text-[11.5px] font-medium tabular-nums text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">{row.sharePct}%</span>
                 </div>
               </td>
-              <td className="px-4 py-4 text-right font-mono font-black tabular-nums text-teal-950">{fmtQty(row.approvedQty)}</td>
-              <td className="px-4 py-4 text-right font-mono font-semibold tabular-nums text-slate-800">{row.actualQty ? fmtQty(row.actualQty) : <NoValue />}</td>
-              <td className="px-4 py-4 text-right font-mono font-black tabular-nums text-blue-950">{row.spend ? fmtInr(row.spend) : <NoValue />}</td>
-              <td className="px-5 py-4 text-right font-mono font-bold tabular-nums">
-                <span className="inline-block bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md text-[11.5px] border border-slate-200/70">
+              <td className="px-4 py-3.5 text-right font-semibold tabular-nums text-slate-900">{fmtQty(row.approvedQty)}</td>
+              <td className="px-4 py-3.5 text-right font-normal tabular-nums text-slate-700">{row.actualQty ? fmtQty(row.actualQty) : <NoValue />}</td>
+              <td className="px-4 py-3.5 text-right font-semibold tabular-nums text-slate-900">{row.spend ? fmtInr(row.spend) : <NoValue />}</td>
+              <td className="px-5 py-3.5 text-right tabular-nums">
+                <span className="inline-block bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md text-[11.5px] border border-slate-200 font-normal">
                   {row.events}
                 </span>
               </td>

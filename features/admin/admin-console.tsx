@@ -501,7 +501,8 @@ function DealerSelector({ brand, value, onChange }: { brand: string; value: stri
         // it and it would distinguish nothing; there it is left off.
         ...getApprovalOnlyBranches(brand).map((b) => ({
           code: b.code,
-          label: registryDealers.length > 0 ? `${b.label} — approvals only` : b.label,
+          // KIA Banihal opens payment approvals and Walk-in Leads (lib/kia/walk-in-leads/access.ts), not sales/BE.
+          label: registryDealers.length > 0 ? `${b.label} — approvals & walk-ins only` : b.label,
         })),
       ]
     : []

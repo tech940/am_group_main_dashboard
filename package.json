@@ -104,6 +104,7 @@
     "verify:syros-ev": "tsx scripts/verify-syros-ev-prices.ts",
     "seed:syros-ev": "tsx scripts/seed-syros-ev-prices.ts",
     "import:kia-price-sheet": "tsx --tsconfig ./tsconfig.verify.json scripts/import-kia-model-price-sheet.ts",
+    "verify:kia-walk-in": "tsx --tsconfig ./tsconfig.hp-flow.json scripts/verify-kia-walk-in-leads.ts",
     "verify:proforma-gate": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-proforma-approval-gate.ts",
     "verify:approvals-visibility": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approvals-visibility.ts",
     "verify:petty-cash-flow": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-petty-cash-flow.ts",

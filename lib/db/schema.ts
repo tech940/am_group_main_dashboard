@@ -3503,3 +3503,43 @@ export const tataHPromiseExchangeBonuses = pgTable('tata_h_promise_exchange_bonu
 }, (table) => ({
   tataHPromiseExchangeBonusesVehicleIdx: index('tata_h_promise_exchange_bonuses_vehicle_idx').on(table.vehicleNoKey),
 }))
+
+// ── AM Kia · Sales · Walk-in Leads (migration 0074) ─────────────────────────────────────────────────────
+// Filled from a no-login link in the showroom; the old Google Form's history is imported once.
+// Phone / email / address are redacted on the server for everyone but MD / Developer / Finance Head.
+export const kiaWalkInLeads = pgTable('kia_walk_in_leads', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  enquiryDate: date('enquiry_date').notNull(),
+  dealerCode: text('dealer_code').default('JK402').notNull(),
+  customerName: text('customer_name').notNull(),
+  countryCode: text('country_code').default('+91').notNull(),
+  mobile: text('mobile').notNull(),
+  email: text('email'),
+  address: text('address'),
+  model: text('model').notNull(),
+  consultantName: text('consultant_name').notNull(),
+  testDrive: boolean('test_drive').default(false).notNull(),
+  enquirySource: text('enquiry_source').notNull(),
+  customerType: text('customer_type'),
+  exchange: boolean('exchange'),
+  exchangeDetails: text('exchange_details'),
+  additionalInfo: text('additional_info'),
+  expectedBookingDate: date('expected_booking_date'),
+  remarks: text('remarks'),
+  booked: boolean('booked').default(false).notNull(),
+  source: text('source').default('form').notNull(),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }).defaultNow().notNull(),
+  importBatch: text('import_batch'),
+  importRow: integer('import_row'),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedByName: text('updated_by_name'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: uuid('deleted_by').references(() => users.id),
+  deletedByName: text('deleted_by_name'),
+  deleteReason: text('delete_reason'),
+}, (table) => ({
+  kiaWalkInLeadsEnquiryDateIdx: index('kia_walk_in_leads_enquiry_date_idx').on(table.enquiryDate),
+  kiaWalkInLeadsMobileIdx: index('kia_walk_in_leads_mobile_idx').on(table.mobile),
+}))

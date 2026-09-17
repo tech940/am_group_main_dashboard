@@ -447,8 +447,9 @@ console.log('\n7) Registry, sidebar and search')
     assert(`${area.href} renders the same single page`, page.includes('HPromisePage') && page.includes('initialTab='))
   }
   const home = read('features/h-promise/hp-home.tsx')
-  for (const form of ['Purchase', 'Sale', 'Booking', 'Documents', 'RC status (broker)', 'Exchange bonus']) {
-    assert(`the "${form}" form is on the H Promise screen`, home.includes(`label: '${form}'`))
+  // By form id: the owner renames the buttons ("Purchase Car", "Broker RC Transfer"), the six forms stay.
+  for (const form of ['purchase', 'sale', 'booking', 'documents', 'rc', 'bonus']) {
+    assert(`the "${form}" form is on the H Promise screen`, new RegExp(`\{ id: '${form}', label: '[^']+'`).test(home))
   }
 }
 

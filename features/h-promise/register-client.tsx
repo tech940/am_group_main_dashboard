@@ -193,12 +193,11 @@ export function VehiclesTab() {
       </Band>
 
       {shownAttention.length > 0 && (
-        <section aria-labelledby="hp-attention" className="rounded-xl border border-slate-200 bg-white px-4 py-3 sm:px-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 id="hp-attention" className="mr-1 flex items-center gap-1.5 text-[13px] font-semibold text-slate-900">
-              <AlertTriangle className="h-4 w-4 text-slate-400" aria-hidden="true" />
-              Needs attention
-            </h3>
+        <section aria-labelledby="hp-attention" className="rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 shadow-2xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span id="hp-attention" className="mr-1 text-xs font-semibold text-slate-500">
+              Needs attention:
+            </span>
             {shownAttention.map((def) => {
               const on = attention === def.key
               return (
@@ -209,13 +208,12 @@ export function VehiclesTab() {
                   onClick={() => setAttention(on ? null : def.key)}
                   data-tone={def.tone}
                   className={cn(
-                    'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-semibold transition-colors',
-                    on ? 'hp-tone-fill border-transparent text-white' : 'hp-tone hover:brightness-95',
+                    'inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11.5px] font-medium transition-colors',
+                    on ? 'hp-tone-fill border-transparent text-white shadow-2xs' : 'hp-tone hover:opacity-90',
                   )}
                 >
-                  <def.icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  {def.label}
-                  <span className={cn('hp-num rounded-full px-1.5 text-[11px]', on ? 'bg-white/25' : 'hp-count')}>{counts.get(def.key)}</span>
+                  <span>{def.label.replace(/^🚨\s*/, '')}</span>
+                  <span className={cn('hp-num rounded-full px-1.5 text-[10.5px]', on ? 'bg-white/25' : 'hp-count')}>{counts.get(def.key)}</span>
                 </button>
               )
             })}
@@ -223,8 +221,8 @@ export function VehiclesTab() {
         </section>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-3 sm:px-4">
+      <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2.5 sm:px-4">
           <PlateSearch value={search} onChange={setSearch} />
           <Segmented
             label="Stage"
@@ -243,12 +241,12 @@ export function VehiclesTab() {
             <HpButton size="sm" variant="ghost" onClick={clear}><X /> Clear</HpButton>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <span className="hp-num text-xs text-slate-500" aria-live="polite">{filtered.length} of {rows.length}</span>
+            <span className="hp-num text-xs text-slate-500 tabular-nums" aria-live="polite">{filtered.length} of {rows.length}</span>
             <HpButton size="sm" variant="outline" onClick={exportRegister}><Download /> Excel</HpButton>
           </div>
         </div>
         {attention && (
-          <div className="hp-accent-soft flex items-center gap-2 px-4 py-2 text-[12.5px] text-slate-700">
+          <div className="hp-accent-soft flex items-center gap-2 px-4 py-2 text-xs text-slate-700 border-b border-slate-100">
             Showing: <strong>{attentionDefs.find((d) => d.key === attention)?.label}</strong>
             <button type="button" onClick={() => setAttention(null)} className="hp-accent-text ml-1 font-semibold underline-offset-2 hover:underline">Show all</button>
           </div>
@@ -290,7 +288,7 @@ export function VehiclesTab() {
                       <button
                         type="button"
                         onClick={(event) => { event.stopPropagation(); openVehicle(row.id) }}
-                        className="hp-mono whitespace-nowrap text-[13.5px] font-semibold text-slate-600 underline-offset-2 hover:underline"
+                        className="whitespace-nowrap text-xs font-semibold text-slate-600 underline-offset-2 hover:underline tabular-nums"
                         aria-label={`Open ${formatStockNo(row.stockNo)}, ${row.regNo}`}
                       >
                         {formatStockNo(row.stockNo)}
@@ -301,7 +299,7 @@ export function VehiclesTab() {
                         <RegPlate regNo={row.regNo} size="sm" />
                         <div className="min-w-0">
                           <p className="max-w-[14rem] truncate font-semibold text-slate-900">{row.model}</p>
-                          <p className="max-w-[14rem] truncate text-[13px] text-slate-500">{[row.colour, row.manufacturingYear].filter(Boolean).join(' · ') || '—'}</p>
+                          <p className="max-w-[14rem] truncate text-xs text-slate-500">{[row.colour, row.manufacturingYear].filter(Boolean).join(' · ') || '—'}</p>
                         </div>
                       </div>
                     </td>
@@ -309,16 +307,16 @@ export function VehiclesTab() {
                     <td className="whitespace-nowrap">
                       <p className="hp-num text-slate-800">{day(row.purchaseDate)}</p>
                       {row.expectedSaleDate && (
-                        <p className={cn("text-[12.5px]", row.flags.saleOverdue ? "font-semibold text-rose-600" : "text-slate-500")} title="Target Expected Sale Date">
+                        <p className={cn("text-[11.5px]", row.flags.saleOverdue ? "font-semibold text-rose-600" : "text-slate-500")} title="Target Expected Sale Date">
                           Exp: {day(row.expectedSaleDate, false)}
                         </p>
                       )}
-                      <p className="text-[13px] text-slate-500">{label(row.purchasedBy)}</p>
+                      <p className="text-xs text-slate-500">{label(row.purchasedBy)}</p>
                     </td>
                     <td><AgingBar days={row.flags.daysInStock} bucket={row.flags.agingBucket} /></td>
                     <td className="hp-num whitespace-nowrap">
                       <p className="font-semibold text-slate-900">{inr(row.purchasePrice)}</p>
-                      <p className="text-[13px] text-slate-500">GST {row.purchaseGstPct} %</p>
+                      <p className="text-xs text-slate-500">GST {row.purchaseGstPct} %</p>
                     </td>
                     <td>
                       <div className="flex max-w-[12.5rem] flex-wrap items-center gap-1">
@@ -326,7 +324,7 @@ export function VehiclesTab() {
                         {row.flags.saleOverdue && (
                           <span
                             title={`Expected sale date was ${day(row.expectedSaleDate ?? '')}`}
-                            className="inline-flex items-center gap-0.5 rounded bg-rose-600 px-1.5 py-0.5 text-[11.5px] font-bold text-white shadow-xs animate-pulse"
+                            className="inline-flex items-center gap-0.5 rounded bg-rose-600 px-1.5 py-0.5 text-[10.5px] font-semibold text-white shadow-2xs animate-pulse"
                           >
                             🚨 {row.flags.daysOverdue}d overdue
                           </span>
@@ -339,12 +337,12 @@ export function VehiclesTab() {
                       {isSaleRecorded(row) ? (
                         <>
                           <p className="hp-num font-semibold text-slate-900">{inr(row.sellingPrice)}</p>
-                          <p className="text-[13px] text-slate-500">{day(row.saleDate)} · {row.soldTo ? row.soldTo.charAt(0) + row.soldTo.slice(1).toLowerCase() : ''}</p>
+                          <p className="text-xs text-slate-500">{day(row.saleDate)} · {row.soldTo ? row.soldTo.charAt(0) + row.soldTo.slice(1).toLowerCase() : ''}</p>
                         </>
                       ) : row.booking ? (
                         <>
                           <p className="hp-num font-semibold text-slate-900">{inr(row.booking.amount)}</p>
-                          <p className="text-[13px] text-slate-500">Booked {day(row.booking.bookingDate, false)}</p>
+                          <p className="text-xs text-slate-500">Booked {day(row.booking.bookingDate, false)}</p>
                         </>
                       ) : (
                         <span className="text-slate-400">—</span>
@@ -352,14 +350,14 @@ export function VehiclesTab() {
                     </td>
                     <td className="hp-num whitespace-nowrap text-right">
                       {row.economics.netProfit !== null ? <Money value={row.economics.netProfit} signed className="font-semibold" /> : (
-                        <span className="text-[13px] text-slate-500" title="Interest on the purchase price since it was bought">{inr(row.economics.interest)} interest</span>
+                        <span className="text-xs text-slate-500" title="Interest on the purchase price since it was bought">{inr(row.economics.interest)} interest</span>
                       )}
                     </td>
                     <td>
                       <div className="flex flex-col items-start gap-1">
                         <DocDots present={row.presentFiles} sold={isSaleRecorded(row)} />
                         {row.flags.insurance && row.flags.insurance !== 'ok' && row.flags.insurance !== 'unknown' && (
-                          <ToneChip tone={row.flags.insurance === 'expired' ? 'rejected' : 'pending'} className="text-[11.5px]">
+                          <ToneChip tone={row.flags.insurance === 'expired' ? 'rejected' : 'pending'} className="text-[10.5px]">
                             {row.flags.insurance === 'expired' ? 'Insurance expired' : 'Insurance due'}
                           </ToneChip>
                         )}

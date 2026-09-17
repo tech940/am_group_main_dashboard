@@ -154,18 +154,18 @@ export function VehicleDrawer({
 
           {profile.segments.length > 0 && (
             <DrawerSection title="Mileage stretches">
-              <div className="fm-scroll overflow-x-auto rounded-xl border border-slate-200/80 bg-white">
+              <div className="fm-scroll overflow-x-auto rounded-xl border border-slate-200 bg-white">
                 <table className="w-full min-w-[460px] text-[13px]">
-                  <thead className="border-b border-teal-100/60 bg-gradient-to-r from-slate-50 via-teal-50/40 to-slate-50 text-left text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  <thead className="border-b border-slate-200/80 bg-slate-50/70 text-left text-[12px] font-semibold text-slate-600">
                     <tr>
-                      <th scope="col" className="px-4 py-3 font-bold">Between</th>
-                      <th scope="col" className="px-4 py-3 font-bold">Measured as</th>
-                      <th scope="col" className="px-4 py-3 text-right font-bold">Distance</th>
-                      <th scope="col" className="px-4 py-3 text-right font-bold">Fuel</th>
-                      <th scope="col" className="px-4 py-3 text-right font-bold">Mileage</th>
+                      <th scope="col" className="px-4 py-3 font-semibold">Between</th>
+                      <th scope="col" className="px-4 py-3 font-semibold">Measured as</th>
+                      <th scope="col" className="px-4 py-3 text-right font-semibold">Distance</th>
+                      <th scope="col" className="px-4 py-3 text-right font-semibold">Fuel</th>
+                      <th scope="col" className="px-4 py-3 text-right font-semibold">Mileage</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-100 text-[12.5px]">
                     {profile.segments.map((s) => (
                       <tr key={`${s.openedOn}-${s.closedOn}-${s.kind}`} className="transition-colors hover:bg-slate-50/70">
                         <td className="px-4 py-3 font-medium text-slate-700">{fmtDay(s.openedOn)} – {fmtDay(s.closedOn)}</td>
@@ -174,9 +174,9 @@ export function VehicleDrawer({
                             ? <DataStateTag state={s.kind === 'full_tank' ? 'measured' : 'provisional'} />
                             : <span className="text-[12px] text-slate-500">{PROBLEM_WORD[s.problem ?? ''] ?? 'Not usable'}</span>}
                         </td>
-                        <td className="px-4 py-3 text-right font-mono font-medium tabular-nums text-slate-700">{fmtKm(s.distanceKm)}</td>
-                        <td className="px-4 py-3 text-right font-mono font-medium tabular-nums text-teal-800">{fmtQty(s.quantity, v.unit)}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold tabular-nums text-emerald-900">{fmtEff(s.efficiency, v.unit)}</td>
+                        <td className="px-4 py-3 text-right font-medium tabular-nums text-slate-700">{fmtKm(s.distanceKm)}</td>
+                        <td className="px-4 py-3 text-right font-medium tabular-nums text-slate-900">{fmtQty(s.quantity, v.unit)}</td>
+                        <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">{fmtEff(s.efficiency, v.unit)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -191,7 +191,7 @@ export function VehicleDrawer({
               <button
                 type="button"
                 onClick={() => navigate.recordsForVehicle(v.key)}
-                className="inline-flex min-h-7 items-center text-[12px] font-semibold text-teal-700 hover:text-teal-800 hover:underline"
+                className="inline-flex min-h-7 items-center text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline cursor-pointer"
               >
                 Showing 20 — see all
               </button>
@@ -200,22 +200,22 @@ export function VehicleDrawer({
             {profile.fills.length === 0 ? (
               <p className="text-[12.5px] text-slate-500">No fuel recorded for this vehicle in the last thirteen months.</p>
             ) : (
-              <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200/80 bg-white">
+              <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
                 {profile.fills.slice(0, 20).map((f) => (
                   <li key={f.id}>
                     <button
                       type="button"
                       onClick={() => navigate.openRecord(f.id)}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-teal-50/30"
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50/80 cursor-pointer"
                     >
-                      <span className="w-18 shrink-0 text-[12px] font-medium tabular-nums text-slate-500">{fmtDay(f.date)}</span>
+                      <span className="w-18 shrink-0 text-xs font-medium tabular-nums text-slate-500">{fmtDay(f.date)}</span>
                       <span className="min-w-0 flex-1">
-                        <span className="inline-block rounded-md bg-teal-50 px-2 py-0.5 font-mono text-[12px] font-bold text-teal-800 ring-1 ring-teal-200/60">{f.requestNumber}</span>
-                        <span className="mt-0.5 block text-[11.5px] text-slate-500">{f.purposeLabel}{f.odometerKm !== null ? ` · ${fmtKm(f.odometerKm)}` : ''}</span>
+                        <span className="inline-block rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11.5px] font-semibold text-slate-800 ring-1 ring-slate-200">{f.requestNumber}</span>
+                        <span className="mt-0.5 block text-xs text-slate-500 font-normal">{f.purposeLabel}{f.odometerKm !== null ? ` · ${fmtKm(f.odometerKm)}` : ''}</span>
                       </span>
-                      <span className="shrink-0 text-right text-[12.5px] tabular-nums">
-                        <span className="font-mono font-bold text-teal-950">{fmtQty(f.actual ?? f.approved ?? f.requested, f.unit)}</span>
-                        {f.cost !== null && <span className="block font-mono font-semibold text-blue-900">{fmtInr(f.cost)}</span>}
+                      <span className="shrink-0 text-right text-xs tabular-nums">
+                        <span className="font-semibold text-slate-900">{fmtQty(f.actual ?? f.approved ?? f.requested, f.unit)}</span>
+                        {f.cost !== null && <span className="block font-medium text-slate-600">{fmtInr(f.cost)}</span>}
                       </span>
                       <LifecycleChip lifecycle={f.lifecycle} />
                     </button>
@@ -228,33 +228,33 @@ export function VehicleDrawer({
           {profile.drives.length > 0 && (
             <DrawerSection
               title={`Gate passes (${profile.drives.length})`}
-              action={profile.drives.length > 25 ? <span className="text-[12px] text-slate-500">Latest 25 shown</span> : undefined}
+              action={profile.drives.length > 25 ? <span className="text-xs text-slate-500">Latest 25 shown</span> : undefined}
             >
-              <div className="fm-scroll overflow-x-auto rounded-xl border border-slate-200/80 bg-white">
+              <div className="fm-scroll overflow-x-auto rounded-xl border border-slate-200 bg-white">
                 <table className="w-full min-w-[480px] text-[13px]">
-                  <thead className="border-b border-teal-100/60 bg-gradient-to-r from-slate-50 via-teal-50/40 to-slate-50 text-left text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  <thead className="border-b border-slate-200/80 bg-slate-50/70 text-left text-[12px] font-semibold text-slate-600">
                     <tr>
-                      <th scope="col" className="px-4 py-3 font-bold">Pass</th>
-                      <th scope="col" className="px-4 py-3 font-bold">Purpose</th>
-                      <th scope="col" className="px-4 py-3 font-bold">Out</th>
-                      <th scope="col" className="px-4 py-3 text-right font-bold">Odometer</th>
-                      <th scope="col" className="px-4 py-3 text-right font-bold">GPS</th>
-                      <th scope="col" className="px-4 py-3 text-right font-bold">Pump</th>
+                      <th scope="col" className="px-4 py-3 font-semibold">Pass</th>
+                      <th scope="col" className="px-4 py-3 font-semibold">Purpose</th>
+                      <th scope="col" className="px-4 py-3 font-semibold">Out</th>
+                      <th scope="col" className="px-4 py-3 text-right font-semibold">Odometer</th>
+                      <th scope="col" className="px-4 py-3 text-right font-semibold">GPS</th>
+                      <th scope="col" className="px-4 py-3 text-right font-semibold">Pump</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-100 text-[12.5px]">
                     {profile.drives.slice(0, 25).map((d) => (
                       <tr key={d.passNo} className="transition-colors hover:bg-slate-50/70">
                         <td className="px-4 py-3">
-                          <span className="inline-block rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[12px] font-bold text-slate-800 ring-1 ring-slate-200">
+                          <span className="inline-block rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11.5px] font-semibold text-slate-800 ring-1 ring-slate-200">
                             {d.passNo}
                           </span>
                         </td>
                         <td className="max-w-[10rem] truncate px-4 py-3 font-medium text-slate-700">{d.purpose}</td>
-                        <td className="px-4 py-3 text-[12px] text-slate-500">{fmtWhen(d.gateOutAt)}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold tabular-nums text-slate-900">{fmtKm(d.odometerKm)}</td>
-                        <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-600">{d.gpsKm === null ? '—' : fmtKm(d.gpsKm)}</td>
-                        <td className="px-4 py-3 text-right font-mono font-medium tabular-nums text-teal-800">{d.pumpLitres === null ? '—' : fmtQty(d.pumpLitres)}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500 font-normal">{fmtWhen(d.gateOutAt)}</td>
+                        <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">{fmtKm(d.odometerKm)}</td>
+                        <td className="px-4 py-3 text-right font-normal tabular-nums text-slate-600">{d.gpsKm === null ? '—' : fmtKm(d.gpsKm)}</td>
+                        <td className="px-4 py-3 text-right font-medium tabular-nums text-slate-800">{d.pumpLitres === null ? '—' : fmtQty(d.pumpLitres)}</td>
                       </tr>
                     ))}
                   </tbody>

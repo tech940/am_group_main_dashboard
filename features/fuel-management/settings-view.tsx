@@ -263,56 +263,50 @@ export function SettingsView() {
         ) : (
           <div className="fm-scroll overflow-x-auto">
             <table className="w-full min-w-[640px] text-[13px]">
-              <thead className="border-b border-teal-100/60 bg-gradient-to-r from-slate-50 via-teal-50/40 to-slate-50 text-left text-[11px] font-bold uppercase tracking-wider text-slate-600">
+              <thead className="border-b border-slate-200/80 bg-slate-50/70 text-left text-[12px] font-semibold text-slate-600">
                 <tr>
-                  <th scope="col" className="px-5 py-3.5 font-bold">Applies to</th>
-                  <th scope="col" className="px-4 py-3.5 font-bold">Fuel</th>
-                  <th scope="col" className="px-4 py-3.5 text-right font-bold">Expected Mileage</th>
-                  <th scope="col" className="px-4 py-3.5 text-right font-bold">Tank Capacity</th>
-                  <th scope="col" className="px-4 py-3.5 font-bold">Set by</th>
-                  {canEdit && <th scope="col" className="px-4 py-3.5"><span className="sr-only">Actions</span></th>}
+                  <th scope="col" className="px-5 py-3 font-semibold">Applies to</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Fuel</th>
+                  <th scope="col" className="px-4 py-3 text-right font-semibold">Expected Mileage</th>
+                  <th scope="col" className="px-4 py-3 text-right font-semibold">Tank Capacity</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Set by</th>
+                  {canEdit && <th scope="col" className="px-4 py-3"><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 text-[12.5px] sm:text-[13px] font-normal text-slate-700">
                 {data.benchmarks.map((b) => {
                   const scopeTheme = b.scope === 'vehicle'
-                    ? 'bg-indigo-50 text-indigo-700 ring-indigo-200/70'
+                    ? 'bg-slate-100 text-slate-700 ring-slate-200'
                     : b.scope === 'model_variant'
-                    ? 'bg-sky-50 text-sky-700 ring-sky-200/70'
-                    : 'bg-teal-50 text-teal-700 ring-teal-200/70'
+                    ? 'bg-slate-100 text-slate-700 ring-slate-200'
+                    : 'bg-slate-100 text-slate-700 ring-slate-200'
 
-                  const energyTheme = b.energyType === 'petrol'
-                    ? 'bg-amber-50 text-amber-800 ring-amber-200/70'
-                    : b.energyType === 'diesel'
-                    ? 'bg-blue-50 text-blue-800 ring-blue-200/70'
-                    : b.energyType === 'cng'
-                    ? 'bg-emerald-50 text-emerald-800 ring-emerald-200/70'
-                    : 'bg-cyan-50 text-cyan-800 ring-cyan-200/70'
+                  const energyTheme = 'bg-slate-100 text-slate-700 ring-slate-200'
 
                   return (
-                    <tr key={b.id} className="transition-colors hover:bg-teal-50/20">
-                      <td className="px-5 py-4">
+                    <tr key={b.id} className="transition-colors hover:bg-slate-50/80">
+                      <td className="px-5 py-3.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold text-slate-900">{b.vin ?? [b.model, b.variant].filter(Boolean).join(' · ')}</span>
-                          <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1', scopeTheme)}>
+                          <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ring-1', scopeTheme)}>
                             {SCOPE_WORD[b.scope]}
                           </span>
                         </div>
-                        {b.notes && <span className="mt-1 block text-[11.5px] text-slate-500">{b.notes}</span>}
+                        {b.notes && <span className="mt-1 block text-xs text-slate-500 font-normal">{b.notes}</span>}
                       </td>
-                      <td className="px-4 py-4">
-                        <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-[11.5px] font-semibold ring-1', energyTheme)}>
+                      <td className="px-4 py-3.5">
+                        <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-[11.5px] font-medium ring-1', energyTheme)}>
                           {ENERGY_WORD[b.energyType] ?? b.energyType}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-right font-mono font-bold tabular-nums text-emerald-900">{fmtEff(b.expectedEfficiency, b.unit)}</td>
-                      <td className="px-4 py-4 text-right font-mono font-semibold tabular-nums text-slate-800">{fmtQty(b.tankCapacity, b.unit)}</td>
-                      <td className="px-4 py-4 text-[12px] text-slate-500">
+                      <td className="px-4 py-3.5 text-right font-semibold tabular-nums text-slate-900">{fmtEff(b.expectedEfficiency, b.unit)}</td>
+                      <td className="px-4 py-3.5 text-right font-medium tabular-nums text-slate-800">{fmtQty(b.tankCapacity, b.unit)}</td>
+                      <td className="px-4 py-3.5 text-xs text-slate-500 font-normal">
                         <span className="font-medium text-slate-700">{b.setByName ?? '—'}</span>
                         <span className="block text-slate-400">{fmtWhen(b.updatedAt)}</span>
                       </td>
                       {canEdit && (
-                        <td className="whitespace-nowrap px-4 py-4 text-right">
+                        <td className="whitespace-nowrap px-4 py-3.5 text-right">
                           <div className="inline-flex items-center gap-1.5">
                             <button
                               type="button"
@@ -325,7 +319,7 @@ export function SettingsView() {
                                 tankCapacity: b.tankCapacity === null ? '' : String(b.tankCapacity),
                                 notes: b.notes ?? '',
                               })}
-                              className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 shadow-2xs transition-colors hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800"
+                              className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 shadow-2xs transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
                             >
                               <Pencil aria-hidden className="size-3.5" />
                             </button>

@@ -8,6 +8,7 @@
  * the page itself sits behind the login.
  */
 import 'dotenv/config'
+import { readFileSync } from 'node:fs'
 import * as React from 'react'
 import { renderToString } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -58,6 +59,14 @@ async function main() {
       openNewPurchase: () => {},
       closeDrawer: () => {},
     }
+    // The button names come from the source, so a rename there does not break this check.
+    const homeSource = readFileSync('features/h-promise/hp-home.tsx', 'utf8')
+    const formsBlock = homeSource.slice(homeSource.indexOf('const FORMS'), homeSource.indexOf('function FormsBar'))
+    const formLabels = [...formsBlock.matchAll(/\{ id: '[a-z]+', label: '([^']+)'/g)].map((m) => m[1])
+    const barBlock = homeSource.slice(homeSource.indexOf('function FormsBar'))
+    const barLabel = /<section aria-label="([^"]+)"/.exec(barBlock)?.[1]
+    if (!barLabel) failures.push('the forms bar has no aria-label to recognise it by')
+    if (formLabels.length !== 6) failures.push(`expected 6 form buttons in hp-home.tsx, found ${formLabels.length}`)
     const screens: Array<[string, React.ReactElement]> = [
       ...HP_TABS.map((tab): [string, React.ReactElement] => [`tab ${tab}`, <HPromiseApp key={tab} caps={c} initialTab={tab} />]),
       ['new purchase', <PurchaseForm key="n" onDone={() => {}} onCancel={() => {}} />],
@@ -66,11 +75,12 @@ async function main() {
       try {
         const html = renderToString(<Wrap client={client} section={section}>{element}</Wrap>)
         if (name.startsWith('tab ') && who === 'super') {
-          for (const form of ['Purchase', 'Sale', 'Booking', 'Documents', 'RC status (broker)', 'Exchange bonus']) {
+          for (const form of formLabels) {
             if (!html.includes(`>${form}<`)) failures.push(`${who} ${name}: the ${form} form is missing`)
           }
         }
-        if (name.startsWith('tab ') && who === 'viewer' && html.includes('>Purchase<')) failures.push(`${who} ${name}: a view-only user is offered the forms`)
+        if (name.startsWith('tab ') && who === 'super' && barLabel && !html.includes(`aria-label="${barLabel}"`)) failures.push(`${who} ${name}: the forms bar is missing`)
+        if (name.startsWith('tab ') && who === 'viewer' && barLabel && html.includes(`aria-label="${barLabel}"`)) failures.push(`${who} ${name}: a view-only user is offered the forms`)
         const plates = (html.match(/hp-plate/g) ?? []).length
         console.log(`  [ok] ${who} ${name}: ${html.length} chars, ${plates} plates${html.includes('Loading') ? ' (loading state)' : ''}`)
         if (html.includes('9876') || /\b[6-9]\d{9}\b/.test(html)) {

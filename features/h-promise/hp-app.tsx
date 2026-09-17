@@ -14,14 +14,6 @@ export function HPromiseShell({ children }: { children: React.ReactNode }) {
     <MainLayout title="H Promise" subtitle="AM Tata · pre-owned car desk">
       <HPromiseTokens />
       <div className="hp mx-auto max-w-[1520px] space-y-4 pb-16">
-        <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3.5 sm:px-5">
-          <span className="hidden shrink-0 sm:inline-flex"><RegPlate label="H PROMISE" size="lg" /></span>
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">AM Tata · Pre-owned</p>
-            <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-slate-900">H Promise</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Purchase, booking, sale, documents and approvals for every pre-owned car.</p>
-          </div>
-        </div>
         {children}
       </div>
     </MainLayout>

@@ -28,21 +28,21 @@ export function QualityView({ data, navigate }: { data: FuelManagementResponse; 
             return (
               <li key={row.key} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1fr)_16rem_auto] md:items-center hover:bg-slate-50/50 transition-colors">
                 <div className="min-w-0">
-                  <p className="text-[13.5px] font-bold text-slate-900">{row.label}</p>
-                  <p className="mt-0.5 max-w-[70ch] text-[12.5px] leading-relaxed text-slate-500">{row.description}</p>
+                  <p className="text-sm font-semibold text-slate-900">{row.label}</p>
+                  <p className="mt-0.5 max-w-[70ch] text-xs leading-relaxed text-slate-500 font-normal">{row.description}</p>
                 </div>
                 <div>
-                  <div className="mb-2 flex items-baseline justify-between text-[12px] tabular-nums">
+                  <div className="mb-2 flex items-baseline justify-between text-xs tabular-nums">
                     {row.count ? (
-                      <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11.5px] font-bold text-amber-800 ring-1 ring-amber-200/70">
+                      <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11.5px] font-medium text-amber-800 ring-1 ring-amber-200/70">
                         {fmtCount(row.count)} missing
                       </span>
                     ) : (
-                      <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[11.5px] font-bold text-emerald-800 ring-1 ring-emerald-200/70">
+                      <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[11.5px] font-medium text-emerald-800 ring-1 ring-emerald-200/70">
                         100% Complete
                       </span>
                     )}
-                    <span className="font-mono text-[11.5px] text-slate-500">of {fmtCount(row.of)}</span>
+                    <span className="text-xs text-slate-500 font-normal">of {fmtCount(row.of)}</span>
                   </div>
                   <Bar pct={complete} tone={row.count ? 'review' : 'ok'} label={`${Math.round(complete)}% complete`} />
                 </div>
@@ -51,13 +51,13 @@ export function QualityView({ data, navigate }: { data: FuelManagementResponse; 
                     <button
                       type="button"
                       onClick={() => navigate.toTab('records', { quality: row.key, recordState: '' })}
-                      className="inline-flex h-8.5 items-center rounded-xl border border-slate-200/90 bg-white px-3.5 text-[12.5px] font-semibold text-slate-700 shadow-2xs transition-colors hover:border-teal-300 hover:bg-teal-50/40 hover:text-teal-900"
+                      className="inline-flex h-8.5 items-center rounded-xl border border-slate-200/90 bg-white px-3.5 text-xs font-medium text-slate-700 shadow-2xs transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
                     >
                       Show {fmtCount(row.count)}
                       <span className="sr-only"> records: {row.label}</span>
                     </button>
                   ) : row.key === 'gps_missing' && row.count > 0 ? (
-                    <Link href="/gate-pass" className="inline-flex h-8.5 items-center rounded-xl border border-slate-200/90 bg-white px-3.5 text-[12.5px] font-semibold text-slate-700 shadow-2xs transition-colors hover:border-teal-300 hover:bg-teal-50/40 hover:text-teal-900">
+                    <Link href="/gate-pass" className="inline-flex h-8.5 items-center rounded-xl border border-slate-200/90 bg-white px-3.5 text-xs font-medium text-slate-700 shadow-2xs transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900">
                       Link trackers
                     </Link>
                   ) : null}

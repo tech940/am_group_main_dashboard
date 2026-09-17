@@ -102,10 +102,10 @@ export function OverdueTab() {
   return (
     <div className="space-y-4">
       {/* Alarming Hero Header / Banner */}
-      <div className="relative overflow-hidden rounded-xl border-2 border-rose-500/90 bg-gradient-to-br from-rose-500/10 via-rose-500/5 to-transparent p-4 sm:p-5 shadow-sm">
+      <div className="relative overflow-hidden rounded-xl border border-rose-300 bg-gradient-to-br from-rose-50/90 via-rose-50/40 to-white p-4 sm:p-5 shadow-2xs">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white shadow-md ring-4 ring-rose-300/50 animate-pulse">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white shadow-sm ring-2 ring-rose-200 animate-pulse">
               <AlertTriangle className="h-5 w-5" aria-hidden="true" />
             </span>
             <div>
@@ -114,13 +114,13 @@ export function OverdueTab() {
                   Overdue Target Sale Commitments
                 </h2>
                 {totalOverdueCount > 0 && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-black text-white shadow-xs animate-pulse">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-semibold text-white shadow-2xs animate-pulse">
                     <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                    {totalOverdueCount} {totalOverdueCount === 1 ? 'VEHICLE' : 'VEHICLES'} ACTION REQUIRED
+                    {totalOverdueCount} {totalOverdueCount === 1 ? 'vehicle' : 'vehicles'} action required
                   </span>
                 )}
               </div>
-              <p className="mt-0.5 text-xs sm:text-[13px] text-slate-600 max-w-3xl">
+              <p className="mt-0.5 text-xs text-slate-600 max-w-3xl">
                 Active vehicles that have breached their committed expected sale dates. Requires immediate sales attention, price correction, or customer re-engagement.
               </p>
             </div>
@@ -129,46 +129,46 @@ export function OverdueTab() {
 
         {/* KPI Metrics */}
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-          <div className="rounded-lg border border-rose-200/80 bg-white/90 p-3 shadow-xs">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+          <div className="rounded-lg border border-rose-200/80 bg-white/95 p-3 shadow-2xs">
+            <div className="flex items-center justify-between text-xs font-medium text-slate-500">
               <span>Overdue Cars</span>
               <AlertCircle className="h-4 w-4 text-rose-600" />
             </div>
-            <p className="mt-1 text-xl sm:text-2xl font-black text-rose-700">
+            <p className="mt-1 text-xl sm:text-2xl font-bold text-rose-700 tabular-nums">
               {totalOverdueCount}
             </p>
             <p className="text-[11px] text-slate-500">Passed commitment date</p>
           </div>
 
-          <div className="rounded-lg border border-rose-200/80 bg-white/90 p-3 shadow-xs">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+          <div className="rounded-lg border border-rose-200/80 bg-white/95 p-3 shadow-2xs">
+            <div className="flex items-center justify-between text-xs font-medium text-slate-500">
               <span>Capital Tied Up</span>
               <DollarSign className="h-4 w-4 text-rose-600" />
             </div>
-            <p className="mt-1 text-xl sm:text-2xl font-black text-slate-900">
+            <p className="mt-1 text-xl sm:text-2xl font-bold text-slate-900 tabular-nums">
               {inr(totalCapitalTied)}
             </p>
             <p className="text-[11px] text-slate-500">Total purchase value</p>
           </div>
 
-          <div className="rounded-lg border border-rose-200/80 bg-white/90 p-3 shadow-xs">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+          <div className="rounded-lg border border-rose-200/80 bg-white/95 p-3 shadow-2xs">
+            <div className="flex items-center justify-between text-xs font-medium text-slate-500">
               <span>Max Delay</span>
               <Timer className="h-4 w-4 text-rose-600" />
             </div>
-            <p className="mt-1 text-xl sm:text-2xl font-black text-rose-600">
-              {maxDaysOverdue} <span className="text-xs font-bold text-slate-500">days</span>
+            <p className="mt-1 text-xl sm:text-2xl font-bold text-rose-600 tabular-nums">
+              {maxDaysOverdue} <span className="text-xs font-semibold text-slate-500">days</span>
             </p>
             <p className="text-[11px] text-slate-500">Longest overdue car</p>
           </div>
 
-          <div className="rounded-lg border border-rose-200/80 bg-white/90 p-3 shadow-xs">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+          <div className="rounded-lg border border-rose-200/80 bg-white/95 p-3 shadow-2xs">
+            <div className="flex items-center justify-between text-xs font-medium text-slate-500">
               <span>Average Delay</span>
-              <CalendarClock className="h-4 w-4 text-slate-600" />
+              <CalendarClock className="h-4 w-4 text-slate-500" />
             </div>
-            <p className="mt-1 text-xl sm:text-2xl font-black text-slate-800">
-              {avgDaysOverdue} <span className="text-xs font-bold text-slate-500">days</span>
+            <p className="mt-1 text-xl sm:text-2xl font-bold text-slate-800 tabular-nums">
+              {avgDaysOverdue} <span className="text-xs font-semibold text-slate-500">days</span>
             </p>
             <p className="text-[11px] text-slate-500">Across overdue inventory</p>
           </div>
@@ -185,17 +185,17 @@ export function OverdueTab() {
       ) : (
         <>
           {/* Filter and Action Bar */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
             <div className="flex flex-1 flex-wrap items-center gap-2">
               {/* Search Bar */}
               <div className="relative min-w-[200px] flex-1 max-w-sm">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search overdue cars (plate, model, HP#)..."
-                  className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 pl-9 pr-8 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-rose-500 focus:bg-white focus:outline-none"
+                  className="h-8.5 w-full rounded-lg border border-slate-200/80 bg-slate-50/60 pl-8.5 pr-8 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-[var(--dashboard-primary)] focus:bg-white focus:outline-none"
                 />
                 {search && (
                   <button
@@ -209,14 +209,14 @@ export function OverdueTab() {
               </div>
 
               {/* Urgency Filter */}
-              <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50/80 p-0.5 text-xs font-medium">
+              <div className="flex items-center rounded-lg border border-slate-200/80 bg-slate-50/70 p-0.5 text-xs font-medium">
                 <button
                   type="button"
                   onClick={() => setUrgency('all')}
                   className={cn(
-                    'rounded-md px-2.5 py-1 transition',
+                    'rounded-md px-2.5 py-1 text-xs transition',
                     urgency === 'all'
-                      ? 'bg-white font-bold text-slate-900 shadow-xs'
+                      ? 'bg-white font-semibold text-slate-900 shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900',
                   )}
                 >
@@ -226,9 +226,9 @@ export function OverdueTab() {
                   type="button"
                   onClick={() => setUrgency('extreme')}
                   className={cn(
-                    'rounded-md px-2.5 py-1 transition',
+                    'rounded-md px-2.5 py-1 text-xs transition',
                     urgency === 'extreme'
-                      ? 'bg-rose-600 font-bold text-white shadow-xs'
+                      ? 'bg-rose-100 font-semibold text-rose-800 border border-rose-300/60 shadow-2xs'
                       : 'text-rose-700 hover:text-rose-900',
                   )}
                 >
@@ -238,9 +238,9 @@ export function OverdueTab() {
                   type="button"
                   onClick={() => setUrgency('high')}
                   className={cn(
-                    'rounded-md px-2.5 py-1 transition',
+                    'rounded-md px-2.5 py-1 text-xs transition',
                     urgency === 'high'
-                      ? 'bg-amber-600 font-bold text-white shadow-xs'
+                      ? 'bg-amber-100 font-semibold text-amber-800 border border-amber-300/60 shadow-2xs'
                       : 'text-amber-700 hover:text-amber-900',
                   )}
                 >
@@ -250,9 +250,9 @@ export function OverdueTab() {
                   type="button"
                   onClick={() => setUrgency('moderate')}
                   className={cn(
-                    'rounded-md px-2.5 py-1 transition',
+                    'rounded-md px-2.5 py-1 text-xs transition',
                     urgency === 'moderate'
-                      ? 'bg-slate-700 font-bold text-white shadow-xs'
+                      ? 'bg-slate-200 font-semibold text-slate-800 border border-slate-300/60 shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900',
                   )}
                 >
@@ -266,7 +266,7 @@ export function OverdueTab() {
                   <select
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    className="h-9 appearance-none rounded-lg border border-slate-200 bg-slate-50/60 pl-3 pr-8 text-xs font-semibold text-slate-800 focus:border-rose-500 focus:bg-white focus:outline-none"
+                    className="h-8.5 appearance-none rounded-lg border border-slate-200/80 bg-slate-50/60 pl-3 pr-8 text-xs font-semibold text-slate-800 focus:border-[var(--dashboard-primary)] focus:bg-white focus:outline-none"
                   >
                     <option value="all">All Locations ({distinctLocations.length})</option>
                     {distinctLocations.map((loc) => (
@@ -304,11 +304,11 @@ export function OverdueTab() {
               </EmptyState>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xs">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/90 text-[12.5px] font-bold uppercase tracking-wider text-slate-600">
+                    <tr className="border-b border-slate-200 bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wider text-slate-500">
                       <th className="px-4 py-3">Vehicle / Stock #</th>
                       <th className="px-4 py-3">Model & Details</th>
                       <th className="px-4 py-3">Location</th>
@@ -319,7 +319,7 @@ export function OverdueTab() {
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-[14px]">
+                  <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                     {filteredOverdue.map((r) => {
                       const days = r.flags.daysOverdue || 0
                       const isExtreme = days >= 30
@@ -328,54 +328,54 @@ export function OverdueTab() {
                       return (
                         <tr
                           key={r.id}
-                          className="group transition hover:bg-rose-50/40"
+                          className="group transition hover:bg-slate-50/60"
                         >
                           {/* Plate & Stock # */}
-                          <td className="px-4 py-3.5 align-middle">
+                          <td className="px-4 py-3 align-middle">
                             <div className="flex flex-col items-start gap-1">
                               <RegPlate regNo={r.regNo} size="sm" />
-                              <span className="hp-mono text-[12px] font-bold text-slate-500">
+                              <span className="text-[11px] font-medium text-slate-500 tabular-nums">
                                 {formatStockNo(r.stockNo)}
                               </span>
                             </div>
                           </td>
 
                           {/* Model & Details */}
-                          <td className="px-4 py-3.5 align-middle">
+                          <td className="px-4 py-3 align-middle">
                             <div className="max-w-[220px]">
-                              <span className="block truncate font-bold text-slate-900 group-hover:text-rose-700">
+                              <span className="block truncate font-semibold text-slate-900 group-hover:text-slate-950">
                                 {r.model}
                               </span>
-                              <span className="block truncate text-xs text-slate-500">
+                              <span className="block truncate text-[11px] text-slate-500">
                                 {r.colour ? `${r.colour} · ` : ''}{r.manufacturingYear ? `${r.manufacturingYear} Model` : 'Pre-owned'}
                               </span>
                             </div>
                           </td>
 
                           {/* Location */}
-                          <td className="px-4 py-3.5 align-middle">
-                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                          <td className="px-4 py-3 align-middle">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11.5px] font-medium text-slate-700">
                               <MapPin className="h-3 w-3 text-slate-400" />
                               {label(r.location)}
                             </span>
                           </td>
 
                           {/* Purchase Date & Cost */}
-                          <td className="px-4 py-3.5 align-middle">
+                          <td className="px-4 py-3 align-middle">
                             <div className="flex flex-col">
-                              <span className="font-bold text-slate-900">
+                              <span className="font-semibold text-slate-900 tabular-nums">
                                 {inr(r.purchasePrice)}
                               </span>
-                              <span className="text-xs text-slate-500">
+                              <span className="text-[11px] text-slate-500">
                                 Bought {day(r.purchaseDate, false)}
                               </span>
                             </div>
                           </td>
 
                           {/* Target Sale Date */}
-                          <td className="px-4 py-3.5 align-middle">
+                          <td className="px-4 py-3 align-middle">
                             <div className="flex flex-col">
-                              <span className="font-bold text-rose-700">
+                              <span className="font-semibold text-rose-700">
                                 {day(r.expectedSaleDate ?? '')}
                               </span>
                               <span className="text-[11px] text-slate-500">
@@ -385,11 +385,11 @@ export function OverdueTab() {
                           </td>
 
                           {/* Breach Urgency Badge */}
-                          <td className="px-4 py-3.5 align-middle">
+                          <td className="px-4 py-3 align-middle">
                             <div className="flex flex-col items-start gap-1">
                               <span
                                 className={cn(
-                                  'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-black shadow-xs',
+                                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold shadow-2xs',
                                   isExtreme
                                     ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-300'
                                     : isHigh
@@ -401,7 +401,7 @@ export function OverdueTab() {
                                 {days} {days === 1 ? 'day' : 'days'} overdue
                               </span>
                               {isExtreme && (
-                                <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wide">
+                                <span className="text-[10px] font-medium text-rose-600 uppercase tracking-wide">
                                   Critical Aging
                                 </span>
                               )}
@@ -409,7 +409,7 @@ export function OverdueTab() {
                           </td>
 
                           {/* Status */}
-                          <td className="px-4 py-3.5 align-middle">
+                          <td className="px-4 py-3 align-middle">
                             <StageChip stage={r.stage} />
                           </td>
 

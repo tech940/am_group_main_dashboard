@@ -39,7 +39,7 @@ export function ReportsView({ data, navigate }: { data: FuelManagementResponse; 
             return (
               <div key={group} className="px-5 py-4">
                 <div className="mb-2.5 flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ring-1 ${conf.badgeClass}`}>
+                  <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ${conf.badgeClass}`}>
                     <GroupIcon className="size-3" />
                     {conf.label}
                   </span>
@@ -50,14 +50,14 @@ export function ReportsView({ data, navigate }: { data: FuelManagementResponse; 
                       <button
                         type="button"
                         onClick={() => navigate.download(report.id)}
-                        className="group flex w-full items-start gap-3 rounded-xl border border-transparent p-2.5 text-left transition-all duration-150 hover:border-slate-200/80 hover:bg-slate-50/90 hover:shadow-2xs"
+                        className="group flex w-full items-start gap-3 rounded-xl border border-transparent p-2.5 text-left transition-all duration-150 hover:border-slate-200/80 hover:bg-slate-50/90 hover:shadow-2xs cursor-pointer"
                       >
                         <div className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 ring-1 ring-slate-200/60 transition-colors ${conf.iconClass}`}>
                           <Download aria-hidden className="size-4" />
                         </div>
                         <span className="min-w-0 flex-1">
-                          <span className="block text-[13px] font-semibold text-slate-900 group-hover:text-teal-950">{report.title}</span>
-                          <span className="block text-[12px] leading-snug text-slate-500">{report.description}</span>
+                          <span className="block text-[13px] font-semibold text-slate-900 group-hover:text-slate-950">{report.title}</span>
+                          <span className="block text-xs leading-snug text-slate-500 font-normal">{report.description}</span>
                         </span>
                       </button>
                     </li>

@@ -94,7 +94,8 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // snapshot cached under v45 has none of the keys, so without the bump an Access-Map tick would not show
 // for up to 75 minutes and the sidebar link would not appear.
 // v47 (2026-09-17): EA sees H Promise by default (GRANT_ONLY_ROLE_DEFAULTS). A v46 snapshot says it does not.
-const PERMISSION_CACHE_VERSION = 'v47'
+// v48 (2026-09-17): registers kia.walk_in_leads (AM Kia · Sales · Walk-in Leads). A v47 snapshot has no such key.
+const PERMISSION_CACHE_VERSION = 'v48'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

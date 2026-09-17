@@ -424,13 +424,13 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
   const getFuelTypeTag = (fuelType: string) => {
     if (fuelType === 'PETROL') {
       return (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-500 text-white shadow-2xs">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-white shadow-2xs">
           PETROL
         </span>
       )
     }
     return (
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black bg-blue-600 text-white shadow-2xs">
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-600 text-white shadow-2xs">
         DIESEL
       </span>
     )
@@ -599,12 +599,12 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
 
       {/* Executive Metric Tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs hover:border-slate-300 transition-colors">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
             Pending My Action
           </span>
           <div className="mt-1.5 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-800 tabular-nums">
+            <span className="text-2xl sm:text-[25px] font-semibold text-slate-900 tabular-nums">
               {counts.pending}
             </span>
           </div>
@@ -620,13 +620,13 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
         <button
           type="button"
           onClick={() => { setCurrentTab('to_finalise'); setSelectedIds(new Set()) }}
-          className="p-4 text-left rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-amber-300 transition-colors cursor-pointer"
+          className="p-4 text-left rounded-2xl bg-white border border-slate-200/90 shadow-2xs hover:border-amber-300 transition-colors cursor-pointer"
         >
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
             To Finalise
           </span>
           <div className="mt-1.5 flex items-baseline gap-2">
-            <span className="text-2xl font-black tabular-nums" style={{ color: counts.toFinalise > 0 ? '#b45309' : '#1e293b' }}>
+            <span className="text-2xl sm:text-[25px] font-semibold tabular-nums" style={{ color: counts.toFinalise > 0 ? '#b45309' : '#0f172a' }}>
               {counts.toFinalise}
             </span>
           </div>
@@ -636,28 +636,28 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
         <button
           type="button"
           onClick={() => { setCurrentTab('completed'); setSelectedIds(new Set()) }}
-          className="p-4 text-left rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-emerald-300 transition-colors cursor-pointer"
+          className="p-4 text-left rounded-2xl bg-white border border-slate-200/90 shadow-2xs hover:border-emerald-300 transition-colors cursor-pointer"
         >
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
             Completed
           </span>
           <div className="mt-1.5 flex items-baseline gap-2">
-            <span className="text-2xl font-black tabular-nums" style={{ color: '#047857' }}>
+            <span className="text-2xl sm:text-[25px] font-semibold tabular-nums text-emerald-700">
               {counts.completed}
             </span>
           </div>
           <span className="text-[11px] text-slate-400 mt-1 block font-medium">Bill &amp; slips recorded</span>
         </button>
 
-        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs hover:border-slate-300 transition-colors">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
             Approved Fuel
           </span>
           <div className="mt-1.5 flex items-baseline gap-1.5">
-            <span className="text-2xl font-black tabular-nums" style={{ color: '#047857' }}>
+            <span className="text-2xl sm:text-[25px] font-semibold tabular-nums text-emerald-700">
               {counts.totalLitersApproved}
             </span>
-            <span className="text-xs font-bold" style={{ color: '#059669' }}>Ltrs</span>
+            <span className="text-xs font-semibold text-emerald-600">Ltrs</span>
           </div>
           <span className="text-[11px] text-slate-400 mt-1 block font-medium">Total dispensed &amp; authorized</span>
         </div>
@@ -765,10 +765,10 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
       {selectedIds.size > 0 && (
         <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 p-3 bg-white/95 backdrop-blur-md rounded-2xl border border-slate-300 shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-700 text-xs font-black text-white">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-700 text-xs font-semibold text-white">
               {selectedIds.size}
             </span>
-            <span className="text-xs font-bold text-slate-800">
+            <span className="text-xs font-semibold text-slate-800">
               {selectedIds.size} {selectedIds.size === 1 ? 'order' : 'orders'} selected
             </span>
           </div>
@@ -779,7 +779,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
               disabled={actionLoading}
               onClick={() => handleBulkAction('APPROVE')}
               style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
+              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
             >
               {actionLoading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -794,7 +794,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
               disabled={actionLoading}
               onClick={() => handleBulkAction('SEND_BACK')}
               style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
-              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
+              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
             >
               <CornerUpLeft className="h-3.5 w-3.5" />
               <span>Send Back</span>
@@ -805,7 +805,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
               disabled={actionLoading}
               onClick={() => handleBulkAction('REJECT')}
               style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
-              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
+              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
             >
               <X className="h-3.5 w-3.5" />
               <span>Reject</span>
@@ -816,7 +816,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
               disabled={actionLoading}
               onClick={() => handleBulkAction('HOLD')}
               style={{ backgroundColor: '#475569', color: '#ffffff' }}
-              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
+              className="flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
             >
               <Clock className="h-3.5 w-3.5" />
               <span>Hold</span>
@@ -828,7 +828,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                 disabled={actionLoading}
                 onClick={() => handleBulkAction('RESET')}
                 style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
-                className="flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs font-black text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
+                className="flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-white transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer shadow-sm border-none"
               >
                 <Undo2 className="h-3.5 w-3.5" />
                 <span>Reset</span>
@@ -838,7 +838,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
-              className="h-8 px-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer border-none bg-transparent"
+              className="h-8 px-2.5 rounded-xl text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer border-none bg-transparent"
             >
               Cancel
             </button>
@@ -919,7 +919,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-black text-slate-900">
+                      <span className="font-semibold text-slate-900">
                         {record.fuelFilledLtrs} L
                       </span>
                       {getFuelTypeTag(record.fuelType)}
@@ -946,7 +946,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                             handleStageAction(record.id, 'APPROVE')
                           }}
                           style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                          className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                          className="h-8 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
                         >
                           {isActionBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
                           <span>{getStageActionLabel(record.currentStage)}</span>
@@ -960,7 +960,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                             handleStageAction(record.id, 'SEND_BACK')
                           }}
                           style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
-                          className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                          className="h-8 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
                         >
                           <CornerUpLeft className="w-3.5 h-3.5" />
                           <span>Send Back</span>
@@ -974,7 +974,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                             handleStageAction(record.id, 'REJECT')
                           }}
                           style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
-                          className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                          className="h-8 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
                         >
                           <X className="w-3.5 h-3.5" />
                           <span>Reject</span>
@@ -988,7 +988,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                             handleStageAction(record.id, 'HOLD')
                           }}
                           style={{ backgroundColor: '#475569', color: '#ffffff' }}
-                          className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                          className="h-8 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
                         >
                           <Clock className="w-3.5 h-3.5" />
                           <span>Hold</span>
@@ -1015,7 +1015,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                               setFinalizeRecord(record)
                             }}
                             style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                            className="h-8 px-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                            className="h-8 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 text-white shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
                             title="Finalise fuel cost and slips"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1147,7 +1147,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
 
                         <td className="py-3 px-3 whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-black text-slate-900 text-xs">
+                            <span className="font-semibold text-slate-900 text-xs">
                               {record.fuelFilledLtrs} L
                             </span>
                             {getFuelTypeTag(record.fuelType)}
@@ -1195,7 +1195,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                     handleStageAction(record.id, 'APPROVE')
                                   }}
                                   style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
+                                  className="h-7 px-2.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
                                   title={`Approve request at ${record.currentStage.toUpperCase()} stage`}
                                 >
                                   {isActionBusy ? (
@@ -1215,7 +1215,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                     handleStageAction(record.id, 'SEND_BACK')
                                   }}
                                   style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
-                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
+                                  className="h-7 px-2.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
                                   title="Send Back to Submitter for Revision"
                                 >
                                   <CornerUpLeft className="w-3 h-3" />
@@ -1231,7 +1231,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                     handleStageAction(record.id, 'REJECT')
                                   }}
                                   style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
-                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
+                                  className="h-7 px-2.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
                                   title="Reject / Deny Request"
                                 >
                                   <X className="w-3 h-3" />
@@ -1247,7 +1247,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                     handleStageAction(record.id, 'HOLD')
                                   }}
                                   style={{ backgroundColor: '#475569', color: '#ffffff' }}
-                                  className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
+                                  className="h-7 px-2.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 disabled:opacity-40 cursor-pointer border-none"
                                   title="Place order on hold"
                                 >
                                   <Clock className="w-3 h-3" />
@@ -1267,7 +1267,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                         else setSelectedRecord(record)
                                       }}
                                       style={{ backgroundColor: '#ffffff', color: '#334155' }}
-                                      className="h-7 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                                      className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
                                     >
                                       <Paperclip className="w-3 h-3 text-slate-500" />
                                       <span>Slip{slipUrls.length > 1 ? ` (${slipUrls.length})` : ''}</span>
@@ -1289,7 +1289,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                           setFinalizeRecord(record)
                                         }}
                                         style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                                        className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
+                                        className="h-7 px-2.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 shadow-2xs transition-all hover:brightness-110 cursor-pointer border-none"
                                         title="Finalise fuel cost and slips"
                                       >
                                         <CheckCircle2 className="w-3 h-3" />
@@ -1306,7 +1306,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                         setFinalizeRecord(record)
                                       }}
                                       style={{ backgroundColor: '#ffffff', color: '#334155' }}
-                                      className="h-7 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                                      className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
                                       title={`${finalizedTitle(fin)} Opens the finalise form so the amount or slips can be corrected.`}
                                     >
                                       <PencilLine className="w-3 h-3 text-slate-500" />
@@ -1327,7 +1327,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                         else setSelectedRecord(record)
                                       }}
                                       style={{ backgroundColor: '#ffffff', color: '#334155' }}
-                                      className="h-7 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                                      className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
                                     >
                                       <Paperclip className="w-3 h-3 text-slate-500" />
                                       <span>Slip{slipUrls.length > 1 ? ` (${slipUrls.length})` : ''}</span>
@@ -1341,7 +1341,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                     setSelectedRecord(record)
                                   }}
                                   style={{ backgroundColor: '#ffffff', color: '#334155' }}
-                                  className="h-7 px-2 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                                  className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
                                   title="View Details"
                                 >
                                   <Eye className="w-3 h-3 text-slate-500" />
@@ -1356,7 +1356,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                                   setSelectedRecord(record)
                                 }}
                                 style={{ backgroundColor: '#ffffff', color: '#334155' }}
-                                className="h-7 px-2.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                                className="h-7 px-2.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
                               >
                                 <Eye className="w-3 h-3 text-slate-500" />
                                 <span>View</span>
@@ -1604,7 +1604,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-slate-500">Requested</span>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-black text-slate-900">
+                        <span className="font-semibold text-slate-900">
                           {recordLitersLabel(selectedRecord.fuelFilledLtrs)}
                         </span>
                         {getFuelTypeTag(selectedRecord.fuelType)}
@@ -1893,7 +1893,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                         approveLitres.trim() ? Number(approveLitres) : undefined,
                       )}
                       style={{ backgroundColor: '#055B65', color: '#ffffff' }}
-                      className="rounded-xl text-xs font-black h-9 px-2 cursor-pointer shadow-sm flex items-center justify-center gap-1 border-none hover:brightness-110 disabled:opacity-40"
+                      className="rounded-xl text-xs font-semibold h-9 px-2 cursor-pointer shadow-sm flex items-center justify-center gap-1 border-none hover:brightness-110 disabled:opacity-40"
                     >
                       <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                       <span>Approve</span>
@@ -1904,7 +1904,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                       disabled={actionLoading}
                       onClick={() => handleStageAction(selectedRecord.id, 'SEND_BACK')}
                       style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
-                      className="rounded-xl text-xs font-black h-9 px-2 cursor-pointer shadow-sm flex items-center justify-center gap-1 border-none hover:brightness-110 disabled:opacity-40"
+                      className="rounded-xl text-xs font-semibold h-9 px-2 cursor-pointer shadow-sm flex items-center justify-center gap-1 border-none hover:brightness-110 disabled:opacity-40"
                     >
                       <CornerUpLeft className="w-3.5 h-3.5" />
                       <span>Send Back</span>
@@ -1915,7 +1915,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                       disabled={actionLoading}
                       onClick={() => handleStageAction(selectedRecord.id, 'REJECT')}
                       style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
-                      className="rounded-xl text-xs font-black h-9 px-2 cursor-pointer shadow-sm flex items-center justify-center gap-1 border-none hover:brightness-110 disabled:opacity-40"
+                      className="rounded-xl text-xs font-semibold h-9 px-2 cursor-pointer shadow-sm flex items-center justify-center gap-1 border-none hover:brightness-110 disabled:opacity-40"
                     >
                       <X className="w-3.5 h-3.5" />
                       <span>Reject</span>
@@ -1926,7 +1926,7 @@ export function FuelApprovalsClient({ currentUser, embedded = false }: FuelAppro
                       disabled={actionLoading}
                       onClick={() => handleStageAction(selectedRecord.id, 'HOLD')}
                       style={{ backgroundColor: '#475569', color: '#ffffff' }}
-                      className="rounded-xl text-xs font-black h-9 px-2 cursor-pointer shadow-sm flex items-center justify-center gap-1 border-none hover:brightness-110 disabled:opacity-40"
+                      className="rounded-xl text-xs font-semibold h-9 px-2 cursor-pointer shadow-sm flex items-center justify-center gap-1 border-none hover:brightness-110 disabled:opacity-40"
                     >
                       <Clock className="w-3.5 h-3.5" />
                       <span>Hold</span>

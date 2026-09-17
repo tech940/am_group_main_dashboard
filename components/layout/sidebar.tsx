@@ -111,6 +111,7 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Booking Payment History', href: '/brands/kia/booking-payment-history' },
           { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups' },
           { name: 'Call Analytics', href: '/brands/kia/call-analytics' },
+          { name: 'Walk-in Leads', href: '/brands/kia/walk-in-leads' },
           { name: 'Social Media Leads', href: '/social-media-leads' },
         ],
       },

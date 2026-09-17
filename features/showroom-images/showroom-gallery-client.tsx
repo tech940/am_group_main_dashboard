@@ -363,7 +363,7 @@ export function ShowroomGalleryClient({
         >
           <AmGlyph
             color={selectedBrand === 'all' ? '#FFFFFF' : '#0F172A'}
-            className="h-3 sm:h-3.5 w-auto shrink-0"
+            size="xs"
           />
           <div
             className={cn(
@@ -371,7 +371,7 @@ export function ShowroomGalleryClient({
               selectedBrand === 'all' ? 'bg-white/30' : 'bg-slate-300'
             )}
           />
-          <span className="font-black uppercase tracking-wider text-[9.5px] sm:text-[10.5px] whitespace-nowrap">
+          <span className="font-bold uppercase tracking-wider text-[9.5px] sm:text-[10.5px] whitespace-nowrap">
             ALL BRANDS ({totalImages})
           </span>
         </button>

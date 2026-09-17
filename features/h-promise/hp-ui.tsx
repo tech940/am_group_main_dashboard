@@ -22,10 +22,10 @@ function plateGroups(value: string): string {
 }
 
 const PLATE_SIZES = {
-  sm: { text: 'text-[12.5px] px-2 py-[3px]', strip: 'w-4.5 text-[6.5px]' },
-  md: { text: 'text-[13.5px] px-2 py-1', strip: 'w-5 text-[7px]' },
-  lg: { text: 'text-lg px-3 py-1.5', strip: 'w-7 text-[8px]' },
-  xl: { text: 'text-2xl px-4 py-2', strip: 'w-9 text-[10px]' },
+  sm: { text: 'text-[11.5px] px-1.5 py-[2px]', strip: 'w-4 text-[6px]' },
+  md: { text: 'text-xs px-2 py-0.5', strip: 'w-4.5 text-[6.5px]' },
+  lg: { text: 'text-sm px-2.5 py-1', strip: 'w-6 text-[7.5px]' },
+  xl: { text: 'text-lg px-3 py-1.5', strip: 'w-8 text-[9px]' },
 } as const
 
 /** The section's signature: every registration number is shown as the plate people read it from. */
@@ -72,7 +72,7 @@ export function ToneChip({
     <span
       data-tone={tone}
       title={title}
-      className={cn('hp-tone inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[12.5px] font-semibold leading-4', className)}
+      className={cn('hp-tone inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-0.5 text-[11.5px] font-medium leading-4', className)}
     >
       {dot && <span className="hp-tone-dot h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden="true" />}
       {children}
@@ -169,12 +169,12 @@ export function BandCell({
   const body = (
     <>
       {tone && <span className="hp-cell-tick" data-tone={tone} aria-hidden="true" />}
-      <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+      <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500">
         {label}
         {hint && <InfoTip text={hint} />}
       </span>
-      <span className="hp-num mt-1 block text-[22px] font-semibold leading-7 tracking-tight text-slate-900 sm:text-2xl">{value}</span>
-      {sub && <span className="mt-0.5 block text-xs text-slate-500">{sub}</span>}
+      <span className="hp-num mt-1 block text-xl font-bold leading-6 tracking-tight text-slate-900 sm:text-2xl tabular-nums">{value}</span>
+      {sub && <span className="mt-0.5 block text-[11px] text-slate-500">{sub}</span>}
     </>
   )
   if (onClick) {
@@ -184,13 +184,13 @@ export function BandCell({
         onClick={onClick}
         aria-pressed={pressed}
         data-tone={tone}
-        className={cn('relative block w-full px-4 py-3.5 text-left', pressed ? 'hp-accent-soft' : 'hp-hover')}
+        className={cn('relative block w-full px-4 py-3 text-left transition-colors', pressed ? 'hp-accent-soft' : 'hp-hover')}
       >
         {body}
       </button>
     )
   }
-  return <div className="relative px-4 py-3.5 sm:px-5" data-tone={tone}>{body}</div>
+  return <div className="relative px-4 py-3 sm:px-4.5" data-tone={tone}>{body}</div>
 }
 
 export function InfoTip({ text }: { text: string }) {
