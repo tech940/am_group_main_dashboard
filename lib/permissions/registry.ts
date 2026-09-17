@@ -1001,6 +1001,64 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     sortOrder: 176,
     actions: ['view'],
   },
+  /*
+   * ── AM Tata · H Promise (pre-owned car desk), owner decision 2026-09-17 ─────────────────────────
+   *
+   * One Access Map tick per area, and write actions granted per person in Access Control. Every one of
+   * these is GRANT-ONLY (see GRANT_ONLY_SECTIONS): without that, the legacy `admin` role (family 'super'
+   * in tiers.ts) would receive every action including approve, and applyBrandDefault would hand the
+   * unrouted groups to every Tata-brand user. Buyers' and sellers' PAN/Aadhaar live behind these keys.
+   *
+   * `name` must equal the sidebar label (scripts/verify-permission-resolution.ts, scenario 8).
+   */
+  {
+    key: 'tata.h_promise',
+    name: 'H Promise',
+    parentKey: 'tata',
+    description: 'AM Tata pre-owned car desk: purchases, bookings, sales, paperwork, approvals and MIS.',
+    sortOrder: 177,
+    actions: ['view'],
+  },
+  {
+    key: 'tata.h_promise.register',
+    name: 'Vehicle Register',
+    parentKey: 'tata.h_promise',
+    description: 'The H Promise vehicle register. Create = new purchase and exchange bonus; Edit = booking, sale, documents, broker RC; Delete = remove a record (with a reason).',
+    sortOrder: 178,
+    actions: ['view', 'create', 'edit', 'delete'],
+  },
+  {
+    key: 'tata.h_promise.approvals',
+    name: 'Purchase & Sale Approvals',
+    parentKey: 'tata.h_promise',
+    description: 'Approve = the GSM / Sales Manager approval (first stage) of H Promise purchases and sales. The MD gives the final approval and may give it before the GSM / SM. Nobody can decide an entry they made.',
+    sortOrder: 179,
+    actions: ['view', 'approve'],
+  },
+  {
+    key: 'tata.h_promise.payments',
+    name: 'Payment Verification',
+    parentKey: 'tata.h_promise',
+    description: 'Upload and check the payment ledger for sold H Promise vehicles.',
+    sortOrder: 180,
+    actions: ['view', 'edit'],
+  },
+  {
+    key: 'tata.h_promise.insights',
+    name: 'Insights',
+    parentKey: 'tata.h_promise',
+    description: 'H Promise insights dashboards, Excel exports and the printable monthly summary.',
+    sortOrder: 181,
+    actions: ['view'],
+  },
+  {
+    key: 'tata.h_promise.settings',
+    name: 'H Promise Settings',
+    parentKey: 'tata.h_promise',
+    description: 'The H Promise name lists (staff, WhatsApp approvers, locations) and the rates behind profit and interest.',
+    sortOrder: 182,
+    actions: ['view', 'edit'],
+  },
 ]
 
 /*
@@ -1055,6 +1113,12 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   social_media_leads: { href: '/social-media-leads' },
   admin_panel: { href: '/admin' },
   'kia.vehicle_tracker': { href: '/brands/kia/vehicle-tracker' },
+  // AM Tata · H Promise. The container `tata.h_promise` and `tata.h_promise.settings` have no route on purpose:
+  // the four areas below are the Access Map columns; settings is granted in Access Control.
+  'tata.h_promise.register': { href: '/brands/tata/h-promise/register' },
+  'tata.h_promise.approvals': { href: '/brands/tata/h-promise/approvals' },
+  'tata.h_promise.payments': { href: '/brands/tata/h-promise/payments' },
+  'tata.h_promise.insights': { href: '/brands/tata/h-promise/insights' },
 
   cockpit: { href: '/cockpit' },
   delegation_tasks: { href: '/delegation-tasks' },
@@ -1195,12 +1259,39 @@ export const GRANT_ONLY_SECTIONS = new Set<string>([
   'social_media_leads',
   'admin_panel',
   'kia.vehicle_tracker',
+  // AM Tata · H Promise — all six, including the two unrouted groups (see the note on their definitions).
+  'tata.h_promise',
+  'tata.h_promise.register',
+  'tata.h_promise.approvals',
+  'tata.h_promise.payments',
+  'tata.h_promise.insights',
+  'tata.h_promise.settings',
 ])
 
 /** The concrete permission keys under a grant-only section. */
 export const GRANT_ONLY_PERMISSION_KEYS = new Set<string>(
   PERMISSIONS.filter((permission) => GRANT_ONLY_SECTIONS.has(permission.groupKey)).map((permission) => permission.key)
 )
+
+/**
+ * The ONLY default audience a grant-only key has beyond MD / Developer (who hold everything anyway).
+ * Applied by stripGrantOnly in lib/permissions/service.ts, in the same place the keys are stripped, so a
+ * per-person Deny in the Access Map still wins.
+ *
+ * Owner, 2026-09-17: AM Tata and H Promise stay "hidden by default for others except MD, DEVELOPER, EA".
+ * ⚠️ EA gets VIEW only — the four areas and their container, not Settings. Entering, approving and
+ * verifying payments stay per-person ticks: they are money decisions, and `approve` is what opens buyers'
+ * PAN and Aadhaar scans (lib/h-promise/access-shared.ts).
+ */
+export const GRANT_ONLY_ROLE_DEFAULTS: Readonly<Partial<Record<PermissionRole, readonly string[]>>> = {
+  ea: [
+    'tata.h_promise.view',
+    'tata.h_promise.register.view',
+    'tata.h_promise.approvals.view',
+    'tata.h_promise.payments.view',
+    'tata.h_promise.insights.view',
+  ],
+}
 
 export const RESTRICTED_DEFAULT_PERMISSION_KEYS = new Set<string>(
   PERMISSIONS.filter((permission) => RESTRICTED_DEFAULT_SECTIONS.has(permission.groupKey)).map((permission) => permission.key)

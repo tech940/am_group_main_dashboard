@@ -132,8 +132,8 @@ export function LicenceCapture({
             }}
           />
           {photo ? (
-            <div className="mt-1 flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2">
-              <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+            <div className="mt-1 flex items-center gap-2 rounded-md border border-teal-200 bg-teal-50/50 px-3 py-2">
+              <Check className="h-4 w-4 shrink-0 text-teal-700" />
               <span className="flex-1 truncate text-sm text-slate-700">{photo.name}</span>
               <Button type="button" variant="ghost" size="sm" onClick={() => {
                 setPhoto(null)

@@ -97,9 +97,20 @@ const CATEGORY_CONFIG: CategoryMeta[] = [
     badgeBorder: 'border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
     viewAllColor: 'text-[var(--dashboard-primary)] dark:text-[var(--dashboard-primary-light)] hover:opacity-80',
   },
+  {
+    id: 'tata',
+    title: 'AM Tata',
+    description: 'AM Tata sections, including the H Promise pre-owned car desk',
+    avatarBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)] border border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    avatarText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBg: 'bg-[var(--dashboard-primary-soft)] dark:bg-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)]',
+    badgeText: 'text-[var(--dashboard-primary-dark)] dark:text-[var(--dashboard-primary-light)]',
+    badgeBorder: 'border-[var(--dashboard-primary-border)]/50 dark:border-[var(--dashboard-primary-light)]/20',
+    viewAllColor: 'text-[var(--dashboard-primary)] dark:text-[var(--dashboard-primary-light)] hover:opacity-80',
+  },
 ]
 
-type FilterOptionId = 'all' | DepartmentType | 'kia' | 'hyundai' | 'platinum' | 'common'
+type FilterOptionId = 'all' | DepartmentType | 'kia' | 'hyundai' | 'platinum' | 'tata' | 'common'
 
 const FILTER_PILLS: { id: FilterOptionId; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -110,6 +121,7 @@ const FILTER_PILLS: { id: FilterOptionId; label: string }[] = [
   { id: 'kia', label: 'KIA' },
   { id: 'hyundai', label: 'Hyundai' },
   { id: 'platinum', label: 'Platinum' },
+  { id: 'tata', label: 'Tata' },
   { id: 'common', label: 'Common' },
 ]
 
@@ -178,7 +190,7 @@ export function SearchPageClient() {
       if (activeFilter !== 'all') {
         if (['sales', 'service', 'finance', 'admin'].includes(activeFilter)) {
           matchesFilter = section.department === activeFilter
-        } else if (['kia', 'hyundai', 'platinum', 'common'].includes(activeFilter)) {
+        } else if (['kia', 'hyundai', 'platinum', 'tata', 'common'].includes(activeFilter)) {
           matchesFilter = section.brand === activeFilter
         }
       }
@@ -195,6 +207,7 @@ export function SearchPageClient() {
       kia: [],
       hyundai: [],
       platinum: [],
+      tata: [],
     }
 
     filteredSections.forEach((section) => {

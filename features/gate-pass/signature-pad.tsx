@@ -102,8 +102,8 @@ export function GateSignaturePad({
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-slate-700">{label}</span>
         {confirmed ? (
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-            <Check className="h-3.5 w-3.5" /> Captured
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-teal-800">
+            <Check className="h-3.5 w-3.5 text-teal-700" /> Captured
           </span>
         ) : null}
       </div>

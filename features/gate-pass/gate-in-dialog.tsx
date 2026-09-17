@@ -197,7 +197,7 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
       >
         <DialogHeader>
           <DialogTitle className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            <CheckCircle2 className="h-5 w-5 text-teal-700" />
             Gate In Verification — {pass.passNo}
           </DialogTitle>
           <DialogDescription className="text-slate-500">
@@ -246,7 +246,7 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
           {/* Odometer IN Section */}
           <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
             <Label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-              <Gauge className="h-4 w-4 text-emerald-600" />
+              <Gauge className="h-4 w-4 text-teal-700" />
               Odometer IN Reading *
             </Label>
 
@@ -287,12 +287,12 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
             <div className="pt-2">
               <Label className="text-xs font-semibold text-slate-700 flex items-center justify-between mb-2">
                 <span className="flex items-center gap-1.5">
-                  <Camera className="h-4 w-4 text-emerald-600" />
+                  <Camera className="h-4 w-4 text-teal-700" />
                   Odometer IN Picture *
                 </span>
                 {photoOdometerIn ? (
-                  <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Photo Ready
+                  <span className="text-[11px] text-teal-800 font-semibold flex items-center gap-1 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-teal-700" /> Photo Ready
                   </span>
                 ) : null}
               </Label>
@@ -350,33 +350,16 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
                 </Label>
                 <Input
                   id="keyHandoverTo"
-                  placeholder="e.g. Key Locker, Guard Desk, Manager Name"
+                  placeholder="e.g. Guard Desk, Reception, Key Locker"
                   value={keyHandoverTo}
                   onChange={(e) => setKeyHandoverTo(e.target.value)}
                   className="mt-1 bg-white"
                 />
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {['Key Locker', 'Security Desk', 'Demo Incharge', 'Sales Manager'].map((holder) => (
-                    <button
-                      key={holder}
-                      type="button"
-                      onClick={() => setKeyHandoverTo(holder)}
-                      className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-                        keyHandoverTo === holder
-                          ? 'bg-amber-50 border-amber-300 text-amber-800 font-semibold'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      {holder}
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
 
             <div className="pt-2">
-              <Label htmlFor="remarks" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5 mb-1">
-                <MessageSquare className="h-3.5 w-3.5 text-slate-500" />
+              <Label htmlFor="remarks" className="text-xs text-slate-600 block mb-1">
                 Return Remarks & Vehicle Condition (Optional)
               </Label>
               <Textarea
@@ -392,31 +375,31 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
 
           {/* Fuel Filling Proofs (When purpose == Fuel filling) */}
           {isFuelFillingPurpose(pass.purpose) ? (
-            <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 p-4 space-y-3">
+            <div className="rounded-xl border border-amber-300 bg-amber-50/40 p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                <Label className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
                   <Fuel className="h-4 w-4 text-amber-600" />
                   Mandatory Fuel Filling Proofs *
                 </Label>
                 {Boolean(pass.fuelSlipPath && pass.pumpStartPath && pass.pumpStopPath) ? (
-                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1 bg-emerald-100/70 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-300">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> All 3 Proofs on File
+                  <span className="text-[11px] text-teal-800 font-semibold flex items-center gap-1 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-teal-700" /> All 3 Proofs on File
                   </span>
                 ) : (
-                  <span className="text-[11px] text-amber-800 dark:text-amber-300 font-semibold bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 rounded border border-amber-300">
+                  <span className="text-[11px] text-amber-800 font-semibold bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
                     Required for Completion
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90">
+              <p className="text-[11px] text-amber-800/90">
                 This pass was issued for Fuel Filling. All 3 documents below must be attached before Gate In can be completed.
               </p>
 
               {/* Fuel Price & Litres Input */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white/80 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white/80 p-3 rounded-lg border border-slate-200">
                 <div className="space-y-1">
-                  <Label htmlFor="gatein-fuel-amount" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                    <IndianRupee className="h-3.5 w-3.5 text-emerald-600" /> Fuel Price (₹)
+                  <Label htmlFor="gatein-fuel-amount" className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <IndianRupee className="h-3.5 w-3.5 text-teal-700" /> Fuel Price (₹)
                   </Label>
                   <Input
                     id="gatein-fuel-amount"
@@ -426,11 +409,11 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
                     placeholder="e.g. 3500"
                     value={fuelAmount}
                     onChange={(e) => setFuelAmount(e.target.value)}
-                    className="h-8 font-mono text-xs bg-slate-50 dark:bg-slate-950"
+                    className="h-8 font-mono text-xs bg-slate-50"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="gatein-fuel-litres" className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                  <Label htmlFor="gatein-fuel-litres" className="text-xs font-bold text-slate-700 flex items-center gap-1">
                     <Fuel className="h-3.5 w-3.5 text-blue-600" /> Fuel Litres
                   </Label>
                   <Input
@@ -441,21 +424,21 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
                     placeholder="e.g. 35.5"
                     value={fuelLitres}
                     onChange={(e) => setFuelLitres(e.target.value)}
-                    className="h-8 font-mono text-xs bg-slate-50 dark:bg-slate-950"
+                    className="h-8 font-mono text-xs bg-slate-50"
                   />
                 </div>
               </div>
 
               <div className="space-y-3 pt-1">
                 {/* 1. Slip */}
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 p-3">
+                <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
                       <FileText className="h-3.5 w-3.5 text-amber-600" /> 1. Physical Fuel Slip *
                     </span>
                     {fuelSlip || pass.fuelSlipPath ? (
-                      <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Attached
+                      <span className="text-[11px] text-teal-800 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-teal-700" /> Attached
                       </span>
                     ) : null}
                   </div>
@@ -468,14 +451,14 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
                 </div>
 
                 {/* 2. Pump Start 0.00 */}
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 p-3">
+                <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
                       <Gauge className="h-3.5 w-3.5 text-blue-600" /> 2. Pump Start (0.00) *
                     </span>
                     {pumpStart || pass.pumpStartPath ? (
-                      <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Attached
+                      <span className="text-[11px] text-teal-800 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-teal-700" /> Attached
                       </span>
                     ) : null}
                   </div>
@@ -488,14 +471,14 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
                 </div>
 
                 {/* 3. Pump Stop Amount */}
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 p-3">
+                <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                      <IndianRupee className="h-3.5 w-3.5 text-emerald-600" /> 3. Pump Stop (Amount) *
+                    <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                      <IndianRupee className="h-3.5 w-3.5 text-teal-700" /> 3. Pump Stop (Amount) *
                     </span>
                     {pumpStop || pass.pumpStopPath ? (
-                      <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Attached
+                      <span className="text-[11px] text-teal-800 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-teal-700" /> Attached
                       </span>
                     ) : null}
                   </div>
@@ -520,7 +503,7 @@ export function GateInDialog({ open, onOpenChange, pass, onGateInSuccess }: Gate
           <Button
             onClick={handleSubmit}
             disabled={saving}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+            className="bg-teal-700 hover:bg-teal-800 text-white font-semibold shadow-2xs"
           >
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Save & Complete Gate In

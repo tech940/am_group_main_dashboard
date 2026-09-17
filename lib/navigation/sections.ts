@@ -1,4 +1,4 @@
-import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
+import { SIDEBAR_PERMISSION_BY_HREF, compositeViewKeysForHref } from '@/lib/permissions/navigation'
 import { isSuperAdminRole, hasGlobalAccessRole } from '@/lib/auth/roles'
 import { hasAllBranchAccess } from '@/lib/branches'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
@@ -13,7 +13,7 @@ import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { isPettyCashViewRole, isAmFinanceViewRole, isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 
 export type DepartmentType = 'sales' | 'service' | 'finance' | 'admin'
-export type SectionCategory = 'common_dashboards' | 'general_modules' | 'kia' | 'hyundai' | 'platinum'
+export type SectionCategory = 'common_dashboards' | 'general_modules' | 'kia' | 'hyundai' | 'platinum' | 'tata'
 
 export interface SearchSection {
   id: string
@@ -21,7 +21,7 @@ export interface SearchSection {
   description: string
   href: string
   department: DepartmentType
-  brand: 'kia' | 'hyundai' | 'platinum' | 'mg' | 'common'
+  brand: 'kia' | 'hyundai' | 'platinum' | 'mg' | 'tata' | 'common'
   iconName: string
   badge?: string
   initials?: string
@@ -657,6 +657,19 @@ export const ALL_SECTIONS: SearchSection[] = [
     initials: 'PDA',
     category: 'platinum',
   },
+  // ── AM Tata · H Promise (pre-owned car desk). ONE entry, like its one sidebar row: it opens for anyone
+  // holding any of the four H Promise sections (COMPOSITE_SIDEBAR_SECTIONS), all grant-only.
+  {
+    id: 'tata_h_promise',
+    name: 'H Promise',
+    description: 'AM Tata pre-owned cars: purchase, sale, booking, documents, exchange bonus, approvals, payment verification and MIS.',
+    href: '/brands/tata/h-promise',
+    department: 'sales',
+    brand: 'tata',
+    iconName: 'Car',
+    initials: 'HP',
+    category: 'tata',
+  },
   {
     id: 'showroom_images',
     name: 'Showroom Images',
@@ -769,6 +782,9 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/brands/platinum/warranty-claim-list',
   '/brands/platinum/demo-job-cards',
   '/brands/platinum/demo-cars-list',
+
+  // AM Tata · H Promise — one link over four Access-Map sections
+  '/brands/tata/h-promise',
 ])
 
 /**
@@ -829,7 +845,10 @@ export function canUserAccessSection(
      * The section's own key still has to pass at step 4; this only stops the brand vetoing first.
      */
     const sectionKey = SIDEBAR_PERMISSION_BY_HREF[section.href]
-    const grantedAcrossBrand = Boolean(sectionKey && permissionMap && permissionMap[sectionKey] === true)
+    const compositeKeys = compositeViewKeysForHref(section.href)
+    const grantedAcrossBrand = compositeKeys
+      ? Boolean(permissionMap && compositeKeys.some((key) => permissionMap[key] === true))
+      : Boolean(sectionKey && permissionMap && permissionMap[sectionKey] === true)
 
     const hasBrandAccess = isGlobal || isAllBranches || userBrandKeys.includes(section.brand) || grantedAcrossBrand
     if (!hasBrandAccess) return false
@@ -959,6 +978,13 @@ export function canUserAccessSection(
     const map = permissionMap
     if (!map) return false
     return FUEL_MANAGEMENT_VIEW_KEYS.some((key) => map[key] === true)
+  }
+
+  // One link over several Access-Map sections (AM Tata · H Promise): any of them opens it.
+  const compositeKeys = compositeViewKeysForHref(href)
+  if (compositeKeys) {
+    if (!permissionMap) return false
+    return compositeKeys.some((key) => permissionMap[key] === true)
   }
 
   // 4. Standard Permission Keys

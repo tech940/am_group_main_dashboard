@@ -61,6 +61,16 @@ function PlatinumFilterLogo({ className }: { className?: string }) {
   )
 }
 
+const TATA_LOGO_URL = '/brand-logos/tata.svg'
+
+function TataFilterLogo({ className }: { className?: string }) {
+  return (
+    <div className={cn("h-6 w-auto px-2 py-0.5 rounded-lg bg-white border border-slate-200 shadow-2xs flex items-center justify-center shrink-0 select-none", className)}>
+      <img src={TATA_LOGO_URL} alt="AM Tata" className="h-4.5 w-auto object-contain" />
+    </div>
+  )
+}
+
 function CommonFilterLogo({ className }: { className?: string }) {
   return (
     <div className={cn("h-6 w-auto px-2 py-0.5 rounded-lg bg-white border border-slate-200 shadow-2xs flex items-center justify-center shrink-0 select-none", className)}>
@@ -148,9 +158,21 @@ const CATEGORY_CONFIG: Record<SectionCategory, CategoryMeta> = {
     gradientBg: 'bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-slate-50/90 dark:from-amber-950/40 dark:via-slate-900 dark:to-slate-950',
     logoUrl: HYUNDAI_LOGO_URL,
   },
+  tata: {
+    id: 'tata',
+    title: 'AM Tata',
+    description: 'AM Tata sections, including the H Promise pre-owned car desk',
+    badgeBg: 'bg-[#004e5a]/10 text-[#004e5a] border-[#004e5a]/20',
+    badgeText: 'text-[#004e5a]',
+    avatarBg: 'bg-[#004e5a] text-white shadow-xs',
+    avatarText: 'text-white',
+    borderColor: 'border-sky-300/60 dark:border-sky-500/30',
+    gradientBg: 'bg-gradient-to-br from-sky-500/10 via-indigo-500/5 to-slate-50/90 dark:from-sky-950/40 dark:via-slate-900 dark:to-slate-950',
+    logoUrl: TATA_LOGO_URL,
+  },
 }
 
-type FilterOptionId = 'all' | DepartmentType | 'kia' | 'hyundai' | 'platinum' | 'common'
+type FilterOptionId = 'all' | DepartmentType | 'kia' | 'hyundai' | 'platinum' | 'tata' | 'common'
 
 const FILTER_PILLS: { id: FilterOptionId; label: string; logo?: React.ReactNode }[] = [
   { id: 'all', label: 'All Sections' },
@@ -161,6 +183,7 @@ const FILTER_PILLS: { id: FilterOptionId; label: string; logo?: React.ReactNode 
   { id: 'kia', label: 'KIA', logo: <KiaFilterLogo /> },
   { id: 'hyundai', label: 'Hyundai', logo: <HyundaiFilterLogo /> },
   { id: 'platinum', label: 'Platinum', logo: <PlatinumFilterLogo /> },
+  { id: 'tata', label: 'Tata', logo: <TataFilterLogo /> },
   { id: 'common', label: 'Common', logo: <CommonFilterLogo /> },
 ]
 
@@ -260,7 +283,7 @@ function getRelevanceScore(section: SearchSection, query: string): number {
           matchesFilter = section.department === activeFilter
         } else if (activeFilter === 'common') {
           matchesFilter = section.brand === 'common' || section.category === 'common_dashboards' || section.category === 'general_modules'
-        } else if (['kia', 'hyundai', 'platinum'].includes(activeFilter)) {
+        } else if (['kia', 'hyundai', 'platinum', 'tata'].includes(activeFilter)) {
           matchesFilter = section.brand === activeFilter
         }
       }
@@ -270,7 +293,7 @@ function getRelevanceScore(section: SearchSection, query: string): number {
   }, [authorizedSections, search, activeFilter])
 
   const orderedCategorizedGroups = useMemo(() => {
-    const categories: SectionCategory[] = ['common_dashboards', 'kia', 'hyundai', 'platinum']
+    const categories: SectionCategory[] = ['common_dashboards', 'kia', 'hyundai', 'platinum', 'tata']
     const query = search.toLowerCase().trim()
     const result: { category: SectionCategory; maxScore: number; sections: SearchSection[] }[] = []
 

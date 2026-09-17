@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 import { convertAudioBufferToMp3 } from '@/lib/audio/mp3-converter'
+import { BrandLogoLockup, AmGlyph } from '@/components/brand-logo-lockup'
 
 type CrePerformance = {
   cre_id: string
@@ -495,19 +496,25 @@ function formatSecondsMmSs(seconds: number) {
 function getBrandIconUrl(brandName: string, brandId?: string): string | null {
   const norm = `${brandName || ''} ${brandId || ''}`.toLowerCase().trim()
   if (norm.includes('kia')) {
-    return 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_kia.svg'
+    return '/brand-logos/kia.svg'
   }
-  if (norm.includes('hyundai')) {
-    return 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_hyundai.svg'
+  if (norm.includes('hyundai') || norm.includes('platinum')) {
+    return '/brand-logos/hyundai.svg'
   }
   if (norm.includes('ktm')) {
-    return 'https://wallpapercat.com/w/full/0/0/3/880987-3840x2160-desktop-4k-ktm-logo-wallpaper-image.jpg'
+    return '/brand-logos/ktm.svg'
   }
   if (norm.includes('honda')) {
-    return 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRjNN9PyTICXYqFfZwgJSTd_ftng4BTSqxJBFPlBwq19A&s=10'
+    return '/brand-logos/diamond-honda.png'
   }
-  if (norm.includes('group') || norm.includes('all')) {
-    return 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg'
+  if (norm.includes('tata')) {
+    return '/brand-logos/tata.svg'
+  }
+  if (norm.includes('mg')) {
+    return '/brand-logos/mg.svg'
+  }
+  if (norm.includes('bajaj')) {
+    return '/brand-logos/bajaj.svg'
   }
   return null
 }
@@ -1208,27 +1215,31 @@ export function AmGroupCallAnalysis() {
           type="button"
           onClick={() => selectBranch('all')}
           className={cn(
-            'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all cursor-pointer border',
+            'px-3 py-1.5 rounded-lg transition-all shrink-0 flex items-center cursor-pointer select-none shadow-2xs border',
             branch === 'all'
               ? 'bg-[#093339] text-white border-[#093339] shadow-sm'
-              : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
+              : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50 hover:border-slate-300'
           )}
         >
-          <div className="flex h-4 w-4 items-center justify-center rounded-md bg-white p-0.5 overflow-hidden shrink-0">
-            <img
-              src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg"
-              alt="All Brands"
-              className="h-full w-full object-contain"
-            />
-          </div>
-          <span>All Brands</span>
+          <AmGlyph
+            color={branch === 'all' ? '#FFFFFF' : '#0F172A'}
+            className="h-3 sm:h-3.5 w-auto shrink-0"
+          />
+          <div
+            className={cn(
+              'mx-1.5 sm:mx-2 w-px self-stretch min-h-[11px] sm:min-h-[13px]',
+              branch === 'all' ? 'bg-white/30' : 'bg-slate-300'
+            )}
+          />
+          <span className="font-black uppercase tracking-wider text-[9.5px] sm:text-[10.5px] whitespace-nowrap">
+            ALL BRANDS
+          </span>
         </button>
 
         {(d?.facets.branchOptions || [])
           .filter((b) => b.id !== 'am_group' && !b.name.toLowerCase().includes('am group'))
           .map((b) => {
             const isBrandActive = branch === b.id || b.subBranches?.some((sb: any) => sb.id === branch)
-            const logoUrl = getBrandIconUrl(b.name, b.id)
 
             return (
               <button
@@ -1236,22 +1247,18 @@ export function AmGroupCallAnalysis() {
                 type="button"
                 onClick={() => selectBranch(b.id)}
                 className={cn(
-                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all cursor-pointer border',
+                  'px-2.5 py-1.5 rounded-lg transition-all shrink-0 flex items-center cursor-pointer select-none shadow-2xs border',
                   isBrandActive
                     ? 'bg-[#093339] text-white border-[#093339] shadow-sm'
-                    : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
+                    : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50 hover:border-slate-300'
                 )}
               >
-                {logoUrl ? (
-                  <div className="flex h-4 w-4 items-center justify-center rounded-md bg-white p-0.5 overflow-hidden shrink-0">
-                    <img src={logoUrl} alt={b.name} className="h-full w-full object-contain" />
-                  </div>
-                ) : b.id === 'special_team' || b.name.toLowerCase().includes('special team') ? (
-                  <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" />
-                ) : (
-                  <Building2 className="h-3.5 w-3.5 text-emerald-500" />
-                )}
-                <span>{b.name}</span>
+                <BrandLogoLockup
+                  brand={b.id === 'special_team' ? 'SPECIAL TEAM' : b.id}
+                  variant={isBrandActive ? 'light' : 'inline'}
+                  size="xs"
+                  className="p-0 border-0 shadow-none bg-transparent"
+                />
               </button>
             )
           })}

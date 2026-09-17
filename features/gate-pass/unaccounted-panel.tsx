@@ -255,8 +255,8 @@ export function UnaccountedPanel({
               className={cn(
                 'h-10 w-10 rounded-xl flex items-center justify-center shrink-0 shadow-2xs',
                 activeBreachesCount > 0
-                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                  ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                  : 'bg-teal-50 text-teal-800 border border-teal-200'
               )}
             >
               {activeBreachesCount > 0 ? (
@@ -267,7 +267,7 @@ export function UnaccountedPanel({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                <h2 className="text-base font-bold text-slate-900">
                   Unauthorized Movement Telemetry
                 </h2>
                 {activeBreachesCount > 0 ? (
@@ -276,14 +276,14 @@ export function UnaccountedPanel({
                     Action Required ({activeBreachesCount})
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                  <span className="inline-flex items-center gap-1 bg-teal-50 text-teal-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-teal-200">
                     <Check className="w-3 h-3" /> All Clear
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                 Live GPS tracker detection for demo cars currently outside showroom geofence boundaries with{' '}
-                <strong className="text-slate-700 dark:text-slate-300">no active or approved gate pass</strong>.
+                <strong className="text-slate-700">no active or approved gate pass</strong>.
               </p>
             </div>
           </div>
@@ -294,7 +294,7 @@ export function UnaccountedPanel({
               size="sm"
               onClick={() => refetch()}
               disabled={isFetching}
-              className="h-8.5 px-3 text-xs font-semibold rounded-xl border-slate-200 dark:border-slate-700 cursor-pointer shadow-2xs"
+              className="h-8.5 px-3 text-xs font-semibold rounded-xl border-slate-200 cursor-pointer shadow-2xs"
             >
               <RotateCcw className={cn('w-3.5 h-3.5 mr-1.5', isFetching && 'animate-spin text-indigo-600')} />
               Refresh GPS
@@ -303,71 +303,64 @@ export function UnaccountedPanel({
         </div>
 
         {/* ── KPI Stat Pills / Quick Toggles ─────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-          {/* Card 1: Active Today */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-4 border-t border-slate-100">
+          {/* Card 1: Active Off-Site */}
           <button
             type="button"
-            onClick={() => setActiveSubTab('live')}
+            onClick={() => setActiveSubTab(activeSubTab === 'live' ? 'all' : 'live')}
             className={cn(
               'p-3 rounded-xl border text-left transition-all cursor-pointer shadow-2xs',
               activeSubTab === 'live'
-                ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 ring-2 ring-rose-400/20'
-                : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20'
+                : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
             )}
           >
-            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-              <span>Active Breaches (Today)</span>
-              <AlertTriangle className={cn('w-3.5 h-3.5', activeBreachesCount > 0 ? 'text-rose-500' : 'text-slate-400')} />
+            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1">
+              <span>Outside Geofence</span>
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span
-                className={cn(
-                  'text-xl font-black tabular-nums',
-                  activeBreachesCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'
-                )}
-              >
+              <span className="text-xl font-black tabular-nums text-rose-600">
                 {activeBreachesCount}
               </span>
-              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                {liveCount} live · {recentCount} today
-              </span>
+              <span className="text-[10px] font-medium text-slate-500">unauthorized</span>
             </div>
           </button>
 
-          {/* Card 2: Stale Fixes */}
+          {/* Card 2: Stale GPS */}
           <button
             type="button"
             onClick={() => setActiveSubTab('stale')}
             className={cn(
               'p-3 rounded-xl border text-left transition-all cursor-pointer shadow-2xs',
               activeSubTab === 'stale'
-                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 ring-2 ring-amber-400/20'
-                : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-500/20'
+                : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
             )}
           >
-            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-              <span>Stale / Historical Fixes</span>
+            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1">
+              <span>Stale GPS Signals</span>
               <Clock className="w-3.5 h-3.5 text-slate-400" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xl font-black tabular-nums text-slate-700 dark:text-slate-300">
+              <span className="text-xl font-black tabular-nums text-slate-700">
                 {staleCount}
               </span>
-              <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">&gt;24h old fix</span>
+              <span className="text-[10px] font-medium text-slate-500">&gt;24h old fix</span>
             </div>
           </button>
 
           {/* Card 3: Accounted For */}
-          <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 shadow-2xs">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+          <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/70 shadow-2xs">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1">
               <span>Accounted For</span>
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              <ShieldCheck className="w-3.5 h-3.5 text-teal-600" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xl font-black tabular-nums text-emerald-600 dark:text-emerald-400">
+              <span className="text-xl font-black tabular-nums text-teal-700">
                 {data.accountedFor}
               </span>
-              <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">on yard / on pass</span>
+              <span className="text-[10px] font-medium text-slate-500">on yard / on pass</span>
             </div>
           </div>
 
@@ -643,18 +636,18 @@ export function UnaccountedPanel({
                   <th className="px-4 py-3 text-right font-semibold text-[11px] uppercase tracking-wider">Direct Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+              <tbody className="divide-y divide-slate-100">
                 {filteredOffSite.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-16 text-center">
                       <div className="max-w-sm mx-auto space-y-2">
-                        <div className="h-12 w-12 mx-auto rounded-full bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+                        <div className="h-12 w-12 mx-auto rounded-full bg-teal-50 flex items-center justify-center text-teal-700 border border-teal-200 shadow-2xs">
                           <ShieldCheck className="h-6 w-6" />
                         </div>
-                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                        <p className="text-sm font-bold text-slate-800">
                           {hasActiveFilters ? 'No vehicles match current search/filter' : 'All Demo Vehicles Accounted For'}
                         </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <p className="text-xs text-slate-500">
                           {hasActiveFilters
                             ? 'Try clearing the search query or changing branch filters.'
                             : 'No unauthorized demo cars detected outside showroom perimeters.'}
@@ -673,25 +666,25 @@ export function UnaccountedPanel({
                         className={cn(
                           'transition-colors',
                           isLive
-                            ? 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-50/70 dark:hover:bg-rose-950/30'
+                            ? 'bg-rose-50/40 hover:bg-rose-50/70'
                             : isRecent
-                            ? 'bg-amber-50/30 dark:bg-amber-950/15 hover:bg-amber-50/60 dark:hover:bg-amber-950/25'
-                            : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/40'
+                            ? 'bg-amber-50/30 hover:bg-amber-50/60'
+                            : 'hover:bg-slate-50/70'
                         )}
                       >
                         {/* Vehicle Details */}
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-1.5">
-                            <div className="inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 px-2 py-0.5 rounded-md font-mono font-bold text-xs tracking-wider shadow-2xs">
-                              <Car className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <div className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-mono font-bold text-xs tracking-wider shadow-2xs">
+                              <Car className="w-3 h-3 text-amber-600 shrink-0" />
                               <span>{v.registrationNumber || `VIN …${v.vin.slice(-6)}`}</span>
                             </div>
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded border bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded border bg-slate-100 text-slate-700 border-slate-200">
                               {v.branchLabel}
                             </span>
                           </div>
 
-                          <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
+                          <div className="text-[11px] text-slate-600 mt-1 flex items-center gap-1.5 font-medium">
                             <span
                               className="w-2 h-2 rounded-full border border-slate-300 shrink-0 shadow-2xs"
                               style={{ backgroundColor: getCarColorDot(v.color) }}
@@ -712,10 +705,10 @@ export function UnaccountedPanel({
                               className={cn(
                                 'inline-flex items-center gap-1 font-bold text-xs px-2 py-0.5 rounded-md border shadow-2xs',
                                 isLive
-                                  ? 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+                                  ? 'bg-rose-100 text-rose-800 border-rose-200'
                                   : isRecent
-                                  ? 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
-                                  : 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                                  ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                  : 'bg-slate-100 text-slate-700 border-slate-200'
                               )}
                             >
                               <MapPin className="w-3 h-3 shrink-0" />
@@ -723,7 +716,7 @@ export function UnaccountedPanel({
                             </span>
                           </div>
 
-                          <div className="text-xs text-slate-700 dark:text-slate-300 font-medium mt-1 truncate" title={v.address || 'Address unavailable'}>
+                          <div className="text-xs text-slate-700 font-medium mt-1 truncate" title={v.address || 'Address unavailable'}>
                             {v.address || <span className="text-slate-400 italic">Address unavailable</span>}
                           </div>
 
@@ -740,13 +733,13 @@ export function UnaccountedPanel({
                                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
                                 ENGINE RUNNING
                               </span>
-                              <div className="text-[10px] text-slate-600 dark:text-slate-400 font-semibold font-mono">
+                              <div className="text-[10px] text-slate-600 font-semibold font-mono">
                                 Speed: {v.speedKph ? `${v.speedKph} km/h` : 'Moving'}
                               </div>
                             </div>
                           ) : (
                             <div className="space-y-0.5">
-                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
                                 <Zap className="w-3 h-3 text-slate-400" /> Ignition OFF
                               </span>
                               <div className="text-[10px] text-slate-400 font-mono">
@@ -763,21 +756,21 @@ export function UnaccountedPanel({
                               className={cn(
                                 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-2xs',
                                 isLive
-                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                  ? 'bg-teal-50 text-teal-800 border-teal-200'
                                   : isRecent
-                                  ? 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
-                                  : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                                  ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
                               )}
                             >
                               <span
                                 className={cn(
                                   'w-1.5 h-1.5 rounded-full',
-                                  isLive ? 'bg-emerald-500 animate-pulse' : isRecent ? 'bg-amber-500' : 'bg-slate-400'
+                                  isLive ? 'bg-teal-600 animate-pulse' : isRecent ? 'bg-amber-500' : 'bg-slate-400'
                                 )}
                               />
                               {isLive ? 'Live Fix' : isRecent ? 'Reported Today' : 'Stale Fix'}
                             </span>
-                            <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                            <div className="text-[11px] font-semibold text-slate-700">
                               {agePhrase(v.ageMs)}
                             </div>
                           </div>
@@ -804,7 +797,7 @@ export function UnaccountedPanel({
                                 size="sm"
                                 variant="outline"
                                 onClick={() => onTrackOnMap(v.vin)}
-                                className="h-7.5 px-2 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50/60 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 hover:bg-blue-100 rounded-lg cursor-pointer gap-1"
+                                className="h-7.5 px-2 text-xs font-semibold text-blue-700 bg-blue-50/60 border-blue-200 hover:bg-blue-100 rounded-lg cursor-pointer gap-1"
                                 title="Locate vehicle on live satellite map"
                               >
                                 <Navigation className="w-3.5 h-3.5 text-blue-600" /> Map
@@ -816,11 +809,11 @@ export function UnaccountedPanel({
                               size="sm"
                               variant="outline"
                               onClick={() => copyAlertInfo(v)}
-                              className="h-7.5 px-2 text-xs font-semibold rounded-lg border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer gap-1"
+                              className="h-7.5 px-2 text-xs font-semibold rounded-lg border-slate-200 text-slate-600 cursor-pointer gap-1"
                               title="Copy alert report for WhatsApp / phone"
                             >
                               {copiedVin === v.vin ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <Check className="w-3.5 h-3.5 text-teal-700" />
                               ) : (
                                 <Copy className="w-3.5 h-3.5" />
                               )}

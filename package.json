@@ -103,6 +103,7 @@
     "verify:scrap-roundtrip": "tsx scripts/verify-scrap-entry-roundtrip.ts",
     "verify:syros-ev": "tsx scripts/verify-syros-ev-prices.ts",
     "seed:syros-ev": "tsx scripts/seed-syros-ev-prices.ts",
+    "import:kia-price-sheet": "tsx --tsconfig ./tsconfig.verify.json scripts/import-kia-model-price-sheet.ts",
     "verify:proforma-gate": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-proforma-approval-gate.ts",
     "verify:approvals-visibility": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approvals-visibility.ts",
     "verify:petty-cash-flow": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-petty-cash-flow.ts",
@@ -121,6 +122,9 @@
     "verify:approval-history": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approval-history-labels.ts",
     "verify:loconav": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-loconav.ts",
     "verify:fuel-management": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-fuel-management.ts",
+    "verify:h-promise": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-h-promise.ts",
+    "verify:h-promise-flow": "tsx --tsconfig ./tsconfig.hp-flow.json scripts/verify-h-promise-flow.ts",
+    "verify:h-promise-render": "tsx --tsconfig ./tsconfig.hp-ssr.json scripts/verify-h-promise-render.tsx",
     "verify:kia-target-plan": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-kia-sales-target-plan.ts",
     "backfill:fuel-entry": "tsx --tsconfig ./tsconfig.verify.json scripts/backfill-fuel-entry-columns.ts",
     "loconav:sync": "tsx scripts/loconav-sync-scheduler.mjs"

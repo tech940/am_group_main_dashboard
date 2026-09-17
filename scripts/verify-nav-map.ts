@@ -29,6 +29,7 @@ import {
   SOCIAL_MEDIA_LEADS_ROLES,
 } from '../lib/permissions/locked-sections'
 import { ROLE_PERMISSION_TEMPLATES, SECTION_ROUTES, SECTION_DISPLAY_BRAND } from '../lib/permissions/registry'
+import { COMPOSITE_SIDEBAR_SECTIONS } from '../lib/permissions/navigation'
 
 let failures = 0
 function assert(label: string, condition: boolean, detail = '') {
@@ -71,8 +72,18 @@ for (const [groupKey, route] of Object.entries(SECTION_ROUTES)) {
  */
 const KNOWN_HREF_DIFFERENCES: Record<string, string> = { '/scrap': 'scrap_erp' }
 const lockedByHref = new Map(LOCKED_SIDEBAR_SECTIONS.map((section) => [section.href, section]))
+/*
+ * A composite link (AM Tata · H Promise) opens several tickable sections at once; it is accounted for when
+ * every member is itself a routed, tickable group.
+ */
+const routedViewKeys = new Set(Object.keys(SECTION_ROUTES).map((groupKey) => `${groupKey}.view`))
+for (const [href, keys] of Object.entries(COMPOSITE_SIDEBAR_SECTIONS)) {
+  assert(`composite ${href} opens only tickable sections`, keys.length > 0 && keys.every((key) => routedViewKeys.has(key)), keys.join(', '))
+  assert(`composite ${href} has no route of its own`, !tickableByHref.has(href))
+}
 for (const href of sidebarHrefs) {
-  const tickable = tickableByHref.get(href) ?? KNOWN_HREF_DIFFERENCES[href]
+  const composite = COMPOSITE_SIDEBAR_SECTIONS[href]
+  const tickable = tickableByHref.get(href) ?? KNOWN_HREF_DIFFERENCES[href] ?? (composite ? `composite of ${composite.length}` : undefined)
   const locked = lockedByHref.get(href)
   assert(`${href} → ${tickable ? `tickable (${tickable})` : locked ? `read-only (${locked.rule})` : 'MISSING'}`,
     Boolean(tickable) !== Boolean(locked), tickable && locked ? 'listed as BOTH tickable and locked' : '')

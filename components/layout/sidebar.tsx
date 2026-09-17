@@ -38,7 +38,7 @@ import { canViewMdTargets } from '@/lib/auth/md-targets-access'
 import { canViewBankSanctions } from '@/lib/auth/bank-sanctions-access'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
-import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
+import { SIDEBAR_PERMISSION_BY_HREF, compositeViewKeysForHref } from '@/lib/permissions/navigation'
 import { isPettyCashViewRole, isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 
 const VEHICLE_TRACKER_HREF = '/brands/kia/vehicle-tracker'
@@ -231,7 +231,15 @@ const brandNavigation: SidebarBrand[] = [
     color: 'text-blue-100',
     icon: Activity,
     comingSoon: false,
-    sections: [],
+    sections: [
+      /*
+       * AM Tata · H Promise, the pre-owned car desk. ONE row (owner, 2026-09-17: "put all of them in one
+       * option … H Promise … inside handle everything"). The Access Map keeps its four H Promise columns;
+       * this link shows when ANY of them is granted (COMPOSITE_SIDEBAR_SECTIONS), and the page shows only
+       * the tabs the person holds.
+       */
+      { name: 'H Promise', key: 'h-promise', href: '/brands/tata/h-promise', submenus: [] },
+    ],
   },
   {
     name: 'AM KTM',
@@ -276,8 +284,14 @@ const brandNavigation: SidebarBrand[] = [
  * HAS sections still disappears when the viewer can see none of them — that gate lives in the node
  * builder below and is what stops an empty KIA row appearing for someone with no KIA access.
  */
+/*
+ * ⚠️ A section is real when it has submenus OR is a direct link. Counting only submenus dropped the whole
+ * AM Tata card (2026-09-17) once H Promise became one direct link: its only section had `submenus: []`.
+ */
 const availableBrands = brandNavigation.filter(
-  (brand) => brand.sections.length === 0 || brand.sections.some((section) => section.submenus.length > 0),
+  (brand) => brand.sections.length === 0 || brand.sections.some((section) => (
+    section.submenus.length > 0 || ('href' in section && Boolean(section.href))
+  )),
 )
 
 /*
@@ -287,6 +301,12 @@ const availableBrands = brandNavigation.filter(
  */
 const DISPLAY_ONLY_BRAND_KEYS = new Set(['honda', 'tata', 'ktm', 'bajaj', 'mg'])
 const DISPLAY_ONLY_BRAND_ROLES = new Set(['developer', 'md', 'ea'])
+/*
+ * Display-only brands whose own staff do NOT get the card from their brand pin. Owner, 2026-09-17: AM Tata
+ * and H Promise are "hidden by default for others except MD, DEVELOPER, EA". Anyone else sees the card only
+ * once ticked for a section inside it (the grant check in visibleBrands); a pin alone showed an empty card.
+ */
+const BRANDS_SHOWN_ONLY_WHEN_GRANTED = new Set(['tata'])
 
 const alwaysVisibleBrandKeys = new Set<string>()
 const DEFAULT_SIDEBAR_FAVOURITES: string[] = []
@@ -516,6 +536,11 @@ export function Sidebar() {
       return ['md', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
         || hasExplicitGrant('social_media_leads.view')
     }
+    // One link over several Access-Map sections (AM Tata · H Promise): visible when ANY of them is granted.
+    const compositeKeys = compositeViewKeysForHref(href)
+    if (compositeKeys) {
+      return compositeKeys.some((key) => hasPermission(key))
+    }
     // Everything else is gated by the user's effective permissions. Brand users are no longer
     // auto-granted their whole brand here, so a per-section Deny — and restricted-role defaults
     // (branch_admin, sales_executive, sensitive reports) — hide the link. hasPermission handles
@@ -547,14 +572,20 @@ export function Sidebar() {
       .filter((brand) => {
         // Display-only brands answer to their own rule and do NOT follow the global-access blanket:
         // that blanket covers CEO, EBA, ED, EDP, PC and HR too, which is wider than the owner asked for.
+        //
+        // ⚠️ They still reach the Access-Map grant check below (2026-09-17). AM Tata now has a section
+        // (H Promise), and a person outside Tata who was ticked for it needs the card to hold the link.
+        // Returning early here would hide a grant an admin made — the same bug fixed for KIA on 09-16.
+        // Only the global-access and all-branch blankets are skipped, exactly as before.
         if (DISPLAY_ONLY_BRAND_KEYS.has(brand.key)) {
           if (DISPLAY_ONLY_BRAND_ROLES.has(String(userRole || '').trim().toLowerCase())) return true
-          return userBrandKeys.includes(brand.key)
+          if (userBrandKeys.includes(brand.key) && !BRANDS_SHOWN_ONLY_WHEN_GRANTED.has(brand.key)) return true
+        } else {
+          if (alwaysVisibleBrandKeys.has(brand.key)) return true
+          if (hasGlobalAccessRole(userRole)) return true
+          if (hasAllBranchAccess(userBrand)) return true
+          if (userBrandKeys.includes(brand.key)) return true
         }
-        if (alwaysVisibleBrandKeys.has(brand.key)) return true
-        if (hasGlobalAccessRole(userRole)) return true
-        if (hasAllBranchAccess(userBrand)) return true
-        if (userBrandKeys.includes(brand.key)) return true
 
         /*
          * ⚠️ AN ACCESS-MAP GRANT KEEPS THE BRAND CARD.
@@ -905,7 +936,12 @@ export function Sidebar() {
       sections.sort(byLabel)
       // A brand that HAS sections but shows none of them is dropped, as before. A brand with no sections
       // at all is listed anyway — that is the whole point of the display-only rows.
-      if (sections.length === 0 && brand.sections.length > 0) continue
+      //
+      // ⚠️ A display-only brand keeps its card even once it has sections (AM Tata since H Promise,
+      // 2026-09-17): visibleBrands already admitted this person under the owner's display rule
+      // (Developer/MD/EA or their own brand), and a new grant-only section must not take away the card
+      // they could always see.
+      if (sections.length === 0 && brand.sections.length > 0 && !DISPLAY_ONLY_BRAND_KEYS.has(brand.key)) continue
       brandNodes.push({
         key: brand.key,
         label: brand.name,

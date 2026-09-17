@@ -1,0 +1,1068 @@
+{
+  "source": "HPROMISE TATA NEW .xlsx — VEHICLE MASTER, columns H I J X Y Z F BK–BO. Money and dates only; no names, numbers or registrations.",
+  "readOn": "2026-09-17",
+  "sheetToday": "2026-09-17",
+  "note": "The sheet counts interest days to TODAY for every row (interestRunsTo: as_of). Rows whose stored J disagrees with H x (1 + GST) are listed in knownSheetErrors and skipped for the with-GST figures.",
+  "knownSheetErrors": [
+    {
+      "sheetRow": 44,
+      "issue": "Stored price with GST is 636000 but purchase price is 60000 at 6% (63600). One of the two was mistyped; the owner must confirm which."
+    }
+  ],
+  "rows": [
+    {
+      "sheetRow": 2,
+      "purchasePrice": 400000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 424000,
+      "sellingPrice": 235000,
+      "otherCost": 0,
+      "purchaseDate": "2024-06-01",
+      "saleDate": "2025-11-06",
+      "expected": {
+        "grossProfit": -165000,
+        "grossProfitWithGst": -189000,
+        "interestDays": 838,
+        "interest": 110203,
+        "netProfit": -299203
+      }
+    },
+    {
+      "sheetRow": 3,
+      "purchasePrice": 270000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 286200,
+      "sellingPrice": 280000,
+      "otherCost": 0,
+      "purchaseDate": "2025-09-04",
+      "saleDate": "2025-09-10",
+      "expected": {
+        "grossProfit": 10000,
+        "grossProfitWithGst": -6200,
+        "interestDays": 378,
+        "interest": 33554,
+        "netProfit": -39754
+      }
+    },
+    {
+      "sheetRow": 4,
+      "purchasePrice": 95000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 100700,
+      "sellingPrice": 100000,
+      "otherCost": 0,
+      "purchaseDate": "2025-09-26",
+      "saleDate": "2025-12-04",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": -700,
+        "interestDays": 356,
+        "interest": 11119,
+        "netProfit": -11819
+      }
+    },
+    {
+      "sheetRow": 5,
+      "purchasePrice": 44000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 46640,
+      "sellingPrice": 50000,
+      "otherCost": 0,
+      "purchaseDate": "2025-09-01",
+      "saleDate": "2025-09-03",
+      "expected": {
+        "grossProfit": 6000,
+        "grossProfitWithGst": 3360,
+        "interestDays": 381,
+        "interest": 5511,
+        "netProfit": -2151
+      }
+    },
+    {
+      "sheetRow": 6,
+      "purchasePrice": 45000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 47700,
+      "sellingPrice": 48000,
+      "otherCost": 0,
+      "purchaseDate": "2025-08-20",
+      "saleDate": "2025-09-10",
+      "expected": {
+        "grossProfit": 3000,
+        "grossProfitWithGst": 300,
+        "interestDays": 393,
+        "interest": 5814,
+        "netProfit": -5514
+      }
+    },
+    {
+      "sheetRow": 7,
+      "purchasePrice": 365000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 386900,
+      "sellingPrice": 375000,
+      "otherCost": 0,
+      "purchaseDate": "2025-09-06",
+      "saleDate": "2025-08-10",
+      "expected": {
+        "grossProfit": 10000,
+        "grossProfitWithGst": -11900,
+        "interestDays": 376,
+        "interest": 45120,
+        "netProfit": -57020
+      }
+    },
+    {
+      "sheetRow": 8,
+      "purchasePrice": 450000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 477000,
+      "sellingPrice": 455000,
+      "otherCost": 0,
+      "purchaseDate": "2025-09-17",
+      "saleDate": "2025-10-10",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": -22000,
+        "interestDays": 365,
+        "interest": 54000,
+        "netProfit": -76000
+      }
+    },
+    {
+      "sheetRow": 9,
+      "purchasePrice": 50000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 53000,
+      "sellingPrice": 55000,
+      "otherCost": 0,
+      "purchaseDate": "2025-09-26",
+      "saleDate": "2025-09-27",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": 2000,
+        "interestDays": 356,
+        "interest": 5852,
+        "netProfit": -3852
+      }
+    },
+    {
+      "sheetRow": 10,
+      "purchasePrice": 20000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 21200,
+      "sellingPrice": 22204,
+      "otherCost": 0,
+      "purchaseDate": "2025-09-28",
+      "saleDate": "2025-10-14",
+      "expected": {
+        "grossProfit": 2204,
+        "grossProfitWithGst": 1004,
+        "interestDays": 354,
+        "interest": 2328,
+        "netProfit": -1324
+      }
+    },
+    {
+      "sheetRow": 11,
+      "purchasePrice": 175000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 185500,
+      "sellingPrice": 185000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-01",
+      "saleDate": "2025-10-22",
+      "expected": {
+        "grossProfit": 10000,
+        "grossProfitWithGst": -500,
+        "interestDays": 351,
+        "interest": 20195,
+        "netProfit": -20695
+      }
+    },
+    {
+      "sheetRow": 12,
+      "purchasePrice": 260000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 275600,
+      "sellingPrice": 270000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-01",
+      "saleDate": "2025-10-07",
+      "expected": {
+        "grossProfit": 10000,
+        "grossProfitWithGst": -5600,
+        "interestDays": 351,
+        "interest": 30003,
+        "netProfit": -35603
+      }
+    },
+    {
+      "sheetRow": 13,
+      "purchasePrice": 50000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 53000,
+      "sellingPrice": 55000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-04",
+      "saleDate": "2025-10-07",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": 2000,
+        "interestDays": 348,
+        "interest": 5721,
+        "netProfit": -3721
+      }
+    },
+    {
+      "sheetRow": 14,
+      "purchasePrice": 60000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 63600,
+      "sellingPrice": 65000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-08",
+      "saleDate": "2025-10-18",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": 1400,
+        "interestDays": 344,
+        "interest": 6786,
+        "netProfit": -5386
+      }
+    },
+    {
+      "sheetRow": 15,
+      "purchasePrice": 70000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 74200,
+      "sellingPrice": 75000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-08",
+      "saleDate": "2025-10-10",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": 800,
+        "interestDays": 344,
+        "interest": 7917,
+        "netProfit": -7117
+      }
+    },
+    {
+      "sheetRow": 16,
+      "purchasePrice": 30000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 31800,
+      "sellingPrice": 35000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-08",
+      "saleDate": "2025-10-16",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": 3200,
+        "interestDays": 344,
+        "interest": 3393,
+        "netProfit": -193
+      }
+    },
+    {
+      "sheetRow": 17,
+      "purchasePrice": 37000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 39220,
+      "sellingPrice": 40000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-08",
+      "saleDate": "2025-10-29",
+      "expected": {
+        "grossProfit": 3000,
+        "grossProfitWithGst": 780,
+        "interestDays": 344,
+        "interest": 4185,
+        "netProfit": -3405
+      }
+    },
+    {
+      "sheetRow": 18,
+      "purchasePrice": 160000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 169600,
+      "sellingPrice": 170000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-10",
+      "saleDate": "2025-10-15",
+      "expected": {
+        "grossProfit": 10000,
+        "grossProfitWithGst": 400,
+        "interestDays": 342,
+        "interest": 17990,
+        "netProfit": -17590
+      }
+    },
+    {
+      "sheetRow": 19,
+      "purchasePrice": 55000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 58300,
+      "sellingPrice": 45000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-15",
+      "saleDate": "2025-10-15",
+      "expected": {
+        "grossProfit": -10000,
+        "grossProfitWithGst": -13300,
+        "interestDays": 337,
+        "interest": 6094,
+        "netProfit": -19394
+      }
+    },
+    {
+      "sheetRow": 20,
+      "purchasePrice": 170000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 180200,
+      "sellingPrice": 180000,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-19",
+      "saleDate": "2025-10-22",
+      "expected": {
+        "grossProfit": 10000,
+        "grossProfitWithGst": -200,
+        "interestDays": 333,
+        "interest": 18612,
+        "netProfit": -18812
+      }
+    },
+    {
+      "sheetRow": 21,
+      "purchasePrice": 120000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 127200,
+      "sellingPrice": 130000,
+      "otherCost": 0,
+      "purchaseDate": "2025-11-27",
+      "saleDate": "2025-12-04",
+      "expected": {
+        "grossProfit": 10000,
+        "grossProfitWithGst": 2800,
+        "interestDays": 294,
+        "interest": 11599,
+        "netProfit": -8799
+      }
+    },
+    {
+      "sheetRow": 22,
+      "purchasePrice": 245000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 259700,
+      "sellingPrice": 260000,
+      "otherCost": 0,
+      "purchaseDate": "2025-11-29",
+      "saleDate": "2025-12-08",
+      "expected": {
+        "grossProfit": 15000,
+        "grossProfitWithGst": 300,
+        "interestDays": 292,
+        "interest": 23520,
+        "netProfit": -23220
+      }
+    },
+    {
+      "sheetRow": 23,
+      "purchasePrice": 12000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 12720,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-12",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 340,
+        "interest": 1341,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 24,
+      "purchasePrice": 23000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 24380,
+      "sellingPrice": 25000,
+      "otherCost": 0,
+      "purchaseDate": "2025-12-16",
+      "saleDate": "2025-12-15",
+      "expected": {
+        "grossProfit": 2000,
+        "grossProfitWithGst": 620,
+        "interestDays": 275,
+        "interest": 2079,
+        "netProfit": -1459
+      }
+    },
+    {
+      "sheetRow": 25,
+      "purchasePrice": 15000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 15900,
+      "sellingPrice": 17360,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-29",
+      "saleDate": "2025-12-29",
+      "expected": {
+        "grossProfit": 2360,
+        "grossProfitWithGst": 1460,
+        "interestDays": 323,
+        "interest": 1593,
+        "netProfit": -133
+      }
+    },
+    {
+      "sheetRow": 26,
+      "purchasePrice": 165000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 174900,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2025-08-11",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 402,
+        "interest": 21807,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 27,
+      "purchasePrice": 90000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 95400,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2024-09-23",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 724,
+        "interest": 21422,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 28,
+      "purchasePrice": 13000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 13780,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-31",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 321,
+        "interest": 1372,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 29,
+      "purchasePrice": 210000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 222600,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2025-07-04",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 440,
+        "interest": 30378,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 30,
+      "purchasePrice": 35000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 37100,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-18",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 334,
+        "interest": 3843,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 31,
+      "purchasePrice": 20000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 21200,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2025-10-15",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 337,
+        "interest": 2216,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 32,
+      "purchasePrice": 370000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 392200,
+      "sellingPrice": 240000,
+      "otherCost": 0,
+      "purchaseDate": "2025-07-14",
+      "saleDate": "2026-02-06",
+      "expected": {
+        "grossProfit": -130000,
+        "grossProfitWithGst": -152200,
+        "interestDays": 430,
+        "interest": 52307,
+        "netProfit": -204507
+      }
+    },
+    {
+      "sheetRow": 33,
+      "purchasePrice": 150000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 159000,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2025-05-14",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 491,
+        "interest": 24214,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 34,
+      "purchasePrice": 10000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 10600,
+      "sellingPrice": 13000,
+      "otherCost": 0,
+      "purchaseDate": "2025-12-18",
+      "saleDate": "2026-09-12",
+      "expected": {
+        "grossProfit": 3000,
+        "grossProfitWithGst": 2400,
+        "interestDays": 273,
+        "interest": 898,
+        "netProfit": 1502
+      }
+    },
+    {
+      "sheetRow": 35,
+      "purchasePrice": 40000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 42400,
+      "sellingPrice": 40000,
+      "otherCost": 30000,
+      "purchaseDate": "2025-12-24",
+      "saleDate": "2026-01-16",
+      "expected": {
+        "grossProfit": -30000,
+        "grossProfitWithGst": -32400,
+        "interestDays": 267,
+        "interest": 3511,
+        "netProfit": -35911
+      }
+    },
+    {
+      "sheetRow": 36,
+      "purchasePrice": 30000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 31800,
+      "sellingPrice": 35000,
+      "otherCost": 0,
+      "purchaseDate": "2025-12-30",
+      "saleDate": "2026-01-15",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": 3200,
+        "interestDays": 261,
+        "interest": 2574,
+        "netProfit": 626
+      }
+    },
+    {
+      "sheetRow": 37,
+      "purchasePrice": 300000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 318000,
+      "sellingPrice": 305000,
+      "otherCost": 0,
+      "purchaseDate": "2026-01-02",
+      "saleDate": "2026-01-03",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": -13000,
+        "interestDays": 258,
+        "interest": 25447,
+        "netProfit": -38447
+      }
+    },
+    {
+      "sheetRow": 38,
+      "purchasePrice": 160000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 169600,
+      "sellingPrice": 170000,
+      "otherCost": 0,
+      "purchaseDate": "2025-12-31",
+      "saleDate": "2026-01-08",
+      "expected": {
+        "grossProfit": 10000,
+        "grossProfitWithGst": 400,
+        "interestDays": 260,
+        "interest": 13677,
+        "netProfit": -13277
+      }
+    },
+    {
+      "sheetRow": 39,
+      "purchasePrice": 190000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 201400,
+      "sellingPrice": 195000,
+      "otherCost": 0,
+      "purchaseDate": "2026-01-05",
+      "saleDate": "2026-01-06",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": -6400,
+        "interestDays": 255,
+        "interest": 15929,
+        "netProfit": -22329
+      }
+    },
+    {
+      "sheetRow": 40,
+      "purchasePrice": 50000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 53000,
+      "sellingPrice": 55000,
+      "otherCost": 0,
+      "purchaseDate": "2026-01-05",
+      "saleDate": "2026-01-05",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": 2000,
+        "interestDays": 255,
+        "interest": 4192,
+        "netProfit": -2192
+      }
+    },
+    {
+      "sheetRow": 41,
+      "purchasePrice": 160000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 169600,
+      "sellingPrice": 175000,
+      "otherCost": 0,
+      "purchaseDate": "2026-01-05",
+      "saleDate": "2026-02-02",
+      "expected": {
+        "grossProfit": 15000,
+        "grossProfitWithGst": 5400,
+        "interestDays": 255,
+        "interest": 13414,
+        "netProfit": -8014
+      }
+    },
+    {
+      "sheetRow": 42,
+      "purchasePrice": 357750,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 379215,
+      "sellingPrice": 380000,
+      "otherCost": 0,
+      "purchaseDate": "2026-01-20",
+      "saleDate": "2026-01-22",
+      "expected": {
+        "grossProfit": 22250,
+        "grossProfitWithGst": 785,
+        "interestDays": 240,
+        "interest": 28228,
+        "netProfit": -27443
+      }
+    },
+    {
+      "sheetRow": 43,
+      "purchasePrice": 190000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 201400,
+      "sellingPrice": 205000,
+      "otherCost": 0,
+      "purchaseDate": "2026-01-24",
+      "saleDate": "2026-01-27",
+      "expected": {
+        "grossProfit": 15000,
+        "grossProfitWithGst": 3600,
+        "interestDays": 236,
+        "interest": 14742,
+        "netProfit": -11142
+      }
+    },
+    {
+      "sheetRow": 44,
+      "purchasePrice": 60000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 636000,
+      "sellingPrice": 65000,
+      "otherCost": 0,
+      "purchaseDate": "2026-05-05",
+      "saleDate": "2026-05-14",
+      "expected": {
+        "grossProfit": 5000,
+        "grossProfitWithGst": -571000,
+        "interestDays": 135,
+        "interest": 2663,
+        "netProfit": -573663
+      }
+    },
+    {
+      "sheetRow": 45,
+      "purchasePrice": 16300,
+      "purchaseGstPct": 0,
+      "sheetPriceWithGst": 16300,
+      "sellingPrice": 17000,
+      "otherCost": 0,
+      "purchaseDate": "2026-05-15",
+      "saleDate": "2026-05-18",
+      "expected": {
+        "grossProfit": 700,
+        "grossProfitWithGst": 700,
+        "interestDays": 125,
+        "interest": 670,
+        "netProfit": 30
+      }
+    },
+    {
+      "sheetRow": 46,
+      "purchasePrice": 120000,
+      "purchaseGstPct": 10,
+      "sheetPriceWithGst": 132000,
+      "sellingPrice": 135000,
+      "otherCost": 0,
+      "purchaseDate": "2025-05-15",
+      "saleDate": "2026-05-19",
+      "expected": {
+        "grossProfit": 15000,
+        "grossProfitWithGst": 3000,
+        "interestDays": 490,
+        "interest": 19332,
+        "netProfit": -16332
+      }
+    },
+    {
+      "sheetRow": 47,
+      "purchasePrice": 49998,
+      "purchaseGstPct": 10,
+      "sheetPriceWithGst": 54998,
+      "sellingPrice": 55000,
+      "otherCost": 0,
+      "purchaseDate": "2026-05-29",
+      "saleDate": "2026-06-03",
+      "expected": {
+        "grossProfit": 5002,
+        "grossProfitWithGst": 2,
+        "interestDays": 111,
+        "interest": 1825,
+        "netProfit": -1823
+      }
+    },
+    {
+      "sheetRow": 48,
+      "purchasePrice": 405000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 429300,
+      "sellingPrice": 433000,
+      "otherCost": 0,
+      "purchaseDate": "2026-05-30",
+      "saleDate": "2026-06-25",
+      "expected": {
+        "grossProfit": 28000,
+        "grossProfitWithGst": 3700,
+        "interestDays": 110,
+        "interest": 14647,
+        "netProfit": -10947
+      }
+    },
+    {
+      "sheetRow": 49,
+      "purchasePrice": 185000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 196100,
+      "sellingPrice": 197000,
+      "otherCost": 0,
+      "purchaseDate": "2026-05-31",
+      "saleDate": "2026-07-01",
+      "expected": {
+        "grossProfit": 12000,
+        "grossProfitWithGst": 900,
+        "interestDays": 109,
+        "interest": 6630,
+        "netProfit": -5730
+      }
+    },
+    {
+      "sheetRow": 50,
+      "purchasePrice": 487000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 516220,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2026-06-12",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 97,
+        "interest": 15531,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 51,
+      "purchasePrice": 160000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 169600,
+      "sellingPrice": 175000,
+      "otherCost": 0,
+      "purchaseDate": "2026-06-17",
+      "saleDate": "2026-06-19",
+      "expected": {
+        "grossProfit": 15000,
+        "grossProfitWithGst": 5400,
+        "interestDays": 92,
+        "interest": 4839,
+        "netProfit": 561
+      }
+    },
+    {
+      "sheetRow": 52,
+      "purchasePrice": 750000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 795000,
+      "sellingPrice": 790000,
+      "otherCost": 0,
+      "purchaseDate": "2026-06-14",
+      "saleDate": "2026-06-23",
+      "expected": {
+        "grossProfit": 40000,
+        "grossProfitWithGst": -5000,
+        "interestDays": 95,
+        "interest": 23425,
+        "netProfit": -28425
+      }
+    },
+    {
+      "sheetRow": 53,
+      "purchasePrice": 189000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 200340,
+      "sellingPrice": 201000,
+      "otherCost": 0,
+      "purchaseDate": "2026-06-25",
+      "saleDate": "2026-06-30",
+      "expected": {
+        "grossProfit": 12000,
+        "grossProfitWithGst": 660,
+        "interestDays": 84,
+        "interest": 5220,
+        "netProfit": -4560
+      }
+    },
+    {
+      "sheetRow": 54,
+      "purchasePrice": 350000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 371000,
+      "sellingPrice": 375000,
+      "otherCost": 0,
+      "purchaseDate": "2026-06-26",
+      "saleDate": "2026-07-09",
+      "expected": {
+        "grossProfit": 25000,
+        "grossProfitWithGst": 4000,
+        "interestDays": 83,
+        "interest": 9551,
+        "netProfit": -5551
+      }
+    },
+    {
+      "sheetRow": 55,
+      "purchasePrice": 100000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 106000,
+      "sellingPrice": 108000,
+      "otherCost": 0,
+      "purchaseDate": "2026-06-30",
+      "saleDate": "2026-06-30",
+      "expected": {
+        "grossProfit": 8000,
+        "grossProfitWithGst": 2000,
+        "interestDays": 79,
+        "interest": 2597,
+        "netProfit": -597
+      }
+    },
+    {
+      "sheetRow": 56,
+      "purchasePrice": 90000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 95400,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2026-07-06",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 73,
+        "interest": 2160,
+        "netProfit": null
+      }
+    },
+    {
+      "sheetRow": 57,
+      "purchasePrice": 150000,
+      "purchaseGstPct": 10,
+      "sheetPriceWithGst": 165000,
+      "sellingPrice": 165000,
+      "otherCost": 0,
+      "purchaseDate": "2026-07-03",
+      "saleDate": "2026-07-09",
+      "expected": {
+        "grossProfit": 15000,
+        "grossProfitWithGst": 0,
+        "interestDays": 76,
+        "interest": 3748,
+        "netProfit": -3748
+      }
+    },
+    {
+      "sheetRow": 58,
+      "purchasePrice": 215000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 227900,
+      "sellingPrice": 230000,
+      "otherCost": 0,
+      "purchaseDate": "2026-07-18",
+      "saleDate": "2026-07-20",
+      "expected": {
+        "grossProfit": 15000,
+        "grossProfitWithGst": 2100,
+        "interestDays": 61,
+        "interest": 4312,
+        "netProfit": -2212
+      }
+    },
+    {
+      "sheetRow": 59,
+      "purchasePrice": 250000,
+      "purchaseGstPct": 10,
+      "sheetPriceWithGst": 275000,
+      "sellingPrice": 280000,
+      "otherCost": 0,
+      "purchaseDate": "2026-07-20",
+      "saleDate": "2026-07-24",
+      "expected": {
+        "grossProfit": 30000,
+        "grossProfitWithGst": 5000,
+        "interestDays": 59,
+        "interest": 4849,
+        "netProfit": 151
+      }
+    },
+    {
+      "sheetRow": 60,
+      "purchasePrice": 19999,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 21199,
+      "sellingPrice": 21000,
+      "otherCost": 0,
+      "purchaseDate": "2026-08-04",
+      "saleDate": "2026-08-05",
+      "expected": {
+        "grossProfit": 1001,
+        "grossProfitWithGst": -199,
+        "interestDays": 44,
+        "interest": 289,
+        "netProfit": -488
+      }
+    },
+    {
+      "sheetRow": 61,
+      "purchasePrice": 295000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 312700,
+      "sellingPrice": 325000,
+      "otherCost": 0,
+      "purchaseDate": "2026-08-11",
+      "saleDate": "2026-08-18",
+      "expected": {
+        "grossProfit": 30000,
+        "grossProfitWithGst": 12300,
+        "interestDays": 37,
+        "interest": 3588,
+        "netProfit": 8712
+      }
+    },
+    {
+      "sheetRow": 62,
+      "purchasePrice": 65000,
+      "purchaseGstPct": 6,
+      "sheetPriceWithGst": 68900,
+      "sellingPrice": 71500,
+      "otherCost": 0,
+      "purchaseDate": "2026-08-31",
+      "saleDate": "2026-09-11",
+      "expected": {
+        "grossProfit": 6500,
+        "grossProfitWithGst": 2600,
+        "interestDays": 17,
+        "interest": 363,
+        "netProfit": 2237
+      }
+    },
+    {
+      "sheetRow": 63,
+      "purchasePrice": 60000,
+      "purchaseGstPct": 10,
+      "sheetPriceWithGst": 66000,
+      "sellingPrice": null,
+      "otherCost": 0,
+      "purchaseDate": "2026-09-16",
+      "saleDate": null,
+      "expected": {
+        "grossProfit": null,
+        "grossProfitWithGst": null,
+        "interestDays": 1,
+        "interest": 20,
+        "netProfit": null
+      }
+    }
+  ]
+}

@@ -156,7 +156,9 @@ function BrandMark({
 
   // No artwork for this brand: its name, set plainly. Never a stand-in mark.
   const displayName =
-    norm === 'group' || norm === '' ? 'GROUP' : brand.replace(/^\s*AM\s+/i, '').toUpperCase()
+    norm === 'group' || norm === ''
+      ? 'GROUP'
+      : brand.replace(/^\s*AM\s+/i, '').replace(/_/g, ' ').toUpperCase()
 
   return (
     <span

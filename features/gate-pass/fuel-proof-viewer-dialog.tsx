@@ -112,25 +112,25 @@ export function FuelProofViewerDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          className="max-h-[90dvh] overflow-y-auto w-[96vw] sm:w-full sm:max-w-3xl p-0 gap-0 border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl"
+          className="max-h-[90dvh] overflow-y-auto w-[96vw] sm:w-full sm:max-w-3xl p-0 gap-0 border-slate-200 bg-white shadow-2xl rounded-2xl"
           onPointerDownOutside={(e) => e.preventDefault()}
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/60 dark:border-amber-900/40 p-5 sm:p-6">
+          <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/60 p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <div className="h-9 w-9 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400 flex items-center justify-center font-bold">
+                  <div className="h-9 w-9 rounded-xl bg-amber-500/20 text-amber-800 flex items-center justify-center font-bold">
                     <Fuel className="h-5 w-5" />
                   </div>
                   <div>
-                    <DialogTitle className="text-lg sm:text-xl font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <DialogTitle className="text-lg sm:text-xl font-black tracking-tight text-slate-900 flex items-center gap-2">
                       Fuel Filling Proofs
-                      <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300/80">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300/80">
                         {pass.passNo}
                       </span>
                     </DialogTitle>
-                    <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+                    <DialogDescription className="text-xs text-slate-500">
                       Verified petrol station slip, zero start dispenser, and final amount proofs.
                     </DialogDescription>
                   </div>
@@ -145,7 +145,7 @@ export function FuelProofViewerDialog({
                     onOpenChange(false)
                     onEdit()
                   }}
-                  className="h-8 text-xs font-semibold border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 gap-1.5 cursor-pointer"
+                  className="h-8 text-xs font-semibold border-amber-200 text-amber-800 hover:bg-amber-50 gap-1.5 cursor-pointer"
                 >
                   <Edit3 className="h-3.5 w-3.5" />
                   Update Proofs
@@ -156,41 +156,41 @@ export function FuelProofViewerDialog({
             {/* Price & Summary Ribbon */}
             <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {/* Total Fuel Cost */}
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/60 dark:bg-emerald-950/30 p-2.5">
-                <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 block tracking-wider">
+              <div className="rounded-xl border border-teal-200 bg-teal-50/80 p-2.5">
+                <span className="text-[10px] uppercase font-bold text-teal-800 block tracking-wider">
                   Total Fuel Price
                 </span>
-                <span className="text-base sm:text-lg font-black text-emerald-800 dark:text-emerald-200">
+                <span className="text-base sm:text-lg font-black text-teal-950 font-mono">
                   {effectiveAmount ? `₹${Number(effectiveAmount).toLocaleString('en-IN')}` : '—'}
                 </span>
               </div>
 
               {/* Litres */}
-              <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60 p-2.5">
+              <div className="rounded-xl border border-slate-200 bg-white p-2.5">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
                   Fuel Quantity
                 </span>
-                <span className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200">
+                <span className="text-sm sm:text-base font-bold text-slate-800 font-mono">
                   {effectiveLitres ? `${effectiveLitres} L` : 'Recorded on slip'}
                 </span>
               </div>
 
               {/* Vehicle */}
-              <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60 p-2.5">
+              <div className="rounded-xl border border-slate-200 bg-white p-2.5">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
                   Vehicle
                 </span>
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">
+                <span className="text-xs font-bold text-slate-800 truncate block">
                   {pass.registrationNumber || pass.model || 'Demo Car'}
                 </span>
               </div>
 
               {/* Driver */}
-              <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60 p-2.5">
+              <div className="rounded-xl border border-slate-200 bg-white p-2.5">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
                   Driver
                 </span>
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">
+                <span className="text-xs font-bold text-slate-800 truncate block">
                   {pass.driverName}
                 </span>
               </div>
@@ -205,7 +205,7 @@ export function FuelProofViewerDialog({
                 <span className="text-xs font-medium">Loading verified fuel proof images...</span>
               </div>
             ) : error ? (
-              <div className="rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 p-4 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+              <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-xs text-rose-700 flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>Could not load fuel proofs: {(error as Error).message}</span>
               </div>
@@ -239,7 +239,7 @@ export function FuelProofViewerDialog({
                 <ProofCard
                   title="3. Pump Stop (Amount)"
                   icon={IndianRupee}
-                  iconColor="text-emerald-600"
+                  iconColor="text-teal-700"
                   url={data?.pumpStopUrl ?? pass.pumpStopUrl}
                   onZoom={() => {
                     const u = data?.pumpStopUrl ?? pass.pumpStopUrl
@@ -250,22 +250,22 @@ export function FuelProofViewerDialog({
             )}
 
             {uploadedAt && (
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                 <span className="flex items-center gap-1.5">
                   <Calendar className="h-3.5 w-3.5 text-slate-400" /> Upload Timestamp
                 </span>
-                <span className="font-semibold text-slate-700 dark:text-slate-300 font-mono">
+                <span className="font-semibold text-slate-700 font-mono">
                   {formatIndiaDateTime(uploadedAt)}
                 </span>
               </div>
             )}
           </div>
 
-          <DialogFooter className="bg-slate-50 dark:bg-slate-900/60 border-t border-slate-200/80 dark:border-slate-800 px-5 py-3.5 sm:px-6">
+          <DialogFooter className="bg-slate-50 border-t border-slate-200/80 px-5 py-3.5 sm:px-6">
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="font-semibold border-slate-300 dark:border-slate-700"
+              className="font-semibold border-slate-300"
             >
               Close
             </Button>
@@ -275,30 +275,28 @@ export function FuelProofViewerDialog({
 
       {/* Lightbox / Fullscreen Image Preview */}
       {lightbox && (
-        <div
-          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 p-4 backdrop-blur-md animate-in fade-in duration-200"
-          onClick={() => setLightbox(null)}
-        >
-          <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
-            <button
-              onClick={() => setLightbox(null)}
-              className="rounded-full bg-white/20 p-2 text-white hover:bg-white/30 transition-colors cursor-pointer"
-              title="Close full-screen image"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <div className="relative max-h-[85vh] max-w-[90vw] flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={lightbox.url}
-              alt={lightbox.label}
-              className="max-h-[80vh] max-w-full rounded-lg object-contain shadow-2xl border border-white/20"
-            />
-            <p className="text-white text-xs font-semibold bg-black/60 px-3 py-1 rounded-full border border-white/20">
-              {lightbox.label}
-            </p>
-          </div>
-        </div>
+        <Dialog open={Boolean(lightbox)} onOpenChange={() => setLightbox(null)}>
+          <DialogContent className="max-w-2xl p-4 bg-white border border-slate-200 text-slate-900 shadow-2xl rounded-2xl">
+            <DialogHeader className="pb-3 flex flex-row items-center justify-between border-b border-slate-100">
+              <DialogTitle className="text-sm font-bold text-slate-800">{lightbox.label}</DialogTitle>
+              <a
+                href={lightbox.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 font-semibold"
+              >
+                Open original
+              </a>
+            </DialogHeader>
+            <div className="flex items-center justify-center p-3 bg-slate-50/70 rounded-xl border border-slate-100/80 mt-2">
+              <img
+                src={lightbox.url}
+                alt={lightbox.label}
+                className="max-h-[72vh] w-auto rounded-lg object-contain shadow-md"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </>
   )
@@ -318,14 +316,14 @@ function ProofCard({
   onZoom: () => void
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs flex flex-col">
-      <div className="p-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
-        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs flex flex-col">
+      <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
           <Icon className={cn('h-3.5 w-3.5', iconColor)} />
           {title}
         </span>
         {url ? (
-          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-[10px] px-1.5 py-0">
+          <Badge className="bg-teal-50 text-teal-800 border-teal-200 text-[10px] px-1.5 py-0">
             Attached
           </Badge>
         ) : (
@@ -335,7 +333,7 @@ function ProofCard({
         )}
       </div>
 
-      <div className="relative aspect-[4/3] bg-slate-100 dark:bg-slate-950 flex items-center justify-center group overflow-hidden">
+      <div className="relative aspect-[4/3] bg-slate-100 flex items-center justify-center group overflow-hidden">
         {url ? (
           <>
             <img
@@ -345,7 +343,7 @@ function ProofCard({
             />
             <div
               onClick={onZoom}
-              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer gap-1.5 text-white text-xs font-semibold backdrop-blur-[1px]"
+              className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer gap-1.5 text-white text-xs font-semibold backdrop-blur-[1px]"
             >
               <ZoomIn className="h-4 w-4" />
               <span>Click to Enlarge</span>

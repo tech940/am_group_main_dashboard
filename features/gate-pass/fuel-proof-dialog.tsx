@@ -182,16 +182,16 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
           </div>
 
           {/* Fuel Price & Litres Input Strip */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3.5 space-y-3 shadow-2xs">
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-3 shadow-2xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Fuel Price / Total Amount (Mandatory) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="fuel-amount-input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <IndianRupee className="h-4 w-4 text-emerald-600" />
+                  <Label htmlFor="fuel-amount-input" className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <IndianRupee className="h-4 w-4 text-teal-700" />
                     Price of Fuel (Total ₹) *
                   </Label>
-                  <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.2 rounded border border-rose-200 dark:border-rose-900">
+                  <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
                     Mandatory
                   </span>
                 </div>
@@ -206,7 +206,7 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
                     setFuelAmount(e.target.value)
                     if (error) setError('')
                   }}
-                  className="font-mono font-bold text-sm bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700 focus:border-amber-500 focus:ring-amber-500"
+                  className="font-mono font-bold text-sm bg-slate-50 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
                   required
                 />
                 <p className="text-[10px] text-slate-500">Total ₹ amount billed on the physical petrol slip.</p>
@@ -215,7 +215,7 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
               {/* Fuel Quantity (Litres) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="fuel-litres-input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Label htmlFor="fuel-litres-input" className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                     <Fuel className="h-4 w-4 text-blue-600" />
                     Fuel Quantity (Litres)
                   </Label>
@@ -229,7 +229,7 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
                   placeholder="e.g. 35.50"
                   value={fuelLitres}
                   onChange={(e) => setFuelLitres(e.target.value)}
-                  className="font-mono text-sm bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700 focus:border-blue-500 focus:ring-blue-500"
+                  className="font-mono text-sm bg-slate-50 border-slate-300 focus:border-blue-500 focus:ring-blue-500"
                 />
                 <p className="text-[10px] text-slate-500">Volume in litres shown on pump dispenser.</p>
               </div>
@@ -239,19 +239,19 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
           {/* 3 Proof Cards */}
           <div className="grid grid-cols-1 gap-4">
             {/* 1. Physical Fuel Slip */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 p-3.5 space-y-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                   <FileText className="h-4 w-4 text-amber-600" />
                   1. Physical Fuel Slip *
                 </Label>
                 {isSlipProvided ? (
-                  <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  <span className="text-[11px] text-teal-800 font-semibold flex items-center gap-1 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-teal-700" />
                     {fuelSlip ? 'Ready to upload' : 'Already on file'}
                   </span>
                 ) : (
-                  <span className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                  <span className="text-[11px] text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                     Required
                   </span>
                 )}
@@ -266,19 +266,19 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
             </div>
 
             {/* 2. Pump Start 0.00 */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 p-3.5 space-y-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                   <Gauge className="h-4 w-4 text-blue-600" />
                   2. Pump Start (0.00) *
                 </Label>
                 {isStartProvided ? (
-                  <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  <span className="text-[11px] text-teal-800 font-semibold flex items-center gap-1 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-teal-700" />
                     {pumpStart ? 'Ready to upload' : 'Already on file'}
                   </span>
                 ) : (
-                  <span className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                  <span className="text-[11px] text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                     Required
                   </span>
                 )}
@@ -293,19 +293,19 @@ export function FuelProofDialog({ open, onOpenChange, pass, onSuccess }: FuelPro
             </div>
 
             {/* 3. Pump Stop (Amount) */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 p-3.5 space-y-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <IndianRupee className="h-4 w-4 text-emerald-600" />
+                <Label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <IndianRupee className="h-4 w-4 text-teal-700" />
                   3. Pump Stop (Amount) *
                 </Label>
                 {isStopProvided ? (
-                  <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  <span className="text-[11px] text-teal-800 font-semibold flex items-center gap-1 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-teal-700" />
                     {pumpStop ? 'Ready to upload' : 'Already on file'}
                   </span>
                 ) : (
-                  <span className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                  <span className="text-[11px] text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                     Required
                   </span>
                 )}

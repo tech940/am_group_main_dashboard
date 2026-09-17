@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, index, uniqueIndex, bigint, date, primaryKey } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, boolean, integer, smallint, decimal, jsonb, pgEnum, index, uniqueIndex, bigint, date, primaryKey } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
@@ -3261,4 +3261,245 @@ export const demoVehicleTrackerEvents = pgTable('demo_vehicle_tracker_events', {
   demoVehicleTrackerEventsVinIdx: index('demo_vehicle_tracker_events_vin_idx').on(table.vin, table.createdAt),
   demoVehicleTrackerEventsProviderUuidIdx: index('demo_vehicle_tracker_events_provider_uuid_idx')
     .on(table.providerVehicleUuid, table.createdAt),
+}))
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// AM Tata · H Promise — the pre-owned car desk (migration 0072).
+//
+// ⚠️ The lifecycle stage (in stock / booked / sold) is DERIVED in lib/h-promise/stage.ts and price-with-GST is
+// computed in lib/h-promise/economics.ts. Neither is a column, so neither can drift from the facts.
+// ⚠️ Statuses are free text (see 0050). The allowed values and transitions live in lib/h-promise/status.ts.
+// ⚠️ The database also enforces the owner's safeguards: no self-decision (CHECKs), approved prices locked
+// (trigger, SQLSTATE HP001) and append-only history. See the migration for the details.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+export const tataHPromiseVehicles = pgTable('tata_h_promise_vehicles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  stockNo: integer('stock_no').generatedByDefaultAsIdentity().notNull().unique(),
+  regNo: text('reg_no').notNull(),
+  regNoKey: text('reg_no_key').generatedAlwaysAs(sql`upper(regexp_replace(reg_no, '[^A-Za-z0-9]', '', 'g'))`),
+  model: text('model').notNull(),
+  colour: text('colour'),
+  manufacturingYear: smallint('manufacturing_year'),
+  odometerKm: integer('odometer_km'),
+  engineNo: text('engine_no'),
+  chassisNo: text('chassis_no'),
+  location: text('location').notNull(),
+
+  purchaseDate: date('purchase_date').notNull(),
+  purchasePrice: decimal('purchase_price', { precision: 14, scale: 2 }).notNull(),
+  purchaseGstPct: decimal('purchase_gst_pct', { precision: 5, scale: 2 }).default('0').notNull(),
+  expectedProfit: decimal('expected_profit', { precision: 14, scale: 2 }),
+  expectedSaleDate: date('expected_sale_date'),
+  purchaseRemarks: text('purchase_remarks'),
+  purchaseFinanced: boolean('purchase_financed').default(false).notNull(),
+  purchasedBy: text('purchased_by').notNull(),
+  salesConsultant: text('sales_consultant'),
+  sellerPhone: text('seller_phone'),
+  purchaseWhatsappApprover: text('purchase_whatsapp_approver').notNull(),
+  purchaseStatus: text('purchase_status').default('pending').notNull(),
+  purchaseSubmittedBy: uuid('purchase_submitted_by').references(() => users.id),
+  purchaseSubmittedByName: text('purchase_submitted_by_name'),
+  purchaseSubmittedAt: timestamp('purchase_submitted_at', { withTimezone: true }),
+  purchaseDecidedBy: uuid('purchase_decided_by').references(() => users.id),
+  purchaseDecidedByName: text('purchase_decided_by_name'),
+  purchaseDecidedAt: timestamp('purchase_decided_at', { withTimezone: true }),
+  purchaseDecisionReason: text('purchase_decision_reason'),
+  // 0073: two-stage approval. The manager (GSM / Sales Manager) stage; the overall decision stays above.
+  purchaseDecidedRole: text('purchase_decided_role'),
+  purchaseManagerStatus: text('purchase_manager_status'),
+  purchaseManagerBy: uuid('purchase_manager_by').references(() => users.id),
+  purchaseManagerByName: text('purchase_manager_by_name'),
+  purchaseManagerRole: text('purchase_manager_role'),
+  purchaseManagerAt: timestamp('purchase_manager_at', { withTimezone: true }),
+  purchaseManagerNote: text('purchase_manager_note'),
+
+  saleStatus: text('sale_status'),
+  saleDate: date('sale_date'),
+  sellingPrice: decimal('selling_price', { precision: 14, scale: 2 }),
+  otherCost: decimal('other_cost', { precision: 14, scale: 2 }).default('0').notNull(),
+  isDemo: boolean('is_demo'),
+  soldTo: text('sold_to'),
+  saleFinanced: boolean('sale_financed'),
+  soldBy: text('sold_by'),
+  buyerName: text('buyer_name'),
+  buyerPhone: text('buyer_phone'),
+  buyerAddress: text('buyer_address'),
+  saleWhatsappApprover: text('sale_whatsapp_approver'),
+  saleSubmittedBy: uuid('sale_submitted_by').references(() => users.id),
+  saleSubmittedByName: text('sale_submitted_by_name'),
+  saleSubmittedAt: timestamp('sale_submitted_at', { withTimezone: true }),
+  saleDecidedBy: uuid('sale_decided_by').references(() => users.id),
+  saleDecidedByName: text('sale_decided_by_name'),
+  saleDecidedAt: timestamp('sale_decided_at', { withTimezone: true }),
+  saleDecisionReason: text('sale_decision_reason'),
+  saleDecidedRole: text('sale_decided_role'),
+  saleManagerStatus: text('sale_manager_status'),
+  saleManagerBy: uuid('sale_manager_by').references(() => users.id),
+  saleManagerByName: text('sale_manager_by_name'),
+  saleManagerRole: text('sale_manager_role'),
+  saleManagerAt: timestamp('sale_manager_at', { withTimezone: true }),
+  saleManagerNote: text('sale_manager_note'),
+
+  insuranceEndDate: date('insurance_end_date'),
+  hypothecation: text('hypothecation'),
+  rtoStatus: text('rto_status'),
+  documentsRemarks: text('documents_remarks'),
+  documentsUpdatedBy: uuid('documents_updated_by').references(() => users.id),
+  documentsUpdatedByName: text('documents_updated_by_name'),
+  documentsUpdatedAt: timestamp('documents_updated_at', { withTimezone: true }),
+
+  brokerRcRemarks: text('broker_rc_remarks'),
+  brokerRcUpdatedBy: uuid('broker_rc_updated_by').references(() => users.id),
+  brokerRcUpdatedByName: text('broker_rc_updated_by_name'),
+  brokerRcUpdatedAt: timestamp('broker_rc_updated_at', { withTimezone: true }),
+
+  paymentVerifiedBy: uuid('payment_verified_by').references(() => users.id),
+  paymentVerifiedByName: text('payment_verified_by_name'),
+  paymentVerifiedAt: timestamp('payment_verified_at', { withTimezone: true }),
+
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedByName: text('updated_by_name'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: uuid('deleted_by').references(() => users.id),
+  deletedByName: text('deleted_by_name'),
+  deleteReason: text('delete_reason'),
+  importBatch: text('import_batch'),
+  importRow: integer('import_row'),
+}, (table) => ({
+  tataHPromiseVehiclesRegLiveKey: uniqueIndex('tata_h_promise_vehicles_reg_live_key')
+    .on(table.regNoKey)
+    .where(sql`deleted_at IS NULL AND sale_status IS DISTINCT FROM 'approved'`),
+  tataHPromiseVehiclesRegIdx: index('tata_h_promise_vehicles_reg_idx').on(table.regNoKey),
+  tataHPromiseVehiclesPurchaseDateIdx: index('tata_h_promise_vehicles_purchase_date_idx').on(table.purchaseDate),
+  tataHPromiseVehiclesSaleDateIdx: index('tata_h_promise_vehicles_sale_date_idx').on(table.saleDate),
+}))
+
+export const tataHPromiseBookings = pgTable('tata_h_promise_bookings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  vehicleId: uuid('vehicle_id').references(() => tataHPromiseVehicles.id, { onDelete: 'restrict' }).notNull(),
+  status: text('status').default('active').notNull(),
+  bookingDate: date('booking_date').notNull(),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  remarks: text('remarks'),
+  refundDate: date('refund_date'),
+  refundRemarks: text('refund_remarks'),
+  refundedBy: uuid('refunded_by').references(() => users.id),
+  refundedByName: text('refunded_by_name'),
+  refundedAt: timestamp('refunded_at', { withTimezone: true }),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedByName: text('updated_by_name'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  importBatch: text('import_batch'),
+  importRow: integer('import_row'),
+}, (table) => ({
+  tataHPromiseBookingsVehicleIdx: index('tata_h_promise_bookings_vehicle_idx').on(table.vehicleId, table.bookingDate),
+}))
+
+export const tataHPromiseFiles = pgTable('tata_h_promise_files', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  vehicleId: uuid('vehicle_id').references(() => tataHPromiseVehicles.id, { onDelete: 'restrict' }),
+  bookingId: uuid('booking_id').references(() => tataHPromiseBookings.id, { onDelete: 'restrict' }),
+  kind: text('kind').notNull(),
+  // Object path in the PRIVATE tata-h-promise bucket. Never a public URL.
+  storagePath: text('storage_path').notNull().unique(),
+  contentType: text('content_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  sha256: text('sha256').notNull(),
+  originalName: text('original_name'),
+  source: text('source').default('upload').notNull(),
+  legacyUrl: text('legacy_url'),
+  uploadedBy: uuid('uploaded_by').references(() => users.id),
+  uploadedByName: text('uploaded_by_name').notNull(),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
+  attachedAt: timestamp('attached_at', { withTimezone: true }),
+  supersededAt: timestamp('superseded_at', { withTimezone: true }),
+  supersededBy: uuid('superseded_by'),
+}, (table) => ({
+  tataHPromiseFilesVehicleIdx: index('tata_h_promise_files_vehicle_idx').on(table.vehicleId, table.kind, table.uploadedAt),
+}))
+
+/** APPEND-ONLY. A trigger in 0072 refuses UPDATE, DELETE and TRUNCATE. */
+export const tataHPromiseEvents = pgTable('tata_h_promise_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  vehicleId: uuid('vehicle_id').references(() => tataHPromiseVehicles.id, { onDelete: 'restrict' }),
+  subject: text('subject').default('vehicle').notNull(),
+  subjectId: uuid('subject_id'),
+  stockNo: integer('stock_no'),
+  regNo: text('reg_no'),
+  action: text('action').notNull(),
+  fromStatus: text('from_status'),
+  toStatus: text('to_status'),
+  actorId: uuid('actor_id').references(() => users.id),
+  actorName: text('actor_name').notNull(),
+  actorRole: text('actor_role'),
+  remarks: text('remarks'),
+  changes: jsonb('changes').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tataHPromiseEventsVehicleIdx: index('tata_h_promise_events_vehicle_idx').on(table.vehicleId, table.createdAt),
+  tataHPromiseEventsSubjectIdx: index('tata_h_promise_events_subject_idx').on(table.subject, table.subjectId, table.createdAt),
+}))
+
+export const tataHPromiseOptions = pgTable('tata_h_promise_options', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  kind: text('kind').notNull(),
+  value: text('value').notNull(),
+  label: text('label').notNull(),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedByName: text('updated_by_name'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tataHPromiseOptionsKindValueKey: uniqueIndex('tata_h_promise_options_kind_value_key').on(table.kind, table.value),
+}))
+
+export const tataHPromiseSettings = pgTable('tata_h_promise_settings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  key: text('key').notNull(),
+  effectiveFrom: date('effective_from').notNull(),
+  value: jsonb('value').$type<unknown>().notNull(),
+  note: text('note'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tataHPromiseSettingsKeyFromKey: uniqueIndex('tata_h_promise_settings_key_from_key').on(table.key, table.effectiveFrom),
+}))
+
+export const tataHPromiseExchangeBonuses = pgTable('tata_h_promise_exchange_bonuses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  entryDate: date('entry_date'),
+  vehicleNo: text('vehicle_no').notNull(),
+  vehicleNoKey: text('vehicle_no_key').generatedAlwaysAs(sql`upper(regexp_replace(vehicle_no, '[^A-Za-z0-9]', '', 'g'))`),
+  vehicleName: text('vehicle_name'),
+  salesConsultant: text('sales_consultant'),
+  newCarModel: text('new_car_model').notNull(),
+  bonusAmount: decimal('bonus_amount', { precision: 12, scale: 2 }).notNull(),
+  customerPhone: text('customer_phone'),
+  remarks: text('remarks'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedByName: text('updated_by_name'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: uuid('deleted_by').references(() => users.id),
+  deletedByName: text('deleted_by_name'),
+  importBatch: text('import_batch'),
+  importRow: integer('import_row'),
+}, (table) => ({
+  tataHPromiseExchangeBonusesVehicleIdx: index('tata_h_promise_exchange_bonuses_vehicle_idx').on(table.vehicleNoKey),
 }))

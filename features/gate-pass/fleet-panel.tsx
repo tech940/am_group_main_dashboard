@@ -69,7 +69,7 @@ const STATE_STYLE = {
 function trackingLabel(t: FleetVehicle['tracking']): { text: string; tone: string } {
   switch (t.state) {
     case 'live':
-      return { text: t.speedKph && t.speedKph > 1 ? `Moving · ${Math.round(t.speedKph)} km/h` : 'Live · stopped', tone: 'text-emerald-700' }
+      return { text: t.speedKph && t.speedKph > 1 ? `Moving · ${Math.round(t.speedKph)} km/h` : 'Live · stopped', tone: 'text-teal-800' }
     case 'stale': {
       const mins = t.ageMs === null ? null : Math.round(t.ageMs / 60000)
       const age = mins === null ? 'a while' : mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`

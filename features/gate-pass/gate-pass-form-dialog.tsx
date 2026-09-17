@@ -710,7 +710,7 @@ export function GatePassFormDialog({
                                 </p>
                               </div>
                               {hasDL ? (
-                                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded shrink-0">
+                                <span className="text-[10px] font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded shrink-0">
                                   License on File
                                 </span>
                               ) : (
@@ -770,7 +770,7 @@ export function GatePassFormDialog({
                   Driver Driving License Photo
                 </Label>
                 {hasValidLicenceOnFile && !editingLicence ? (
-                  <span className="text-[10px] font-bold uppercase text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-bold uppercase text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
                     Verified On File
                   </span>
                 ) : (!isManualDriver && driverUserId) || (isManualDriver && saveManualAsEmployee) ? (
@@ -781,12 +781,12 @@ export function GatePassFormDialog({
               </div>
 
               {hasValidLicenceOnFile && !editingLicence ? (
-                <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800">
+                <div className="flex items-center justify-between rounded-lg bg-teal-50/70 border border-teal-200 p-3 text-xs text-teal-900">
                   <div className="flex items-center gap-2.5">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                    <CheckCircle2 className="h-5 w-5 text-teal-700 shrink-0" />
                     <div>
-                      <p className="font-bold text-emerald-950">Driving License Saved on Profile</p>
-                      <p className="text-[11px] text-emerald-700">
+                      <p className="font-bold text-teal-950">Driving License Saved on Profile</p>
+                      <p className="text-[11px] text-teal-800">
                         {chosenDriver?.fullName}'s driving license is already on file and ready.
                       </p>
                     </div>
@@ -796,7 +796,7 @@ export function GatePassFormDialog({
                     variant="outline"
                     size="sm"
                     onClick={() => setEditingLicence(true)}
-                    className="text-xs h-7 border-emerald-300 text-emerald-800 bg-white hover:bg-emerald-100 shrink-0 font-semibold"
+                    className="text-xs h-7 border-teal-300 text-teal-800 bg-white hover:bg-teal-100 shrink-0 font-semibold"
                   >
                     Update / Retake
                   </Button>

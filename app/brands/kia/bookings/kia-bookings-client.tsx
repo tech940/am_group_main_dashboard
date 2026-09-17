@@ -1138,7 +1138,8 @@ function Stepper({ status }: { status: string }) {
 
 const YEARS = ['2026', '2025', '2024', '2023'] as const
 
-const FUEL_TYPES = ['PETROL', 'ELECTRIC', 'DIESEL'] as const
+// HYBRID: the Sorento HEV (price list 2026-09-17). Fuel is stored as free text, so no server change is needed.
+const FUEL_TYPES = ['PETROL', 'ELECTRIC', 'DIESEL', 'HYBRID'] as const
 
 const DEALERS = ['AM KIA', 'JK402', 'JK501'] as const
 
@@ -7771,7 +7772,7 @@ function EmailQuoteDialog({
                   <Select value={form.fuelType} onValueChange={(val) => update('fuelType', val)}>
                     <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {['DIESEL', 'PETROL', 'ELECTRIC'].map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                      {['DIESEL', 'PETROL', 'ELECTRIC', 'HYBRID'].map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>

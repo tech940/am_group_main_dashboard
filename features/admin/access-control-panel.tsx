@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { getBranchLabel, isBranchValue } from '@/lib/branches'
 
 type TriState = 'allow' | 'inherit' | 'deny'
 
@@ -51,6 +52,11 @@ type AccessControlPanelProps = {
   saving: boolean
   onSave: () => void
   roleLabels: Record<string, string>
+}
+
+/** A brand's root group reads as the sidebar names it ("AM Tata"), not as its registry name ("Tata"). */
+function groupLabel(group: { key: string; name: string; parentKey: string | null }) {
+  return group.parentKey === null && isBranchValue(group.key) ? getBranchLabel(group.key) : group.name
 }
 
 const ACTION_ORDER = ['view', 'create', 'edit', 'delete', 'approve', 'audit']
@@ -273,7 +279,7 @@ export function AccessControlPanel({
   const sectionFilter = sectionQuery.trim().toLowerCase()
   const matchesQuery = (group: GroupRow): boolean => {
     if (!sectionFilter) return true
-    if (`${group.name} ${group.key}`.toLowerCase().includes(sectionFilter)) return true
+    if (`${groupLabel(group)} ${group.name} ${group.key}`.toLowerCase().includes(sectionFilter)) return true
     return (childrenByParent.get(group.key) || []).some(matchesQuery)
   }
 
@@ -330,7 +336,7 @@ export function AccessControlPanel({
 
           <div className="min-w-0 flex-1">
             <p className={cn('truncate font-semibold text-slate-800', depth === 0 ? 'text-[13px]' : 'text-[12.5px] font-medium text-slate-700')}>
-              {group.name}
+              {groupLabel(group)}
             </p>
             {depth > 0 && <p className="truncate font-mono text-[10px] text-slate-400">{group.key}</p>}
           </div>
@@ -481,7 +487,7 @@ export function AccessControlPanel({
                     <div key={group.key} className="rounded-xl border border-slate-100">
                       <div className="flex items-center justify-between px-3 py-2">
                         <div className="min-w-0">
-                          <p className="truncate text-[13px] font-bold text-slate-900">{group.name}</p>
+                          <p className="truncate text-[13px] font-bold text-slate-900">{groupLabel(group)}</p>
                           {group.description && <p className="truncate text-[11px] text-slate-400">{group.description}</p>}
                         </div>
                         {canManage && (

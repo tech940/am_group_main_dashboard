@@ -171,7 +171,7 @@ export function GateOutDialog({ open, onOpenChange, pass, onGateOutSuccess }: Ga
       }}
     >
       <DialogContent
-        className="max-h-[90dvh] overflow-y-auto w-[96vw] sm:w-full sm:max-w-2xl p-4 sm:p-6 gap-4 border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl"
+        className="max-h-[90dvh] overflow-y-auto w-[96vw] sm:w-full sm:max-w-2xl p-4 sm:p-6 gap-4 border-slate-200 shadow-2xl rounded-2xl"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
@@ -272,14 +272,14 @@ export function GateOutDialog({ open, onOpenChange, pass, onGateOutSuccess }: Ga
                       isActive
                         ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-500/20 shadow-sm'
                         : isCaptured
-                        ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-300'
+                        ? 'border-teal-200 bg-teal-50/50 hover:border-teal-300'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     {preview ? (
                       <div className="relative w-full h-12 rounded-lg overflow-hidden mb-1.5 border border-slate-200">
                         <img src={preview} alt={label} className="w-full h-full object-cover" />
-                        <span className="absolute top-1 right-1 bg-emerald-600 text-white rounded-full p-0.5 shadow">
+                        <span className="absolute top-1 right-1 bg-teal-700 text-white rounded-full p-0.5 shadow">
                           <CheckCircle2 className="h-3 w-3" />
                         </span>
                       </div>

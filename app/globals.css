@@ -566,7 +566,21 @@
   .fm table thead tr,
   .c360-activity-table thead tr,
   .kia-plan-table thead tr,
+  .hp thead tr,
   .access-map-grid thead tr { background-color: transparent !important; }
+  /* AM Tata · H Promise tables carry their own quiet header (features/h-promise/hp-tokens.tsx); row
+     headers inside the body read as ordinary cells. */
+  .hp th {
+    color: var(--hp-muted, #64748b) !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em !important;
+    text-transform: uppercase !important;
+  }
+  .hp tbody th {
+    color: var(--hp-ink, #0f172a) !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+  }
   /* The MD Targets grid keeps its own quiet slate header: the global rule would otherwise paint it
      the theme primary with white uppercase 900-weight text, which fights a dense editable grid. */
   .md-targets-grid th {

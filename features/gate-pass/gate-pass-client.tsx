@@ -68,9 +68,10 @@ import { FleetPanel } from './fleet-panel'
 import { FleetMapCard, type MapFocus } from './fleet-map'
 import { UnaccountedPanel } from './unaccounted-panel'
 import { TrackersPanel } from './trackers-panel'
+import { GatePassAnalysisPanel } from './gate-pass-analysis'
 import { type GatePassSummary } from '@/lib/gate-pass/metrics'
 import { cn } from '@/lib/utils'
-import { Fuel } from 'lucide-react'
+import { Fuel, TrendingUp } from 'lucide-react'
 
 const FILTER_PURPOSES = [
   'Customer test drive',
@@ -114,48 +115,48 @@ function getPurposeBadgeStyle(purpose?: string | null): { bg: string; text: stri
   const p = (purpose || '').toLowerCase()
   if (p.includes('test drive') || p.includes('home demo') || p.includes('customer')) {
     return {
-      bg: 'bg-emerald-50 dark:bg-emerald-950/40',
-      text: 'text-emerald-700 dark:text-emerald-300',
-      border: 'border-emerald-200 dark:border-emerald-800',
-      dot: 'bg-emerald-500',
+      bg: 'bg-teal-50',
+      text: 'text-teal-800',
+      border: 'border-teal-200',
+      dot: 'bg-teal-600',
     }
   }
   if (p.includes('workshop') || p.includes('service') || p.includes('maintenance')) {
     return {
-      bg: 'bg-sky-50 dark:bg-sky-950/40',
-      text: 'text-sky-700 dark:text-sky-300',
-      border: 'border-sky-200 dark:border-sky-800',
-      dot: 'bg-sky-500',
+      bg: 'bg-sky-50',
+      text: 'text-sky-800',
+      border: 'border-sky-200',
+      dot: 'bg-sky-600',
     }
   }
   if (p.includes('event') || p.includes('display') || p.includes('showroom')) {
     return {
-      bg: 'bg-amber-50 dark:bg-amber-950/40',
-      text: 'text-amber-700 dark:text-amber-300',
-      border: 'border-amber-200 dark:border-amber-800',
-      dot: 'bg-amber-500',
+      bg: 'bg-amber-50',
+      text: 'text-amber-800',
+      border: 'border-amber-200',
+      dot: 'bg-amber-600',
     }
   }
   if (p.includes('inter-branch') || p.includes('stockyard') || p.includes('transfer')) {
     return {
-      bg: 'bg-indigo-50 dark:bg-indigo-950/40',
-      text: 'text-indigo-700 dark:text-indigo-300',
-      border: 'border-indigo-200 dark:border-indigo-800',
-      dot: 'bg-indigo-500',
+      bg: 'bg-indigo-50',
+      text: 'text-indigo-800',
+      border: 'border-indigo-200',
+      dot: 'bg-indigo-600',
     }
   }
   if (p.includes('sir') || p.includes('vip') || p.includes('payment') || p.includes('bank')) {
     return {
-      bg: 'bg-purple-50 dark:bg-purple-950/40',
-      text: 'text-purple-700 dark:text-purple-300',
-      border: 'border-purple-200 dark:border-purple-800',
-      dot: 'bg-purple-500',
+      bg: 'bg-purple-50',
+      text: 'text-purple-800',
+      border: 'border-purple-200',
+      dot: 'bg-purple-600',
     }
   }
   return {
-    bg: 'bg-slate-100 dark:bg-slate-800',
-    text: 'text-slate-700 dark:text-slate-300',
-    border: 'border-slate-200 dark:border-slate-700',
+    bg: 'bg-slate-100',
+    text: 'text-slate-700',
+    border: 'border-slate-200',
     dot: 'bg-slate-400',
   }
 }
@@ -187,12 +188,6 @@ type PassRow = {
   passNo: string
   status: string
   dealerCode: string
-  /*
-   * ⚠️ The VIN, not the plate, is what identifies a car here. Measured on the live feed: 29 demo
-   * VINs share 25 plates, and JK02C0059TC is a trade-certificate plate worn by FIVE cars — so
-   * "show me this pass's car on the map" matched by registration would point at the wrong vehicle.
-   * listGatePasses selects every column, so this has always been in the payload.
-   */
   vin: string
   registrationNumber: string | null
   model: string | null
@@ -233,50 +228,44 @@ const TABS = [
   { key: 'fuel_filling', label: 'Fuel Filling', status: '' },
   { key: 'closed', label: 'Completed / Closed', status: 'returned,rejected,cancelled,expired' },
   { key: 'all', label: 'All Passes', status: '' },
-  /*
-   * ⚠️ Not a pass-status filter like the others — it asks a question about CARS, not passes: which
-   * demo car is off the premises with nothing authorising it. It sits here because that is where
-   * somebody goes looking for it, and the table below branches on the key rather than pretending an
-   * empty `status` filters anything.
-   */
   { key: 'unaccounted', label: 'Out Without Pass', status: '' },
 ] as const
 
 const STATUS_BADGE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   pending_approval: {
-    bg: 'bg-amber-50 dark:bg-amber-950/50',
-    text: 'text-amber-700 dark:text-amber-300',
-    border: 'border-amber-200 dark:border-amber-800',
+    bg: 'bg-amber-50',
+    text: 'text-amber-800',
+    border: 'border-amber-200',
   },
   approved: {
-    bg: 'bg-indigo-50 dark:bg-indigo-950/50',
-    text: 'text-indigo-700 dark:text-indigo-300',
-    border: 'border-indigo-200 dark:border-indigo-800',
+    bg: 'bg-indigo-50',
+    text: 'text-indigo-800',
+    border: 'border-indigo-200',
   },
   out: {
-    bg: 'bg-blue-50 dark:bg-blue-950/50',
-    text: 'text-blue-700 dark:text-blue-300',
-    border: 'border-blue-200 dark:border-blue-800',
+    bg: 'bg-blue-50',
+    text: 'text-blue-800',
+    border: 'border-blue-200',
   },
   returned: {
-    bg: 'bg-emerald-50 dark:bg-emerald-950/50',
-    text: 'text-emerald-700 dark:text-emerald-300',
-    border: 'border-emerald-200 dark:border-emerald-800',
+    bg: 'bg-teal-50',
+    text: 'text-teal-800',
+    border: 'border-teal-200',
   },
   rejected: {
-    bg: 'bg-rose-50 dark:bg-rose-950/50',
-    text: 'text-rose-700 dark:text-rose-300',
-    border: 'border-rose-200 dark:border-rose-800',
+    bg: 'bg-rose-50',
+    text: 'text-rose-800',
+    border: 'border-rose-200',
   },
   cancelled: {
-    bg: 'bg-slate-100 dark:bg-slate-800',
-    text: 'text-slate-600 dark:text-slate-400',
-    border: 'border-slate-200 dark:border-slate-700',
+    bg: 'bg-slate-100',
+    text: 'text-slate-700',
+    border: 'border-slate-200',
   },
   expired: {
-    bg: 'bg-red-50 dark:bg-red-950/50',
-    text: 'text-red-700 dark:text-red-300',
-    border: 'border-red-200 dark:border-red-800',
+    bg: 'bg-red-50',
+    text: 'text-red-800',
+    border: 'border-red-200',
   },
 }
 
@@ -303,7 +292,7 @@ function StatusPill({ status }: { status: string }) {
           status === 'pending_approval' ? 'bg-amber-500 animate-pulse' :
           status === 'approved' ? 'bg-indigo-500' :
           status === 'out' ? 'bg-blue-500 animate-pulse' :
-          status === 'returned' ? 'bg-emerald-500' : 'bg-slate-400'
+          status === 'returned' ? 'bg-teal-600' : 'bg-slate-400'
         )}
       />
       {info.pillLabel}
@@ -354,7 +343,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
   const [cancelling, setCancelling] = useState(false)
   const [fuelProofFor, setFuelProofFor] = useState<PassRow | null>(null)
   const [viewFuelProofFor, setViewFuelProofFor] = useState<PassRow | null>(null)
-  const [section, setSection] = useState<'passes' | 'map' | 'fleet' | 'trackers'>('passes')
+  const [section, setSection] = useState<'passes' | 'map' | 'fleet' | 'trackers' | 'analysis'>('passes')
   /* A car asked for from a pass row. The nonce is what lets the same car be re-opened twice. */
   const [mapFocus, setMapFocus] = useState<MapFocus | null>(null)
 
@@ -824,15 +813,15 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
         {/* Section Navigation Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
           <div className="w-full sm:w-auto overflow-x-auto no-scrollbar scrollbar-none pb-0.5">
-            <div className="inline-flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80 min-w-max">
+            <div className="inline-flex items-center gap-1 rounded-xl bg-slate-100 p-1 min-w-max border border-slate-200">
               <button
                 type="button"
                 onClick={() => setSection('passes')}
                 className={cn(
                   'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap',
                   section === 'passes'
-                    ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                    ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 )}
               >
                 <ScanLine className="h-3.5 w-3.5" />
@@ -842,8 +831,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                     className={cn(
                       'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
                       section === 'passes'
-                        ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
-                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                        ? 'bg-indigo-50 text-indigo-700'
+                        : 'bg-slate-200 text-slate-700'
                     )}
                   >
                     {summary.total}
@@ -853,12 +842,29 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
 
               <button
                 type="button"
+                onClick={() => setSection('analysis')}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap',
+                  section === 'analysis'
+                    ? 'bg-white text-teal-800 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                )}
+              >
+                <TrendingUp className="h-3.5 w-3.5 text-teal-700" />
+                <span>Deep Analysis</span>
+                <span className="ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                  Charts
+                </span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setSection('map')}
                 className={cn(
                   'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap',
                   section === 'map'
-                    ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                    ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 )}
               >
                 <MapPin className="h-3.5 w-3.5" />
@@ -868,8 +874,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                     className={cn(
                       'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
                       fleetData.out > 0
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
-                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-slate-200 text-slate-700'
                     )}
                   >
                     {fleetData.out} out
@@ -883,8 +889,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                 className={cn(
                   'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap',
                   section === 'fleet'
-                    ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                    ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 )}
               >
                 <Car className="h-3.5 w-3.5" />
@@ -894,8 +900,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                     className={cn(
                       'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
                       section === 'fleet'
-                        ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
-                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                        ? 'bg-indigo-50 text-indigo-700'
+                        : 'bg-slate-200 text-slate-700'
                     )}
                   >
                     {fleetData.total}
@@ -910,8 +916,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                   className={cn(
                     'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap',
                     section === 'trackers'
-                      ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400 font-bold'
-                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                      ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
                   )}
                 >
                   <Satellite className="h-3.5 w-3.5" />
@@ -1024,23 +1030,23 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                   className={cn(
                     'p-3 sm:p-4 rounded-xl sm:rounded-2xl text-left border transition-all cursor-pointer shadow-xs',
                     tab === 'all'
-                      ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                      ? 'bg-teal-50/80 border-teal-300 ring-2 ring-teal-500/20'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
                   )}
                 >
-                  <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+                  <div className="flex items-center justify-between text-xs font-medium text-slate-500 mb-1">
                     <span className="font-semibold text-[11px] sm:text-xs">Total Fleet &amp; Passes</span>
-                    <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-500 shrink-0" />
+                    <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-teal-600 shrink-0" />
                   </div>
                   <div className="flex items-baseline gap-1.5 sm:gap-2">
-                    <span className="text-xl sm:text-2xl font-black tabular-nums text-slate-900 dark:text-slate-100">
+                    <span className="text-xl sm:text-2xl font-black tabular-nums text-slate-900">
                       {fleetData ? fleetData.total : summary.total}
                     </span>
-                    <span className="text-[10px] sm:text-xs font-bold text-emerald-600 dark:text-emerald-400 truncate">
+                    <span className="text-[10px] sm:text-xs font-bold text-teal-700 truncate">
                       {fleetData ? `${fleetData.total} cars` : `${summary.completedTrips} closed`}
                     </span>
                   </div>
-                  <p className="mt-1 sm:mt-1.5 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                  <p className="mt-1 sm:mt-1.5 text-[10px] sm:text-[11px] text-slate-500 truncate">
                     {fleetData
                       ? `${fleetData.available} free · ${summary.completedTrips} closed`
                       : 'All fleet & trip logs'}
@@ -1460,16 +1466,16 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                       {isFuelFillingPurpose(row.purpose) && (
                         <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                           {row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded">
-                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proofs Attached
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">
+                              <CheckCircle2 className="w-2.5 h-2.5 text-teal-700" /> Proofs Attached
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                               <Fuel className="w-2.5 h-2.5 text-amber-600" /> Proofs Pending
                             </span>
                           )}
                           {row.fuelAmount && (
-                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-100/90 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.5 rounded font-mono">
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-teal-900 bg-teal-100/80 border border-teal-200 px-1.5 py-0.5 rounded font-mono">
                               ₹{Number(row.fuelAmount).toLocaleString('en-IN')}
                               {row.fuelLitres ? ` (${row.fuelLitres}L)` : ''}
                             </span>
@@ -1479,7 +1485,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                     </div>
 
                     {/* Action Button Row with Top Separator */}
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                    <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
                       {row.status === 'pending_approval' && (
                         <>
                           {canApprove && (
@@ -1488,7 +1494,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                 size="sm"
                                 disabled={approvingId === row.id}
                                 onClick={() => approvePass(row)}
-                                className="h-8 flex-1 min-w-[90px] px-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shadow-2xs gap-1 [&_svg]:size-3.5"
+                                className="h-8 flex-1 min-w-[90px] px-2.5 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-lg cursor-pointer shadow-2xs gap-1 [&_svg]:size-3.5"
                               >
                                 {approvingId === row.id ? (
                                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1504,7 +1510,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                   setDecisionFor(row)
                                   setRemarks('')
                                 }}
-                                className="h-8 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900 rounded-lg cursor-pointer [&_svg]:size-3.5"
+                                className="h-8 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 rounded-lg cursor-pointer [&_svg]:size-3.5"
                               >
                                 <X className="h-3.5 w-3.5 mr-0.5" /> Reject
                               </Button>
@@ -1515,7 +1521,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                             variant="outline"
                             onClick={() => cancel(row)}
                             title="Cancel gate pass request"
-                            className="h-8 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5"
+                            className="h-8 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5"
                           >
                             <Ban className="h-3.5 w-3.5" /> Cancel
                           </Button>
@@ -1536,16 +1542,16 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                             variant="outline"
                             onClick={() => showQr(row)}
                             title="Show Gate Out QR code"
-                            className="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
+                            className="h-8 w-8 p-0 rounded-lg border-slate-200 cursor-pointer [&_svg]:size-3.5"
                           >
-                            <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                            <QrCode className="h-3.5 w-3.5 text-slate-600" />
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => cancel(row)}
                             title="Cancel gate pass request"
-                            className="h-8 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5"
+                            className="h-8 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5"
                           >
                             <Ban className="h-3.5 w-3.5" /> Cancel
                           </Button>
@@ -1557,7 +1563,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                           <Button
                             size="sm"
                             onClick={() => setGateInFor(row)}
-                            className="h-8 flex-1 min-w-[100px] px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-2xs cursor-pointer gap-1.5 [&_svg]:size-3.5"
+                            className="h-8 flex-1 min-w-[100px] px-3 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-lg shadow-2xs cursor-pointer gap-1.5 [&_svg]:size-3.5"
                           >
                             <CheckCircle2 className="h-3.5 w-3.5" /> Gate In
                           </Button>
@@ -1566,9 +1572,9 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                             variant="outline"
                             onClick={() => showQr(row)}
                             title="Show Gate In QR code"
-                            className="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
+                            className="h-8 w-8 p-0 rounded-lg border-slate-200 cursor-pointer [&_svg]:size-3.5"
                           >
-                            <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                            <QrCode className="h-3.5 w-3.5 text-slate-600" />
                           </Button>
                         </>
                       )}
@@ -1580,9 +1586,9 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                             size="sm"
                             variant="outline"
                             onClick={() => setViewFuelProofFor(row)}
-                            className="h-8 px-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5 shadow-2xs"
+                            className="h-8 px-2 text-xs font-semibold text-teal-800 hover:bg-teal-50 border-teal-200 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5 shadow-2xs"
                           >
-                            <Fuel className="h-3.5 w-3.5 text-emerald-600" />
+                            <Fuel className="h-3.5 w-3.5 text-teal-700" />
                             Fuel Proofs
                           </Button>
                         ) : (
@@ -1590,7 +1596,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                             size="sm"
                             variant="outline"
                             onClick={() => setFuelProofFor(row)}
-                            className="h-8 px-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 border-amber-200 dark:border-amber-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5 shadow-2xs"
+                            className="h-8 px-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 border-amber-200 rounded-lg cursor-pointer gap-1 [&_svg]:size-3.5 shadow-2xs"
                           >
                             <Fuel className="h-3.5 w-3.5 text-amber-600" />
                             Add Proofs
@@ -1629,20 +1635,21 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
           </div>
 
           {/* Clean Modern Table (desktop / tablets) */}
+          {/* Clean Modern Table (desktop / tablets) */}
           <div className={cn('hidden md:block overflow-x-auto', tab === 'unaccounted' && 'hidden')}>
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400">
+              <thead className="border-b border-indigo-100/60 bg-gradient-to-r from-slate-50 via-indigo-50/30 to-slate-50 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
                 <tr>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Pass Details</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Vehicle</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Driver</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Purpose</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Distance</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-right font-semibold text-[11px] uppercase tracking-wider">Action</th>
+                  <th className="px-5 py-3.5 font-bold">Pass Details</th>
+                  <th className="px-4 py-3.5 font-bold">Vehicle</th>
+                  <th className="px-4 py-3.5 font-bold">Driver</th>
+                  <th className="px-4 py-3.5 font-bold">Purpose</th>
+                  <th className="px-4 py-3.5 font-bold">Distance</th>
+                  <th className="px-4 py-3.5 font-bold">Status</th>
+                  <th className="px-5 py-3.5 text-right font-bold">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+              <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-16 text-center text-slate-500">
@@ -1654,10 +1661,10 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                   <tr>
                     <td colSpan={7} className="px-4 py-16 text-center">
                       <div className="max-w-xs mx-auto space-y-2">
-                        <div className="h-10 w-10 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                        <div className="h-10 w-10 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
                           <Car className="h-5 w-5" />
                         </div>
-                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">No gate passes found</p>
+                        <p className="text-xs font-semibold text-slate-800">No gate passes found</p>
                         <p className="text-[11px] text-slate-400">
                           {search ? 'Try adjusting your search terms.' : 'No passes recorded in this view.'}
                         </p>
@@ -1675,20 +1682,20 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                         onClick={() => setDetailId(row.id)}
                         onMouseEnter={() => prefetchPassDetail(row.id)}
                         onTouchStart={() => prefetchPassDetail(row.id)}
-                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
+                        className="hover:bg-slate-50/70 transition-colors cursor-pointer"
                       >
                         {/* Pass No & Requester */}
-                        <td className="px-4 py-3.5">
+                        <td className="px-5 py-4">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800 px-2 py-0.5 rounded-md font-mono text-xs tracking-tight shadow-2xs">
+                            <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-md font-mono text-xs tracking-tight shadow-2xs">
                               {row.passNo}
                             </span>
                             <span
                               className={cn(
                                 'text-[10px] font-bold px-1.5 py-0.2 rounded border uppercase tracking-wider',
                                 row.dealerCode === 'JK402'
-                                  ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
-                                  : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : 'bg-purple-50 text-purple-700 border-purple-200'
                               )}
                             >
                               {row.dealerCode === 'JK402' ? 'Jammu' : row.dealerCode === 'JK501' ? 'Udhampur' : row.dealerCode}
@@ -1696,17 +1703,17 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                           </div>
                           <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-1">
                             <span>by</span>
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">{row.requestedByName}</span>
+                            <span className="font-semibold text-slate-700">{row.requestedByName}</span>
                           </div>
                         </td>
 
                         {/* Vehicle Details */}
-                        <td className="px-4 py-3.5">
-                          <div className="inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 px-2 py-0.5 rounded-md font-mono font-bold text-xs tracking-wider shadow-2xs">
-                            <Car className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <td className="px-4 py-4">
+                          <div className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-mono font-bold text-xs tracking-wider shadow-2xs">
+                            <Car className="w-3 h-3 text-amber-700 shrink-0" />
                             <span>{row.registrationNumber || 'No Plate'}</span>
                           </div>
-                          <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-1.5">
+                          <div className="text-[11px] text-slate-600 mt-1 flex items-center gap-1.5">
                             <span
                               className="w-2 h-2 rounded-full border border-slate-300 shrink-0 shadow-2xs"
                               style={{ backgroundColor: getCarColorDot(row.color) }}
@@ -1717,17 +1724,17 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                         </td>
 
                         {/* Driver */}
-                        <td className="px-4 py-3.5">
+                        <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 font-bold text-[10px] flex items-center justify-center shrink-0 border border-teal-200 dark:border-teal-800 shadow-2xs">
+                            <div className="h-6 w-6 rounded-full bg-teal-50 text-teal-800 font-bold text-[10px] flex items-center justify-center shrink-0 border border-teal-200 shadow-2xs">
                               {getDriverInitials(row.driverName)}
                             </div>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">{row.driverName}</span>
+                            <span className="font-semibold text-slate-800">{row.driverName}</span>
                           </div>
                         </td>
 
                         {/* Purpose */}
-                        <td className="px-4 py-3.5 max-w-[210px]">
+                        <td className="px-4 py-4 max-w-[210px]">
                           <div className="space-y-1">
                             <span
                               className={cn(
@@ -1741,7 +1748,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                               {row.purpose}
                             </span>
                             {row.purposeNote && (
-                              <div className="text-[11px] text-slate-500 dark:text-slate-400 break-words leading-tight" title={row.purposeNote}>
+                              <div className="text-[11px] text-slate-500 break-words leading-tight" title={row.purposeNote}>
                                 {row.purposeNote}
                               </div>
                             )}
@@ -1749,16 +1756,16 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                               <div className="pt-0.5 space-y-1">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {row.fuelSlipPath && row.pumpStartPath && row.pumpStopPath ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded">
-                                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proofs Attached
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-teal-700" /> Proofs Attached
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded">
-                                      <Fuel className="w-2.5 h-2.5 text-amber-600" /> Proofs Pending
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                      <Fuel className="w-2.5 h-2.5 text-amber-700" /> Proofs Pending
                                     </span>
                                   )}
                                   {row.fuelAmount && (
-                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-100/90 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.5 rounded font-mono shadow-2xs">
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-teal-950 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded font-mono shadow-2xs">
                                       ₹{Number(row.fuelAmount).toLocaleString('en-IN')}
                                       {row.fuelLitres ? ` (${row.fuelLitres}L)` : ''}
                                     </span>
@@ -1767,7 +1774,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                               </div>
                             )}
                             {isOverdueNow && (
-                              <div className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 px-1.5 py-0.2 rounded">
+                              <div className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded">
                                 <Clock className="w-2.5 h-2.5" /> Overdue Return
                               </div>
                             )}
@@ -1775,11 +1782,11 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                         </td>
 
                         {/* Distance Travelled */}
-                        <td className="px-4 py-3.5 whitespace-nowrap">
+                        <td className="px-4 py-4 whitespace-nowrap">
                           {row.gateInOdo && row.gateOutOdo && Number(row.gateInOdo) >= Number(row.gateOutOdo) ? (
                             <div className="space-y-0.5">
-                              <span className="inline-flex items-center gap-1 font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md font-mono text-xs border border-slate-200 dark:border-slate-700 shadow-2xs">
-                                <Route className="h-3 w-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                              <span className="inline-flex items-center gap-1 font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md font-mono text-xs border border-slate-200 shadow-2xs">
+                                <Route className="h-3 w-3 text-indigo-600 shrink-0" />
                                 {(Number(row.gateInOdo) - Number(row.gateOutOdo)).toLocaleString('en-IN')} km
                               </span>
                               <div className="text-[10px] text-slate-400 font-mono tracking-tight">
@@ -1788,8 +1795,8 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                             </div>
                           ) : row.status === 'out' && row.gateOutOdo ? (
                             <div className="space-y-0.5">
-                              <span className="inline-flex items-center gap-1 font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded text-[11px] border border-blue-200 dark:border-blue-800">
-                                <Car className="h-3 w-3 text-blue-500 animate-pulse shrink-0" /> On Road
+                              <span className="inline-flex items-center gap-1 font-semibold text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded text-[11px] border border-blue-200">
+                                <Car className="h-3 w-3 text-blue-600 animate-pulse shrink-0" /> On Road
                               </span>
                               <div className="text-[10px] text-slate-400 font-mono">
                                 Out: {Number(row.gateOutOdo).toLocaleString('en-IN')} km
@@ -1801,12 +1808,12 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                         </td>
 
                         {/* Status */}
-                        <td className="px-4 py-3.5 whitespace-nowrap">
+                        <td className="px-4 py-4 whitespace-nowrap">
                           <StatusPill status={row.status} />
                         </td>
 
                       {/* Actions */}
-                      <td className="px-4 py-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-5 py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Pending Approval: 1-Click Approve, Reject & Cancel */}
                           {row.status === 'pending_approval' ? (
@@ -1817,7 +1824,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                     size="sm"
                                     disabled={approvingId === row.id}
                                     onClick={() => approvePass(row)}
-                                    className="h-7 px-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer shadow-2xs gap-1 [&_svg]:size-3"
+                                    className="h-7 px-2.5 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-lg cursor-pointer shadow-2xs gap-1 [&_svg]:size-3"
                                   >
                                     {approvingId === row.id ? (
                                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -1833,7 +1840,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                       setDecisionFor(row)
                                       setRemarks('')
                                     }}
-                                    className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900 rounded-lg cursor-pointer [&_svg]:size-3"
+                                    className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 rounded-lg cursor-pointer [&_svg]:size-3"
                                   >
                                     <X className="h-3 w-3 mr-0.5" /> Reject
                                   </Button>
@@ -1844,7 +1851,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                 variant="outline"
                                 onClick={() => cancel(row)}
                                 title="Cancel gate pass request"
-                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3"
+                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 rounded-lg cursor-pointer gap-1 [&_svg]:size-3"
                               >
                                 <Ban className="h-3 w-3" /> Cancel
                               </Button>
@@ -1866,16 +1873,16 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                 variant="outline"
                                 onClick={() => showQr(row)}
                                 title="Show Gate Out QR code"
-                                className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
+                                className="h-7 w-7 p-0 rounded-lg border-slate-200 cursor-pointer [&_svg]:size-3.5"
                               >
-                                <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                                <QrCode className="h-3.5 w-3.5 text-slate-600" />
                               </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => cancel(row)}
                                 title="Cancel gate pass request (vehicle is at gate and yet to go out)"
-                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3"
+                                className="h-7 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 rounded-lg cursor-pointer gap-1 [&_svg]:size-3"
                               >
                                 <Ban className="h-3 w-3" /> Cancel
                               </Button>
@@ -1888,7 +1895,7 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                               <Button
                                 size="sm"
                                 onClick={() => setGateInFor(row)}
-                                className="h-7 px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-2xs cursor-pointer gap-1 [&_svg]:size-3.5"
+                                className="h-7 px-3 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-lg shadow-2xs cursor-pointer gap-1 [&_svg]:size-3.5"
                               >
                                 <CheckCircle2 className="h-3.5 w-3.5" /> Gate In
                               </Button>
@@ -1897,9 +1904,9 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                 variant="outline"
                                 onClick={() => showQr(row)}
                                 title="Show Gate In QR code"
-                                className="h-7 w-7 p-0 rounded-lg border-slate-200 dark:border-slate-700 cursor-pointer [&_svg]:size-3.5"
+                                className="h-7 w-7 p-0 rounded-lg border-slate-200 cursor-pointer [&_svg]:size-3.5"
                               >
-                                <QrCode className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                                <QrCode className="h-3.5 w-3.5 text-slate-600" />
                               </Button>
                             </>
                           ) : null}
@@ -1912,9 +1919,9 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                 variant="outline"
                                 onClick={() => setViewFuelProofFor(row)}
                                 title="View Verified Fuel Filling Proofs"
-                                className="h-7 px-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3 shadow-2xs"
+                                className="h-7 px-2 text-xs font-semibold text-teal-800 hover:bg-teal-50 border-teal-200 rounded-lg cursor-pointer gap-1 [&_svg]:size-3 shadow-2xs"
                               >
-                                <Fuel className="h-3 w-3 text-emerald-600" />
+                                <Fuel className="h-3 w-3 text-teal-700" />
                                 Fuel Proofs
                               </Button>
                             ) : (
@@ -1923,9 +1930,9 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
                                 variant="outline"
                                 onClick={() => setFuelProofFor(row)}
                                 title="Upload Mandatory Fuel Proofs (Slip, Pump 0.00, Pump Stop)"
-                                className="h-7 px-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 border-amber-200 dark:border-amber-800 rounded-lg cursor-pointer gap-1 [&_svg]:size-3 shadow-2xs"
+                                className="h-7 px-2 text-xs font-semibold text-amber-800 hover:bg-amber-50 border-amber-200 rounded-lg cursor-pointer gap-1 [&_svg]:size-3 shadow-2xs"
                               >
-                                <Fuel className="h-3 w-3 text-amber-600" />
+                                <Fuel className="h-3 w-3 text-amber-700" />
                                 Add Proofs
                               </Button>
                             )
@@ -2072,6 +2079,17 @@ export function GatePassClient({ currentUser, embedded = false, canManageTracker
 
         {/* VIEW 4: GPS TRACKERS CONFIGURATION */}
         {section === 'trackers' && canManageTrackers && <TrackersPanel />}
+
+        {/* VIEW 5: DEEP ANALYSIS & CHARTS */}
+        {section === 'analysis' && (
+          <GatePassAnalysisPanel
+            onViewPassesForFilter={(f) => {
+              if (f.dealerCode) setSelectedDealer(f.dealerCode)
+              if (f.purpose) setSelectedPurpose(f.purpose)
+              setSection('passes')
+            }}
+          />
+        )}
       </div>
 
       {/* Modal Dialogs */}

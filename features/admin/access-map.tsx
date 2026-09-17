@@ -49,7 +49,23 @@ type AccessMapProps = {
 function prefixLabel(prefix: string) {
   // The role-locked sections share the `locked.` namespace; name the group for what it means to an admin.
   if (prefix === 'locked') return 'Fixed by role'
+  // A brand band carries the brand's name as the sidebar shows it ("AM Tata"), not its key ("Tata").
+  const brand = BRANCH_OPTIONS.find((option) => option.value === prefix)
+  if (brand) return brand.label
   return prefix.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
+/*
+ * AM Tata · H Promise is ONE sidebar link, but four Access Map columns — one tick per tab of the page.
+ * Under their registry names the band read "Vehicle Register, Purchase & Sale Approvals, …" and nothing on
+ * screen said those ticks are H Promise, so they are named after the tabs they open. Display only: the
+ * saved keys are unchanged, and the per-user Access Control tree still shows them under Tata › H Promise.
+ */
+const COLUMN_DISPLAY_NAME: Record<string, string> = {
+  'tata.h_promise.register': 'H Promise · Vehicles',
+  'tata.h_promise.approvals': 'H Promise · Approvals',
+  'tata.h_promise.payments': 'H Promise · Payments',
+  'tata.h_promise.insights': 'H Promise · MIS & Insights',
 }
 
 // The four admin permission sections (User Management, Access Control, Admin Audit, Dashboard
@@ -142,6 +158,8 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
       .map((section) => {
         if (section.key === ADMIN_PRIMARY_KEY) return { ...section, name: 'Admin Panel' }
         if (section.key === BOOKINGS_PRIMARY_KEY) return { ...section, name: 'Bookings' }
+        const displayName = COLUMN_DISPLAY_NAME[section.key]
+        if (displayName) return { ...section, name: displayName }
         return section
       }),
   [data.sections])

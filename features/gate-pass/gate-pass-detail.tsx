@@ -42,11 +42,11 @@ import { JourneyMap, type JourneySegment } from './journey-map'
 import { LiveRoutePanel } from './live-route-panel'
 
 const STATUS_TONE_STYLES: Record<string, string> = {
-  pending: 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
-  success: 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
-  danger: 'bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800',
-  active: 'bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
-  muted: 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700',
+  pending: 'bg-amber-50 text-amber-800 border-amber-200',
+  success: 'bg-teal-50 text-teal-800 border-teal-200',
+  danger: 'bg-rose-50 text-rose-800 border-rose-200',
+  active: 'bg-blue-50 text-blue-800 border-blue-200',
+  muted: 'bg-slate-100 text-slate-700 border-slate-200',
 }
 
 type Trip = {
@@ -114,51 +114,51 @@ const ACTION_MAP: Record<string, { label: string; icon: typeof FileText; color: 
   created: {
     label: 'Raised',
     icon: FileText,
-    color: 'text-blue-600 dark:text-blue-400',
-    bg: 'bg-blue-50 dark:bg-blue-950/60',
-    border: 'border-blue-200 dark:border-blue-800',
+    color: 'text-blue-700',
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
   },
   approved: {
     label: 'Approved',
     icon: ShieldCheck,
-    color: 'text-emerald-600 dark:text-emerald-400',
-    bg: 'bg-emerald-50 dark:bg-emerald-950/60',
-    border: 'border-emerald-200 dark:border-emerald-800',
+    color: 'text-teal-700',
+    bg: 'bg-teal-50',
+    border: 'border-teal-200',
   },
   rejected: {
     label: 'Rejected',
     icon: X,
-    color: 'text-rose-600 dark:text-rose-400',
-    bg: 'bg-rose-50 dark:bg-rose-950/60',
-    border: 'border-rose-200 dark:border-rose-800',
+    color: 'text-rose-700',
+    bg: 'bg-rose-50',
+    border: 'border-rose-200',
   },
   gate_out: {
     label: 'Gate Out',
     icon: LogOut,
-    color: 'text-indigo-600 dark:text-indigo-400',
-    bg: 'bg-indigo-50 dark:bg-indigo-950/60',
-    border: 'border-indigo-200 dark:border-indigo-800',
+    color: 'text-indigo-700',
+    bg: 'bg-indigo-50',
+    border: 'border-indigo-200',
   },
   gate_in: {
     label: 'Gate In',
     icon: LogIn,
-    color: 'text-teal-600 dark:text-teal-400',
-    bg: 'bg-teal-50 dark:bg-teal-950/60',
-    border: 'border-teal-200 dark:border-teal-800',
+    color: 'text-teal-700',
+    bg: 'bg-teal-50',
+    border: 'border-teal-200',
   },
   cancelled: {
     label: 'Cancelled',
     icon: AlertTriangle,
-    color: 'text-slate-600 dark:text-slate-400',
-    bg: 'bg-slate-50 dark:bg-slate-900',
-    border: 'border-slate-200 dark:border-slate-800',
+    color: 'text-slate-600',
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
   },
   expired: {
     label: 'Expired',
     icon: Clock,
-    color: 'text-amber-600 dark:text-amber-400',
-    bg: 'bg-amber-50 dark:bg-amber-950/60',
-    border: 'border-amber-200 dark:border-amber-800',
+    color: 'text-amber-700',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
   },
 }
 
@@ -255,7 +255,7 @@ export function GatePassDetail({
       role: approvedEvt?.actorRole || 'Approver',
       time: approvedEvt?.createdAt || p?.approvedAt,
       remarks: (p?.approvalRemarks as string) || approvedEvt?.remarks,
-      color: p?.status === 'rejected' ? 'rose' : 'emerald',
+      color: p?.status === 'rejected' ? 'rose' : 'teal',
     },
     {
       step: 3,
@@ -348,7 +348,7 @@ export function GatePassDetail({
                       status: p.status as string,
                     })
                   }
-                  className="h-8 px-3 rounded-xl text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900 cursor-pointer gap-1.5 shrink-0"
+                  className="h-8 px-3 rounded-xl text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 cursor-pointer gap-1.5 shrink-0"
                 >
                   <Ban className="h-3.5 w-3.5" />
                   Cancel Pass
@@ -370,25 +370,25 @@ export function GatePassDetail({
                   label="Odometer Out"
                   value={p.gateOutOdo ? `${p.gateOutOdo} km` : '—'}
                   icon={<Gauge className="h-4 w-4 text-indigo-600" />}
-                  bg="bg-indigo-50/80 dark:bg-indigo-950/20"
-                  border="border-indigo-200 dark:border-indigo-900/50"
-                  textColor="text-indigo-950 dark:text-indigo-200"
+                  bg="bg-indigo-50/80"
+                  border="border-indigo-200"
+                  textColor="text-indigo-950"
                 />
                 <MetricCard
                   label="Odometer In"
                   value={p.gateInOdo ? `${p.gateInOdo} km` : '—'}
-                  icon={<Gauge className="h-4 w-4 text-emerald-600" />}
-                  bg="bg-emerald-50/80 dark:bg-emerald-950/20"
-                  border="border-emerald-200 dark:border-emerald-900/50"
-                  textColor="text-emerald-950 dark:text-emerald-200"
+                  icon={<Gauge className="h-4 w-4 text-teal-600" />}
+                  bg="bg-teal-50/80"
+                  border="border-teal-200"
+                  textColor="text-teal-950"
                 />
                 <MetricCard
                   label="Distance Covered"
                   value={m.distanceKm === null ? '—' : `${m.distanceKm} km`}
                   icon={<Route className="h-4 w-4 text-purple-600" />}
-                  bg="bg-purple-50/80 dark:bg-purple-950/20"
-                  border="border-purple-200 dark:border-purple-900/50"
-                  textColor="text-purple-950 dark:text-purple-200"
+                  bg="bg-purple-50/80"
+                  border="border-purple-200"
+                  textColor="text-purple-950"
                   alert={m.odometerWentBackwards}
                 />
                 <MetricCard
@@ -402,9 +402,9 @@ export function GatePassDetail({
                     : `${data.trip.providerDistanceKm} km`
                   }
                   icon={<Satellite className="h-4 w-4 text-teal-600" />}
-                  bg="bg-teal-50/80 dark:bg-teal-950/20"
-                  border="border-teal-200 dark:border-teal-900/50"
-                  textColor="text-teal-950 dark:text-teal-200"
+                  bg="bg-teal-50/80"
+                  border="border-teal-200"
+                  textColor="text-teal-950"
                   /* Flagged only when BOTH thresholds trip — see isTripDiscrepancy. A prompt to look,
                      never an accusation: GPS and a typed odometer disagree for honest reasons. */
                   alert={Boolean(data?.trip?.discrepancy)}
@@ -416,9 +416,9 @@ export function GatePassDetail({
                   label="Trip Duration"
                   value={formatDuration(m.tripMinutes)}
                   icon={<Clock className="h-4 w-4 text-sky-600" />}
-                  bg="bg-sky-50/80 dark:bg-sky-950/20"
-                  border="border-sky-200 dark:border-sky-900/50"
-                  textColor="text-sky-950 dark:text-sky-200"
+                  bg="bg-sky-50/80"
+                  border="border-sky-200"
+                  textColor="text-sky-950"
                 />
                 {linkNote ? (
                   <p className="col-span-2 break-words text-[11px] font-medium text-slate-500 sm:col-span-4">
@@ -434,18 +434,18 @@ export function GatePassDetail({
 
               {/* ── 2. Trip Status Banner ── */}
               {p.gateInAt ? (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 flex items-center justify-between text-xs text-emerald-900 shadow-xs">
+                <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3.5 flex items-center justify-between text-xs text-teal-950 shadow-xs">
                   <div className="flex items-center gap-2.5">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                    <CheckCircle2 className="h-5 w-5 text-teal-700 shrink-0" />
                     <div>
                       <p className="font-bold text-sm">Trip Completed &amp; Closed</p>
-                      <p className="text-[11px] opacity-80 mt-0.5">
+                      <p className="text-[11px] text-teal-800/80 mt-0.5">
                         {p.gateOutAt ? `Departed ${formatIndiaDateTime(p.gateOutAt)} · ` : ''}
                         Returned on {formatIndiaDateTime(p.gateInAt)}
                       </p>
                     </div>
                   </div>
-                  <span className="hidden sm:inline-block px-2.5 py-1 rounded-md font-bold text-[11px] bg-white border border-slate-200 text-emerald-800">
+                  <span className="hidden sm:inline-block px-2.5 py-1 rounded-md font-bold text-[11px] bg-white border border-teal-200 text-teal-800">
                     Closed Trip
                   </span>
                 </div>
@@ -524,14 +524,12 @@ export function GatePassDetail({
                               <div
                                 className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${
                                   st.active
-                                    ? st.color === 'emerald'
-                                      ? 'bg-emerald-100 text-emerald-700'
+                                    ? st.color === 'teal'
+                                      ? 'bg-teal-100 text-teal-700'
                                       : st.color === 'rose'
                                       ? 'bg-rose-100 text-rose-700'
                                       : st.color === 'indigo'
                                       ? 'bg-indigo-100 text-indigo-700'
-                                      : st.color === 'teal'
-                                      ? 'bg-teal-100 text-teal-700'
                                       : 'bg-blue-100 text-blue-700'
                                     : 'bg-slate-200 text-slate-500'
                                 }`}
@@ -563,7 +561,7 @@ export function GatePassDetail({
                           </div>
 
                           {st.remarks && (
-                            <p className="mt-2 text-[10px] italic text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800 whitespace-pre-wrap break-words leading-relaxed">
+                            <p className="mt-2 text-[10px] italic text-slate-600 bg-white p-2 rounded-lg border border-slate-200 whitespace-pre-wrap break-words leading-relaxed">
                               &ldquo;{st.remarks}&rdquo;
                             </p>
                           )}
@@ -590,7 +588,7 @@ export function GatePassDetail({
                     </div>
                   </div>
                   <div className="rounded-lg bg-slate-50 border border-slate-200/60 p-2.5 flex items-center gap-2 text-xs">
-                    <Route className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <Route className="h-4 w-4 text-teal-600 shrink-0" />
                     <div>
                       <span className="text-slate-400 text-[10px] uppercase font-bold block">Total Out Time</span>
                       <span className="font-bold text-slate-800">{formatDuration(m.tripMinutes)}</span>
@@ -613,7 +611,7 @@ export function GatePassDetail({
                   </div>
 
                   <div className="rounded-xl border border-slate-200 bg-white p-3.5 flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+                    <div className="h-9 w-9 rounded-lg bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
                       <Key className="h-4 w-4" />
                     </div>
                     <div>
@@ -626,18 +624,18 @@ export function GatePassDetail({
 
               {/* ── Fuel Filling Proofs (If Purpose == Fuel filling) ── */}
               {isFuelFillingPurpose(p.purpose as string) || data?.fuelDocs?.fuelSlipUrl || data?.fuelDocs?.pumpStartUrl || data?.fuelDocs?.pumpStopUrl ? (
-                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-amber-200 dark:border-amber-800/80 p-4 sm:p-5 shadow-xs space-y-3.5">
+                <div className="bg-white rounded-2xl border border-amber-200 p-4 sm:p-5 shadow-xs space-y-3.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Fuel className="h-4 w-4 text-amber-600" />
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Fuel Filling Documentation</h3>
+                      <h3 className="text-sm font-bold text-slate-900">Fuel Filling Documentation</h3>
                     </div>
                     {data?.fuelDocs?.isComplete ? (
-                      <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300">
-                        <CheckCircle2 className="h-3 w-3 mr-1" /> All 3 Proofs Verified
+                      <Badge className="bg-teal-50 text-teal-800 border-teal-200">
+                        <CheckCircle2 className="h-3 w-3 mr-1 text-teal-700" /> All 3 Proofs Verified
                       </Badge>
                     ) : (
-                      <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300">
+                      <Badge className="bg-amber-50 text-amber-800 border-amber-200">
                         Proofs Pending
                       </Badge>
                     )}
@@ -646,16 +644,16 @@ export function GatePassDetail({
                   {/* Fuel Price & Litres Ribbon */}
                   {(data?.fuelDocs?.fuelAmount || p.fuelAmount) && (
                     <div className="flex items-center gap-2 flex-wrap text-xs">
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30 px-3 py-1.5 flex items-center gap-1.5">
-                        <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400">Price:</span>
-                        <span className="font-bold text-emerald-900 dark:text-emerald-200 font-mono">
+                      <div className="rounded-lg border border-teal-200 bg-teal-50/80 px-3 py-1.5 flex items-center gap-1.5">
+                        <span className="text-[10px] uppercase font-bold text-teal-800">Price:</span>
+                        <span className="font-bold text-teal-950 font-mono">
                           ₹{Number(data?.fuelDocs?.fuelAmount || p.fuelAmount).toLocaleString('en-IN')}
                         </span>
                       </div>
                       {(data?.fuelDocs?.fuelLitres || p.fuelLitres) && (
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/60 px-3 py-1.5 flex items-center gap-1.5">
-                          <span className="text-[10px] uppercase font-bold text-slate-400">Quantity:</span>
-                          <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 flex items-center gap-1.5">
+                          <span className="text-[10px] uppercase font-bold text-slate-500">Quantity:</span>
+                          <span className="font-bold text-slate-800 font-mono">
                             {data?.fuelDocs?.fuelLitres || p.fuelLitres} L
                           </span>
                         </div>
@@ -694,9 +692,9 @@ export function GatePassDetail({
                   </div>
 
                   {data?.fuelDocs?.uploadedAt ? (
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                       <span>Uploaded At</span>
-                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                      <span className="font-medium text-slate-700">
                         {formatIndiaDateTime(data.fuelDocs.uploadedAt)}
                       </span>
                     </div>
@@ -712,10 +710,10 @@ export function GatePassDetail({
                     <h3 className="text-sm font-bold text-slate-900">Gate Condition Photos & Evidence</h3>
                   </div>
                   <span
-                    className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                    className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
                       m.evidence.complete
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-amber-100 text-amber-800'
+                        ? 'bg-teal-50 text-teal-800 border-teal-200'
+                        : 'bg-amber-50 text-amber-800 border-amber-200'
                     }`}
                   >
                     {m.evidence.captured} of {m.evidence.expected} Photos Verified
@@ -798,24 +796,24 @@ export function GatePassDetail({
       {/* ── Photo Lightbox Dialog ── */}
       {lightboxImage && (
         <Dialog open={Boolean(lightboxImage)} onOpenChange={() => setLightboxImage(null)}>
-          <DialogContent className="max-w-2xl p-2 bg-slate-900 border-slate-800 text-white">
-            <DialogHeader className="p-2 flex flex-row items-center justify-between">
-              <DialogTitle className="text-sm font-bold text-slate-200">{lightboxImage.label}</DialogTitle>
+          <DialogContent className="max-w-2xl p-4 bg-white border border-slate-200 text-slate-900 shadow-2xl rounded-2xl">
+            <DialogHeader className="pb-3 flex flex-row items-center justify-between border-b border-slate-100">
+              <DialogTitle className="text-sm font-bold text-slate-800">{lightboxImage.label}</DialogTitle>
               <a
                 href={lightboxImage.url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs text-indigo-400 hover:underline flex items-center gap-1"
+                className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 font-semibold"
               >
                 Open original <ExternalLink className="h-3 w-3" />
               </a>
             </DialogHeader>
-            <div className="flex items-center justify-center p-2">
+            <div className="flex items-center justify-center p-3 bg-slate-50/70 rounded-xl border border-slate-100/80 mt-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={lightboxImage.url}
                 alt={lightboxImage.label}
-                className="max-h-[75vh] w-auto rounded-lg object-contain shadow-2xl"
+                className="max-h-[72vh] w-auto rounded-lg object-contain shadow-md"
               />
             </div>
           </DialogContent>

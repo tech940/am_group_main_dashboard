@@ -66,12 +66,12 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
   if (done) {
     return (
       <Shell pass={pass}>
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-center">
-          <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-600" />
-          <p className="text-base font-semibold text-emerald-900">
+        <div className="rounded-lg border border-teal-200 bg-teal-50/70 p-5 text-center">
+          <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-teal-700" />
+          <p className="text-base font-semibold text-teal-950">
             {isOut ? 'Vehicle signed out' : 'Vehicle signed back in'}
           </p>
-          <p className="mt-1 text-sm text-emerald-800">
+          <p className="mt-1 text-sm text-teal-800">
             {done === 'already'
               ? 'This was already recorded — nothing was changed.'
               : 'Recorded. The showroom has been notified.'}
@@ -221,7 +221,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
               <div className="space-y-1.5">
                 <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
                   <span>1. Front of the vehicle</span>
-                  {frontPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+                  {frontPhoto ? <Check className="h-4 w-4 text-teal-700 font-bold" /> : null}
                 </Label>
                 <VehicleTrackerCamera label="Front View Photo" onCapture={setFrontPhoto} />
               </div>
@@ -229,7 +229,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
               <div className="space-y-1.5">
                 <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
                   <span>2. Back of the vehicle</span>
-                  {backPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+                  {backPhoto ? <Check className="h-4 w-4 text-teal-700 font-bold" /> : null}
                 </Label>
                 <VehicleTrackerCamera label="Back View Photo" onCapture={setBackPhoto} />
               </div>
@@ -237,7 +237,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
               <div className="space-y-1.5">
                 <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
                   <span>3. Right side of the vehicle</span>
-                  {rightPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+                  {rightPhoto ? <Check className="h-4 w-4 text-teal-700 font-bold" /> : null}
                 </Label>
                 <VehicleTrackerCamera label="Right Side Photo" onCapture={setRightPhoto} />
               </div>
@@ -245,7 +245,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
               <div className="space-y-1.5">
                 <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
                   <span>4. Left side of the vehicle</span>
-                  {leftPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+                  {leftPhoto ? <Check className="h-4 w-4 text-teal-700 font-bold" /> : null}
                 </Label>
                 <VehicleTrackerCamera label="Left Side Photo" onCapture={setLeftPhoto} />
               </div>
@@ -255,7 +255,7 @@ export function GuardForm({ pass, token }: { pass: GuardView; token: string }) {
           <div className="space-y-1.5">
             <Label className="flex items-center justify-between text-xs font-medium text-slate-700">
               <span>{isOut ? '5. Odometer reading display' : 'Odometer reading display *'}</span>
-              {odoPhoto ? <Check className="h-4 w-4 text-emerald-600 font-bold" /> : null}
+              {odoPhoto ? <Check className="h-4 w-4 text-teal-700 font-bold" /> : null}
             </Label>
             <VehicleTrackerCamera label="Odometer Display Photo" onCapture={setOdoPhoto} />
           </div>

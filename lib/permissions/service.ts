@@ -14,6 +14,7 @@ import {
   PERMISSIONS,
   RESTRICTED_DEFAULT_PERMISSION_KEYS,
   GRANT_ONLY_PERMISSION_KEYS,
+  GRANT_ONLY_ROLE_DEFAULTS,
   SENSITIVE_REPORT_PERMISSION_KEYS,
   ROLE_PERMISSION_TEMPLATES,
   type PermissionRole,
@@ -89,7 +90,11 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // v44 (2026-09-16): kia.sales_performance relabelled "Sales Target Plan" in the registry. The
 // snapshot is cached for 75 minutes, so without a bump every signed-in admin keeps seeing the old
 // column name and reads it as the section still being missing.
-const PERMISSION_CACHE_VERSION = 'v45'
+// v46 (2026-09-17): registers AM Tata · H Promise (tata.h_promise and five children, all grant-only). A
+// snapshot cached under v45 has none of the keys, so without the bump an Access-Map tick would not show
+// for up to 75 minutes and the sidebar link would not appear.
+// v47 (2026-09-17): EA sees H Promise by default (GRANT_ONLY_ROLE_DEFAULTS). A v46 snapshot says it does not.
+const PERMISSION_CACHE_VERSION = 'v47'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -124,10 +129,17 @@ function isRestrictedDefaultPermission(permissionKey: string) {
  *
  * ⚠️ Applied to DEFAULTS ONLY. Explicit overrides merge afterwards and still win, which is the point:
  * the owner asked for these to be grantable, not for them to be grantable-except-when-they-are-not.
+ *
+ * The one exception is GRANT_ONLY_ROLE_DEFAULTS, the owner's named default audience for a key (EA sees
+ * AM Tata · H Promise). It is applied HERE, in the same step, so it cannot leak past the strip and a Deny
+ * override still beats it.
  */
-function stripGrantOnly(values: Record<string, boolean>) {
+function stripGrantOnly(values: Record<string, boolean>, role: PermissionRole) {
   for (const key of GRANT_ONLY_PERMISSION_KEYS) {
     if (key in values) values[key] = false
+  }
+  for (const key of GRANT_ONLY_ROLE_DEFAULTS[role] ?? []) {
+    if (key in values) values[key] = true
   }
 }
 
@@ -398,7 +410,7 @@ function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string |
   }
   applySensitiveReportDefaults(roleDefaults, role)
   // ⚠️ AFTER every blanket above, including the super-admin one — see stripGrantOnly.
-  if (!isSuperAdminRole(role)) stripGrantOnly(roleDefaults)
+  if (!isSuperAdminRole(role)) stripGrantOnly(roleDefaults, role)
 
   return {
     effective: { ...roleDefaults },
@@ -747,7 +759,7 @@ export function resolveEffectiveSnapshot(
   // overrides merge, so an individual Access-Map tick still wins.
   applyFuelSectionDefaults(roleDefaults, role)
   // ⚠️ LAST of the default layers and BEFORE the overrides merge, so a hand-tick still wins.
-  if (!isSuperAdminRole(role)) stripGrantOnly(roleDefaults)
+  if (!isSuperAdminRole(role)) stripGrantOnly(roleDefaults, role)
   constrainSnapshotToBranch(roleDefaults, role, branchAccess)
 
   // Overrides merge LAST, so an explicit Deny wins over the role / brand / global default.
@@ -811,7 +823,7 @@ export function buildTierRoleDefaults(role: PermissionRole): Record<string, bool
      * exactly what keeping them keyless used to prevent. MD/Developer get them back at the end of
      * resolveEffectiveSnapshot, where isSuperAdminRole re-opens everything.
      */
-    if (!isSuperAdminRole(role)) stripGrantOnly(base)
+    if (!isSuperAdminRole(role)) stripGrantOnly(base, role)
     return base
   }
   // Tracked roles inherit their FUNCTION TRACK (service/sales/branch/finance) up to their tier;

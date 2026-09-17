@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { ROLE_PROFILE } from '@/lib/permissions/tiers'
+import { getBranchLabel, isBranchValue } from '@/lib/branches'
 
 const TIER_LABEL: Record<number, string> = { 0: 'Employee', 1: 'Supervisor', 2: 'Manager', 3: 'Head / GM', 4: 'Leadership', 5: 'Super-admin' }
 function tierInfo(roleKey: string): { tier: string; track: string } | null {
@@ -24,6 +25,11 @@ export type RolesData = {
   groups: GroupRow[]
   permissions: PermissionRow[]
   grants: Record<string, Record<string, boolean>>
+}
+
+/** A brand's root group reads as the sidebar names it ("AM Tata"), not as its registry name ("Tata"). */
+function groupLabel(group: { key: string; name: string; parentKey: string | null }) {
+  return group.parentKey === null && isBranchValue(group.key) ? getBranchLabel(group.key) : group.name
 }
 
 const ACTION_ORDER = ['view', 'create', 'edit', 'delete', 'approve', 'audit']
@@ -81,7 +87,7 @@ export function RolesPanel({ data }: { data: RolesData }) {
   const sectionFilter = sectionQuery.trim().toLowerCase()
   const matches = (group: GroupRow): boolean => {
     if (!sectionFilter) return true
-    if (`${group.name} ${group.key}`.toLowerCase().includes(sectionFilter)) return true
+    if (`${groupLabel(group)} ${group.name} ${group.key}`.toLowerCase().includes(sectionFilter)) return true
     return (childrenByParent.get(group.key) || []).some(matches)
   }
 
@@ -123,7 +129,7 @@ export function RolesPanel({ data }: { data: RolesData }) {
             <ChevronDown className={cn('h-4 w-4 transition-transform', isCollapsed && '-rotate-90')} />
           </button>
           <div className="min-w-0 flex-1">
-            <p className={cn('truncate font-semibold', depth === 0 ? 'text-[13px] text-slate-800' : 'text-[12.5px] font-medium text-slate-700')}>{group.name}</p>
+            <p className={cn('truncate font-semibold', depth === 0 ? 'text-[13px] text-slate-800' : 'text-[12.5px] font-medium text-slate-700')}>{groupLabel(group)}</p>
             {depth > 0 && <p className="truncate font-mono text-[10px] text-slate-400">{group.key}</p>}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">

@@ -196,15 +196,15 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
        */
       if (!canEditKiaProforma(appUser.role)) {
         return NextResponse.json(
-          { error: 'Only the General Manager or the MD can edit a proforma.' },
+          { error: 'Only the General Manager, the MD or the CEO can edit a proforma.' },
           { status: 403 },
         )
       }
 
       /*
-       * Approved by Finance: the MD and the GSM may still edit, nobody else may.
+       * Approved by Finance: the MD, the GSM and the CEO may still edit, nobody else may.
        *
-       * ⚠️ Owner decisions: MD 2026-09-10, GSM 2026-09-16. The edit below resets the proforma to
+       * ⚠️ Owner decisions: MD 2026-09-10, GSM 2026-09-16, CEO 2026-09-17. The edit below resets the proforma to
        * PENDING, so it must pass stage 1 AND Finance again before the customer is mailed or the
        * consultant can download it. Both predicates live in
        * lib/kia/workflow-access.ts and the client imports the SAME ones, so the Edit button and this
@@ -215,7 +215,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         !canEditApprovedKiaProforma(appUser.role)
       ) {
         return NextResponse.json(
-          { error: 'This proforma has already been approved by Finance. Only the GSM or the MD can edit it now.' },
+          { error: 'This proforma has already been approved by Finance. Only the GSM, the MD or the CEO can edit it now.' },
           { status: 400 },
         )
       }
