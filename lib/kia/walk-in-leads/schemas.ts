@@ -5,7 +5,9 @@
 import { z } from 'zod'
 import { getIndiaYmd } from '@/lib/date-time'
 import {
+  WALK_IN_BOOKING_TIMELINES,
   WALK_IN_CUSTOMER_TYPES,
+  WALK_IN_HOLDING_REASONS,
   WALK_IN_LIMITS,
   WALK_IN_MODELS,
   WALK_IN_SOURCES,
@@ -57,17 +59,20 @@ export const walkInSubmitSchema = z
       (value) => (tidyText(value) === '' ? null : tidyText(value).toLowerCase()),
       z.string().max(WALK_IN_LIMITS.email).email('Enter a valid e-mail address, or leave it empty.').nullable(),
     ),
-    address: optionalText('address', WALK_IN_LIMITS.address),
+    address: requiredText('area / locality address (e.g. Talab Tillo, Gandhi Nagar)', WALK_IN_LIMITS.address),
     model: z.enum(WALK_IN_MODELS, { message: 'Choose the model the customer asked about.' }),
     consultantName: z.preprocess((value) => titleCaseName(value), z.string().min(2, 'Choose or type the sales consultant.').max(WALK_IN_LIMITS.consultant)),
     testDrive: yesNo('test drive'),
-    enquirySource: z.enum(WALK_IN_SOURCES, { message: 'Choose where the customer came from.' }),
+    enquirySource: z.enum(WALK_IN_SOURCES, { message: 'Choose the enquiry source.' }),
     customerType: z.enum(WALK_IN_CUSTOMER_TYPES, { message: 'Choose New or Existing customer.' }),
     exchange: yesNo('exchange'),
     exchangeDetails: optionalText('exchange vehicle', WALK_IN_LIMITS.exchangeDetails),
-    additionalInfo: optionalText('additional information', WALK_IN_LIMITS.additionalInfo),
-    expectedBookingDate: optionalDate('expected booking date'),
+    expectedBookingTimeline: z.enum(WALK_IN_BOOKING_TIMELINES, { message: 'Select the expected booking timeline.' }),
+    expectedBookingDate: z.string({ message: 'Select the expected booking date.' }).regex(YMD, 'Enter a valid expected booking date.'),
+    holdingReason: optionalText('reason holding back', 200),
+    followUpDate: z.string({ message: 'Select the next follow-up date.' }).regex(YMD, 'Enter a valid next follow-up date.'),
     remarks: optionalText('remarks', WALK_IN_LIMITS.remarks),
+    additionalInfo: optionalText('additional information', WALK_IN_LIMITS.additionalInfo),
     /** Honeypot: a real person never sees or fills this field. */
     website: z.string().max(0).optional(),
   })
@@ -80,6 +85,12 @@ export const walkInSubmitSchema = z
     if (value.expectedBookingDate && value.expectedBookingDate < value.enquiryDate) {
       ctx.addIssue({ code: 'custom', path: ['expectedBookingDate'], message: 'The expected booking date cannot be before the visit.' })
     }
+    if (value.followUpDate && value.followUpDate < value.enquiryDate) {
+      ctx.addIssue({ code: 'custom', path: ['followUpDate'], message: 'The next follow-up date cannot be before the visit.' })
+    }
+    if (value.expectedBookingTimeline !== 'Booked today' && !value.holdingReason) {
+      ctx.addIssue({ code: 'custom', path: ['holdingReason'], message: 'Select what is holding the customer back.' })
+    }
     if (value.exchange && !value.exchangeDetails) {
       ctx.addIssue({ code: 'custom', path: ['exchangeDetails'], message: 'Enter the exchange vehicle, e.g. "Swift 2018".' })
     }
@@ -91,6 +102,9 @@ export type WalkInSubmitInput = z.infer<typeof walkInSubmitSchema>
 export const walkInUpdateSchema = z.object({
   remarks: optionalText('remarks', WALK_IN_LIMITS.remarks).optional(),
   expectedBookingDate: optionalDate('expected booking date').optional(),
+  expectedBookingTimeline: optionalText('booking timeline', 50).optional(),
+  holdingReason: optionalText('holding reason', 200).optional(),
+  followUpDate: optionalDate('follow-up date').optional(),
   booked: z.boolean().optional(),
   consultantName: z.preprocess((value) => titleCaseName(value), z.string().min(2).max(WALK_IN_LIMITS.consultant)).optional(),
   expectedUpdatedAt: z.string().min(1),

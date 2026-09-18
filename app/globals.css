@@ -2082,15 +2082,14 @@
   .kia-premium .kia-table thead tr,
   .kia-premium .kia-table thead th {
     background: linear-gradient(180deg,
-      color-mix(in srgb, var(--dashboard-primary) 96%, #000),
+      var(--dashboard-primary-dark),
       var(--dashboard-primary)) !important;
-  }
-  .kia-premium .kia-table thead th {
-    color: color-mix(in srgb, #ffffff 82%, transparent) !important;
+    color: #ffffff !important;
     font-weight: 700 !important;
-    font-size: 0.625rem !important;
-    letter-spacing: 0.16em !important;
+    font-size: 0.6875rem !important;
+    letter-spacing: 0.08em !important;
     text-transform: uppercase !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
   }
   .kia-premium .kia-table tbody tr {
     transition: background-color 0.18s ease, box-shadow 0.18s ease;

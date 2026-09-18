@@ -30,6 +30,30 @@ export const WALK_IN_SOURCES = [
   'OTHERS',
 ] as const
 
+/** The buying intent / forecasting timeline chips. */
+export const WALK_IN_BOOKING_TIMELINES = [
+  'Booked today',
+  'Within 7 days',
+  '8 to 30 days',
+  'Next month',
+  '2 to 3 months',
+  'No timeline given',
+] as const
+export type WalkInBookingTimeline = (typeof WALK_IN_BOOKING_TIMELINES)[number]
+
+/**
+ * What is holding the buyer back (mandatory unless booked).
+ */
+export const WALK_IN_HOLDING_REASONS = [
+  'Discussing with family',
+  'Waiting for price or offer',
+  'Exchange evaluation pending',
+  'Test drive pending',
+  'Finance approval',
+  'Just looking',
+] as const
+export type WalkInHoldingReason = (typeof WALK_IN_HOLDING_REASONS)[number]
+
 /**
  * The buying intent staff wrote in REMARKS most often (1,713 sheet rows). Offered as quick picks; free text is
  * still accepted. "BOOKED" is what the sheet's Booked column keyed on.

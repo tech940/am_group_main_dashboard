@@ -3525,6 +3525,9 @@ export const kiaWalkInLeads = pgTable('kia_walk_in_leads', {
   exchangeDetails: text('exchange_details'),
   additionalInfo: text('additional_info'),
   expectedBookingDate: date('expected_booking_date'),
+  expectedBookingTimeline: text('expected_booking_timeline'),
+  holdingReason: text('holding_reason'),
+  followUpDate: date('follow_up_date'),
   remarks: text('remarks'),
   booked: boolean('booked').default(false).notNull(),
   source: text('source').default('form').notNull(),
@@ -3542,4 +3545,5 @@ export const kiaWalkInLeads = pgTable('kia_walk_in_leads', {
 }, (table) => ({
   kiaWalkInLeadsEnquiryDateIdx: index('kia_walk_in_leads_enquiry_date_idx').on(table.enquiryDate),
   kiaWalkInLeadsMobileIdx: index('kia_walk_in_leads_mobile_idx').on(table.mobile),
+  kiaWalkInLeadsFollowUpDateIdx: index('kia_walk_in_leads_follow_up_date_idx').on(table.followUpDate),
 }))

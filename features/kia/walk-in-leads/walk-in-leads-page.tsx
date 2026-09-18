@@ -4,6 +4,7 @@ import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import QRCode from 'qrcode'
 import {
+  BadgeCheck,
   Car,
   Check,
   ClipboardCopy,
@@ -11,6 +12,9 @@ import {
   ExternalLink,
   Link2,
   Loader2,
+  MessageSquare,
+  Phone,
+  PhoneCall,
   Repeat,
   Search,
   Trash2,
@@ -24,7 +28,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Chip, FieldValue, KpiRow, PremiumEmptyState, Section, TableSkeleton } from '@/components/kia/premium'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { WALK_IN_INTENTS, WALK_IN_MODELS, WALK_IN_SOURCES } from '@/lib/kia/walk-in-leads/constants'
+import {
+  WALK_IN_BOOKING_TIMELINES,
+  WALK_IN_CUSTOMER_TYPES,
+  WALK_IN_HOLDING_REASONS,
+  WALK_IN_INTENTS,
+  WALK_IN_MODELS,
+  WALK_IN_SOURCES,
+} from '@/lib/kia/walk-in-leads/constants'
 import type { WalkInFormLink, WalkInLead, WalkInListResponse } from '@/lib/kia/walk-in-leads/types'
 
 /**
@@ -47,25 +58,12 @@ type Query = {
   pageSize: number
 }
 
-const HISTORY_START = '2025-01-01'
-
 function ymd(date: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
 }
 
-function presets(today: string) {
-  const [y, m] = today.split('-').map(Number)
-  const monthStart = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}-01`
-  const lastDay = (year: number, month: number) => ymd(new Date(Date.UTC(year, month, 0, 12)))
-  const prev = m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 }
-  const three = new Date(Date.UTC(y, m - 3, 1, 12))
-  return [
-    { key: 'today', label: 'Today', from: today, to: today },
-    { key: 'month', label: 'This month', from: monthStart(y, m), to: today },
-    { key: 'last', label: 'Last month', from: monthStart(prev.y, prev.m), to: lastDay(prev.y, prev.m) },
-    { key: '3m', label: 'Last 3 months', from: ymd(three).slice(0, 8) + '01', to: today },
-    { key: 'all', label: 'All time', from: HISTORY_START, to: today },
-  ]
+function currentMonthStart(todayStr: string): string {
+  return `${todayStr.slice(0, 8)}01`
 }
 
 const dayLabel = (value: string | null) =>
@@ -92,11 +90,23 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function KiaWalkInLeadsPage() {
   const today = React.useMemo(() => ymd(new Date()), [])
-  const ranges = React.useMemo(() => presets(today), [today])
-  const [activeTab, setActiveTab] = React.useState<'register' | 'analysis'>('register')
-  const [query, setQuery] = React.useState<Query>(() => ({
-    from: ranges[1].from, to: ranges[1].to, dealer: '', model: '', consultant: '', source: '', booked: '', testDrive: '', q: '', page: 1, pageSize: 50,
-  }))
+  const [activeTab, setActiveTab] = React.useState<'register' | 'booked' | 'analysis'>('register')
+  const [query, setQuery] = React.useState<Query>(() => {
+    const t = ymd(new Date())
+    return {
+      from: currentMonthStart(t),
+      to: t,
+      dealer: '',
+      model: '',
+      consultant: '',
+      source: '',
+      booked: '',
+      testDrive: '',
+      q: '',
+      page: 1,
+      pageSize: 50,
+    }
+  })
   const [searchText, setSearchText] = React.useState('')
   const [openLead, setOpenLead] = React.useState<WalkInLead | null>(null)
   const [linksOpen, setLinksOpen] = React.useState(false)
@@ -110,7 +120,15 @@ export function KiaWalkInLeadsPage() {
   }, [searchText])
 
   const update = (patch: Partial<Query>) => setQuery((current) => ({ ...current, ...patch, page: patch.page ?? 1 }))
-  const params = toParams(query).toString()
+
+  const effectiveQuery = React.useMemo(() => {
+    if (activeTab === 'booked') {
+      return { ...query, booked: 'yes' as const }
+    }
+    return query
+  }, [activeTab, query])
+
+  const params = toParams(effectiveQuery).toString()
   const list = useQuery({
     queryKey: ['kia-walk-in-leads', params],
     queryFn: () => api<WalkInListResponse>(`/api/brands/kia/walk-in-leads?${params}`),
@@ -119,9 +137,8 @@ export function KiaWalkInLeadsPage() {
   })
   const data = list.data
   const summary = data?.summary
-  const activeRange = ranges.find((range) => range.from === query.from && range.to === query.to)?.key ?? null
   const pages = data ? Math.max(1, Math.ceil(data.total / query.pageSize)) : 1
-  const filtered = Boolean(query.dealer || query.model || query.consultant || query.source || query.booked || query.testDrive || query.q)
+  const filtered = Boolean(query.dealer || query.model || query.consultant || query.source || (activeTab !== 'booked' && query.booked) || query.testDrive || query.q)
 
   return (
     <MainLayout title="Walk-in Leads" subtitle="Showroom visitors from the walk-in form — who came, what they want, and who is close to booking">
@@ -145,6 +162,25 @@ export function KiaWalkInLeadsPage() {
               {data && (
                 <span className="rounded-full bg-slate-100 px-1.5 py-0.2 text-[10px] font-bold text-slate-600">
                   {data.total.toLocaleString('en-IN')}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('booked')}
+              className={cn(
+                'flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none',
+                activeTab === 'booked'
+                  ? 'bg-white text-indigo-950 shadow-xs ring-1 ring-indigo-200'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              )}
+            >
+              <PhoneCall className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Booked &amp; Calling</span>
+              {summary && (
+                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                  {summary.booked.toLocaleString('en-IN')}
                 </span>
               )}
             </button>
@@ -179,9 +215,9 @@ export function KiaWalkInLeadsPage() {
             <Button
               asChild
               size="sm"
-              className="h-8.5 rounded-xl bg-[#055B65] hover:bg-[#044a52] text-white text-xs font-semibold shadow-2xs"
+              className="h-8.5 rounded-xl bg-[var(--dashboard-action-bg)] hover:bg-[var(--dashboard-action-hover)] text-[var(--dashboard-action-fg)] text-xs font-semibold shadow-2xs"
             >
-              <a href={`/api/brands/kia/walk-in-leads/export?${toParams({ ...query, page: 1 }).toString()}`}>
+              <a href={`/api/brands/kia/walk-in-leads/export?${toParams({ ...effectiveQuery, page: 1 }).toString()}`}>
                 <Download className="mr-1.5 h-3.5 w-3.5" /> Export Excel
               </a>
             </Button>
@@ -191,28 +227,21 @@ export function KiaWalkInLeadsPage() {
         {/* ── Filters Section ─────────────────────────────────────────────────────────── */}
         <Section
           kicker="AM Kia · Sales"
-          title={activeTab === 'register' ? 'Walk-in register' : 'Analytics filters'}
-          description={data ? `${data.total.toLocaleString('en-IN')} walk-ins · ${dayLabel(query.from)} – ${dayLabel(query.to)}` : 'Loading…'}
-          icon={UserPlus}
+          title={
+            activeTab === 'register'
+              ? 'Walk-in register'
+              : activeTab === 'booked'
+                ? 'Booked customers calling list'
+                : 'Analytics filters'
+          }
+          description={
+            data
+              ? `${activeTab === 'booked' ? (summary?.booked ?? 0) : data.total.toLocaleString('en-IN')} ${activeTab === 'booked' ? 'booked customers' : 'walk-ins'} · ${dayLabel(query.from)} – ${dayLabel(query.to)}`
+              : 'Loading…'
+          }
+          icon={activeTab === 'booked' ? PhoneCall : UserPlus}
           bodyClassName="space-y-3"
         >
-          <div className="kia-segment inline-flex max-w-full flex-wrap gap-1 p-1" role="group" aria-label="Date range">
-            {ranges.map((range) => (
-              <button
-                key={range.key}
-                type="button"
-                aria-pressed={activeRange === range.key}
-                onClick={() => update({ from: range.from, to: range.to })}
-                className={cn(
-                  'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
-                  activeRange === range.key ? 'bg-[#055B65] text-white' : 'text-slate-600 hover:text-slate-900',
-                )}
-              >
-                {range.label}
-              </button>
-            ))}
-          </div>
-
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
             <LabeledInput label="From" type="date" value={query.from} max={query.to} onChange={(value) => value && update({ from: value })} />
             <LabeledInput label="To" type="date" value={query.to} min={query.from} max={today} onChange={(value) => value && update({ to: value })} />
@@ -245,7 +274,7 @@ export function KiaWalkInLeadsPage() {
             <button
               type="button"
               onClick={() => { setSearchText(''); update({ dealer: '', model: '', consultant: '', source: '', booked: '', testDrive: '', q: '' }) }}
-              className="text-xs font-semibold text-[#055B65] hover:underline"
+              className="text-xs font-semibold text-[var(--dashboard-primary)] hover:underline"
             >
               Clear filters
             </button>
@@ -284,15 +313,17 @@ export function KiaWalkInLeadsPage() {
                 </div>
 
                 <div
-                  onClick={() => update({ booked: query.booked === 'yes' ? '' : 'yes', testDrive: '' })}
-                  className={cn(
-                    'p-3.5 rounded-2xl bg-white border transition-colors cursor-pointer',
-                    query.booked === 'yes' ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200/90 hover:border-indigo-300'
-                  )}
+                  onClick={() => setActiveTab('booked')}
+                  className="p-3.5 rounded-2xl bg-white border border-slate-200/90 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all cursor-pointer shadow-2xs group"
                 >
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Booked</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wider block">Booked</span>
+                    <span className="text-[10.5px] text-indigo-600 font-bold group-hover:underline flex items-center gap-1">
+                      Calling list →
+                    </span>
+                  </div>
                   <div className="mt-1 flex items-baseline gap-2">
-                    <span className="text-2xl font-semibold text-indigo-900 tabular-nums">{summary.booked}</span>
+                    <span className="text-2xl font-bold text-indigo-950 tabular-nums">{summary.booked}</span>
                     <span className="text-[11px] text-indigo-700 font-medium">{pct(summary.booked, summary.total)} rate</span>
                   </div>
                 </div>
@@ -321,67 +352,135 @@ export function KiaWalkInLeadsPage() {
             ) : data ? (
               <Section title="Walk-ins" description={`Newest first · ${data.total.toLocaleString('en-IN')} in total${list.isFetching ? ' · updating…' : ''}`} bodyClassName="p-0">
                 <div className="kia-scroll overflow-x-auto">
-                  <table className="kia-table w-full min-w-[980px] text-[12.5px] sm:text-[13px] border-collapse">
+                  <table className="kia-table w-full min-w-[1080px] text-[12.5px] sm:text-[13px] border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-200 bg-slate-100/90 text-[12px] font-semibold text-slate-800">
-                        <th className="px-4 py-3 text-left border-r border-slate-200">Visit Date</th>
-                        <th className="px-3 py-3 text-left border-r border-slate-200">Customer</th>
-                        <th className="px-3 py-3 text-left border-r border-slate-200">Mobile</th>
-                        <th className="px-3 py-3 text-left border-r border-slate-200">Model</th>
-                        <th className="px-3 py-3 text-left border-r border-slate-200">Consultant</th>
-                        <th className="px-3 py-3 text-left border-r border-slate-200">Test Drive</th>
-                        <th className="px-3 py-3 text-left border-r border-slate-200">Customer Said</th>
-                        <th className="px-3 py-3 text-left border-r border-slate-200">Expected Booking</th>
+                      <tr className="border-b border-white/20 bg-[var(--dashboard-primary)] text-[12px] font-bold text-white">
+                        <th className="px-4 py-3 text-left border-r border-white/10">Visit Date</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Customer &amp; Area</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Mobile</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Model</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Consultant</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Test Drive</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Forecast / Expected</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Holding Reason</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Next Follow-up</th>
                         <th className="px-4 py-3 text-left">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200/70">
-                      {data.rows.map((lead) => (
-                        <tr
-                          key={lead.id}
-                          className="cursor-pointer odd:bg-white even:bg-slate-50/60 hover:bg-indigo-50/35 transition-colors"
-                          onClick={() => setOpenLead(lead)}
-                          tabIndex={0}
-                          onKeyDown={(e) => { if (e.key === 'Enter') setOpenLead(lead) }}
-                        >
-                          <td className="whitespace-nowrap px-4 py-2.5 border-r border-slate-200/70">
-                            <p className="font-semibold text-slate-900">{dayLabel(lead.enquiryDate)}</p>
-                            {data.branches.length > 1 && <p className="text-[11px] text-slate-400">{lead.branch}</p>}
-                          </td>
-                          <td className="px-3 py-2.5 border-r border-slate-200/70">
-                            <p className="font-semibold text-slate-900">{lead.customerName}</p>
-                            <p className="text-[11px] text-slate-500 font-medium">
-                              {title(lead.enquirySource)}{lead.customerType ? ` · ${title(lead.customerType)}` : ''}
-                              {lead.repeatVisit && <span className="ml-1 font-semibold text-amber-700">· came back</span>}
-                            </p>
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2.5 font-medium text-slate-700 border-r border-slate-200/70">{lead.mobile}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-900 border-r border-slate-200/70">{lead.model}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 font-medium text-slate-700 border-r border-slate-200/70">{lead.consultantName}</td>
-                          <td className="px-3 py-2.5 border-r border-slate-200/70">
-                            {lead.testDrive ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-800 border border-sky-200">
-                                Yes
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 text-xs font-medium">No</span>
-                            )}
-                          </td>
-                          <td className="max-w-[16rem] px-3 py-2.5 border-r border-slate-200/70"><p className="line-clamp-2 text-slate-600 font-normal">{lead.remarks ?? '—'}</p></td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-700 font-medium border-r border-slate-200/70">{dayLabel(lead.expectedBookingDate)}</td>
-                          <td className="px-4 py-2.5">
-                            {lead.booked ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-900 border border-indigo-200/80">
-                                <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" /> Booked
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-200/80">
-                                <span className="h-1.5 w-1.5 rounded-full bg-amber-600" /> Open
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {data.rows.map((lead) => {
+                        const isOverdue = lead.followUpDate && !lead.booked && lead.followUpDate < today
+                        const isToday = lead.followUpDate && !lead.booked && lead.followUpDate === today
+
+                        return (
+                          <tr
+                            key={lead.id}
+                            className="cursor-pointer odd:bg-white even:bg-slate-50/60 hover:bg-indigo-50/35 transition-colors"
+                            onClick={() => setOpenLead(lead)}
+                            tabIndex={0}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setOpenLead(lead) }}
+                          >
+                            {/* Visit Date */}
+                            <td className="whitespace-nowrap px-4 py-2.5 border-r border-slate-200/70">
+                              <p className="font-semibold text-slate-900">{dayLabel(lead.enquiryDate)}</p>
+                              {data.branches.length > 1 && <p className="text-[11px] text-slate-400 font-medium">{lead.branch}</p>}
+                            </td>
+
+                            {/* Customer & Area */}
+                            <td className="px-3 py-2.5 border-r border-slate-200/70">
+                              <p className="font-semibold text-slate-900">{lead.customerName}</p>
+                              {lead.address && (
+                                <p className="text-[11px] text-slate-600 font-medium line-clamp-1">
+                                  {lead.address}
+                                </p>
+                              )}
+                              <p className="text-[10.5px] text-slate-400 font-medium">
+                                {title(lead.enquirySource)}{lead.customerType ? ` · ${title(lead.customerType)}` : ''}
+                                {lead.repeatVisit && <span className="ml-1 font-semibold text-amber-700">· came back</span>}
+                              </p>
+                            </td>
+
+                            {/* Mobile */}
+                            <td className="whitespace-nowrap px-3 py-2.5 font-medium text-slate-700 border-r border-slate-200/70">{lead.mobile}</td>
+
+                            {/* Model */}
+                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-900 border-r border-slate-200/70">{lead.model}</td>
+
+                            {/* Consultant */}
+                            <td className="whitespace-nowrap px-3 py-2.5 font-medium text-slate-700 border-r border-slate-200/70">{lead.consultantName}</td>
+
+                            {/* Test Drive */}
+                            <td className="px-3 py-2.5 border-r border-slate-200/70">
+                              {lead.testDrive ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-800 border border-sky-200">
+                                  Yes
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 text-xs font-medium">No</span>
+                              )}
+                            </td>
+
+                            {/* Forecast / Expected Booking */}
+                            <td className="whitespace-nowrap px-3 py-2.5 border-r border-slate-200/70">
+                              {lead.expectedBookingTimeline && (
+                                <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200 mb-0.5">
+                                  {lead.expectedBookingTimeline}
+                                </span>
+                              )}
+                              <p className="text-xs font-semibold text-slate-700">{dayLabel(lead.expectedBookingDate)}</p>
+                            </td>
+
+                            {/* Holding Reason */}
+                            <td className="max-w-[14rem] px-3 py-2.5 border-r border-slate-200/70">
+                              {lead.holdingReason ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-900 border border-amber-200/80">
+                                  {lead.holdingReason}
+                                </span>
+                              ) : lead.remarks ? (
+                                <p className="line-clamp-2 text-slate-600 font-normal">{lead.remarks}</p>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+
+                            {/* Next Follow-up */}
+                            <td className="whitespace-nowrap px-3 py-2.5 border-r border-slate-200/70">
+                              {lead.booked ? (
+                                <span className="text-xs text-slate-400 font-medium">Closed</span>
+                              ) : isOverdue ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-rose-600" />
+                                  {dayLabel(lead.followUpDate)} (Overdue)
+                                </span>
+                              ) : isToday ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-300">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-600 animate-pulse" />
+                                  Today
+                                </span>
+                              ) : lead.followUpDate ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
+                                  {dayLabel(lead.followUpDate)}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 text-xs">—</span>
+                              )}
+                            </td>
+
+                            {/* Status */}
+                            <td className="px-4 py-2.5">
+                              {lead.booked ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-900 border border-indigo-200/80">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" /> Booked
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-200/80">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-600" /> Open
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -405,7 +504,221 @@ export function KiaWalkInLeadsPage() {
           </div>
         )}
 
-        {/* ── VIEW TAB 2: COMPREHENSIVE ANALYTICS SUITE ────────────────────────────── */}
+        {/* ── VIEW TAB 2: BOOKED CUSTOMERS CALLING SHEET ───────────────────────────── */}
+        {activeTab === 'booked' && (
+          <div className="space-y-4">
+            {/* Calling KPI Strip */}
+            {summary && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/90 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wider block">Booked Customers</span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-indigo-950 tabular-nums">{summary.booked}</span>
+                    <span className="text-[11px] text-indigo-700 font-medium">{pct(summary.booked, summary.total)} of walk-ins</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Trade-in / Exchange</span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-slate-900 tabular-nums">{summary.exchange}</span>
+                    <span className="text-[11px] text-slate-500 font-medium">{pct(summary.exchange, summary.total)} with trade-in</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Test Drive Done</span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-slate-900 tabular-nums">{summary.testDrives}</span>
+                    <span className="text-[11px] text-sky-700 font-medium">experienced car</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Follow-up Calling</span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-sm font-bold text-slate-900">Direct Connect</span>
+                  </div>
+                  <p className="mt-0.5 text-[10.5px] text-slate-500 font-medium">Click-to-Call &amp; WhatsApp desk</p>
+                </div>
+              </div>
+            )}
+
+            {/* Table Area */}
+            {list.isLoading ? (
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs"><TableSkeleton rows={8} columns={8} /></div>
+            ) : list.isError && !data ? (
+              <PremiumEmptyState illustration="error" title="Booked walk-ins could not be loaded" description={list.error instanceof Error ? list.error.message : undefined} action={<Button onClick={() => list.refetch()}>Try again</Button>} />
+            ) : data && data.rows.length === 0 ? (
+              <PremiumEmptyState
+                illustration="search"
+                title="No booked walk-ins in this period"
+                description={filtered ? 'Clear some filters or change the date range.' : 'Walk-ins marked as booked will appear here in the calling list.'}
+              />
+            ) : data ? (
+              <Section
+                title="Booked Customer Calling Register"
+                description={`${data.total.toLocaleString('en-IN')} booked customers · Click Call or WhatsApp to connect directly`}
+                bodyClassName="p-0"
+              >
+                <div className="kia-scroll overflow-x-auto">
+                  <table className="kia-table w-full min-w-[1120px] text-[12.5px] sm:text-[13px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/20 bg-[var(--dashboard-primary)] text-[12px] font-bold text-white">
+                        <th className="px-4 py-3 text-left border-r border-white/10">Customer &amp; Area</th>
+                        <th className="px-4 py-3 text-left border-r border-white/10">Direct Calling</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Model Booked</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Consultant &amp; Branch</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Visit / Booking Date</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Delivery / Target Date</th>
+                        <th className="px-3 py-3 text-left border-r border-white/10">Remarks &amp; Exchange</th>
+                        <th className="px-4 py-3 text-left">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200/70">
+                      {data.rows.map((lead) => {
+                        const rawPhone = lead.mobile.replace(/\D/g, '')
+                        const canCall = data.canViewPii && rawPhone.length >= 10
+
+                        return (
+                          <tr
+                            key={lead.id}
+                            className="cursor-pointer odd:bg-white even:bg-slate-50/60 hover:bg-slate-100/60 transition-colors"
+                            onClick={() => setOpenLead(lead)}
+                            tabIndex={0}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setOpenLead(lead) }}
+                          >
+                            {/* Customer & Area */}
+                            <td className="px-4 py-2.5 border-r border-slate-200/70">
+                              <p className="font-bold text-slate-900">{lead.customerName}</p>
+                              {lead.address && (
+                                <p className="text-[11px] text-slate-600 font-medium line-clamp-1">
+                                  {lead.address}
+                                </p>
+                              )}
+                              <p className="text-[10.5px] text-slate-400 font-medium">
+                                {title(lead.enquirySource)}{lead.customerType ? ` · ${title(lead.customerType)}` : ''}
+                                {lead.repeatVisit && <span className="ml-1 font-semibold text-amber-700">· Repeat</span>}
+                              </p>
+                            </td>
+
+                            {/* Direct Calling Actions */}
+                            <td className="px-4 py-2.5 border-r border-slate-200/70" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex flex-col gap-1.5">
+                                {canCall ? (
+                                  <>
+                                    <a
+                                      href={`tel:+91${rawPhone.slice(-10)}`}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--dashboard-action-bg)] hover:bg-[var(--dashboard-action-hover)] text-[var(--dashboard-action-fg)] text-xs font-bold shadow-2xs transition-colors w-fit"
+                                      title="Call customer directly"
+                                    >
+                                      <Phone className="h-3.5 w-3.5" />
+                                      {lead.mobile}
+                                    </a>
+                                    <a
+                                      href={`https://wa.me/91${rawPhone.slice(-10)}?text=${encodeURIComponent(`Hello ${lead.customerName}, greeting from AM Kia showroom regarding your ${lead.model} booking.`)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-800 border border-slate-300 text-[11px] font-semibold transition-colors w-fit"
+                                    >
+                                      <MessageSquare className="h-3 w-3 text-slate-600" />
+                                      WhatsApp
+                                    </a>
+                                  </>
+                                ) : (
+                                  <span className="font-mono text-xs text-slate-500 font-medium">{lead.mobile}</span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Model Booked */}
+                            <td className="whitespace-nowrap px-3 py-2.5 border-r border-slate-200/70">
+                              <span className="inline-block px-2.5 py-1 rounded-md text-xs font-bold bg-slate-100 text-slate-900 border border-slate-200">
+                                {lead.model}
+                              </span>
+                              {lead.testDrive && (
+                                <p className="mt-1 text-[10.5px] font-semibold text-sky-700">Test drive taken</p>
+                              )}
+                            </td>
+
+                            {/* Consultant & Branch */}
+                            <td className="whitespace-nowrap px-3 py-2.5 border-r border-slate-200/70">
+                              <p className="font-semibold text-slate-900">{lead.consultantName}</p>
+                              <p className="text-[11px] text-slate-500 font-medium">{lead.branch} showroom</p>
+                            </td>
+
+                            {/* Visit / Booking Date */}
+                            <td className="whitespace-nowrap px-3 py-2.5 border-r border-slate-200/70">
+                              <p className="font-semibold text-slate-900">{dayLabel(lead.enquiryDate)}</p>
+                              <p className="text-[10.5px] text-slate-400">Booked visit</p>
+                            </td>
+
+                            {/* Delivery / Target Date */}
+                            <td className="whitespace-nowrap px-3 py-2.5 border-r border-slate-200/70">
+                              {lead.expectedBookingDate ? (
+                                <p className="font-bold text-slate-900">{dayLabel(lead.expectedBookingDate)}</p>
+                              ) : (
+                                <p className="text-xs text-slate-400 font-medium">—</p>
+                              )}
+                              {lead.expectedBookingTimeline && (
+                                <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[10.5px] font-medium bg-slate-100 text-slate-700">
+                                  {lead.expectedBookingTimeline}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Remarks & Exchange */}
+                            <td className="max-w-[15rem] px-3 py-2.5 border-r border-slate-200/70">
+                              {lead.exchange && (
+                                <p className="text-[11px] font-semibold text-amber-800 mb-0.5">
+                                  Trade-in: {lead.exchangeDetails || 'Yes'}
+                                </p>
+                              )}
+                              {lead.remarks ? (
+                                <p className="line-clamp-2 text-xs text-slate-700">{lead.remarks}</p>
+                              ) : (
+                                <span className="text-slate-400 text-xs">—</span>
+                              )}
+                            </td>
+
+                            {/* Action */}
+                            <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setOpenLead(lead)}
+                                className="h-8 rounded-lg border-indigo-200 text-indigo-900 bg-indigo-50/50 hover:bg-indigo-100 text-xs font-semibold"
+                              >
+                                Log Call / Notes
+                              </Button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 px-4 py-3 text-xs font-semibold text-slate-600 bg-slate-50/50">
+                  <span>Page {query.page} of {pages} ({data.total} booked)</span>
+                  <div className="flex items-center gap-2">
+                    <select
+                      aria-label="Rows per page"
+                      value={query.pageSize}
+                      onChange={(e) => update({ pageSize: Number(e.target.value) })}
+                      className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 shadow-2xs"
+                    >
+                      {[25, 50, 100].map((size) => <option key={size} value={size}>{size} rows</option>)}
+                    </select>
+                    <Button variant="outline" size="sm" disabled={query.page <= 1} onClick={() => update({ page: query.page - 1 })}>Previous</Button>
+                    <Button variant="outline" size="sm" disabled={query.page >= pages} onClick={() => update({ page: query.page + 1 })}>Next</Button>
+                  </div>
+                </div>
+              </Section>
+            ) : null}
+          </div>
+        )}
+
+        {/* ── VIEW TAB 3: COMPREHENSIVE ANALYTICS SUITE ────────────────────────────── */}
         {activeTab === 'analysis' && summary && (
           <div className="space-y-4">
             {/* Top KPI Strip */}
@@ -748,18 +1061,31 @@ function LeadDialog({ lead, canEdit, canDelete, canViewPii, onClose, onChanged }
 }) {
   const queryClient = useQueryClient()
   const [remarks, setRemarks] = React.useState(lead.remarks ?? '')
+  const [timeline, setTimeline] = React.useState(lead.expectedBookingTimeline ?? '')
   const [expected, setExpected] = React.useState(lead.expectedBookingDate ?? '')
+  const [holdingReason, setHoldingReason] = React.useState(lead.holdingReason ?? '')
+  const [followUpDate, setFollowUpDate] = React.useState(lead.followUpDate ?? '')
   const [booked, setBooked] = React.useState(lead.booked)
   const [removing, setRemoving] = React.useState(false)
   const [reason, setReason] = React.useState('')
-  const dirty = remarks !== (lead.remarks ?? '') || expected !== (lead.expectedBookingDate ?? '') || booked !== lead.booked
+
+  const dirty =
+    remarks !== (lead.remarks ?? '') ||
+    timeline !== (lead.expectedBookingTimeline ?? '') ||
+    expected !== (lead.expectedBookingDate ?? '') ||
+    holdingReason !== (lead.holdingReason ?? '') ||
+    followUpDate !== (lead.followUpDate ?? '') ||
+    booked !== lead.booked
 
   const save = useMutation({
     mutationFn: () => api<{ lead: WalkInLead }>(`/api/brands/kia/walk-in-leads/${lead.id}`, {
       method: 'PATCH',
       body: JSON.stringify({
         ...(remarks !== (lead.remarks ?? '') ? { remarks } : {}),
+        ...(timeline !== (lead.expectedBookingTimeline ?? '') ? { expectedBookingTimeline: timeline } : {}),
         ...(expected !== (lead.expectedBookingDate ?? '') ? { expectedBookingDate: expected } : {}),
+        ...(holdingReason !== (lead.holdingReason ?? '') ? { holdingReason } : {}),
+        ...(followUpDate !== (lead.followUpDate ?? '') ? { followUpDate } : {}),
         ...(booked !== lead.booked ? { booked } : {}),
         expectedUpdatedAt: lead.updatedAt,
       }),
@@ -783,66 +1109,151 @@ function LeadDialog({ lead, canEdit, canDelete, canViewPii, onClose, onChanged }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="kia-premium max-h-[92dvh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto rounded-2xl border-0 bg-white p-0">
-        <DialogHeader className="border-b border-[var(--kia-hairline)] px-5 pb-4 pt-5 text-left">
-          <DialogTitle className="flex flex-wrap items-center gap-2 text-lg font-extrabold">
+      <DialogContent className="kia-premium max-h-[92dvh] w-[calc(100vw-2rem)] max-w-3xl overflow-y-auto rounded-2xl border-0 bg-white p-0 shadow-2xl">
+        <DialogHeader className="border-b border-slate-200 px-6 pb-4 pt-5 text-left">
+          <DialogTitle className="flex flex-wrap items-center gap-2 text-xl font-bold text-slate-900">
             {lead.customerName}
             {lead.booked ? <Chip tone="indigo" dot>Booked</Chip> : <Chip tone="amber" dot>Open</Chip>}
             {lead.repeatVisit && <Chip tone="amber">Came back</Chip>}
           </DialogTitle>
-          <DialogDescription>
-            {lead.model} · visited {dayLabel(lead.enquiryDate)} · {lead.branch} · {lead.source === 'import' ? 'from the old Google Form' : `sent ${new Date(lead.submittedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`}
+          <DialogDescription className="text-xs sm:text-sm text-slate-600 mt-1">
+            {lead.model} · visited {dayLabel(lead.enquiryDate)} · {lead.branch} · {lead.source === 'import' ? 'from old Google Form' : `sent ${new Date(lead.submittedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 px-5 py-4">
+        <div className="space-y-4 px-6 py-5">
           <div className="grid gap-2 sm:grid-cols-2">
             <FieldValue label="Mobile" value={lead.mobile === '••••••' ? lead.mobile : `${lead.countryCode} ${lead.mobile}`} mono />
             <FieldValue label="E-mail" value={lead.email ?? '—'} />
             <FieldValue label="Consultant" value={lead.consultantName} />
             <FieldValue label="Source" value={title(lead.enquirySource)} />
-            <FieldValue label="Customer" value={lead.customerType ? title(lead.customerType) : '—'} />
+            <FieldValue label="Customer Profile" value={lead.customerType ? title(lead.customerType) : '—'} />
             <FieldValue label="Test drive" value={lead.testDrive ? 'Yes' : 'No'} />
             <FieldValue label="Exchange" value={lead.exchange === null ? '—' : lead.exchange ? `Yes${lead.exchangeDetails ? ` — ${lead.exchangeDetails}` : ''}` : 'No'} />
-            <FieldValue label="Address" value={lead.address ?? '—'} />
+            <FieldValue label="Address / Area" value={lead.address ?? '—'} />
             {lead.additionalInfo && <FieldValue label="Anything else" value={lead.additionalInfo} className="sm:col-span-2" />}
           </div>
-          {!canViewPii && <p className="text-[11px] text-[var(--kia-text-faint)]">Mobile, e-mail and address are visible only to MD, Developer and the other KIA customer-data roles.</p>}
+          {!canViewPii && <p className="text-[11px] text-slate-400">Mobile, e-mail and address are visible only to MD, Developer and the other KIA customer-data roles.</p>}
 
-          <div className="kia-surface-sunken space-y-3 rounded-xl p-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--kia-text-faint)]">Follow-up</p>
+          <div className="kia-surface-sunken space-y-3 rounded-xl p-4 bg-slate-50 border border-slate-200/80">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Follow-up &amp; Pipeline Commitment</p>
             {canEdit ? (
-              <>
-                <div className="flex flex-wrap gap-1.5">
-                  {WALK_IN_INTENTS.map((intent) => (
-                    <button key={intent} type="button" onClick={() => { setRemarks(intent); if (intent === 'BOOKED') setBooked(true) }} aria-pressed={remarks === intent}
-                      className={cn('rounded-full border px-2.5 py-1 text-[11px] font-semibold', remarks === intent ? 'border-[var(--dashboard-primary)] bg-[var(--dashboard-primary)] text-white' : 'border-[var(--kia-hairline)] text-[var(--kia-text-soft)]')}>
-                      {title(intent)}
-                    </button>
-                  ))}
+              <div className="space-y-3">
+                {/* Timeline forecasting chips */}
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Forecasting timeline</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WALK_IN_BOOKING_TIMELINES.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => {
+                          setTimeline(t)
+                          if (t === 'Booked today') {
+                            setBooked(true)
+                            setExpected(lead.enquiryDate)
+                          }
+                        }}
+                        className={cn(
+                          'rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                          timeline === t
+                            ? 'border-indigo-600 bg-indigo-600 text-white'
+                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                        )}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <label className="block text-xs font-semibold text-[var(--kia-text-soft)]">
-                  What the customer said
-                  <input value={remarks} onChange={(e) => setRemarks(e.target.value)} maxLength={500} className="mt-1 h-10 w-full rounded-lg border border-[var(--kia-hairline)] bg-white px-3 text-sm text-[var(--kia-text)]" />
+
+                {/* Holding reason chips */}
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">What is holding them back?</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WALK_IN_HOLDING_REASONS.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setHoldingReason(r)}
+                        className={cn(
+                          'rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                          holdingReason === r
+                            ? 'border-amber-600 bg-amber-500 text-white'
+                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                        )}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Remarks */}
+                <label className="block text-xs font-semibold text-slate-700">
+                  Customer remarks / notes
+                  <input
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    maxLength={500}
+                    placeholder="Specific requests, follow-up notes..."
+                    className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                  />
                 </label>
-                <div className="flex flex-wrap items-end gap-3">
-                  <label className="block text-xs font-semibold text-[var(--kia-text-soft)]">
-                    Expected booking
-                    <input type="date" value={expected} min={lead.enquiryDate} onChange={(e) => setExpected(e.target.value)} className="mt-1 h-10 rounded-lg border border-[var(--kia-hairline)] bg-white px-3 text-sm text-[var(--kia-text)]" />
+
+                {/* Date Grid: Expected Booking Date + Next Follow-up Date */}
+                <div className="grid sm:grid-cols-2 gap-3 pt-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Expected booking date
+                    <input
+                      type="date"
+                      value={expected}
+                      min={lead.enquiryDate}
+                      onChange={(e) => setExpected(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                    />
                   </label>
-                  <label className="inline-flex h-10 items-center gap-2 text-sm font-semibold text-[var(--kia-text)]">
-                    <input type="checkbox" checked={booked} onChange={(e) => setBooked(e.target.checked)} className="h-4 w-4" />
-                    Booked
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Next follow-up date (Call commitment)
+                    <input
+                      type="date"
+                      value={followUpDate}
+                      min={lead.enquiryDate}
+                      onChange={(e) => setFollowUpDate(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                    />
                   </label>
-                  <Button className="ml-auto" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200">
+                  <label className="inline-flex h-10 items-center gap-2 text-sm font-semibold text-slate-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={booked}
+                      onChange={(e) => setBooked(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    Mark as Booked
+                  </label>
+                  <Button
+                    className="bg-[#05141f] text-white hover:bg-slate-900"
+                    disabled={!dirty || save.isPending}
+                    onClick={() => save.mutate()}
+                  >
                     {save.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Save follow-up
                   </Button>
                 </div>
-                {lead.updatedByName && <p className="text-[11px] text-[var(--kia-text-faint)]">Last updated by {lead.updatedByName} · {new Date(lead.updatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>}
-              </>
+                {lead.updatedByName && (
+                  <p className="text-[11px] text-slate-400">Last updated by {lead.updatedByName} · {new Date(lead.updatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+                )}
+              </div>
             ) : (
               <div className="grid gap-2 sm:grid-cols-2">
-                <FieldValue label="Customer said" value={lead.remarks ?? '—'} />
+                <FieldValue label="Forecast Timeline" value={lead.expectedBookingTimeline ?? '—'} />
                 <FieldValue label="Expected booking" value={dayLabel(lead.expectedBookingDate)} />
+                <FieldValue label="Holding reason" value={lead.holdingReason ?? '—'} />
+                <FieldValue label="Next follow-up date" value={dayLabel(lead.followUpDate)} />
+                <FieldValue label="Customer remarks" value={lead.remarks ?? '—'} className="sm:col-span-2" />
               </div>
             )}
           </div>
@@ -881,19 +1292,19 @@ function FormLinksDialog({ onClose }: { onClose: () => void }) {
   })
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="kia-premium max-h-[92dvh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto rounded-2xl border-0 bg-white p-0">
-        <DialogHeader className="border-b border-[var(--kia-hairline)] px-5 pb-4 pt-5 text-left">
-          <DialogTitle className="text-lg font-extrabold">Walk-in form links</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-2rem)] max-w-5xl overflow-y-auto rounded-2xl border-0 bg-white p-0 shadow-2xl">
+        <DialogHeader className="border-b border-slate-200 px-6 pb-4 pt-5 text-left">
+          <DialogTitle className="text-xl font-bold text-slate-900">Walk-in form links &amp; Showroom QRs</DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm text-slate-600 mt-1">
             Staff open these without logging in. Print the QR code for the showroom desk, or share the link on WhatsApp. Each link files walk-ins under its branch.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
-          {links.isLoading && <p className="text-sm text-[var(--kia-text-soft)]">Preparing links…</p>}
-          {links.isError && <p className="text-sm text-rose-700">{links.error instanceof Error ? links.error.message : 'The links could not be loaded.'}</p>}
+        <div className="grid gap-4 px-6 py-5 sm:grid-cols-2 lg:grid-cols-3">
+          {links.isLoading && <p className="col-span-full py-8 text-center text-sm text-slate-500">Preparing showroom links…</p>}
+          {links.isError && <p className="col-span-full py-8 text-center text-sm text-rose-700">{links.error instanceof Error ? links.error.message : 'The links could not be loaded.'}</p>}
           {links.data?.links.map((link) => <LinkCard key={link.dealerCode} link={link} />)}
         </div>
-        <p className="border-t border-[var(--kia-hairline)] px-5 py-3 text-[11px] text-[var(--kia-text-faint)]">
+        <p className="border-t border-slate-200/80 bg-slate-50 px-6 py-3 text-[11px] text-slate-500 rounded-b-2xl">
           If a link is shared somewhere it shouldn’t be, ask a developer to change WALK_IN_LINK_GENERATION: every old link stops working and new ones appear here.
         </p>
       </DialogContent>
@@ -920,19 +1331,22 @@ function LinkCard({ link }: { link: WalkInFormLink }) {
     }
   }
   return (
-    <div className="kia-surface-sunken flex flex-col items-center gap-3 rounded-xl p-4 text-center">
-      <p className="text-sm font-extrabold text-[var(--kia-text)]">{link.branch} showroom</p>
+    <div className="kia-surface-sunken flex flex-col items-center gap-3 rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 text-center shadow-2xs">
+      <div className="inline-flex items-center gap-1.5 rounded-full bg-slate-200/80 px-3 py-1 text-xs font-bold text-slate-900">
+        <span className="h-2 w-2 rounded-full bg-slate-500" />
+        {link.branch} showroom
+      </div>
       {qr ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={qr} alt={`QR code for the ${link.branch} walk-in form`} className="h-44 w-44 rounded-lg bg-white p-2" />
+        <img src={qr} alt={`QR code for the ${link.branch} walk-in form`} className="h-44 w-44 rounded-xl bg-white p-2 shadow-xs border border-slate-200/70" />
       ) : (
-        <div className="h-44 w-44 animate-pulse rounded-lg bg-white" />
+        <div className="h-44 w-44 animate-pulse rounded-xl bg-slate-200/60" />
       )}
-      <p className="w-full break-all rounded-lg bg-white px-2 py-1.5 font-mono text-[10px] text-[var(--kia-text-soft)]">{url}</p>
-      <div className="flex flex-wrap justify-center gap-2">
-        <Button size="sm" variant="outline" onClick={copy}>{copied ? <Check className="mr-1.5 h-4 w-4" /> : <ClipboardCopy className="mr-1.5 h-4 w-4" />}{copied ? 'Copied' : 'Copy link'}</Button>
-        <Button size="sm" variant="outline" asChild><a href={url} target="_blank" rel="noreferrer"><ExternalLink className="mr-1.5 h-4 w-4" /> Open</a></Button>
-        {qr && <Button size="sm" variant="outline" asChild><a href={qr} download={`kia-walk-in-${link.branch.toLowerCase()}.png`}><Download className="mr-1.5 h-4 w-4" /> QR</a></Button>}
+      <p className="w-full break-all rounded-lg bg-white px-2 py-1.5 font-mono text-[10.5px] font-medium text-slate-600 border border-slate-200/60 select-all">{url}</p>
+      <div className="flex flex-wrap justify-center gap-2 pt-1">
+        <Button size="sm" variant="outline" onClick={copy} className="h-8 rounded-xl border-slate-200 text-xs font-semibold hover:bg-white">{copied ? <Check className="mr-1.5 h-3.5 w-3.5 text-slate-700" /> : <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />}{copied ? 'Copied' : 'Copy link'}</Button>
+        <Button size="sm" variant="outline" asChild className="h-8 rounded-xl border-slate-200 text-xs font-semibold hover:bg-white"><a href={url} target="_blank" rel="noreferrer"><ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Open</a></Button>
+        {qr && <Button size="sm" variant="outline" asChild className="h-8 rounded-xl border-slate-200 text-xs font-semibold hover:bg-white"><a href={qr} download={`kia-walk-in-${link.branch.toLowerCase()}.png`}><Download className="mr-1.5 h-3.5 w-3.5" /> QR</a></Button>}
       </div>
     </div>
   )

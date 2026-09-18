@@ -54,7 +54,7 @@ function rows<T = Row>(result: unknown): T[] {
  * submitted for the same branch and day in the last few minutes (a double tap, or a resend on a bad signal).
  */
 export async function createWalkInLead(dealerCode: string, input: WalkInSubmitInput): Promise<{ id: string; duplicate: boolean }> {
-  const booked = remarksMeanBooked(input.remarks)
+  const booked = remarksMeanBooked(input.remarks) || input.expectedBookingTimeline === 'Booked today'
   const result = rows<{ inserted: string | null; existing: string | null; recent: number }>(await db.execute(sql`
     WITH repeat_submit AS (
       SELECT id FROM kia_walk_in_leads
@@ -72,14 +72,15 @@ export async function createWalkInLead(dealerCode: string, input: WalkInSubmitIn
       INSERT INTO kia_walk_in_leads (
         enquiry_date, dealer_code, customer_name, country_code, mobile, email, address, model, consultant_name,
         test_drive, enquiry_source, customer_type, exchange, exchange_details, additional_info,
-        expected_booking_date, remarks, booked, source
+        expected_booking_timeline, expected_booking_date, holding_reason, follow_up_date, remarks, booked, source
       )
       SELECT
         ${input.enquiryDate}::date, ${dealerCode}::text, ${input.customerName}::text, '+91', ${input.mobile}::text,
         ${input.email}::text, ${input.address}::text, ${input.model}::text, ${input.consultantName}::text,
         ${input.testDrive}::boolean, ${input.enquirySource}::text, ${input.customerType}::text,
         ${input.exchange}::boolean, ${input.exchange ? input.exchangeDetails : null}::text, ${input.additionalInfo}::text,
-        ${input.expectedBookingDate}::date, ${input.remarks}::text, ${booked}::boolean, 'form'
+        ${input.expectedBookingTimeline}::text, ${input.expectedBookingDate}::date, ${input.holdingReason}::text,
+        ${input.followUpDate}::date, ${input.remarks}::text, ${booked}::boolean, 'form'
       WHERE NOT EXISTS (SELECT 1 FROM repeat_submit) AND (SELECT n FROM flood) < ${FLOOD_LIMIT}::int
       RETURNING id
     )
@@ -182,7 +183,9 @@ const ROW_JSON = sql`json_build_object(
   'mobile', l.mobile, 'countryCode', l.country_code, 'email', l.email, 'address', l.address, 'model', l.model,
   'consultantName', l.consultant_name, 'testDrive', l.test_drive, 'enquirySource', l.enquiry_source,
   'customerType', l.customer_type, 'exchange', l.exchange, 'exchangeDetails', l.exchange_details,
-  'additionalInfo', l.additional_info, 'expectedBookingDate', l.expected_booking_date::text, 'remarks', l.remarks,
+  'additionalInfo', l.additional_info, 'expectedBookingDate', l.expected_booking_date::text,
+  'expectedBookingTimeline', l.expected_booking_timeline, 'holdingReason', l.holding_reason,
+  'followUpDate', l.follow_up_date::text, 'remarks', l.remarks,
   'booked', l.booked, 'source', l.source, 'submittedAt', l.submitted_at, 'updatedAt', l.updated_at,
   'updatedByName', l.updated_by_name,
   'repeatVisit', EXISTS (
@@ -255,9 +258,20 @@ export async function listWalkInLeads(viewer: WalkInViewer, filters: WalkInFilte
         LIMIT ${filters.pageSize} OFFSET ${offset}
       ) x) AS page,
       (SELECT json_agg(c.name ORDER BY c.n DESC, c.name) FROM (
-        SELECT consultant_name AS name, count(*) AS n FROM kia_walk_in_leads
-        WHERE deleted_at IS NULL ${scopeSql}
-        GROUP BY consultant_name
+        SELECT trim(name) AS name, sum(n)::int AS n FROM (
+          SELECT consultant_name AS name, count(*)::int AS n FROM kia_walk_in_leads
+          WHERE deleted_at IS NULL AND consultant_name IS NOT NULL AND trim(consultant_name) <> '' ${scopeSql}
+          GROUP BY consultant_name
+          UNION ALL
+          SELECT consultant_name AS name, 1 AS n FROM kia_sales_targets
+          WHERE consultant_name IS NOT NULL AND trim(consultant_name) <> '' ${scopeSql}
+          GROUP BY consultant_name
+          UNION ALL
+          SELECT consultant_name AS name, 1 AS n FROM kia_bookings
+          WHERE consultant_name IS NOT NULL AND trim(consultant_name) <> '' ${scopeSql}
+          GROUP BY consultant_name
+        ) u
+        GROUP BY trim(name)
       ) c) AS consultants
   `))
 
@@ -301,6 +315,9 @@ export async function updateWalkInLead(viewer: WalkInViewer, id: string, raw: un
   const sets: SQL[] = [sql`updated_at = clock_timestamp()`, sql`updated_by = ${viewer.appUser.id}`, sql`updated_by_name = ${viewer.appUser.fullName || viewer.appUser.email}`]
   if (input.remarks !== undefined) sets.push(sql`remarks = ${input.remarks}`)
   if (input.expectedBookingDate !== undefined) sets.push(sql`expected_booking_date = ${input.expectedBookingDate}`)
+  if (input.expectedBookingTimeline !== undefined) sets.push(sql`expected_booking_timeline = ${input.expectedBookingTimeline}`)
+  if (input.holdingReason !== undefined) sets.push(sql`holding_reason = ${input.holdingReason}`)
+  if (input.followUpDate !== undefined) sets.push(sql`follow_up_date = ${input.followUpDate}`)
   if (input.consultantName !== undefined) sets.push(sql`consultant_name = ${input.consultantName}`)
   if (booked !== undefined) sets.push(sql`booked = ${booked}`)
   const updated = rows<{ row: RawLead }>(await db.execute(sql`
@@ -343,14 +360,17 @@ export async function exportWalkInLeads(viewer: WalkInViewer, filters: WalkInFil
     { header: 'Customer', key: 'customerName', width: 24 },
     { header: 'Mobile', key: 'mobileText', width: 16 },
     { header: 'E-mail', key: 'email', width: 24 },
-    { header: 'Address', key: 'address', width: 28 },
+    { header: 'Address / Area', key: 'address', width: 28 },
     { header: 'Model', key: 'model', width: 16 },
     { header: 'Consultant', key: 'consultantName', width: 20 },
     { header: 'Test drive', key: 'testDriveText', width: 10 },
     { header: 'Source', key: 'enquirySource', width: 18 },
     { header: 'New / existing', key: 'customerType', width: 13 },
     { header: 'Exchange', key: 'exchangeText', width: 22 },
+    { header: 'Forecast Timeline', key: 'expectedBookingTimeline', width: 18 },
     { header: 'Expected booking', key: 'expectedBookingDate', width: 15 },
+    { header: 'Holding reason', key: 'holdingReason', width: 26 },
+    { header: 'Next Follow-up', key: 'followUpDate', width: 15 },
     { header: 'Remarks', key: 'remarks', width: 28 },
     { header: 'Booked', key: 'bookedText', width: 8 },
     { header: 'Repeat visit', key: 'repeatText', width: 11 },
@@ -371,7 +391,7 @@ export async function exportWalkInLeads(viewer: WalkInViewer, filters: WalkInFil
     })
   }
   sheet.getRow(1).font = { bold: true }
-  sheet.autoFilter = { from: 'A1', to: 'S1' }
+  sheet.autoFilter = { from: 'A1', to: 'V1' }
   const buffer = await workbook.xlsx.writeBuffer()
   return Buffer.from(buffer)
 }

@@ -20,6 +20,9 @@ export type WalkInLead = {
   exchangeDetails: string | null
   additionalInfo: string | null
   expectedBookingDate: string | null
+  expectedBookingTimeline: string | null
+  holdingReason: string | null
+  followUpDate: string | null
   remarks: string | null
   booked: boolean
   source: 'form' | 'import'
