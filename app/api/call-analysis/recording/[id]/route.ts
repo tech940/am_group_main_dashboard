@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewCallAnalysis } from '@/lib/callyzer/access'
+import { requireCallAnalysisApi } from '@/lib/call-analysis/access'
 import { getCallById } from '@/lib/callyzer/client'
 
 export const dynamic = 'force-dynamic'
@@ -31,11 +30,9 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const appUser = await getAuthenticatedAppUser()
-  if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canViewCallAnalysis(appUser.role)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  // Same rule as the page: a Call Analysis role, or an explicit call_analysis.view grant.
+  const access = await requireCallAnalysisApi()
+  if ('denied' in access) return access.denied
 
   const { id } = await params
   if (!id) return NextResponse.json({ error: 'Missing call id' }, { status: 400 })

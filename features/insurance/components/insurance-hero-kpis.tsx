@@ -66,7 +66,7 @@ export function InsuranceHeroKpis({
       >
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-            Gross Premium (GWP)
+            Gross Premium (Excl. GST)
           </span>
           <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400">
             <IndianRupee className="h-4 w-4" />
@@ -78,7 +78,7 @@ export function InsuranceHeroKpis({
             {isLoading ? <div className="h-7 w-32 animate-pulse bg-slate-200 dark:bg-slate-800 rounded-lg" /> : formatInr(grossPremium)}
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            <span>Net: {formatInr(netPremium)}</span>
+            <span className="text-teal-600 dark:text-teal-400 font-semibold">Without GST</span>
             <span className="text-[10px] text-teal-600 dark:text-teal-400 font-bold group-hover:underline">
               View Register →
             </span>

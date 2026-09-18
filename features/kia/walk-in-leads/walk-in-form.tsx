@@ -26,6 +26,7 @@ type FormState = {
   consultantName: string
   customerName: string
   mobile: string
+  alternateMobile: string
   email: string
   address: string
   customerType: '' | (typeof WALK_IN_CUSTOMER_TYPES)[number]
@@ -64,6 +65,7 @@ function blank(today: string, consultant: string): FormState {
     consultantName: consultant,
     customerName: '',
     mobile: '',
+    alternateMobile: '',
     email: '',
     address: '',
     customerType: 'NEW',
@@ -342,6 +344,22 @@ export function WalkInForm({ token, branch, consultants, today }: { token: strin
                     value={form.mobile}
                     onChange={(e) => set('mobile', e.target.value.replace(/[^\d\s-]/g, '').slice(0, 14))}
                     placeholder="98765 43210"
+                    className="h-12 min-w-0 flex-1 px-3 text-[16px] tracking-wide outline-none font-medium"
+                  />
+                </div>
+              </Field>
+
+              <Field label="Alternate mobile number" name="alternateMobile" error={errors.alternateMobile} hint="Optional — second contact number">
+                <div className={cn('flex overflow-hidden rounded-xl border bg-white focus-within:ring-2 focus-within:ring-indigo-500', errors.alternateMobile ? 'border-rose-400' : 'border-slate-300')}>
+                  <span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-[15px] font-semibold text-slate-600">+91</span>
+                  <input
+                    id="alternateMobile"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={form.alternateMobile}
+                    onChange={(e) => set('alternateMobile', e.target.value.replace(/[^\d\s-]/g, '').slice(0, 14))}
+                    placeholder="Optional alternate mobile"
                     className="h-12 min-w-0 flex-1 px-3 text-[16px] tracking-wide outline-none font-medium"
                   />
                 </div>

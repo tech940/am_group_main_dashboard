@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewCallAnalysis } from '@/lib/callyzer/access'
+import { requireCallAnalysisApi } from '@/lib/call-analysis/access'
 import { getCreSupabase } from '@/lib/cre-calls/cre-supabase'
 import {
   applyBranchScope,
@@ -237,13 +236,9 @@ async function fetchMissedIncomingRecovery(filters: Filters, dir: CreDirectory) 
 }
 
 export async function GET(request: Request) {
-  const appUser = await getAuthenticatedAppUser()
-  if (!appUser) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  if (!canViewCallAnalysis(appUser.role)) {
-    return NextResponse.json({ error: 'You do not have access to Call Analysis.' }, { status: 403 })
-  }
+  // Same rule as the page: a Call Analysis role, or an explicit call_analysis.view grant.
+  const access = await requireCallAnalysisApi()
+  if ('denied' in access) return access.denied
 
   const { searchParams } = new URL(request.url)
   const startDate = searchParams.get('startDate')

@@ -31,6 +31,8 @@ import {
   Eye,
   EyeOff,
   Trash2,
+  Presentation,
+  Armchair,
 } from 'lucide-react'
 import {
   SHOWROOM_BRANDS,
@@ -454,6 +456,8 @@ export function ShowroomGalleryClient({
                 <SelectItem value="all" className="text-xs font-medium">All Categories</SelectItem>
                 <SelectItem value="vehicles" className="text-xs font-medium">Vehicles / Workshop Bays</SelectItem>
                 <SelectItem value="tv" className="text-xs font-medium">TV Display (Lounge)</SelectItem>
+                <SelectItem value="standee" className="text-xs font-medium">Standee (Sales)</SelectItem>
+                <SelectItem value="lounge" className="text-xs font-medium">Customer Lounge (Service)</SelectItem>
                 <SelectItem value="bathroom" className="text-xs font-medium">Washrooms</SelectItem>
               </SelectContent>
             </Select>
@@ -637,7 +641,7 @@ export function ShowroomGalleryClient({
                   </div>
                 </div>
 
-                {/* Categorized Photo Sections: 3 Vehicles/Workshop Bays (col-span-6), 1 TV (col-span-2), 2 Washrooms (col-span-4) */}
+                {/* Categorized Photo Sections: 3 Vehicles/Workshop Bays (col-span-6), 1 TV (col-span-2), 1 Standee or Lounge (col-span-2), 1 Washroom (col-span-2) */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 pt-1 items-stretch">
                   {/* Category 1: Vehicles / Workshop Bays (3 Slots = col-span-6) */}
                   <div className="md:col-span-6 bg-slate-50/70 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5 flex flex-col justify-between">
@@ -731,19 +735,109 @@ export function ShowroomGalleryClient({
                     </div>
                   </div>
 
-                  {/* Category 3: Washroom (2 Slots = col-span-4) */}
-                  <div className="md:col-span-4 bg-slate-50/70 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5 flex flex-col justify-between">
+                  {/* Category 3: Standee (Sales only) */}
+                  {!isService && (
+                    <div className="md:col-span-2 bg-slate-50/70 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5 flex flex-col justify-between">
+                      <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5 truncate">
+                          <Presentation className="w-4 h-4 text-[#055B65] shrink-0" />
+                          <span className="truncate">Standee ({session.byCategory?.standee?.length || 0}/1)</span>
+                        </h4>
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Promo</span>
+                      </div>
+
+                      <div className="w-full">
+                        {session.byCategory?.standee?.length ? (
+                          session.byCategory.standee.slice(0, 1).map((img, idx) => (
+                            <div
+                              key={img.id}
+                              onClick={() => {
+                                const globalIdx = session.images.findIndex((i) => i.id === img.id)
+                                openLightbox(session.images, globalIdx >= 0 ? globalIdx : 0)
+                              }}
+                              className="group relative aspect-[4/3] w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-900 cursor-pointer shadow-2xs hover:border-teal-500 hover:scale-[1.02] transition-all"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={img.url} alt={`Standee photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                              
+                              <div className="absolute top-1.5 left-1.5 z-10 bg-black/80 text-white font-semibold text-[10px] px-2 py-0.5 rounded flex items-center gap-1 border border-white/20">
+                                <Presentation className="w-3 h-3 text-purple-300" />
+                                <span>Standee</span>
+                              </div>
+
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <ZoomIn className="w-5 h-5 text-white" />
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="w-full h-24 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-[11px] text-slate-400 bg-white">
+                            <Presentation className="w-4 h-4 mb-1 text-slate-300" />
+                            No Standee
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Category 3: Customer Lounge (Service only) */}
+                  {isService && (
+                    <div className="md:col-span-2 bg-slate-50/70 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5 flex flex-col justify-between">
+                      <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5 truncate">
+                          <Armchair className="w-4 h-4 text-[#055B65] shrink-0" />
+                          <span className="truncate">Lounge ({session.byCategory?.lounge?.length || 0}/1)</span>
+                        </h4>
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Lounge</span>
+                      </div>
+
+                      <div className="w-full">
+                        {session.byCategory?.lounge?.length ? (
+                          session.byCategory.lounge.slice(0, 1).map((img, idx) => (
+                            <div
+                              key={img.id}
+                              onClick={() => {
+                                const globalIdx = session.images.findIndex((i) => i.id === img.id)
+                                openLightbox(session.images, globalIdx >= 0 ? globalIdx : 0)
+                              }}
+                              className="group relative aspect-[4/3] w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-900 cursor-pointer shadow-2xs hover:border-teal-500 hover:scale-[1.02] transition-all"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={img.url} alt={`Lounge photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                              
+                              <div className="absolute top-1.5 left-1.5 z-10 bg-black/80 text-white font-semibold text-[10px] px-2 py-0.5 rounded flex items-center gap-1 border border-white/20">
+                                <Armchair className="w-3 h-3 text-indigo-300" />
+                                <span>Lounge</span>
+                              </div>
+
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <ZoomIn className="w-5 h-5 text-white" />
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="w-full h-24 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-[11px] text-slate-400 bg-white">
+                            <Armchair className="w-4 h-4 mb-1 text-slate-300" />
+                            No Lounge
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Category 4: Washroom (1 Slot = col-span-2) */}
+                  <div className="md:col-span-2 bg-slate-50/70 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5 flex flex-col justify-between">
                     <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
-                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <Droplets className="w-4 h-4 text-[#055B65]" />
-                        Washroom ({session.byCategory?.bathroom?.length || 0}/2)
+                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5 truncate">
+                        <Droplets className="w-4 h-4 text-[#055B65] shrink-0" />
+                        <span className="truncate">Washroom ({session.byCategory?.bathroom?.length || 0}/1)</span>
                       </h4>
-                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Cleanliness</span>
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Clean</span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="w-full">
                       {session.byCategory?.bathroom?.length ? (
-                        session.byCategory.bathroom.map((img, idx) => {
+                        session.byCategory.bathroom.slice(0, 1).map((img, idx) => {
                           const isRevealed = revealedWashrooms.has(img.id)
                           return (
                             <div
@@ -752,7 +846,7 @@ export function ShowroomGalleryClient({
                                 const globalIdx = session.images.findIndex((i) => i.id === img.id)
                                 openLightbox(session.images, globalIdx >= 0 ? globalIdx : 0)
                               }}
-                              className="group relative aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 bg-slate-900 cursor-pointer shadow-2xs hover:border-teal-500 transition-all"
+                              className="group relative aspect-[4/3] w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-900 cursor-pointer shadow-2xs hover:border-teal-500 transition-all"
                             >
                               {/* Washroom Image with Default Blur */}
                               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -768,7 +862,7 @@ export function ShowroomGalleryClient({
                               {/* Minimal Badge */}
                               <div className="absolute top-1.5 left-1.5 z-10 bg-black/80 text-white font-semibold text-[10px] px-2 py-0.5 rounded shadow-sm flex items-center gap-1 border border-white/20">
                                 <Droplets className="w-3 h-3 text-teal-300" />
-                                <span>Washroom #{img.categorySlot || idx + 1}</span>
+                                <span>Washroom</span>
                               </div>
 
                               {/* Inline Privacy Overlay & Click to Reveal Toggle */}
@@ -801,9 +895,9 @@ export function ShowroomGalleryClient({
                           )
                         })
                       ) : (
-                        <div className="col-span-2 h-24 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-[11px] text-slate-400 bg-white">
+                        <div className="w-full h-24 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-[11px] text-slate-400 bg-white">
                           <Droplets className="w-4 h-4 mb-1 text-slate-300" />
-                          No washroom photos
+                          No washroom
                         </div>
                       )}
                     </div>

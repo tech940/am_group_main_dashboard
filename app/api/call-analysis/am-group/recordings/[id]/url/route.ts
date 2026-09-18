@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewCallAnalysis } from '@/lib/callyzer/access'
-import { getCreSupabase } from '@/lib/cre-calls/cre-supabase'
+import { requireCallAnalysisApi } from '@/lib/call-analysis/access'
+import { resolveRecordingRef, signRecordingPath } from '@/lib/cre-calls/recording-url'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,75 +33,14 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const appUser = await getAuthenticatedAppUser()
-  if (!appUser) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  if (!canViewCallAnalysis(appUser.role)) {
-    return NextResponse.json({ error: 'You do not have access to Call Analysis.' }, { status: 403 })
-  }
+  const access = await requireCallAnalysisApi()
+  if ('denied' in access) return access.denied
 
   const { id } = await params
 
   try {
-    const supabase = getCreSupabase()
-
-    // 1. Direct recording lookup
-    let { data: row, error } = await supabase
-      .from('call_recordings')
-      .select('id, storage_path, upload_status, deleted_at')
-      .eq('id', id)
-      .maybeSingle()
-
-    if (error) throw new Error(error.message)
-
-    // 2. Fallback: check if `id` is a call ID in v_calls_with_numbers or call_log_entries
-    if (!row) {
-      const { data: viewEntry } = await supabase
-        .from('v_calls_with_numbers')
-        .select('id, recording_id')
-        .eq('id', id)
-        .maybeSingle()
-
-      if (viewEntry?.recording_id) {
-        const { data: recRow, error: recError } = await supabase
-          .from('call_recordings')
-          .select('id, storage_path, upload_status, deleted_at')
-          .eq('id', viewEntry.recording_id)
-          .maybeSingle()
-
-        if (recError) throw new Error(recError.message)
-        row = recRow
-      } else {
-        const { data: logEntry, error: logError } = await supabase
-          .from('call_log_entries')
-          .select('id, recording_id, deleted_at')
-          .eq('id', id)
-          .maybeSingle()
-
-        if (logError) throw new Error(logError.message)
-
-        if (logEntry?.recording_id) {
-          const { data: recRow, error: recError } = await supabase
-            .from('call_recordings')
-            .select('id, storage_path, upload_status, deleted_at')
-            .eq('id', logEntry.recording_id)
-            .maybeSingle()
-
-          if (recError) throw new Error(recError.message)
-          row = recRow
-        } else if (logEntry) {
-          const { data: recByCallId, error: recCallError } = await supabase
-            .from('call_recordings')
-            .select('id, storage_path, upload_status, deleted_at')
-            .eq('call_id', logEntry.id)
-            .maybeSingle()
-
-          if (recCallError) throw new Error(recCallError.message)
-          row = recByCallId
-        }
-      }
-    }
+    // Recording id, call id or call-log id — resolved server-side (lib/cre-calls/recording-url.ts).
+    const row = await resolveRecordingRef(id)
 
     if (!row || row.deleted_at) {
       return NextResponse.json({ error: 'No recording is available for this call.' }, { status: 404 })
@@ -123,18 +61,10 @@ export async function GET(
       )
     }
 
-    const cleanPath = row.storage_path.replace(/^recordings\//, '')
-    const { data: signed, error: signError } = await supabase.storage
-      .from('recordings')
-      .createSignedUrl(cleanPath, SIGNED_URL_TTL_SECONDS)
-
     // No public-URL fallback on purpose: the bucket is private, so a public URL would 404 at best
     // and leak customer audio at worst. A failure to sign is reported as a failure.
-    if (signError || !signed?.signedUrl) {
-      throw new Error(signError?.message || 'Storage did not return a signed URL')
-    }
-
-    return NextResponse.json({ url: signed.signedUrl, expiresInSeconds: SIGNED_URL_TTL_SECONDS })
+    const url = await signRecordingPath(row.storage_path, SIGNED_URL_TTL_SECONDS)
+    return NextResponse.json({ url, expiresInSeconds: SIGNED_URL_TTL_SECONDS })
   } catch (error) {
     console.error('[AM-Group-Call-Recording-URL] Error:', error)
     return NextResponse.json(

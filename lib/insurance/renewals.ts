@@ -55,6 +55,8 @@ export type RenewalSummary = {
   upcoming30Total: number
   lapsed: number
   lost6m: number
+  totalLogged: number
+  totalFollowUps: number
   due30: number
   due60: number
   due90: number
@@ -87,6 +89,8 @@ export type RenewalPipeline = {
   rows: RenewalDue[]
   upcoming30Rows: RenewalDue[]
   lost6mRows: RenewalDue[]
+  allLoggedRows: RenewalDue[]
+  followUpRows: RenewalDue[]
 }
 
 function rows(result: unknown): Record<string, unknown>[] {
@@ -259,12 +263,16 @@ export async function getRenewalPipeline(opts: {
 
   const crmMap = crmRecords as Record<string, any>
   const byChassis = new Map<string, RenewalDue>()
+
+  // 1. Merge all rows from brand queries
   for (const row of perBrand.flat()) {
-    const existing = byChassis.get(row.chassisNo)
+    const chassisKey = row.chassisNo.trim().toUpperCase()
+    const existing = byChassis.get(chassisKey)
     if (!existing || row.expiryDate > existing.expiryDate) {
-      const crm = crmMap[row.chassisNo]
+      const crm = crmMap[chassisKey]
       const enrichedRow: RenewalDue = {
         ...row,
+        chassisNo: chassisKey,
         disposition: crm?.disposition || 'PENDING',
         lossReason: crm?.lossReason || null,
         competitorDestination: crm?.competitorDestination || null,
@@ -272,13 +280,57 @@ export async function getRenewalPipeline(opts: {
         followUpDate: crm?.followUpDate || null,
         calledBy: crm?.calledBy || null,
       }
-      byChassis.set(row.chassisNo, enrichedRow)
+      byChassis.set(chassisKey, enrichedRow)
     }
   }
+
+  // 2. ⚠️ PERMANENT CRM PRESERVATION:
+  // Any customer record with CRM activity must NEVER be dropped, even if cron data changes or raw rows roll over!
+  for (const [crmChassis, crm] of Object.entries(crmMap)) {
+    const key = crmChassis.trim().toUpperCase()
+    if (!byChassis.has(key)) {
+      const crmBrand = (crm.brand ? crm.brand.toLowerCase() : null) as InsuranceBrandId | null
+      // Check if this CRM record belongs to the requested brand context
+      if (!crmBrand || brandIds.includes(crmBrand) || brandIds.length === Object.keys(INSURANCE_BRANDS).length) {
+        const expiryDate = crm.expiryDate || opts.asOf
+        const expiryParsed = Date.parse(`${expiryDate}T00:00:00Z`)
+        const asOfParsed = Date.parse(`${opts.asOf}T00:00:00Z`)
+        const days = Math.round((expiryParsed - asOfParsed) / 86400000)
+        const safeDays = isNaN(days) ? 0 : days
+
+        const synthesizedRow: RenewalDue = {
+          brand: crmBrand && INSURANCE_BRANDS[crmBrand] ? crmBrand : brandIds[0] || 'hyundai',
+          chassisNo: key,
+          registrationNo: crm.registrationNo || null,
+          customerName: crm.customerName || null,
+          model: crm.model || null,
+          variant: crm.variant || null,
+          insuranceCompany: crm.insuranceCompany || null,
+          policyNo: crm.policyNo || null,
+          expiryDate: expiryDate,
+          daysToExpiry: safeDays,
+          bucket: bucketFor(safeDays),
+          urgencySubBucket: urgencySubBucketFor(safeDays),
+          lastPremium: crm.lastPremium ? Number(crm.lastPremium) : null,
+          dealerCode: crm.dealerCode || null,
+          disposition: crm.disposition || 'PENDING',
+          lossReason: crm.lossReason || null,
+          competitorDestination: crm.competitorDestination || null,
+          remarks: crm.remarks || null,
+          followUpDate: crm.followUpDate || null,
+          calledBy: crm.calledBy || null,
+        }
+        byChassis.set(key, synthesizedRow)
+      }
+    }
+  }
+
   const merged = [...byChassis.values()].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate))
 
   const upcoming30Rows = merged.filter((r) => r.daysToExpiry >= 0 && r.daysToExpiry <= 30)
   const lost6mRows = merged.filter((r) => r.daysToExpiry >= -180 && r.daysToExpiry < 0)
+  const allLoggedRows = merged.filter((r) => r.disposition && r.disposition !== 'PENDING')
+  const followUpRows = merged.filter((r) => r.disposition === 'FOLLOWUP_SCHEDULED' || !!r.followUpDate)
 
   const critical7 = merged.filter((r) => r.urgencySubBucket === 'critical_7').length
   const urgent15 = merged.filter((r) => r.urgencySubBucket === 'urgent_15').length
@@ -293,6 +345,8 @@ export async function getRenewalPipeline(opts: {
     rows: merged,
     upcoming30Rows,
     lost6mRows,
+    allLoggedRows,
+    followUpRows,
     summary: {
       critical7,
       urgent15,
@@ -300,6 +354,8 @@ export async function getRenewalPipeline(opts: {
       upcoming30Total: upcoming30Rows.length,
       lapsed,
       lost6m,
+      totalLogged: allLoggedRows.length,
+      totalFollowUps: followUpRows.length,
       due30: merged.filter((r) => r.bucket === '30').length,
       due60: merged.filter((r) => r.bucket === '60').length,
       due90: merged.filter((r) => r.bucket === '90').length,

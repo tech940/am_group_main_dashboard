@@ -18,6 +18,7 @@ import {
   LogIn,
   LogOut,
   MapPin,
+  Phone,
   Route,
   ShieldCheck,
   User,
@@ -321,6 +322,11 @@ export function GatePassDetail({
                   <span className="flex items-center gap-1">
                     <User className="h-3.5 w-3.5 text-slate-400" />
                     Driver: <strong className="text-slate-700">{p?.driverName || 'Staff'}</strong>
+                    {p?.driverPhone ? (
+                      <span className="text-slate-500 font-mono text-[11px] ml-1">
+                        ({String(p.driverPhone)})
+                      </span>
+                    ) : null}
                   </span>
                   {p?.purpose && (
                     <>

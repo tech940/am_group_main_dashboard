@@ -42,9 +42,17 @@ export async function POST(request: Request) {
     }
     await saveCrmRecord({
       chassisNo: String(body.chassisNo),
+      brand: body.brand ? String(body.brand) : null,
       policyNo: body.policyNo ? String(body.policyNo) : null,
       customerName: body.customerName ? String(body.customerName) : null,
       phone: body.phone ? String(body.phone) : null,
+      registrationNo: body.registrationNo ? String(body.registrationNo) : null,
+      model: body.model ? String(body.model) : null,
+      variant: body.variant ? String(body.variant) : null,
+      insuranceCompany: body.insuranceCompany ? String(body.insuranceCompany) : null,
+      dealerCode: body.dealerCode ? String(body.dealerCode) : null,
+      expiryDate: body.expiryDate ? String(body.expiryDate) : null,
+      lastPremium: body.lastPremium !== undefined && body.lastPremium !== null ? Number(body.lastPremium) : null,
       disposition: (body.disposition as CrmDisposition) || 'PENDING',
       lossReason: body.lossReason ? String(body.lossReason) : null,
       competitorDestination: body.competitorDestination ? String(body.competitorDestination) : null,

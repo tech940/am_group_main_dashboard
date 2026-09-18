@@ -60,7 +60,17 @@ export async function POST(req: NextRequest) {
 
       processedFiles.push({
         buffer,
-        category: meta.category || (file.name.includes('tv') ? 'tv' : file.name.includes('bathroom') ? 'bathroom' : 'vehicles'),
+        category:
+          meta.category ||
+          (file.name.includes('tv')
+            ? 'tv'
+            : file.name.includes('standee') || file.name.includes('standy')
+            ? 'standee'
+            : file.name.includes('lounge')
+            ? 'lounge'
+            : file.name.includes('bathroom') || file.name.includes('washroom')
+            ? 'bathroom'
+            : 'vehicles'),
         categorySlot: meta.slot || ((i % 2) + 1),
         mimeType: file.type || 'image/jpeg',
         size: file.size,

@@ -2,6 +2,7 @@ import { forbidden, redirect } from 'next/navigation'
 import { Suspense } from 'react'
 import { getBrandAccess } from '@/lib/auth/brand-access'
 import { requirePermission } from '@/lib/permissions/service'
+import { isSuperAdminRole } from '@/lib/auth/roles'
 import { InsuranceClient } from '@/app/insurance/insurance-client'
 import type { InsuranceBrandId } from '@/lib/insurance/brands'
 
@@ -22,6 +23,7 @@ import type { InsuranceBrandId } from '@/lib/insurance/brands'
  *
  * `canEdit` is resolved HERE and passed down, rather than being decided in the browser: it controls
  * whether the status a caller records is writable, and the API re-checks the same key on every write.
+ * `canExport` is strictly reserved for MD and Developer only (`isSuperAdminRole`).
  */
 export async function BrandInsurancePage({
   brand,
@@ -38,6 +40,7 @@ export async function BrandInsurancePage({
   if (!view.allowed) forbidden()
 
   const edit = await requirePermission(access.appUser, `${brand}.insurance.edit`)
+  const canExport = isSuperAdminRole(access.appUser.role)
 
   const resolved = await searchParams
 
@@ -47,8 +50,10 @@ export async function BrandInsurancePage({
         initialSearchParams={resolved}
         lockedBrand={brand}
         canEdit={edit.allowed}
+        canExport={canExport}
         currentUserName={access.appUser.fullName || access.appUser.email || 'Unknown'}
       />
     </Suspense>
   )
 }
+

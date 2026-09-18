@@ -55,6 +55,13 @@ export const walkInSubmitSchema = z
       (value) => normalizeMobile(value),
       z.string().refine(isValidIndianMobile, 'Enter a 10-digit mobile number starting with 6, 7, 8 or 9.'),
     ),
+    alternateMobile: z.preprocess(
+      (value) => {
+        const digits = normalizeMobile(value)
+        return digits ? digits : null
+      },
+      z.string().refine((val) => !val || isValidIndianMobile(val), 'Enter a valid 10-digit alternate mobile number, or leave it empty.').nullable().optional(),
+    ),
     email: z.preprocess(
       (value) => (tidyText(value) === '' ? null : tidyText(value).toLowerCase()),
       z.string().max(WALK_IN_LIMITS.email).email('Enter a valid e-mail address, or leave it empty.').nullable(),
@@ -98,8 +105,32 @@ export const walkInSubmitSchema = z
 
 export type WalkInSubmitInput = z.infer<typeof walkInSubmitSchema>
 
-/** The follow-up fields the sales team keeps up to date in the section. */
+/** The customer details and follow-up fields the sales team keeps up to date in the section. */
 export const walkInUpdateSchema = z.object({
+  customerName: z.preprocess((value) => titleCaseName(value), z.string().min(2).max(WALK_IN_LIMITS.name)).optional(),
+  mobile: z.preprocess(
+    (value) => normalizeMobile(value),
+    z.string().refine(isValidIndianMobile, 'Enter a 10-digit mobile number starting with 6, 7, 8 or 9.'),
+  ).optional(),
+  alternateMobile: z.preprocess(
+    (value) => {
+      const digits = normalizeMobile(value)
+      return digits ? digits : null
+    },
+    z.string().refine((val) => !val || isValidIndianMobile(val), 'Enter a valid 10-digit alternate mobile number, or leave it empty.').nullable().optional(),
+  ).optional(),
+  email: z.preprocess(
+    (value) => (tidyText(value) === '' ? null : tidyText(value).toLowerCase()),
+    z.string().max(WALK_IN_LIMITS.email).email('Enter a valid e-mail address, or leave it empty.').nullable(),
+  ).optional(),
+  address: optionalText('address', WALK_IN_LIMITS.address).optional(),
+  model: z.enum(WALK_IN_MODELS).optional(),
+  enquirySource: z.enum(WALK_IN_SOURCES).optional(),
+  customerType: z.enum(WALK_IN_CUSTOMER_TYPES).nullable().optional(),
+  testDrive: yesNo('test drive').optional(),
+  exchange: yesNo('exchange').nullable().optional(),
+  exchangeDetails: optionalText('exchange vehicle', WALK_IN_LIMITS.exchangeDetails).optional(),
+  additionalInfo: optionalText('additional information', WALK_IN_LIMITS.additionalInfo).optional(),
   remarks: optionalText('remarks', WALK_IN_LIMITS.remarks).optional(),
   expectedBookingDate: optionalDate('expected booking date').optional(),
   expectedBookingTimeline: optionalText('booking timeline', 50).optional(),

@@ -70,12 +70,13 @@ export async function createWalkInLead(dealerCode: string, input: WalkInSubmitIn
     ),
     inserted AS (
       INSERT INTO kia_walk_in_leads (
-        enquiry_date, dealer_code, customer_name, country_code, mobile, email, address, model, consultant_name,
+        enquiry_date, dealer_code, customer_name, country_code, mobile, alternate_mobile, email, address, model, consultant_name,
         test_drive, enquiry_source, customer_type, exchange, exchange_details, additional_info,
         expected_booking_timeline, expected_booking_date, holding_reason, follow_up_date, remarks, booked, source
       )
       SELECT
         ${input.enquiryDate}::date, ${dealerCode}::text, ${input.customerName}::text, '+91', ${input.mobile}::text,
+        ${input.alternateMobile || null}::text,
         ${input.email}::text, ${input.address}::text, ${input.model}::text, ${input.consultantName}::text,
         ${input.testDrive}::boolean, ${input.enquirySource}::text, ${input.customerType}::text,
         ${input.exchange}::boolean, ${input.exchange ? input.exchangeDetails : null}::text, ${input.additionalInfo}::text,
@@ -180,7 +181,7 @@ function whereFor(filters: WalkInFilters, viewer: WalkInViewer): SQL {
 
 const ROW_JSON = sql`json_build_object(
   'id', l.id, 'enquiryDate', l.enquiry_date::text, 'dealerCode', l.dealer_code, 'customerName', l.customer_name,
-  'mobile', l.mobile, 'countryCode', l.country_code, 'email', l.email, 'address', l.address, 'model', l.model,
+  'mobile', l.mobile, 'alternateMobile', l.alternate_mobile, 'countryCode', l.country_code, 'email', l.email, 'address', l.address, 'model', l.model,
   'consultantName', l.consultant_name, 'testDrive', l.test_drive, 'enquirySource', l.enquiry_source,
   'customerType', l.customer_type, 'exchange', l.exchange, 'exchangeDetails', l.exchange_details,
   'additionalInfo', l.additional_info, 'expectedBookingDate', l.expected_booking_date::text,
@@ -205,6 +206,7 @@ function present(raw: RawLead, viewer: WalkInViewer): WalkInLead {
     submittedAt: new Date(raw.submittedAt).toISOString(),
     updatedAt: new Date(raw.updatedAt).toISOString(),
     mobile: maskKiaPii(raw.mobile, allowed),
+    alternateMobile: raw.alternateMobile ? maskKiaPii(raw.alternateMobile, allowed) : null,
     email: raw.email ? maskKiaPii(raw.email, allowed) : null,
     address: raw.address ? (allowed ? raw.address : maskKiaPii(raw.address, false)) : null,
   }
@@ -313,6 +315,18 @@ export async function updateWalkInLead(viewer: WalkInViewer, id: string, raw: un
   const booked = input.booked ?? (input.remarks !== undefined ? remarksMeanBooked(remarks) : undefined)
   // clock_timestamp(), not now(): the version below must move even when two edits share a transaction.
   const sets: SQL[] = [sql`updated_at = clock_timestamp()`, sql`updated_by = ${viewer.appUser.id}`, sql`updated_by_name = ${viewer.appUser.fullName || viewer.appUser.email}`]
+  if (input.customerName !== undefined) sets.push(sql`customer_name = ${input.customerName}`)
+  if (input.mobile !== undefined) sets.push(sql`mobile = ${input.mobile}`)
+  if (input.alternateMobile !== undefined) sets.push(sql`alternate_mobile = ${input.alternateMobile || null}`)
+  if (input.email !== undefined) sets.push(sql`email = ${input.email || null}`)
+  if (input.address !== undefined) sets.push(sql`address = ${input.address || null}`)
+  if (input.model !== undefined) sets.push(sql`model = ${input.model}`)
+  if (input.enquirySource !== undefined) sets.push(sql`enquiry_source = ${input.enquirySource}`)
+  if (input.customerType !== undefined) sets.push(sql`customer_type = ${input.customerType || null}`)
+  if (input.testDrive !== undefined) sets.push(sql`test_drive = ${input.testDrive}`)
+  if (input.exchange !== undefined) sets.push(sql`exchange = ${input.exchange}`)
+  if (input.exchangeDetails !== undefined) sets.push(sql`exchange_details = ${input.exchangeDetails || null}`)
+  if (input.additionalInfo !== undefined) sets.push(sql`additional_info = ${input.additionalInfo || null}`)
   if (input.remarks !== undefined) sets.push(sql`remarks = ${input.remarks}`)
   if (input.expectedBookingDate !== undefined) sets.push(sql`expected_booking_date = ${input.expectedBookingDate}`)
   if (input.expectedBookingTimeline !== undefined) sets.push(sql`expected_booking_timeline = ${input.expectedBookingTimeline}`)
@@ -359,6 +373,7 @@ export async function exportWalkInLeads(viewer: WalkInViewer, filters: WalkInFil
     { header: 'Branch', key: 'branch', width: 11 },
     { header: 'Customer', key: 'customerName', width: 24 },
     { header: 'Mobile', key: 'mobileText', width: 16 },
+    { header: 'Alternate Mobile', key: 'alternateMobileText', width: 16 },
     { header: 'E-mail', key: 'email', width: 24 },
     { header: 'Address / Area', key: 'address', width: 28 },
     { header: 'Model', key: 'model', width: 16 },
@@ -382,6 +397,7 @@ export async function exportWalkInLeads(viewer: WalkInViewer, filters: WalkInFil
     sheet.addRow({
       ...lead,
       mobileText: lead.mobile === '••••••' ? lead.mobile : `${lead.countryCode} ${lead.mobile}`,
+      alternateMobileText: lead.alternateMobile ? (lead.alternateMobile === '••••••' ? lead.alternateMobile : `${lead.countryCode} ${lead.alternateMobile}`) : '',
       testDriveText: lead.testDrive ? 'Yes' : 'No',
       exchangeText: lead.exchange === null ? '' : lead.exchange ? `Yes${lead.exchangeDetails ? ` — ${lead.exchangeDetails}` : ''}` : 'No',
       bookedText: lead.booked ? 'Yes' : 'No',
@@ -391,7 +407,7 @@ export async function exportWalkInLeads(viewer: WalkInViewer, filters: WalkInFil
     })
   }
   sheet.getRow(1).font = { bold: true }
-  sheet.autoFilter = { from: 'A1', to: 'V1' }
+  sheet.autoFilter = { from: 'A1', to: 'W1' }
   const buffer = await workbook.xlsx.writeBuffer()
   return Buffer.from(buffer)
 }

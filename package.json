@@ -105,6 +105,10 @@
     "seed:syros-ev": "tsx scripts/seed-syros-ev-prices.ts",
     "import:kia-price-sheet": "tsx --tsconfig ./tsconfig.verify.json scripts/import-kia-model-price-sheet.ts",
     "verify:kia-walk-in": "tsx --tsconfig ./tsconfig.hp-flow.json scripts/verify-kia-walk-in-leads.ts",
+    "verify:call-ai": "tsx --tsconfig ./tsconfig.hp-flow.json scripts/verify-call-ai.ts",
+    "call-ai:pilot": "tsx --tsconfig ./tsconfig.verify.json scripts/call-ai-pilot.ts",
+    "call-ai:backfill": "tsx --tsconfig ./tsconfig.verify.json scripts/call-ai-backfill.ts",
+    "call-ai:run": "tsx --tsconfig ./tsconfig.verify.json scripts/call-ai-run.ts",
     "verify:proforma-gate": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-proforma-approval-gate.ts",
     "verify:approvals-visibility": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-approvals-visibility.ts",
     "verify:petty-cash-flow": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-petty-cash-flow.ts",
@@ -131,6 +135,7 @@
     "loconav:sync": "tsx scripts/loconav-sync-scheduler.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
     "@breezystack/lamejs": "^1.2.7",
     "@google-cloud/bigquery": "^7.9.4",
     "@hookform/resolvers": "^5.2.2",

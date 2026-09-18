@@ -4,10 +4,12 @@ import { useEffect, useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  Calendar,
   Car,
   CheckCircle2,
   FileText,
   Loader2,
+  Phone,
   Plus,
   RefreshCw,
   Search,
@@ -49,6 +51,18 @@ const KIA_QUICK_MODELS = ['SONET', 'SELTOS', 'CARENS', 'CARNIVAL', 'SYROS', 'EV6
  * vehicle lock now refuses them outright.
  */
 const KIA_BRANCH_OPTIONS = KIA_BRANCH_DEALERS.map((b) => ({ code: b.dealerCode, label: `${b.label} (${b.dealerCode})` }))
+
+function isExpiryDatePassed(dateStr: string | null | undefined): boolean {
+  if (!dateStr) return false
+  const day = String(dateStr).trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const date = String(now.getDate()).padStart(2, '0')
+  const todayStr = `${year}-${month}-${date}`
+  return day < todayStr
+}
 
 type Vehicle = {
   vin: string
@@ -107,6 +121,8 @@ export function GatePassFormDialog({
   const [isManualDriver, setIsManualDriver] = useState(false)
   const [driverUserId, setDriverUserId] = useState('')
   const [driverName, setDriverName] = useState('')
+  const [manualDriverPhone, setManualDriverPhone] = useState('')
+  const [licenceExpiry, setLicenceExpiry] = useState('')
   const [driverSearch, setDriverSearch] = useState('')
   const [isAddingNewEmployee, setIsAddingNewEmployee] = useState(false)
   const [newEmployeeName, setNewEmployeeName] = useState('')
@@ -202,7 +218,15 @@ export function GatePassFormDialog({
     (driverName.trim() && d.fullName.toLowerCase() === driverName.trim().toLowerCase())
   ) ?? null
 
-  const hasValidLicenceOnFile = Boolean(
+  const chosenDriverExpired = Boolean(
+    chosenDriver && (chosenDriver.expired || isExpiryDatePassed(chosenDriver.licenceExpiry))
+  )
+  const isLicenceInputExpired = isExpiryDatePassed(licenceExpiry)
+  const isCurrentLicenceExpired = isLicenceInputExpired || (!isManualDriver && Boolean(driverUserId) && !editingLicence && !licenceExpiry && chosenDriverExpired)
+  const effectiveLicenceExpiry = licenceExpiry.trim() || (!editingLicence ? (chosenDriver?.licenceExpiry || '') : '')
+  const isLicenceExpiryMissing = !effectiveLicenceExpiry
+
+  const hasLicenceOnFile = Boolean(
     !isManualDriver && chosenDriver && (chosenDriver.hasLicencePhoto || chosenDriver.hasLicence)
   )
 
@@ -321,6 +345,8 @@ export function GatePassFormDialog({
     setIsManualDriver(false)
     setDriverUserId('')
     setDriverName('')
+    setManualDriverPhone('')
+    setLicenceExpiry('')
     setDriverSearch('')
     setIsAddingNewEmployee(false)
     setNewEmployeeName('')
@@ -335,13 +361,36 @@ export function GatePassFormDialog({
 
   const submit = async () => {
     setError('')
-    if (!driverName.trim()) {
-      return setError('Please select an employee or enter the driver name.')
+    if (isManualDriver) {
+      if (!driverName.trim()) {
+        return setError('Please enter the customer / driver name.')
+      }
+      const cleanPhone = manualDriverPhone.trim().replace(/\D/g, '')
+      if (!cleanPhone) {
+        return setError('Please enter a mobile number for the manual entry driver / customer.')
+      }
+      if (cleanPhone.length < 10) {
+        return setError('Please enter a valid 10-digit mobile number.')
+      }
+    } else {
+      if (!driverName.trim()) {
+        return setError('Please select an employee or enter the driver name.')
+      }
     }
     if (!vin && !manualRegNo.trim()) {
       return setError('Please select or add a vehicle.')
     }
     if (!purpose) return setError('Please select a purpose for travel.')
+
+    if (!effectiveLicenceExpiry) {
+      return setError('Please enter the driving license expiry date.')
+    }
+    if (isExpiryDatePassed(effectiveLicenceExpiry)) {
+      return setError(`The driving license expired on ${effectiveLicenceExpiry}. Please enter a valid, non-expired expiry date before saving.`)
+    }
+    if (!isManualDriver && driverUserId && !editingLicence && !licenceExpiry && chosenDriverExpired) {
+      return setError(`The driving license on file for ${chosenDriver?.fullName || 'driver'} expired on ${chosenDriver?.licenceExpiry || 'record'}. Please click "Update / Retake" to provide a valid driving license before saving.`)
+    }
 
     setSaving(true)
     try {
@@ -371,6 +420,7 @@ export function GatePassFormDialog({
           body: JSON.stringify({
             action: 'create_employee',
             fullName: driverName.trim(),
+            phone: manualDriverPhone.trim() || undefined,
             department: 'Driver',
           }),
         })
@@ -385,6 +435,8 @@ export function GatePassFormDialog({
         const formData = new FormData()
         formData.append('userId', finalDriverUserId || driverUserId)
         formData.append('licenceNo', 'VERIFIED')
+        if (licenceExpiry) formData.append('licenceExpiry', licenceExpiry)
+        if (isManualDriver && manualDriverPhone) formData.append('phone', manualDriverPhone.trim())
         formData.append('licencePhoto', licencePhoto)
 
         const uploadRes = await fetch('/api/gate-pass/drivers', {
@@ -403,10 +455,12 @@ export function GatePassFormDialog({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vin: finalVin,
-          driverKind: 'staff',
+          driverKind: isManualDriver ? 'customer' : 'staff',
           driverUserId: finalDriverUserId || (!isManualDriver && driverUserId ? driverUserId : null),
-          driverName: driverName.trim() || chosenDriver?.fullName || 'Staff Driver',
+          driverName: driverName.trim() || chosenDriver?.fullName || (isManualDriver ? 'Guest Customer' : 'Staff Driver'),
+          driverPhone: isManualDriver ? manualDriverPhone.trim() : (chosenDriver?.phone || null),
           driverLicenceNo: (finalDriverUserId || !isManualDriver) && (chosenDriver?.hasLicence || licencePhoto) ? 'VERIFIED' : null,
+          driverLicenceExpiry: licenceExpiry || chosenDriver?.licenceExpiry || null,
           purpose,
           remarks: remarks.trim() || null,
         }),
@@ -680,6 +734,7 @@ export function GatePassFormDialog({
                       ) : (
                         filteredDrivers.map((emp) => {
                           const isSelf = currentUser?.id === emp.userId
+                          const isEmpExpired = Boolean(emp.expired || (emp.licenceExpiry && isExpiryDatePassed(emp.licenceExpiry)))
                           const hasDL = emp.hasLicencePhoto || emp.hasLicence
                           return (
                             <button
@@ -690,6 +745,8 @@ export function GatePassFormDialog({
                                 setDriverName(emp.fullName)
                                 setLicencePhoto(null)
                                 setEditingLicence(false)
+                                if (emp.licenceExpiry) setLicenceExpiry(emp.licenceExpiry)
+                                else setLicenceExpiry('')
                               }}
                               className="w-full flex items-center justify-between p-2 text-left hover:bg-indigo-50/70 rounded-md transition-colors group"
                             >
@@ -709,7 +766,12 @@ export function GatePassFormDialog({
                                   {emp.email ? ` · ${emp.email}` : ''}
                                 </p>
                               </div>
-                              {hasDL ? (
+                              {isEmpExpired ? (
+                                <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded shrink-0 flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  Expired ({emp.licenceExpiry})
+                                </span>
+                              ) : hasDL ? (
                                 <span className="text-[10px] font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded shrink-0">
                                   License on File
                                 </span>
@@ -727,11 +789,9 @@ export function GatePassFormDialog({
                 )}
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold text-slate-700">
-                    Person Taking Car (Name) <span className="text-rose-500">*</span>
-                  </Label>
+                  <span className="text-xs font-semibold text-slate-700">Customer / Driver Information</span>
                   <label className="flex items-center gap-1.5 text-xs text-indigo-700 cursor-pointer select-none font-semibold">
                     <input
                       type="checkbox"
@@ -742,37 +802,74 @@ export function GatePassFormDialog({
                     Save as KIA Employee
                   </label>
                 </div>
-                <div className="relative">
-                  <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                  <Input
-                    value={driverName}
-                    onChange={(e) => {
-                      setDriverName(e.target.value)
-                      setDriverUserId('')
-                    }}
-                    placeholder="Enter full name of driver / guest…"
-                    className="bg-white pl-9 text-xs sm:text-sm"
-                    required
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">
+                      Person Taking Car (Name) <span className="text-rose-500">*</span>
+                    </Label>
+                    <div className="relative">
+                      <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                      <Input
+                        value={driverName}
+                        onChange={(e) => {
+                          setDriverName(e.target.value)
+                          setDriverUserId('')
+                        }}
+                        placeholder="Full name of driver / guest…"
+                        className="bg-white pl-9 text-xs sm:text-sm"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">
+                      Mobile Number <span className="text-rose-500">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                      <Input
+                        type="tel"
+                        value={manualDriverPhone}
+                        onChange={(e) => setManualDriverPhone(e.target.value)}
+                        placeholder="10-digit mobile number…"
+                        className="bg-white pl-9 text-xs sm:text-sm"
+                        maxLength={15}
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
                 <p className="text-[11px] text-slate-500">
                   {saveManualAsEmployee
                     ? 'This driver will be saved into KIA Employees database, and any license photo captured below will be stored permanently on their profile.'
-                    : "Manual entry: this driver's license will not be saved into the employee database profile."}
+                    : "Manual entry: this driver's phone and driving license will be recorded for this pass."}
                 </p>
               </div>
             )}
 
-            <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
+            <div className={`rounded-xl border p-3.5 space-y-3 transition-colors ${
+              isCurrentLicenceExpired ? 'border-rose-300 bg-rose-50/40' : 'border-slate-200 bg-white'
+            }`}>
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-indigo-600" />
+                  {isCurrentLicenceExpired ? (
+                    <AlertTriangle className="h-4 w-4 text-rose-600" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 text-indigo-600" />
+                  )}
                   Driver Driving License Photo
                 </Label>
-                {hasValidLicenceOnFile && !editingLicence ? (
-                  <span className="text-[10px] font-bold uppercase text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
-                    Verified On File
-                  </span>
+                {hasLicenceOnFile && !editingLicence ? (
+                  chosenDriverExpired ? (
+                    <span className="text-[10px] font-bold uppercase text-rose-700 bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      Expired On File
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold uppercase text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                      Verified On File
+                    </span>
+                  )
                 ) : (!isManualDriver && driverUserId) || (isManualDriver && saveManualAsEmployee) ? (
                   <span className="text-[10px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
                     Saves to employee profile
@@ -780,30 +877,61 @@ export function GatePassFormDialog({
                 ) : null}
               </div>
 
-              {hasValidLicenceOnFile && !editingLicence ? (
-                <div className="flex items-center justify-between rounded-lg bg-teal-50/70 border border-teal-200 p-3 text-xs text-teal-900">
-                  <div className="flex items-center gap-2.5">
-                    <CheckCircle2 className="h-5 w-5 text-teal-700 shrink-0" />
-                    <div>
-                      <p className="font-bold text-teal-950">Driving License Saved on Profile</p>
-                      <p className="text-[11px] text-teal-800">
-                        {chosenDriver?.fullName}'s driving license is already on file and ready.
-                      </p>
+              {hasLicenceOnFile && !editingLicence ? (
+                chosenDriverExpired ? (
+                  <div className="flex items-center justify-between rounded-lg bg-rose-50 border border-rose-300 p-3 text-xs text-rose-950">
+                    <div className="flex items-center gap-2.5">
+                      <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0" />
+                      <div>
+                        <p className="font-bold text-rose-950">Driving License Expired</p>
+                        <p className="text-[11px] text-rose-800">
+                          {chosenDriver?.fullName}&apos;s driving license expired on <strong>{chosenDriver?.licenceExpiry || 'record'}</strong>. You cannot save the gate pass until a valid, non-expired license is provided.
+                        </p>
+                      </div>
                     </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEditingLicence(true)
+                        setLicenceExpiry('')
+                      }}
+                      className="text-xs h-7 border-rose-300 text-rose-800 bg-white hover:bg-rose-100 shrink-0 font-semibold"
+                    >
+                      Update / Retake
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditingLicence(true)}
-                    className="text-xs h-7 border-teal-300 text-teal-800 bg-white hover:bg-teal-100 shrink-0 font-semibold"
-                  >
-                    Update / Retake
-                  </Button>
-                </div>
+                ) : (
+                  <div className="flex items-center justify-between rounded-lg bg-teal-50/70 border border-teal-200 p-3 text-xs text-teal-900">
+                    <div className="flex items-center gap-2.5">
+                      <CheckCircle2 className="h-5 w-5 text-teal-700 shrink-0" />
+                      <div>
+                        <p className="font-bold text-teal-950">Driving License Saved on Profile</p>
+                        <p className="text-[11px] text-teal-800">
+                          {chosenDriver?.fullName}&apos;s driving license is already on file and ready.
+                          {chosenDriver?.licenceExpiry && (
+                            <span className="ml-1 font-semibold">
+                              (Expires: {chosenDriver.licenceExpiry})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditingLicence(true)}
+                      className="text-xs h-7 border-teal-300 text-teal-800 bg-white hover:bg-teal-100 shrink-0 font-semibold"
+                    >
+                      Update / Retake
+                    </Button>
+                  </div>
+                )
               ) : (
-                <div className="space-y-2">
-                  {editingLicence && hasValidLicenceOnFile && (
+                <div className="space-y-3">
+                  {editingLicence && hasLicenceOnFile && (
                     <div className="flex items-center justify-between pb-1">
                       <span className="text-xs text-slate-600 font-medium">
                         Updating license for <strong>{chosenDriver?.fullName}</strong>:
@@ -813,6 +941,7 @@ export function GatePassFormDialog({
                         onClick={() => {
                           setEditingLicence(false)
                           setLicencePhoto(null)
+                          if (chosenDriver?.licenceExpiry) setLicenceExpiry(chosenDriver.licenceExpiry)
                         }}
                         className="text-xs text-slate-500 hover:text-slate-800 font-bold"
                       >
@@ -822,7 +951,7 @@ export function GatePassFormDialog({
                   )}
 
                   <p className="text-[11px] text-slate-500">
-                    Capture or upload a clear photo of the driver's license. Full-screen camera will open for crisp detail.
+                    Capture or upload a clear photo of the driver&apos;s license. Full-screen camera will open for crisp detail.
                   </p>
 
                   <VehicleTrackerCamera
@@ -830,6 +959,44 @@ export function GatePassFormDialog({
                     onCapture={(file) => setLicencePhoto(file)}
                     allowUpload={true}
                   />
+
+                  {/* Expiry Date Input when capturing / editing license in both KIA employee and manual cases */}
+                  <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5 text-indigo-600" />
+                        Driving License Expiry Date <span className="text-rose-500">*</span>
+                      </Label>
+                      <p className="text-[11px] text-slate-500">
+                        Mandatory. Enter the expiry date as printed on the driver&apos;s license.
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-start sm:items-end gap-1">
+                      <Input
+                        type="date"
+                        value={licenceExpiry}
+                        onChange={(e) => setLicenceExpiry(e.target.value)}
+                        required
+                        className={`text-xs sm:text-sm w-full sm:w-44 shrink-0 ${
+                          isLicenceInputExpired
+                            ? 'bg-rose-50 border-rose-500 text-rose-900 focus-visible:ring-rose-500'
+                            : !licenceExpiry
+                            ? 'border-amber-300 bg-amber-50/30'
+                            : 'bg-white'
+                        }`}
+                      />
+                      {isLicenceInputExpired ? (
+                        <p className="text-[11px] font-semibold text-rose-600 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3 shrink-0" />
+                          Expired ({licenceExpiry}). Date must be in the future.
+                        </p>
+                      ) : !licenceExpiry ? (
+                        <p className="text-[11px] font-medium text-amber-700 flex items-center gap-1">
+                          Expiry date is required
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1161,14 +1328,39 @@ export function GatePassFormDialog({
           {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 font-medium">{error}</p> : null}
         </div>
 
-        <DialogFooter className="pt-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold">
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Submit Gate Pass
-          </Button>
+        <DialogFooter className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+          {isCurrentLicenceExpired ? (
+            <p className="text-xs font-semibold text-rose-600 flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Driving license is expired. Please update expiry date.
+            </p>
+          ) : isLicenceExpiryMissing ? (
+            <p className="text-xs font-semibold text-amber-700 flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Driving license expiry date is required.
+            </p>
+          ) : <div />}
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submit}
+              disabled={saving || isCurrentLicenceExpired || isLicenceExpiryMissing}
+              className={`font-bold transition-all ${
+                isCurrentLicenceExpired || isLicenceExpiryMissing
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed hover:bg-slate-300'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              }`}
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {isCurrentLicenceExpired
+                ? 'License Expired'
+                : isLicenceExpiryMissing
+                ? 'Expiry Date Required'
+                : 'Submit Gate Pass'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

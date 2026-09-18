@@ -102,6 +102,7 @@ export const ROLE_PROFILE: Record<PermissionRole, RoleProfile> = {
   ccm: { tier: TIER.EMPLOYEE, family: 'special' },
   cxm: { tier: TIER.EMPLOYEE, family: 'special' },
   process_coordinator: { tier: TIER.EMPLOYEE, family: 'special' },
+  h_promise_head: { tier: TIER.HEAD, family: 'special' },
 }
 
 export function getRoleProfile(role: string | null | undefined): RoleProfile | null {

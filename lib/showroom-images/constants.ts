@@ -142,7 +142,7 @@ export function getShowroomDepartmentConfig(key: string | null | undefined): Sho
   return SHOWROOM_DEPARTMENTS.find((d) => d.key === normalized) || null
 }
 
-export type ShowroomCategoryKey = 'vehicles' | 'tv' | 'bathroom'
+export type ShowroomCategoryKey = 'vehicles' | 'tv' | 'standee' | 'lounge' | 'bathroom'
 
 export type ShowroomCategoryConfig = {
   key: ShowroomCategoryKey
@@ -156,9 +156,9 @@ export type ShowroomCategoryConfig = {
 export const SHOWROOM_CATEGORIES: readonly ShowroomCategoryConfig[] = [
   {
     key: 'vehicles',
-    label: 'Vehicles',
-    shortLabel: 'Vehicle',
-    description: 'Display & showroom floor vehicles (3 angles)',
+    label: 'Vehicles / Bays',
+    shortLabel: 'Vehicles',
+    description: 'Display vehicles (Sales) or workshop bays (Service)',
     slotCount: 3,
     badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
   },
@@ -171,11 +171,27 @@ export const SHOWROOM_CATEGORIES: readonly ShowroomCategoryConfig[] = [
     badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
   },
   {
+    key: 'standee',
+    label: 'Standee',
+    shortLabel: 'Standee',
+    description: 'Promotional / model standee (Sales only)',
+    slotCount: 1,
+    badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
+  },
+  {
+    key: 'lounge',
+    label: 'Customer Lounge',
+    shortLabel: 'Lounge',
+    description: 'Customer lounge / waiting area (Service only)',
+    slotCount: 1,
+    badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  },
+  {
     key: 'bathroom',
     label: 'Washroom',
     shortLabel: 'Washroom',
-    description: 'Customer & staff washroom cleanliness',
-    slotCount: 2,
+    description: 'Washroom cleanliness',
+    slotCount: 1,
     badgeClass: 'bg-teal-50 text-teal-700 border-teal-200',
   },
 ] as const

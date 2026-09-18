@@ -104,6 +104,13 @@ export async function POST(request: NextRequest) {
     const day = rawExpiry.slice(0, 10)
     const licenceExpiry = /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null
 
+    if (licenceExpiry) {
+      const today = new Date().toISOString().slice(0, 10)
+      if (licenceExpiry < today) {
+        throw new GatePassError(`The driving license expired on ${licenceExpiry}. Please enter a valid, non-expired expiry date.`, 400)
+      }
+    }
+
     // Upload BEFORE the row is written, so a failed upload does not leave a record pointing at
     // nothing. Omitting the field entirely (rather than sending null) keeps any existing photo.
     const licenceDocPath = photo ? await uploadDriverLicence(targetUserId, photo) : undefined

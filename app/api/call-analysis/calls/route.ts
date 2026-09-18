@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewCallAnalysis } from '@/lib/callyzer/access'
+import { requireCallAnalysisApi } from '@/lib/call-analysis/access'
 import { getAllCalls } from '@/lib/callyzer/client'
 import { filterCalls, type CallFilters } from '@/lib/callyzer/analytics'
 import { matchCustomers, phone10 } from '@/lib/customer-identity/phone-match'
@@ -9,11 +8,9 @@ export const dynamic = 'force-dynamic'
 
 /** Paginated raw call log for the Recordings / Call Log tab. Served from the same cached rows. */
 export async function GET(request: Request) {
-  const appUser = await getAuthenticatedAppUser()
-  if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canViewCallAnalysis(appUser.role)) {
-    return NextResponse.json({ error: 'You do not have access to Call Analysis.' }, { status: 403 })
-  }
+  // Same rule as the page: a Call Analysis role, or an explicit call_analysis.view grant.
+  const access = await requireCallAnalysisApi()
+  if ('denied' in access) return access.denied
 
   try {
     const params = new URL(request.url).searchParams

@@ -42,6 +42,8 @@ export type ShowroomUploadSession = {
   byCategory: {
     vehicles: ShowroomImageRecord[]
     tv: ShowroomImageRecord[]
+    standee: ShowroomImageRecord[]
+    lounge: ShowroomImageRecord[]
     bathroom: ShowroomImageRecord[]
   }
 }
@@ -178,6 +180,8 @@ export async function uploadShowroomImages({
   const byCat = {
     vehicles: insertedRows.filter((r) => r.category === 'vehicles'),
     tv: insertedRows.filter((r) => r.category === 'tv'),
+    standee: insertedRows.filter((r) => r.category === 'standee'),
+    lounge: insertedRows.filter((r) => r.category === 'lounge'),
     bathroom: insertedRows.filter((r) => r.category === 'bathroom'),
   }
 
@@ -295,6 +299,8 @@ export async function getShowroomGallerySessions({
         byCategory: {
           vehicles: [],
           tv: [],
+          standee: [],
+          lounge: [],
           bathroom: [],
         },
       }
@@ -308,6 +314,10 @@ export async function getShowroomGallerySessions({
       session.byCategory.vehicles.push(imgRecord)
     } else if (row.category === 'tv') {
       session.byCategory.tv.push(imgRecord)
+    } else if (row.category === 'standee') {
+      session.byCategory.standee.push(imgRecord)
+    } else if (row.category === 'lounge') {
+      session.byCategory.lounge.push(imgRecord)
     } else if (row.category === 'bathroom') {
       session.byCategory.bathroom.push(imgRecord)
     }

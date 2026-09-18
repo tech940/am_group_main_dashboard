@@ -61,7 +61,7 @@ export function RenewalsCrmWorkspace({
   pageSize,
   onPageSizeChange,
 }: Props) {
-  const [urgencyBucket, setUrgencyBucket] = useState<'all' | 'critical_7' | 'urgent_15' | 'standard_30' | 'lost_6m'>('all')
+  const [urgencyBucket, setUrgencyBucket] = useState<'all' | 'critical_7' | 'urgent_15' | 'standard_30' | 'lost_6m' | 'followups' | 'all_logged'>('all')
   const [dispositionFilter, setDispositionFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -69,6 +69,8 @@ export function RenewalsCrmWorkspace({
   // Source list based on selected urgency bucket
   const sourceRows = useMemo(() => {
     if (!pipelineData) return []
+    if (urgencyBucket === 'all_logged') return pipelineData.allLoggedRows || []
+    if (urgencyBucket === 'followups') return pipelineData.followUpRows || []
     if (urgencyBucket === 'lost_6m') return pipelineData.lost6mRows || []
     const upcoming = pipelineData.upcoming30Rows || []
     if (urgencyBucket === 'all') return upcoming
@@ -114,6 +116,8 @@ export function RenewalsCrmWorkspace({
     [pipelineData?.upcoming30Rows],
   )
   const lostCount = pipelineData?.lost6mRows?.length || 0
+  const loggedCount = pipelineData?.allLoggedRows?.length || 0
+  const followUpCount = pipelineData?.followUpRows?.length || 0
 
   return (
     <div className="space-y-4">
@@ -203,6 +207,40 @@ export function RenewalsCrmWorkspace({
               <UserX className="h-3 w-3" />
               <span>Lost Customers 6M ({lostCount})</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setUrgencyBucket('followups')
+                setPage(1)
+              }}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap',
+                urgencyBucket === 'followups'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 hover:bg-indigo-100',
+              )}
+            >
+              <Clock className="h-3 w-3" />
+              <span>Follow-ups ({followUpCount})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setUrgencyBucket('all_logged')
+                setPage(1)
+              }}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap',
+                urgencyBucket === 'all_logged'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 hover:bg-emerald-100',
+              )}
+            >
+              <PhoneCall className="h-3 w-3" />
+              <span>All Logged Calls ({loggedCount})</span>
+            </button>
           </div>
 
           {/* Quick Search and Disposition Filter */}
@@ -250,21 +288,21 @@ export function RenewalsCrmWorkspace({
       {/* Main Calling Desk Table */}
       <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
         <Table>
-          <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
+          <TableHeader className="bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800">
             <TableRow>
-              <TableHead className="w-12 text-[10px] font-bold uppercase tracking-wider">#</TableHead>
-              <TableHead className="text-[10px] font-bold uppercase tracking-wider">Customer & Vehicle</TableHead>
-              <TableHead className="text-[10px] font-bold uppercase tracking-wider">Chassis (VIN)</TableHead>
-              <TableHead className="text-[10px] font-bold uppercase tracking-wider">Expiry & Urgency</TableHead>
-              <TableHead className="text-[10px] font-bold uppercase tracking-wider">Insurer</TableHead>
-              <TableHead className="text-[10px] font-bold uppercase tracking-wider">Call Disposition</TableHead>
-              <TableHead className="text-right text-[10px] font-bold uppercase tracking-wider pr-4">Action</TableHead>
+              <TableHead className="w-12 text-[10px] font-bold uppercase tracking-wider py-3 px-4">#</TableHead>
+              <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3 px-4">Customer & Vehicle</TableHead>
+              <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3 px-4">Chassis (VIN)</TableHead>
+              <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3 px-4">Expiry & Urgency</TableHead>
+              <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3 px-4">Insurer</TableHead>
+              <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3 px-4">Call Disposition</TableHead>
+              <TableHead className="text-right text-[10px] font-bold uppercase tracking-wider py-3 px-4">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-32 text-center text-xs text-slate-400">
+                <TableCell colSpan={7} className="h-32 text-center text-xs text-slate-400 py-6">
                   Loading renewals pipeline...
                 </TableCell>
               </TableRow>
@@ -279,11 +317,11 @@ export function RenewalsCrmWorkspace({
                     key={lead.chassisNo || idx}
                     className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors"
                   >
-                    <TableCell className="font-mono text-xs text-slate-400 font-medium">
+                    <TableCell className="font-mono text-xs text-slate-400 font-medium py-3 px-4">
                       {rowNum}
                     </TableCell>
 
-                    <TableCell>
+                    <TableCell className="py-3 px-4">
                       <div className="font-bold text-xs text-slate-900 dark:text-slate-100">
                         {lead.customerName || 'Customer'}
                       </div>
@@ -292,13 +330,13 @@ export function RenewalsCrmWorkspace({
                       </div>
                     </TableCell>
 
-                    <TableCell>
+                    <TableCell className="py-3 px-4">
                       <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
                         {lead.chassisNo}
                       </span>
                     </TableCell>
 
-                    <TableCell>
+                    <TableCell className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <Badge
                           variant="secondary"
@@ -319,22 +357,32 @@ export function RenewalsCrmWorkspace({
                       </div>
                     </TableCell>
 
-                    <TableCell className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <TableCell className="text-xs font-medium text-slate-700 dark:text-slate-300 py-3 px-4">
                       {lead.insuranceCompany || '—'}
                     </TableCell>
 
-                    <TableCell>
+                    <TableCell className="py-3 px-4">
                       <Badge variant="secondary" className={cn('text-[10px] font-semibold', badgeInfo.className)}>
                         {badgeInfo.label}
                       </Badge>
+                      {lead.followUpDate && (
+                        <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                          Follow-up: {lead.followUpDate}
+                        </div>
+                      )}
                       {lead.remarks && (
-                        <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[160px]">
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[180px]">
                           {lead.remarks}
                         </p>
                       )}
+                      {lead.calledBy && (
+                        <span className="text-[9px] text-slate-400 block mt-0.5">
+                          by {lead.calledBy}
+                        </span>
+                      )}
                     </TableCell>
 
-                    <TableCell className="text-right pr-4">
+                    <TableCell className="text-right py-3 px-4">
                       <div className="flex items-center justify-end gap-1.5">
                         <Button
                           variant="outline"
@@ -363,7 +411,7 @@ export function RenewalsCrmWorkspace({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="h-32 text-center text-xs text-slate-400">
+                <TableCell colSpan={7} className="h-32 text-center text-xs text-slate-400 py-6">
                   No renewal records found matching this filter criteria
                 </TableCell>
               </TableRow>

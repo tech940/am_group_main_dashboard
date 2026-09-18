@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewCallAnalysis } from '@/lib/callyzer/access'
+import { requireCallAnalysisApi } from '@/lib/call-analysis/access'
 import { authorizeCronRequest } from '@/lib/maintenance/cron-auth'
 import { runCallyzerSync } from '@/lib/callyzer/sync'
 
@@ -35,11 +34,9 @@ async function handle(request: Request) {
   })
 
   if (!cronAuth.ok) {
-    const appUser = await getAuthenticatedAppUser()
-    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!canViewCallAnalysis(appUser.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    // Same rule as the page: a Call Analysis role, or an explicit call_analysis.view grant.
+    const access = await requireCallAnalysisApi()
+    if ('denied' in access) return access.denied
   }
 
   try {

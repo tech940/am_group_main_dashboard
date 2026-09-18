@@ -44,6 +44,7 @@ type Props = {
   onInspectPolicy: (policy: any) => void
   onExportCsv: () => void
   isExporting: boolean
+  canExport?: boolean
 }
 
 function formatInr(val?: number | null) {
@@ -84,6 +85,7 @@ export function RegisterWorkspace({
   onInspectPolicy,
   onExportCsv,
   isExporting,
+  canExport = false,
 }: Props) {
   const brandConfig = INSURANCE_BRANDS[brand]
   const cap = brandConfig.capabilities
@@ -106,18 +108,20 @@ export function RegisterWorkspace({
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onExportCsv}
-            disabled={isExporting || rows.length === 0}
-            className="h-9 rounded-xl text-xs font-bold gap-1.5 border-slate-200 dark:border-slate-700 shadow-2xs cursor-pointer"
-          >
-            <Download className="h-3.5 w-3.5 text-teal-600" />
-            <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
-          </Button>
-        </div>
+        {canExport && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onExportCsv}
+              disabled={isExporting || rows.length === 0}
+              className="h-9 rounded-xl text-xs font-bold gap-1.5 border-slate-200 dark:border-slate-700 shadow-2xs cursor-pointer"
+            >
+              <Download className="h-3.5 w-3.5 text-teal-600" />
+              <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Main Register Table */}

@@ -11,7 +11,7 @@ import {
   Mic, Search, X, ChevronLeft, ChevronRight, Download, Play, Pause, Volume2,
   Building2, Award, UserCheck, ShieldCheck, FileAudio, RefreshCw, PhoneOff,
   Smartphone, WifiOff, TriangleAlert, ShieldAlert, CircleCheck, LogOut, Radio, Timer,
-  SlidersHorizontal, ArrowUpRight, ArrowDownRight, Info, CheckCircle2, ChevronDown, Filter, Calendar
+  SlidersHorizontal, ArrowUpRight, ArrowDownRight, Info, CheckCircle2, ChevronDown, Filter, Calendar, Sparkles
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -22,6 +22,9 @@ import { cn } from '@/lib/utils'
 import { INDIA_TIME_ZONE } from '@/lib/date-time'
 import { convertAudioBufferToMp3 } from '@/lib/audio/mp3-converter'
 import { BrandLogoLockup, AmGlyph } from '@/components/brand-logo-lockup'
+import { AiCallReviewTab } from './ai-review/ai-call-review-tab'
+import { AiReviewDrawer } from './ai-review/ai-review-drawer'
+import { AiVerdictCell, istYmd, useAiVerdicts } from './ai-review/ai-shared'
 
 type CrePerformance = {
   cre_id: string
@@ -976,7 +979,12 @@ function CustomActivityTooltip({ active, payload, label }: any) {
 }
 
 export function AmGroupCallAnalysis() {
-  const [subTab, setSubTab] = useState<'overview' | 'branch_performance' | 'cre_performance' | 'unanswered' | 'recordings' | 'pending' | 'fleet_health'>('overview')
+  const [subTab, setSubTab] = useState<'overview' | 'ai_review' | 'branch_performance' | 'cre_performance' | 'unanswered' | 'recordings' | 'pending' | 'fleet_health'>('overview')
+  // AI Call Review: `?tab=ai` (the 9 AM email links here) opens it; a verdict chip on the Recordings tab opens one review.
+  const [aiReviewId, setAiReviewId] = useState<string | null>(null)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'ai') setSubTab('ai_review') // eslint-disable-line react-hooks/set-state-in-effect -- read the deep link once, after hydration
+  }, [])
 
   const initialRange = PRESETS.find((p) => p.key === DEFAULT_PRESET)!.range()
   const [preset, setPreset] = useState(DEFAULT_PRESET)
@@ -1043,6 +1051,9 @@ export function AmGroupCallAnalysis() {
       return res.json()
     },
   })
+
+  // AI Call Review verdicts for the recordings on this page (one request; AM Hyundai calls only).
+  const aiVerdicts = useAiVerdicts((callsQuery.data?.rows || []).map((r) => r.recordingId), subTab === 'recordings')
 
   const pendingCallsQuery = useQuery<{ rows: RecordingRow[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>({
     queryKey: ['am-group-pending-call-log', filterParams, page],
@@ -1522,6 +1533,20 @@ export function AmGroupCallAnalysis() {
         >
           <Building2 className="h-4 w-4" />
           <span>Overview & Trends</span>
+        </button>
+
+        <button
+          onClick={() => { setSubTab('ai_review'); setPage(1) }}
+          className={cn(
+            'px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+            subTab === 'ai_review'
+              ? 'border-[#093339] text-[#093339]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          )}
+        >
+          <Sparkles className="h-4 w-4" />
+          <span>AI Call Review</span>
+          <span className="ml-1 rounded-full border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[9px] font-black text-[#093339]">AM Hyundai</span>
         </button>
 
         <button
@@ -2637,6 +2662,9 @@ export function AmGroupCallAnalysis() {
       )}
 
       {/* TAB 5: UPLOADED RECORDINGS */}
+      {/* AI CALL REVIEW */}
+      {subTab === 'ai_review' && <AiCallReviewTab startDate={startDate} endDate={endDate} agent={agent} />}
+
       {subTab === 'recordings' && (
         <Card className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
@@ -2673,6 +2701,7 @@ export function AmGroupCallAnalysis() {
                       <th className="py-3.5 px-4 font-bold text-slate-400">Type &amp; Route</th>
                       <th className="py-3.5 px-4 font-bold text-slate-400">Recorded Time</th>
                       <th className="py-3.5 px-4 text-center font-bold text-slate-400">Duration</th>
+                      <th className="py-3.5 px-4 font-bold text-slate-400">AI Verdict</th>
                       <th className="py-3.5 px-4 text-center font-bold text-slate-400">Playback</th>
                     </tr>
                   </thead>
@@ -2698,6 +2727,9 @@ export function AmGroupCallAnalysis() {
                         </td>
                         <td className="py-3.5 px-4 text-center font-bold text-slate-700">
                           {getDurationBadge(row.durationSeconds)}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <AiVerdictCell entry={row.recordingId ? aiVerdicts.data?.[row.recordingId] : undefined} onOpen={setAiReviewId} />
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <RecordingPlayer row={row} />
@@ -2740,6 +2772,8 @@ export function AmGroupCallAnalysis() {
           </CardContent>
         </Card>
       )}
+
+      <AiReviewDrawer reviewId={aiReviewId} onClose={() => setAiReviewId(null)} isAdmin={false} today={istYmd()} />
 
       {/* TAB 6: PENDING & UPLOADING CALLS */}
       {subTab === 'pending' && (

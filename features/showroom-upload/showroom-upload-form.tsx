@@ -23,6 +23,8 @@ import {
   X,
   SwitchCamera,
   Upload,
+  Presentation,
+  Armchair,
 } from 'lucide-react'
 import {
   SHOWROOM_BRANDS,
@@ -63,38 +65,99 @@ export type SlotDefinition = {
   slotNumber: number
   title: string
   subtitle: string
-  icon: typeof Car | typeof Wrench | typeof Tv | typeof Droplets
+  icon: typeof Car | typeof Wrench | typeof Tv | typeof Droplets | typeof Presentation | typeof Armchair
 }
 
 export function getSlotDefinitions(dept: ShowroomDepartmentKey = 'sales'): SlotDefinition[] {
   const isService = dept === 'service'
+
+  if (isService) {
+    return [
+      {
+        key: 'vehicles_1',
+        category: 'vehicles',
+        categoryLabel: 'Workshop Bays',
+        slotNumber: 1,
+        title: 'Service Bay #1',
+        subtitle: 'Active service bay / repair area',
+        icon: Wrench,
+      },
+      {
+        key: 'vehicles_2',
+        category: 'vehicles',
+        categoryLabel: 'Workshop Bays',
+        slotNumber: 2,
+        title: 'Service Bay #2',
+        subtitle: 'Workshop floor / inspection hoist',
+        icon: Wrench,
+      },
+      {
+        key: 'vehicles_3',
+        category: 'vehicles',
+        categoryLabel: 'Workshop Bays',
+        slotNumber: 3,
+        title: 'Service Bay #3',
+        subtitle: 'Customer reception / service delivery',
+        icon: Wrench,
+      },
+      {
+        key: 'tv_1',
+        category: 'tv',
+        categoryLabel: 'TV Display',
+        slotNumber: 1,
+        title: 'TV Screen #1',
+        subtitle: 'Customer waiting lounge TV screen',
+        icon: Tv,
+      },
+      {
+        key: 'lounge_1',
+        category: 'lounge',
+        categoryLabel: 'Customer Lounge',
+        slotNumber: 1,
+        title: 'Customer Lounge #1',
+        subtitle: 'Customer waiting lounge & seating area',
+        icon: Armchair,
+      },
+      {
+        key: 'bathroom_1',
+        category: 'bathroom',
+        categoryLabel: 'Washroom',
+        slotNumber: 1,
+        title: 'Washroom #1',
+        subtitle: 'Service & customer washroom cleanliness',
+        icon: Droplets,
+      },
+    ]
+  }
+
+  // Sales Showroom
   return [
     {
       key: 'vehicles_1',
       category: 'vehicles',
-      categoryLabel: isService ? 'Workshop Bays' : 'Display Vehicles',
+      categoryLabel: 'Display Vehicles',
       slotNumber: 1,
-      title: isService ? 'Service Bay #1' : 'Vehicle #1',
-      subtitle: isService ? 'Active service bay / repair area' : 'Display floor vehicle (Angle 1)',
-      icon: isService ? Wrench : Car,
+      title: 'Vehicle #1',
+      subtitle: 'Display floor vehicle (Angle 1)',
+      icon: Car,
     },
     {
       key: 'vehicles_2',
       category: 'vehicles',
-      categoryLabel: isService ? 'Workshop Bays' : 'Display Vehicles',
+      categoryLabel: 'Display Vehicles',
       slotNumber: 2,
-      title: isService ? 'Service Bay #2' : 'Vehicle #2',
-      subtitle: isService ? 'Workshop floor / inspection hoist' : 'Display floor vehicle (Angle 2)',
-      icon: isService ? Wrench : Car,
+      title: 'Vehicle #2',
+      subtitle: 'Display floor vehicle (Angle 2)',
+      icon: Car,
     },
     {
       key: 'vehicles_3',
       category: 'vehicles',
-      categoryLabel: isService ? 'Workshop Bays' : 'Display Vehicles',
+      categoryLabel: 'Display Vehicles',
       slotNumber: 3,
-      title: isService ? 'Service Bay #3' : 'Vehicle #3',
-      subtitle: isService ? 'Customer reception / service delivery' : 'Display floor vehicle (Angle 3)',
-      icon: isService ? Wrench : Car,
+      title: 'Vehicle #3',
+      subtitle: 'Display floor vehicle (Angle 3)',
+      icon: Car,
     },
     {
       key: 'tv_1',
@@ -102,8 +165,17 @@ export function getSlotDefinitions(dept: ShowroomDepartmentKey = 'sales'): SlotD
       categoryLabel: 'TV Display',
       slotNumber: 1,
       title: 'TV Screen #1',
-      subtitle: isService ? 'Customer waiting lounge TV screen' : 'Customer lounge / display TV screen',
+      subtitle: 'Customer lounge / display TV screen',
       icon: Tv,
+    },
+    {
+      key: 'standee_1',
+      category: 'standee',
+      categoryLabel: 'Standee',
+      slotNumber: 1,
+      title: 'Standee #1',
+      subtitle: 'Showroom promotional / model standee',
+      icon: Presentation,
     },
     {
       key: 'bathroom_1',
@@ -111,57 +183,24 @@ export function getSlotDefinitions(dept: ShowroomDepartmentKey = 'sales'): SlotD
       categoryLabel: 'Washroom',
       slotNumber: 1,
       title: 'Washroom #1',
-      subtitle: 'Customer washroom cleanliness',
-      icon: Droplets,
-    },
-    {
-      key: 'bathroom_2',
-      category: 'bathroom',
-      categoryLabel: 'Washroom',
-      slotNumber: 2,
-      title: 'Washroom #2',
-      subtitle: isService ? 'Staff / workshop washroom' : 'Staff / secondary washroom cleanliness',
+      subtitle: 'Showroom washroom cleanliness',
       icon: Droplets,
     },
   ]
 }
 
 interface ShowroomUploadFormProps {
-  initialBrand?: string | null
-  initialLocation?: string | null
-  initialDepartment?: string | null
+  brand: ShowroomBrandKey
+  location: string
+  department: ShowroomDepartmentKey
 }
 
 export function ShowroomUploadForm({
-  initialBrand,
-  initialLocation,
-  initialDepartment,
+  brand,
+  location,
+  department,
 }: ShowroomUploadFormProps) {
-  // Check if parameters are locked from URL
-  const isBrandPreset = useMemo(() => {
-    return Boolean(initialBrand && getShowroomBrandConfig(initialBrand))
-  }, [initialBrand])
-
-  const [brand, setBrand] = useState<ShowroomBrandKey>(() => {
-    const valid = getShowroomBrandConfig(initialBrand)
-    return valid ? valid.key : 'kia'
-  })
-
-  const locations = useMemo(() => getLocationsForBrand(brand), [brand])
-
-  const [location, setLocation] = useState<string>(() => {
-    if (initialLocation && locations.includes(initialLocation)) {
-      return initialLocation
-    }
-    return locations[0] || 'Jammu'
-  })
-
-  const [department, setDepartment] = useState<ShowroomDepartmentKey>(() => {
-    if (initialDepartment?.toLowerCase() === 'service') return 'service'
-    return 'sales'
-  })
-
-  const isLocked = isBrandPreset && Boolean(initialLocation)
+  const brandConfig = useMemo(() => getShowroomBrandConfig(brand), [brand])
 
   const [uploaderName, setUploaderName] = useState<string>('')
 
@@ -206,16 +245,8 @@ export function ShowroomUploadForm({
 
   const totalCaptured = Object.keys(slotPhotos).length
 
-  // Update default location when brand changes
-  const handleBrandChange = (newBrand: ShowroomBrandKey) => {
-    setBrand(newBrand)
-    const brandLocs = getLocationsForBrand(newBrand)
-    if (!brandLocs.includes(location)) {
-      setLocation(brandLocs[0] || 'Jammu')
-    }
-  }
-
-  // Camera stream management
+  const safeBrand: ShowroomBrandKey = brand || 'kia'
+  const safeLocation: string = location || 'Jammu'
   const stopStream = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop())
@@ -418,11 +449,11 @@ export function ShowroomUploadForm({
       hour12: true,
     })
 
-    const brandCfg = getShowroomBrandConfig(brand)
-    const brandLabel = brandCfg?.label || brand.toUpperCase()
+    const brandCfg = getShowroomBrandConfig(safeBrand)
+    const brandLabel = brandCfg?.label || safeBrand.toUpperCase()
     const deptLabel = department.toUpperCase()
     const catLabel = activeSlot.categoryLabel.toUpperCase()
-    const watermarkText = `${brandLabel.toUpperCase()} · ${location.toUpperCase()} · ${deptLabel} · ${catLabel} #${activeSlot.slotNumber} · ${stamp} IST`
+    const watermarkText = `${brandLabel.toUpperCase()} · ${safeLocation.toUpperCase()} · ${deptLabel} · ${catLabel} #${activeSlot.slotNumber} · ${stamp} IST`
 
     const barHeight = Math.max(34, Math.round(rawH * 0.052))
     const fontSize = Math.round(barHeight * 0.44)
@@ -506,11 +537,11 @@ export function ShowroomUploadForm({
         hour12: true,
       })
 
-      const brandCfg = getShowroomBrandConfig(brand)
-      const brandLabel = brandCfg?.label || brand.toUpperCase()
+      const brandCfg = getShowroomBrandConfig(safeBrand)
+      const brandLabel = brandCfg?.label || safeBrand.toUpperCase()
       const deptLabel = department.toUpperCase()
       const catLabel = targetSlot.categoryLabel.toUpperCase()
-      const watermarkText = `${brandLabel.toUpperCase()} · ${location.toUpperCase()} · ${deptLabel} · ${catLabel} #${targetSlot.slotNumber} · ${stamp} IST`
+      const watermarkText = `${brandLabel.toUpperCase()} · ${safeLocation.toUpperCase()} · ${deptLabel} · ${catLabel} #${targetSlot.slotNumber} · ${stamp} IST`
 
       const barHeight = Math.max(34, Math.round(h * 0.052))
       const fontSize = Math.round(barHeight * 0.44)
@@ -567,8 +598,8 @@ export function ShowroomUploadForm({
     setUploading(true)
     try {
       const formData = new FormData()
-      formData.append('brand', brand)
-      formData.append('location', location)
+      formData.append('brand', safeBrand)
+      formData.append('location', safeLocation)
       formData.append('department', department)
       if (uploaderName.trim()) {
         formData.append('uploaderName', uploaderName.trim())
@@ -628,8 +659,8 @@ export function ShowroomUploadForm({
       photosToUpload.forEach((p) => URL.revokeObjectURL(p.previewUrl))
 
       setUploadSuccess({
-        brand: getShowroomBrandConfig(brand)?.label || brand,
-        location,
+        brand: getShowroomBrandConfig(safeBrand)?.label || safeBrand,
+        location: safeLocation,
         department: department === 'service' ? 'Service' : 'Sales',
         count: photosToUpload.length,
       })
@@ -686,7 +717,7 @@ export function ShowroomUploadForm({
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400">
                     <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-                    LIVE VIEW · {brand.toUpperCase()} · {location}
+                    LIVE VIEW · {safeBrand.toUpperCase()} · {safeLocation}
                   </div>
                 </div>
               </div>
@@ -816,8 +847,6 @@ export function ShowroomUploadForm({
     )
   }
 
-  const activeBrandConfig = getShowroomBrandConfig(brand)
-
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-900 flex flex-col items-center justify-start pb-20">
       {fullScreenCameraOverlay}
@@ -860,133 +889,47 @@ export function ShowroomUploadForm({
       </header>
 
       <main className="w-full max-w-lg px-4 pt-4 sm:pt-6 space-y-4">
-        {/* Dealership & Department Selector or Locked Banner */}
-        {isLocked ? (
-          <div className="bg-white border border-teal-200/90 rounded-2xl p-4 shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#055B65] uppercase tracking-wider bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
-                <Lock className="w-3 h-3" /> Branch Preset via QR / URL
-              </span>
-              <span className="text-[11px] font-bold text-slate-700 uppercase">
-                {department} Department
-              </span>
-            </div>
-            <div className="flex items-center justify-between pt-1">
-              <div>
-                <p className="text-base font-bold text-slate-900">
-                  {activeBrandConfig?.label || brand}
-                </p>
-                <p className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-0.5">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  {location} Dealership
-                </p>
-              </div>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
-                Locked
-              </span>
-            </div>
+        {/* Dealership & Department Strictly Locked Card */}
+        <div className="bg-white border border-teal-200/90 rounded-2xl p-4 shadow-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#055B65] uppercase tracking-wider bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
+              <Lock className="w-3 h-3" /> Branch Locked via URL / QR
+            </span>
+            <span className="text-[11px] font-bold text-slate-700 uppercase">
+              {department} Department
+            </span>
           </div>
-        ) : (
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xs">
-            {/* Department Selector Toggle */}
+          <div className="flex items-center justify-between pt-1">
             <div>
-              <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
-                <Briefcase className="w-3.5 h-3.5 text-slate-600" /> Department
-              </Label>
-              <div className="grid grid-cols-2 gap-2 bg-slate-100/80 p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setDepartment('sales')}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                    department === 'sales'
-                      ? 'bg-white text-[#055B65] shadow-xs border border-slate-200/70'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Briefcase className="w-3.5 h-3.5" />
-                  Sales Showroom
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setDepartment('service')}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                    department === 'service'
-                      ? 'bg-white text-[#055B65] shadow-xs border border-slate-200/70'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Wrench className="w-3.5 h-3.5" />
-                  Service Center
-                </button>
-              </div>
+              <p className="text-base font-bold text-slate-900">
+                {brandConfig?.label || brand.toUpperCase()}
+              </p>
+              <p className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-0.5">
+                <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                {location} Dealership
+              </p>
             </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {/* Brand Dropdown */}
-              <div>
-                <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
-                  <Building2 className="w-3 h-3 text-slate-600" /> Brand
-                </Label>
-                <Select
-                  value={brand}
-                  onValueChange={(val) => handleBrandChange(val as ShowroomBrandKey)}
-                >
-                  <SelectTrigger className="h-10 bg-slate-50 border-slate-200 text-slate-900 font-semibold text-xs rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white border-slate-200 text-slate-900 shadow-lg">
-                    {SHOWROOM_BRANDS.map((b) => (
-                      <SelectItem
-                        key={b.key}
-                        value={b.key}
-                        className="text-xs font-medium cursor-pointer"
-                      >
-                        {b.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Location Dropdown */}
-              <div>
-                <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
-                  <MapPin className="w-3 h-3 text-slate-600" /> Location
-                </Label>
-                <Select value={location} onValueChange={setLocation}>
-                  <SelectTrigger className="h-10 bg-slate-50 border-slate-200 text-slate-900 font-semibold text-xs rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white border-slate-200 text-slate-900 shadow-lg">
-                    {locations.map((loc) => (
-                      <SelectItem
-                        key={loc}
-                        value={loc}
-                        className="text-xs font-medium cursor-pointer"
-                      >
-                        {loc}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Optional Uploader Name */}
-            <div>
-              <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
-                <User className="w-3 h-3 text-slate-400" /> Inspected By (Optional)
-              </Label>
-              <Input
-                value={uploaderName}
-                onChange={(e) => setUploaderName(e.target.value)}
-                placeholder="e.g. Showroom Manager / Floor Lead"
-                className="h-9.5 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 text-xs rounded-xl"
-              />
-            </div>
+            <a
+              href="/showroom-upload"
+              className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline underline-offset-2"
+            >
+              Change Branch
+            </a>
           </div>
-        )}
+
+          {/* Inspected By Name */}
+          <div className="pt-2 border-t border-slate-100">
+            <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1.5">
+              <User className="w-3 h-3 text-slate-400" /> Inspected By (Optional)
+            </Label>
+            <Input
+              value={uploaderName}
+              onChange={(e) => setUploaderName(e.target.value)}
+              placeholder="e.g. Showroom Manager / Floor Lead"
+              className="h-9.5 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 text-xs rounded-xl"
+            />
+          </div>
+        </div>
 
         {/* Guided Category Counts Checklist */}
         <div className="space-y-2">
@@ -995,17 +938,26 @@ export function ShowroomUploadForm({
               Required Inspection Slots (6 Photos)
             </span>
             <span className="text-[11px] text-[#055B65] font-bold">
-              {department === 'service' ? '3 Workshop Bays · 1 TV · 2 Washrooms' : '3 Vehicles · 1 TV · 2 Washrooms'}
+              {department === 'service'
+                ? '3 Workshop Bays · 1 TV · 1 Lounge · 1 Washroom'
+                : '3 Vehicles · 1 TV · 1 Standee · 1 Washroom'}
             </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            {SHOWROOM_CATEGORIES.map((cat) => {
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {SHOWROOM_CATEGORIES.filter((cat) => {
+              if (cat.key === 'standee') return department === 'sales'
+              if (cat.key === 'lounge') return department === 'service'
+              return true
+            }).map((cat) => {
               const catSlots = slotDefinitions.filter((s) => s.category === cat.key)
               const countCaptured = catSlots.filter((s) => Boolean(slotPhotos[s.key])).length
               const isComplete = countCaptured === cat.slotCount
               const isCurrentCat = activeSlot.category === cat.key
-              const catLabel = cat.key === 'vehicles' && department === 'service' ? 'Workshop Bays' : cat.label
+              const catLabel =
+                cat.key === 'vehicles' && department === 'service'
+                  ? 'Workshop Bays'
+                  : cat.label
 
               return (
                 <div
@@ -1212,5 +1164,6 @@ export function ShowroomUploadForm({
     </div>
   )
 }
+
 
 

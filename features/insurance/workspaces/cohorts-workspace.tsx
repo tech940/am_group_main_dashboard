@@ -228,20 +228,20 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
             <span className="text-[10px] text-slate-400 font-medium">Like-for-like baseline</span>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                  <th className="pb-2">Year</th>
-                  <th className="pb-2 text-right">Policies</th>
-                  <th className="pb-2 text-right">Premium</th>
-                  <th className="pb-2 text-right">Growth YoY</th>
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60">
+                  <th className="py-3 px-4">Year</th>
+                  <th className="py-3 px-4 text-right">Policies</th>
+                  <th className="py-3 px-4 text-right">Premium</th>
+                  <th className="py-3 px-4 text-right">Growth YoY</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {yoyRows.map((row: any) => (
                   <tr key={row.year} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    <td className="py-2.5 font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                       {row.year}
                       {row.partial && (
                         <span className="rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider">
@@ -249,13 +249,13 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 text-right font-bold tabular-nums text-slate-800 dark:text-slate-200">
+                    <td className="py-3 px-4 text-right font-bold tabular-nums text-slate-800 dark:text-slate-200">
                       {formatCount(row.policies)}
                     </td>
-                    <td className="py-2.5 text-right font-semibold tabular-nums text-slate-600 dark:text-slate-400">
+                    <td className="py-3 px-4 text-right font-semibold tabular-nums text-slate-600 dark:text-slate-400">
                       {formatInr(row.premium)}
                     </td>
-                    <td className="py-2.5 text-right font-black tabular-nums">
+                    <td className="py-3 px-4 text-right font-black tabular-nums">
                       {row.policyGrowth === null ? (
                         <span className="text-slate-300 dark:text-slate-600">—</span>
                       ) : (
@@ -337,11 +337,11 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
             <Table>
               <TableHeader className="bg-slate-50 dark:bg-slate-800/50 sticky top-0 z-10">
                 <TableRow>
-                  <TableHead className="text-[10px] font-bold uppercase tracking-wider">Month</TableHead>
-                  <TableHead className="text-[10px] font-bold uppercase tracking-wider text-right">Due</TableHead>
-                  <TableHead className="text-[10px] font-bold uppercase tracking-wider text-right">Kept</TableHead>
-                  <TableHead className="text-[10px] font-bold uppercase tracking-wider text-right">Rate</TableHead>
-                  <TableHead className="text-right text-[10px] font-bold uppercase tracking-wider pr-4">
+                  <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3 px-4">Month</TableHead>
+                  <TableHead className="text-[10px] font-bold uppercase tracking-wider text-right py-3 px-4">Due</TableHead>
+                  <TableHead className="text-[10px] font-bold uppercase tracking-wider text-right py-3 px-4">Kept</TableHead>
+                  <TableHead className="text-[10px] font-bold uppercase tracking-wider text-right py-3 px-4">Rate</TableHead>
+                  <TableHead className="text-right text-[10px] font-bold uppercase tracking-wider pr-4 py-3 px-4">
                     Premium Lost
                   </TableHead>
                 </TableRow>
@@ -351,23 +351,23 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
                   const rRate = c.retentionPct !== null && c.retentionPct !== undefined ? Number(c.retentionPct) : null
                   return (
                     <TableRow key={c.month} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50">
-                      <td className="font-bold text-xs text-slate-900 dark:text-slate-100 py-2">
+                      <td className="font-bold text-xs text-slate-900 dark:text-slate-100 py-3 px-4">
                         {monthLabel(c.month)}
                       </td>
-                      <td className="font-medium text-xs text-slate-700 dark:text-slate-300 text-right py-2 tabular-nums">
+                      <td className="font-medium text-xs text-slate-700 dark:text-slate-300 text-right py-3 px-4 tabular-nums">
                         {formatCount(c.expired)}
                       </td>
-                      <td className="font-bold text-xs text-emerald-600 dark:text-emerald-400 text-right py-2 tabular-nums">
+                      <td className="font-bold text-xs text-emerald-600 dark:text-emerald-400 text-right py-3 px-4 tabular-nums">
                         {formatCount(c.retained)}
                       </td>
-                      <td className="text-right py-2 tabular-nums">
+                      <td className="text-right py-3 px-4 tabular-nums">
                         {rRate === null ? (
                           <span className="text-slate-300 dark:text-slate-600">—</span>
                         ) : (
                           <Badge
                             variant="secondary"
                             className={cn(
-                              'text-[10px] font-bold px-1.5 py-0',
+                              'text-[10px] font-bold px-2 py-0.5',
                               rRate >= 40
                                 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
                                 : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
@@ -377,7 +377,7 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
                           </Badge>
                         )}
                       </td>
-                      <td className="text-right text-xs font-semibold text-rose-600 dark:text-rose-400 pr-4 py-2 tabular-nums">
+                      <td className="text-right text-xs font-semibold text-rose-600 dark:text-rose-400 pr-4 py-3 px-4 tabular-nums">
                         {formatInr(c.premiumLost)}
                       </td>
                     </TableRow>
@@ -520,19 +520,19 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-                <th className="py-2.5 px-4">Month</th>
-                <th className="py-2.5 text-right">New Inflow</th>
-                <th className="py-2.5 text-right">Renewed</th>
-                <th className="py-2.5 text-right">Won Back</th>
-                <th className="py-2.5 text-right">Lost / Lapsed</th>
-                <th className="py-2.5 text-right pr-4">Net Growth</th>
+              <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60">
+                <th className="py-3 px-4">Month</th>
+                <th className="py-3 px-4 text-right">New Inflow</th>
+                <th className="py-3 px-4 text-right">Renewed</th>
+                <th className="py-3 px-4 text-right">Won Back</th>
+                <th className="py-3 px-4 text-right">Lost / Lapsed</th>
+                <th className="py-3 px-4 text-right">Net Growth</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {movement.slice(-12).reverse().map((point: any) => (
                 <tr key={point.month} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                  <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <td className="py-3 px-4 font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                     {monthLabel(point.month)}
                     {!point.lossesFinal && (
                       <span className="rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">
@@ -540,19 +540,19 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
                       </span>
                     )}
                   </td>
-                  <td className="py-2.5 text-right font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  <td className="py-3 px-4 text-right font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
                     +{formatCount(point.newCustomers)}
                   </td>
-                  <td className="py-2.5 text-right font-medium tabular-nums text-slate-700 dark:text-slate-300">
+                  <td className="py-3 px-4 text-right font-medium tabular-nums text-slate-700 dark:text-slate-300">
                     {formatCount(point.renewed)}
                   </td>
-                  <td className="py-2.5 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-400">
+                  <td className="py-3 px-4 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-400">
                     +{formatCount(point.wonBack)}
                   </td>
-                  <td className="py-2.5 text-right font-bold tabular-nums text-rose-600 dark:text-rose-400">
+                  <td className="py-3 px-4 text-right font-bold tabular-nums text-rose-600 dark:text-rose-400">
                     {point.lossesFinal ? `-${formatCount(point.lost)}` : <span className="text-slate-300 dark:text-slate-600">—</span>}
                   </td>
-                  <td className="py-2.5 text-right pr-4 font-black tabular-nums">
+                  <td className="py-3 px-4 text-right font-black tabular-nums">
                     {!point.lossesFinal ? (
                       <span className="text-slate-300 dark:text-slate-600">—</span>
                     ) : (
@@ -575,8 +575,8 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
       {/* ── Section 5: Coverage Leak Points (By Model & By Branch) ── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* Leaks by Model */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden flex flex-col">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
               <Car className="h-3.5 w-3.5 text-slate-400" />
               Lapse Leak Points — By Vehicle Model
@@ -584,33 +584,33 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
             <span className="text-[10px] text-slate-400 font-medium">Top loss drivers</span>
           </div>
 
-          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+          <div className="overflow-x-auto max-h-72 overflow-y-auto">
             <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                  <th className="pb-2">Model</th>
-                  <th className="pb-2 text-right">Lost</th>
-                  <th className="pb-2 text-right">Total Due</th>
-                  <th className="pb-2 text-right">Lapse %</th>
-                  <th className="pb-2 text-right">Lost Premium</th>
+              <thead className="sticky top-0 z-10">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/80 backdrop-blur-xs">
+                  <th className="py-3 px-4">Model</th>
+                  <th className="py-3 px-4 text-right">Lost</th>
+                  <th className="py-3 px-4 text-right">Total Due</th>
+                  <th className="py-3 px-4 text-right">Lapse %</th>
+                  <th className="py-3 px-4 text-right">Lost Premium</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {leaks.byModel.slice(0, 8).map((row: any) => (
                   <tr key={row.key} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    <td className="py-2 font-bold text-slate-900 dark:text-slate-100 truncate max-w-[120px]" title={row.key}>
+                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-slate-100 truncate max-w-[140px]" title={row.key}>
                       {row.key}
                     </td>
-                    <td className="py-2 text-right font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                    <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 tabular-nums">
                       {formatCount(row.lost)}
                     </td>
-                    <td className="py-2 text-right text-slate-500 tabular-nums">
+                    <td className="py-3 px-4 text-right text-slate-500 tabular-nums">
                       {formatCount(row.expired)}
                     </td>
-                    <td className="py-2 text-right font-black tabular-nums text-slate-800 dark:text-slate-200">
+                    <td className="py-3 px-4 text-right font-black tabular-nums text-slate-800 dark:text-slate-200">
                       {row.lapsePct !== null ? `${Number(row.lapsePct).toFixed(0)}%` : '—'}
                     </td>
-                    <td className="py-2 text-right font-semibold text-slate-600 dark:text-slate-400 tabular-nums">
+                    <td className="py-3 px-4 text-right font-semibold text-slate-600 dark:text-slate-400 tabular-nums">
                       {formatInr(row.premiumLost)}
                     </td>
                   </tr>
@@ -621,8 +621,8 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
         </div>
 
         {/* Leaks by Branch */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden flex flex-col">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
               <Building2 className="h-3.5 w-3.5 text-slate-400" />
               Lapse Leak Points — By Dealership Branch
@@ -630,33 +630,33 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
             <span className="text-[10px] text-slate-400 font-medium">Dealer locations</span>
           </div>
 
-          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+          <div className="overflow-x-auto max-h-72 overflow-y-auto">
             <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                  <th className="pb-2">Branch</th>
-                  <th className="pb-2 text-right">Lost</th>
-                  <th className="pb-2 text-right">Total Due</th>
-                  <th className="pb-2 text-right">Lapse %</th>
-                  <th className="pb-2 text-right">Lost Premium</th>
+              <thead className="sticky top-0 z-10">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/80 backdrop-blur-xs">
+                  <th className="py-3 px-4">Branch</th>
+                  <th className="py-3 px-4 text-right">Lost</th>
+                  <th className="py-3 px-4 text-right">Total Due</th>
+                  <th className="py-3 px-4 text-right">Lapse %</th>
+                  <th className="py-3 px-4 text-right">Lost Premium</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {leaks.byBranch.slice(0, 8).map((row: any) => (
                   <tr key={row.key} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    <td className="py-2 font-bold text-slate-900 dark:text-slate-100 truncate max-w-[120px]" title={row.key}>
+                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-slate-100 truncate max-w-[140px]" title={row.key}>
                       {row.key}
                     </td>
-                    <td className="py-2 text-right font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                    <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 tabular-nums">
                       {formatCount(row.lost)}
                     </td>
-                    <td className="py-2 text-right text-slate-500 tabular-nums">
+                    <td className="py-3 px-4 text-right text-slate-500 tabular-nums">
                       {formatCount(row.expired)}
                     </td>
-                    <td className="py-2 text-right font-black tabular-nums text-slate-800 dark:text-slate-200">
+                    <td className="py-3 px-4 text-right font-black tabular-nums text-slate-800 dark:text-slate-200">
                       {row.lapsePct !== null ? `${Number(row.lapsePct).toFixed(0)}%` : '—'}
                     </td>
-                    <td className="py-2 text-right font-semibold text-slate-600 dark:text-slate-400 tabular-nums">
+                    <td className="py-3 px-4 text-right font-semibold text-slate-600 dark:text-slate-400 tabular-nums">
                       {formatInr(row.premiumLost)}
                     </td>
                   </tr>
@@ -670,8 +670,8 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
       {/* ── Section 6: Retention by Segment (NCB Slab & Premium Band) ── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* By NCB Slab */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden flex flex-col">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
               Retention by No-Claim Bonus (NCB Slab)
             </h3>
@@ -681,12 +681,12 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                  <th className="pb-2">NCB Slab</th>
-                  <th className="pb-2 text-right">Due</th>
-                  <th className="pb-2 text-right">Kept</th>
-                  <th className="pb-2">Retention Rate</th>
-                  <th className="pb-2 text-right">Lost Premium</th>
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60">
+                  <th className="py-3 px-4">NCB Slab</th>
+                  <th className="py-3 px-4 text-right">Due</th>
+                  <th className="py-3 px-4 text-right">Kept</th>
+                  <th className="py-3 px-4 min-w-[140px]">Retention Rate</th>
+                  <th className="py-3 px-4 text-right">Lost Premium</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -694,18 +694,18 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
                   const rate = row.retentionPct !== null && row.retentionPct !== undefined ? Number(row.retentionPct) : null
                   return (
                     <tr key={row.key} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                      <td className="py-2.5 font-bold text-slate-900 dark:text-slate-100">
+                      <td className="py-3 px-4 font-bold text-slate-900 dark:text-slate-100">
                         {row.key}
                       </td>
-                      <td className="py-2.5 text-right font-medium text-slate-700 dark:text-slate-300 tabular-nums">
+                      <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300 tabular-nums">
                         {formatCount(row.expired)}
                       </td>
-                      <td className="py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      <td className="py-3 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
                         {formatCount(row.retained)}
                       </td>
-                      <td className="py-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="h-3 w-16 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-3 w-16 overflow-hidden rounded bg-slate-100 dark:bg-slate-800 shrink-0">
                             <div
                               className="h-full rounded bg-teal-500"
                               style={{ width: `${Math.max(2, rate || 0)}%` }}
@@ -716,7 +716,7 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
                           </span>
                         </div>
                       </td>
-                      <td className="py-2.5 text-right font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                      <td className="py-3 px-4 text-right font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
                         {formatInr(row.premiumLost)}
                       </td>
                     </tr>
@@ -728,8 +728,8 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
         </div>
 
         {/* By Premium Band */}
-        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden flex flex-col">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
               Retention by Premium Ticket Size
             </h3>
@@ -739,12 +739,12 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                  <th className="pb-2">Premium Band</th>
-                  <th className="pb-2 text-right">Due</th>
-                  <th className="pb-2 text-right">Kept</th>
-                  <th className="pb-2">Retention Rate</th>
-                  <th className="pb-2 text-right">Lost Premium</th>
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60">
+                  <th className="py-3 px-4">Premium Band</th>
+                  <th className="py-3 px-4 text-right">Due</th>
+                  <th className="py-3 px-4 text-right">Kept</th>
+                  <th className="py-3 px-4 min-w-[140px]">Retention Rate</th>
+                  <th className="py-3 px-4 text-right">Lost Premium</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -752,18 +752,18 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
                   const rate = row.retentionPct !== null && row.retentionPct !== undefined ? Number(row.retentionPct) : null
                   return (
                     <tr key={row.key} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                      <td className="py-2.5 font-bold text-slate-900 dark:text-slate-100">
+                      <td className="py-3 px-4 font-bold text-slate-900 dark:text-slate-100">
                         {row.key}
                       </td>
-                      <td className="py-2.5 text-right font-medium text-slate-700 dark:text-slate-300 tabular-nums">
+                      <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300 tabular-nums">
                         {formatCount(row.expired)}
                       </td>
-                      <td className="py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      <td className="py-3 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
                         {formatCount(row.retained)}
                       </td>
-                      <td className="py-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="h-3 w-16 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-3 w-16 overflow-hidden rounded bg-slate-100 dark:bg-slate-800 shrink-0">
                             <div
                               className="h-full rounded bg-teal-500"
                               style={{ width: `${Math.max(2, rate || 0)}%` }}
@@ -774,7 +774,7 @@ export function CohortsWorkspace({ brand, analyticsData, isLoading }: Props) {
                           </span>
                         </div>
                       </td>
-                      <td className="py-2.5 text-right font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                      <td className="py-3 px-4 text-right font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
                         {formatInr(row.premiumLost)}
                       </td>
                     </tr>

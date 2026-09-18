@@ -357,7 +357,8 @@ const HYUNDAI_PLATINUM_COLUMNS: InsuranceColumnMap = {
   fuelType: 'fuel_type',
   mfgYear: 'mfg_year',
   vehRegistNo: 'veh_regist_no',
-  grossPremium: 'gross_premium',
+  // Gross Premium is defined without GST across all insurance sections, mapping to base net_premium.
+  grossPremium: 'net_premium',
   netPremium: 'net_premium',
   netOdPremiumA: 'net_od_premium_a',
   thirdPartyLiability: 'third_party_liability',
@@ -501,7 +502,8 @@ export const INSURANCE_BRANDS: Record<InsuranceBrandId, InsuranceBrand> = {
       // PRESENT BUT EMPTY on all 1,366 rows (0 filled). Mapped so the column resolves, but gated off
       // by capabilities.hasRegistration — an ILIKE against it is a permanently dead search arm.
       vehRegistNo: 'veh_regist_no',
-      grossPremium: 'grosspremium', // NUMERIC
+      // Gross Premium is defined without GST across all insurance sections, mapping to base netpremium.
+      grossPremium: 'netpremium', // NUMERIC
       netPremium: 'netpremium', // NUMERIC
       // PRESENT BUT ZERO on all 1,366 rows. Mapped, but gated off by hasPremiumSplit — worse than
       // missing, because it compiles and returns a confident Rs 0.

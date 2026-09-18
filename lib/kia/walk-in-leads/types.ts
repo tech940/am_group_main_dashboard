@@ -8,6 +8,7 @@ export type WalkInLead = {
   customerName: string
   /** Real only for MD / Developer / Finance Head (and the other KIA PII roles); `••••••` for everyone else. */
   mobile: string
+  alternateMobile: string | null
   countryCode: string
   email: string | null
   address: string | null
@@ -75,4 +76,4 @@ export type WalkInListResponse = {
   today: string
 }
 
-export type WalkInFormLink = { dealerCode: string; branch: string; path: string }
+export type WalkInFormLink = { dealerCode: string; branch: string; path: string; feedbackPath?: string }

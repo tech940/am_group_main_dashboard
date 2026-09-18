@@ -95,7 +95,8 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // for up to 75 minutes and the sidebar link would not appear.
 // v47 (2026-09-17): EA sees H Promise by default (GRANT_ONLY_ROLE_DEFAULTS). A v46 snapshot says it does not.
 // v48 (2026-09-17): registers kia.walk_in_leads (AM Kia · Sales · Walk-in Leads). A v47 snapshot has no such key.
-const PERMISSION_CACHE_VERSION = 'v48'
+// v49 (2026-09-18): registers h_promise_head role (H-Promise Head) with full H-Promise access.
+const PERMISSION_CACHE_VERSION = 'v49'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -311,7 +312,7 @@ function constrainSnapshotToBranch(
 // 'dgm' is here deliberately: it owns ONE approval stage on Platinum service. Without membership
 // the per-brand blanket below grants it every section of its assigned brand — the mechanism that
 // silently handed cxm 27 keys and ccm 30, including kia.proforma.approve.
-const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'cxm', 'ccm', 'dgm'])
+const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'cxm', 'ccm', 'dgm', 'h_promise_head'])
 
 // Sensitive analytics (Sales Report, Stock Report) are visible by default ONLY to top management:
 // super admins (MD/Developer) and EBA. Every other role — including CEO/EA and all brand roles — is

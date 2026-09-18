@@ -1,5 +1,9 @@
-import React from 'react'
+import { notFound } from 'next/navigation'
 import { ShowroomUploadForm } from '@/features/showroom-upload/showroom-upload-form'
+import {
+  getShowroomBrandConfig,
+  getLocationsForBrand,
+} from '@/lib/showroom-images/constants'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,15 +23,30 @@ type Props = {
 
 export default async function ShowroomUploadPage({ searchParams }: Props) {
   const params = await searchParams
-  const brand = params.brand
-  const location = params.location
-  const department = params.department || params.dept
+  const rawBrand = params.brand
+  const rawLocation = params.location
+  const rawDepartment = params.department || params.dept
+
+  // Require valid brand configuration
+  const brandConfig = getShowroomBrandConfig(rawBrand)
+  if (!brandConfig) {
+    notFound()
+  }
+
+  // Require valid location for that specific brand
+  const validLocations = getLocationsForBrand(brandConfig.key)
+  if (!rawLocation || !validLocations.includes(rawLocation)) {
+    notFound()
+  }
+
+  const department = rawDepartment?.toLowerCase() === 'service' ? 'service' : 'sales'
 
   return (
     <ShowroomUploadForm
-      initialBrand={brand}
-      initialLocation={location}
-      initialDepartment={department}
+      brand={brandConfig.key}
+      location={rawLocation}
+      department={department}
     />
   )
 }
+

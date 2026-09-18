@@ -400,8 +400,20 @@ export async function createGatePass(appUser: AppUser, rawInput: unknown) {
   // or auto-persisted if provided on creation so the driver never has to upload again.
   let licenceNo: string | null = null
   let licenceExpiry: string | null = null
+
+  if (input.driverLicenceExpiry) {
+    const day = String(input.driverLicenceExpiry).slice(0, 10)
+    const today = new Date().toISOString().slice(0, 10)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < today) {
+      throw new GatePassError(`The driving license expired on ${day}. A gate pass cannot be issued with an expired license.`, 400)
+    }
+  }
+
   if (input.driverKind === 'staff' && input.driverUserId) {
     const profile = await getDriverProfile(input.driverUserId, new Date())
+    if (profile?.expired && !input.driverLicenceExpiry) {
+      throw new GatePassError(`The driving license on file for ${profile.fullName} expired on ${profile.licenceExpiry || 'record'}. Please provide a valid driving license.`, 400)
+    }
     licenceNo = input.driverLicenceNo || profile?.licenceNo || 'ON_FILE'
     licenceExpiry = input.driverLicenceExpiry || profile?.licenceExpiry || null
 
@@ -420,6 +432,8 @@ export async function createGatePass(appUser: AppUser, rawInput: unknown) {
         // Non-fatal
       }
     }
+  } else {
+    licenceExpiry = input.driverLicenceExpiry || null
   }
 
   const created = await db.transaction(async (tx) => {

@@ -13,10 +13,14 @@ import {
   Link2,
   Loader2,
   MessageSquare,
+  Pencil,
   Phone,
   PhoneCall,
   Repeat,
   Search,
+  Smile,
+  Sparkles,
+  Star,
   Trash2,
   UserPlus,
   Users,
@@ -37,6 +41,7 @@ import {
   WALK_IN_SOURCES,
 } from '@/lib/kia/walk-in-leads/constants'
 import type { WalkInFormLink, WalkInLead, WalkInListResponse } from '@/lib/kia/walk-in-leads/types'
+import type { FeedbackDashboardData, FeedbackRow } from '@/lib/kia/feedback/types'
 
 /**
  * AM Kia · Sales · Walk-in Leads. Reads what the no-login showroom form sends (and the old Google Form's
@@ -90,7 +95,7 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function KiaWalkInLeadsPage() {
   const today = React.useMemo(() => ymd(new Date()), [])
-  const [activeTab, setActiveTab] = React.useState<'register' | 'booked' | 'analysis'>('register')
+  const [activeTab, setActiveTab] = React.useState<'register' | 'booked' | 'analysis' | 'feedback'>('register')
   const [query, setQuery] = React.useState<Query>(() => {
     const t = ymd(new Date())
     return {
@@ -139,6 +144,17 @@ export function KiaWalkInLeadsPage() {
   const summary = data?.summary
   const pages = data ? Math.max(1, Math.ceil(data.total / query.pageSize)) : 1
   const filtered = Boolean(query.dealer || query.model || query.consultant || query.source || (activeTab !== 'booked' && query.booked) || query.testDrive || query.q)
+
+  const feedbackQuery = useQuery({
+    queryKey: ['kia-walk-in-feedback', query.dealer, query.from, query.to],
+    queryFn: () => api<FeedbackDashboardData>(`/api/brands/kia/walk-in-leads/feedback?${new URLSearchParams({
+      ...(query.dealer ? { dealer: query.dealer } : {}),
+      ...(query.from ? { from: query.from } : {}),
+      ...(query.to ? { to: query.to } : {}),
+    }).toString()}`),
+    enabled: activeTab === 'feedback',
+    staleTime: 30_000,
+  })
 
   return (
     <MainLayout title="Walk-in Leads" subtitle="Showroom visitors from the walk-in form — who came, what they want, and who is close to booking">
@@ -197,6 +213,25 @@ export function KiaWalkInLeadsPage() {
             >
               <Car className="w-3.5 h-3.5 text-slate-500" />
               <span>Analytics &amp; Insights</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('feedback')}
+              className={cn(
+                'flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none',
+                activeTab === 'feedback'
+                  ? 'bg-white text-amber-950 shadow-xs ring-1 ring-amber-200'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              )}
+            >
+              <Smile className="w-3.5 h-3.5 text-amber-600" />
+              <span>Guest Reviews</span>
+              {feedbackQuery.data && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                  {feedbackQuery.data.total}
+                </span>
+              )}
             </button>
           </div>
 
@@ -401,7 +436,12 @@ export function KiaWalkInLeadsPage() {
                             </td>
 
                             {/* Mobile */}
-                            <td className="whitespace-nowrap px-3 py-2.5 font-medium text-slate-700 border-r border-slate-200/70">{lead.mobile}</td>
+                            <td className="whitespace-nowrap px-3 py-2.5 font-medium text-slate-700 border-r border-slate-200/70">
+                              <div>{lead.mobile}</div>
+                              {lead.alternateMobile && (
+                                <div className="text-[10.5px] text-slate-400 font-normal">Alt: {lead.alternateMobile}</div>
+                              )}
+                            </td>
 
                             {/* Model */}
                             <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-900 border-r border-slate-200/70">{lead.model}</td>
@@ -624,6 +664,16 @@ export function KiaWalkInLeadsPage() {
                                       <MessageSquare className="h-3 w-3 text-slate-600" />
                                       WhatsApp
                                     </a>
+                                    {lead.alternateMobile && lead.alternateMobile !== '••••••' && (
+                                      <a
+                                        href={`tel:+91${lead.alternateMobile.replace(/\D/g, '').slice(-10)}`}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 w-fit"
+                                        title="Call alternate number"
+                                      >
+                                        <Phone className="h-2.5 w-2.5 text-slate-500" />
+                                        Alt: {lead.alternateMobile}
+                                      </a>
+                                    )}
                                   </>
                                 ) : (
                                   <span className="font-mono text-xs text-slate-500 font-medium">{lead.mobile}</span>
@@ -988,6 +1038,248 @@ export function KiaWalkInLeadsPage() {
             </Section>
           </div>
         )}
+
+        {/* ── VIEW TAB 4: CUSTOMER GUEST REVIEWS & FEEDBACK ────────────────────────── */}
+        {activeTab === 'feedback' && (
+          <div className="space-y-4">
+            {feedbackQuery.isLoading ? (
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-2xs">
+                <TableSkeleton rows={6} columns={6} />
+              </div>
+            ) : feedbackQuery.isError ? (
+              <PremiumEmptyState
+                illustration="error"
+                title="Feedback could not be loaded"
+                description={feedbackQuery.error instanceof Error ? feedbackQuery.error.message : undefined}
+                action={<Button onClick={() => feedbackQuery.refetch()}>Try again</Button>}
+              />
+            ) : feedbackQuery.data && feedbackQuery.data.rows.length === 0 ? (
+              <PremiumEmptyState
+                illustration="search"
+                title="No customer feedback recorded yet"
+                description="Visitors can scan the Showroom Feedback QR code on desk displays or table stands to submit reviews."
+                action={
+                  <Button onClick={() => setLinksOpen(true)} className="gap-2">
+                    <Link2 className="h-4 w-4" /> View Showroom Feedback QRs
+                  </Button>
+                }
+              />
+            ) : feedbackQuery.data ? (
+              <>
+                {/* Top Feedback KPI Summary */}
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                  <div className="rounded-2xl border border-amber-200/90 bg-amber-50/60 p-4 shadow-2xs">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-amber-800">
+                      Average Rating
+                    </span>
+                    <div className="mt-1.5 flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold text-amber-900 tabular-nums">
+                        {feedbackQuery.data.summary.avgRating}
+                      </span>
+                      <span className="text-xs font-semibold text-amber-700">/ 5.0</span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-medium text-amber-800">
+                      From {feedbackQuery.data.total} showroom review{feedbackQuery.data.total > 1 ? 's' : ''}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/50 p-4 shadow-2xs">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-indigo-700">
+                      Positive Sentiment
+                    </span>
+                    <div className="mt-1.5 flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold text-indigo-900 tabular-nums">
+                        {feedbackQuery.data.summary.positivePct}%
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-medium text-indigo-700">4 &amp; 5 star ratings</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Staff Courtesy
+                    </span>
+                    <div className="mt-1.5 flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold text-slate-800 tabular-nums">
+                        {feedbackQuery.data.summary.avgCourtesy}
+                      </span>
+                      <span className="text-xs font-medium text-slate-400">/ 5.0</span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-medium text-slate-500">Hospitality &amp; greeting</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Test Drive Rating
+                    </span>
+                    <div className="mt-1.5 flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold text-slate-800 tabular-nums">
+                        {feedbackQuery.data.summary.avgTestDrive}
+                      </span>
+                      <span className="text-xs font-medium text-slate-400">/ 5.0</span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-medium text-slate-500">Vehicle &amp; drive experience</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Showroom Ambience
+                    </span>
+                    <div className="mt-1.5 flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold text-slate-800 tabular-nums">
+                        {feedbackQuery.data.summary.avgAmbience}
+                      </span>
+                      <span className="text-xs font-medium text-slate-400">/ 5.0</span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-medium text-slate-500">Cleanliness &amp; comfort</p>
+                  </div>
+                </div>
+
+                {/* Rating Distribution Breakdown */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
+                  <h3 className="text-sm font-bold text-slate-900">Rating Distribution</h3>
+                  <div className="mt-3.5 space-y-3">
+                    {[
+                      { star: 5, label: '5 Star · Delighted', color: 'bg-amber-500', iconColor: 'text-amber-500', count: feedbackQuery.data.summary.ratingCounts[5] },
+                      { star: 4, label: '4 Star · Great', color: 'bg-amber-400', iconColor: 'text-amber-500', count: feedbackQuery.data.summary.ratingCounts[4] },
+                      { star: 3, label: '3 Star · Fair', color: 'bg-slate-400', iconColor: 'text-slate-500', count: feedbackQuery.data.summary.ratingCounts[3] },
+                      { star: 2, label: '2 Star · Needs Work', color: 'bg-orange-400', iconColor: 'text-orange-500', count: feedbackQuery.data.summary.ratingCounts[2] },
+                      { star: 1, label: '1 Star · Disappointed', color: 'bg-rose-500', iconColor: 'text-rose-500', count: feedbackQuery.data.summary.ratingCounts[1] },
+                    ].map((item) => {
+                      const total = feedbackQuery.data?.total || 1
+                      const pctVal = Math.round((item.count / total) * 100)
+                      return (
+                        <div key={item.star} className="flex items-center gap-3 text-xs">
+                          <span className="flex w-38 items-center gap-2 font-semibold text-slate-700">
+                            <ModernSentimentIcon rating={item.star} className={cn('h-4.5 w-4.5 shrink-0', item.iconColor)} />
+                            <span>{item.label}</span>
+                          </span>
+                          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={cn('h-full rounded-full transition-all duration-300', item.color)}
+                              style={{ width: `${pctVal}%` }}
+                            />
+                          </div>
+                          <span className="w-16 text-right font-mono font-semibold tabular-nums text-slate-600">
+                            {item.count} ({pctVal}%)
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Recent Reviews Feed */}
+                <Section
+                  title="Guest Reviews &amp; Remarks Feed"
+                  description={`${feedbackQuery.data.total} total visitor feedback submissions`}
+                  bodyClassName="p-4 sm:p-5 bg-slate-50/40"
+                >
+                  {feedbackQuery.data.rows.length === 0 ? (
+                    <div className="py-12 text-center text-sm text-slate-500 bg-white rounded-xl border border-dashed border-slate-200">
+                      No feedback submitted for the selected filter range.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {feedbackQuery.data.rows.map((row) => {
+                        const emojiMap: Record<number, { label: string; badge: string; iconBg: string; iconColor: string }> = {
+                          5: { label: 'Delighted', badge: 'bg-amber-50 text-amber-900 border-amber-200', iconBg: 'bg-amber-50 border-amber-200', iconColor: 'text-amber-600' },
+                          4: { label: 'Great', badge: 'bg-blue-50 text-blue-900 border-blue-200', iconBg: 'bg-blue-50 border-blue-200', iconColor: 'text-blue-600' },
+                          3: { label: 'Fair', badge: 'bg-slate-100 text-slate-700 border-slate-200', iconBg: 'bg-slate-100 border-slate-200', iconColor: 'text-slate-600' },
+                          2: { label: 'Needs Work', badge: 'bg-orange-50 text-orange-900 border-orange-200', iconBg: 'bg-orange-50 border-orange-200', iconColor: 'text-orange-600' },
+                          1: { label: 'Disappointed', badge: 'bg-rose-50 text-rose-900 border-rose-200', iconBg: 'bg-rose-50 border-rose-200', iconColor: 'text-rose-600' },
+                        }
+                        const r = emojiMap[row.overallRating] ?? emojiMap[5]
+
+                        return (
+                          <div
+                            key={row.id}
+                            className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4.5 shadow-2xs transition-shadow hover:shadow-xs"
+                          >
+                            <div className="space-y-3">
+                              {/* Top Bar: Icon, Rating Badge, Showroom, Date */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5">
+                                  <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-2xs', r.iconBg, r.iconColor)}>
+                                    <ModernSentimentIcon rating={row.overallRating} className="h-5.5 w-5.5" />
+                                  </div>
+                                  <div>
+                                    <span className={cn('rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider', r.badge)}>
+                                      {row.overallRating} ★ · {r.label}
+                                    </span>
+                                    <p className="mt-0.5 text-[11.5px] font-semibold text-slate-600">
+                                      {row.branch}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="shrink-0 text-[11px] font-medium text-slate-400">
+                                  {new Date(row.createdAt).toLocaleString('en-IN', {
+                                    timeZone: 'Asia/Kolkata',
+                                    day: 'numeric',
+                                    month: 'short',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              </div>
+
+                              {/* Aspect Ratings Badges */}
+                              {(row.staffCourtesyRating || row.testDriveRating || row.showroomAmbienceRating) && (
+                                <div className="flex flex-wrap gap-1.5 text-[11px]">
+                                  {row.staffCourtesyRating && (
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 border border-slate-200">
+                                      Staff: <b>{row.staffCourtesyRating}/5</b>
+                                    </span>
+                                  )}
+                                  {row.testDriveRating && (
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 border border-slate-200">
+                                      Test Drive: <b>{row.testDriveRating}/5</b>
+                                    </span>
+                                  )}
+                                  {row.showroomAmbienceRating && (
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 border border-slate-200">
+                                      Ambience: <b>{row.showroomAmbienceRating}/5</b>
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Selected Tags */}
+                              {row.experienceTags && row.experienceTags.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {row.experienceTags.map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className={cn(
+                                        'rounded-md border px-2 py-0.5 text-[10.5px] font-semibold',
+                                        row.overallRating >= 4
+                                          ? 'border-slate-200 bg-slate-50 text-slate-700'
+                                          : 'border-amber-200 bg-amber-50/60 text-amber-900',
+                                      )}
+                                    >
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Remarks */}
+                            {row.remarks ? (
+                              <p className="mt-3.5 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 text-xs font-medium text-slate-800 leading-relaxed italic">
+                                &ldquo;{row.remarks}&rdquo;
+                              </p>
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </Section>
+              </>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {openLead && data && (
@@ -996,6 +1288,7 @@ export function KiaWalkInLeadsPage() {
           canEdit={data.can.edit}
           canDelete={data.can.delete}
           canViewPii={data.canViewPii}
+          consultants={data.consultants}
           onClose={() => setOpenLead(null)}
           onChanged={(lead) => setOpenLead(lead)}
         />
@@ -1051,11 +1344,20 @@ function Bars({ items, onPick, active }: { items: Array<{ key: string; label?: s
   )
 }
 
-function LeadDialog({ lead, canEdit, canDelete, canViewPii, onClose, onChanged }: {
+function LeadDialog({
+  lead,
+  canEdit,
+  canDelete,
+  canViewPii,
+  consultants = [],
+  onClose,
+  onChanged,
+}: {
   lead: WalkInLead
   canEdit: boolean
   canDelete: boolean
   canViewPii: boolean
+  consultants?: string[]
   onClose: () => void
   onChanged: (lead: WalkInLead) => void
 }) {
@@ -1069,7 +1371,49 @@ function LeadDialog({ lead, canEdit, canDelete, canViewPii, onClose, onChanged }
   const [removing, setRemoving] = React.useState(false)
   const [reason, setReason] = React.useState('')
 
-  const dirty =
+  // Customer Details Edit Mode
+  const [isEditingCustomer, setIsEditingCustomer] = React.useState(false)
+  const [customerName, setCustomerName] = React.useState(lead.customerName)
+  const [mobile, setMobile] = React.useState(lead.mobile === '••••••' ? '' : lead.mobile)
+  const [alternateMobile, setAlternateMobile] = React.useState(lead.alternateMobile === '••••••' ? '' : (lead.alternateMobile ?? ''))
+  const [email, setEmail] = React.useState(lead.email === '••••••' ? '' : (lead.email ?? ''))
+  const [address, setAddress] = React.useState(lead.address === '••••••' ? '' : (lead.address ?? ''))
+  const [model, setModel] = React.useState(lead.model)
+  const [consultantName, setConsultantName] = React.useState(lead.consultantName)
+  const [enquirySource, setEnquirySource] = React.useState(lead.enquirySource)
+  const [customerType, setCustomerType] = React.useState(lead.customerType ?? 'NEW')
+  const [testDrive, setTestDrive] = React.useState(lead.testDrive)
+  const [exchange, setExchange] = React.useState(lead.exchange ?? false)
+  const [exchangeDetails, setExchangeDetails] = React.useState(lead.exchangeDetails ?? '')
+  const [additionalInfo, setAdditionalInfo] = React.useState(lead.additionalInfo ?? '')
+
+  const resetCustomerForm = () => {
+    setCustomerName(lead.customerName)
+    setMobile(lead.mobile === '••••••' ? '' : lead.mobile)
+    setAlternateMobile(lead.alternateMobile === '••••••' ? '' : (lead.alternateMobile ?? ''))
+    setEmail(lead.email === '••••••' ? '' : (lead.email ?? ''))
+    setAddress(lead.address === '••••••' ? '' : (lead.address ?? ''))
+    setModel(lead.model)
+    setConsultantName(lead.consultantName)
+    setEnquirySource(lead.enquirySource)
+    setCustomerType(lead.customerType ?? 'NEW')
+    setTestDrive(lead.testDrive)
+    setExchange(lead.exchange ?? false)
+    setExchangeDetails(lead.exchangeDetails ?? '')
+    setAdditionalInfo(lead.additionalInfo ?? '')
+  }
+
+  React.useEffect(() => {
+    setRemarks(lead.remarks ?? '')
+    setTimeline(lead.expectedBookingTimeline ?? '')
+    setExpected(lead.expectedBookingDate ?? '')
+    setHoldingReason(lead.holdingReason ?? '')
+    setFollowUpDate(lead.followUpDate ?? '')
+    setBooked(lead.booked)
+    resetCustomerForm()
+  }, [lead])
+
+  const dirtyFollowUp =
     remarks !== (lead.remarks ?? '') ||
     timeline !== (lead.expectedBookingTimeline ?? '') ||
     expected !== (lead.expectedBookingDate ?? '') ||
@@ -1097,6 +1441,44 @@ function LeadDialog({ lead, canEdit, canDelete, canViewPii, onClose, onChanged }
     },
     onError: (error) => toast({ title: 'Not saved', description: error instanceof Error ? error.message : undefined, variant: 'error' }),
   })
+
+  const saveCustomer = useMutation({
+    mutationFn: () => {
+      const payload: Record<string, unknown> = {
+        customerName: customerName.trim(),
+        model,
+        consultantName: consultantName.trim(),
+        enquirySource,
+        customerType: customerType || null,
+        testDrive,
+        exchange,
+        exchangeDetails: exchange ? (exchangeDetails.trim() || null) : null,
+        additionalInfo: additionalInfo.trim() || null,
+        expectedUpdatedAt: lead.updatedAt,
+      }
+      if (canViewPii) {
+        if (mobile.trim()) payload.mobile = mobile.trim().replace(/\D/g, '').slice(-10)
+        payload.alternateMobile = alternateMobile.trim() ? alternateMobile.trim().replace(/\D/g, '').slice(-10) : null
+        payload.email = email.trim() ? email.trim().toLowerCase() : null
+        payload.address = address.trim() ? address.trim() : null
+      } else {
+        if (email.trim()) payload.email = email.trim().toLowerCase()
+        if (address.trim()) payload.address = address.trim()
+      }
+      return api<{ lead: WalkInLead }>(`/api/brands/kia/walk-in-leads/${lead.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      })
+    },
+    onSuccess: async (result) => {
+      toast({ title: 'Customer details updated', description: result.lead.customerName, variant: 'success' })
+      setIsEditingCustomer(false)
+      onChanged(result.lead)
+      await queryClient.invalidateQueries({ queryKey: ['kia-walk-in-leads'] })
+    },
+    onError: (error) => toast({ title: 'Not updated', description: error instanceof Error ? error.message : undefined, variant: 'error' }),
+  })
+
   const remove = useMutation({
     mutationFn: () => api(`/api/brands/kia/walk-in-leads/${lead.id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
     onSuccess: async () => {
@@ -1121,16 +1503,259 @@ function LeadDialog({ lead, canEdit, canDelete, canViewPii, onClose, onChanged }
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 px-6 py-5">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <FieldValue label="Mobile" value={lead.mobile === '••••••' ? lead.mobile : `${lead.countryCode} ${lead.mobile}`} mono />
-            <FieldValue label="E-mail" value={lead.email ?? '—'} />
-            <FieldValue label="Consultant" value={lead.consultantName} />
-            <FieldValue label="Source" value={title(lead.enquirySource)} />
-            <FieldValue label="Customer Profile" value={lead.customerType ? title(lead.customerType) : '—'} />
-            <FieldValue label="Test drive" value={lead.testDrive ? 'Yes' : 'No'} />
-            <FieldValue label="Exchange" value={lead.exchange === null ? '—' : lead.exchange ? `Yes${lead.exchangeDetails ? ` — ${lead.exchangeDetails}` : ''}` : 'No'} />
-            <FieldValue label="Address / Area" value={lead.address ?? '—'} />
-            {lead.additionalInfo && <FieldValue label="Anything else" value={lead.additionalInfo} className="sm:col-span-2" />}
+          {/* Customer & Enquiry Details Card */}
+          <div className="rounded-xl border border-slate-200/90 bg-slate-50/50 p-4 shadow-2xs">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200/70">
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                Customer &amp; Enquiry Details
+              </span>
+              {canEdit && !isEditingCustomer && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsEditingCustomer(true)}
+                  className="h-7 px-2.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border-slate-300 gap-1.5 shadow-2xs"
+                >
+                  <Pencil className="h-3 w-3" /> Edit Customer Details
+                </Button>
+              )}
+            </div>
+
+            {isEditingCustomer ? (
+              <div className="space-y-3.5 pt-1">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Customer Name <span className="text-rose-500">*</span>
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      maxLength={100}
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </label>
+
+                  {canViewPii ? (
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Primary Mobile <span className="text-rose-500">*</span>
+                      <div className="mt-1 flex h-9 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                        <span className="flex items-center border-r border-slate-200 bg-slate-50 px-2.5 text-xs font-semibold text-slate-600">+91</span>
+                        <input
+                          type="tel"
+                          inputMode="numeric"
+                          value={mobile}
+                          onChange={(e) => setMobile(e.target.value.replace(/[^\d\s-]/g, '').slice(0, 14))}
+                          placeholder="9876543210"
+                          className="min-w-0 flex-1 px-2.5 text-sm font-medium outline-none"
+                        />
+                      </div>
+                    </label>
+                  ) : (
+                    <div className="block text-xs font-semibold text-slate-500">
+                      Primary Mobile
+                      <div className="mt-1 flex h-9 items-center rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs text-slate-500 font-mono">
+                        {lead.mobile} (Protected)
+                      </div>
+                    </div>
+                  )}
+
+                  {canViewPii ? (
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Alternate Mobile (Optional)
+                      <div className="mt-1 flex h-9 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                        <span className="flex items-center border-r border-slate-200 bg-slate-50 px-2.5 text-xs font-semibold text-slate-600">+91</span>
+                        <input
+                          type="tel"
+                          inputMode="numeric"
+                          value={alternateMobile}
+                          onChange={(e) => setAlternateMobile(e.target.value.replace(/[^\d\s-]/g, '').slice(0, 14))}
+                          placeholder="Optional alternate mobile"
+                          className="min-w-0 flex-1 px-2.5 text-sm font-medium outline-none"
+                        />
+                      </div>
+                    </label>
+                  ) : (
+                    <div className="block text-xs font-semibold text-slate-500">
+                      Alternate Mobile
+                      <div className="mt-1 flex h-9 items-center rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs text-slate-500 font-mono">
+                        {lead.alternateMobile ?? '—'}
+                      </div>
+                    </div>
+                  )}
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    E-mail (Optional)
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      maxLength={120}
+                      placeholder="name@domain.com"
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Model Interested In <span className="text-rose-500">*</span>
+                    <select
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm font-medium text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {WALK_IN_MODELS.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Sales Consultant <span className="text-rose-500">*</span>
+                    <input
+                      type="text"
+                      value={consultantName}
+                      onChange={(e) => setConsultantName(e.target.value)}
+                      list="lead-consultants-list"
+                      maxLength={100}
+                      placeholder="Sales consultant name"
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <datalist id="lead-consultants-list">
+                      {consultants.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Enquiry Source <span className="text-rose-500">*</span>
+                    <select
+                      value={enquirySource}
+                      onChange={(e) => setEnquirySource(e.target.value)}
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm font-medium text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {WALK_IN_SOURCES.map((s) => (
+                        <option key={s} value={s}>{title(s)}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Customer Profile
+                    <select
+                      value={customerType}
+                      onChange={(e) => setCustomerType(e.target.value)}
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm font-medium text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {WALK_IN_CUSTOMER_TYPES.map((t) => (
+                        <option key={t} value={t}>{title(t)}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700 sm:col-span-2">
+                    Address / Area
+                    <input
+                      type="text"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      maxLength={300}
+                      placeholder="Locality / Area"
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </label>
+
+                  <div className="sm:col-span-2 flex flex-wrap gap-6 pt-1">
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={testDrive}
+                        onChange={(e) => setTestDrive(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Test drive taken
+                    </label>
+
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={exchange}
+                        onChange={(e) => setExchange(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Vehicle Exchange / Trade-in
+                    </label>
+                  </div>
+
+                  {exchange && (
+                    <label className="block text-xs font-semibold text-slate-700 sm:col-span-2">
+                      Exchange Vehicle Details
+                      <input
+                        type="text"
+                        value={exchangeDetails}
+                        onChange={(e) => setExchangeDetails(e.target.value)}
+                        maxLength={100}
+                        placeholder="e.g. Swift 2018 VXi"
+                        className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </label>
+                  )}
+
+                  <label className="block text-xs font-semibold text-slate-700 sm:col-span-2">
+                    Additional Info / Notes
+                    <input
+                      type="text"
+                      value={additionalInfo}
+                      onChange={(e) => setAdditionalInfo(e.target.value)}
+                      maxLength={500}
+                      placeholder="Any additional notes or customer preferences"
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      resetCustomerForm()
+                      setIsEditingCustomer(false)
+                    }}
+                    disabled={saveCustomer.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="bg-[#05141f] text-white hover:bg-slate-900"
+                    disabled={!customerName.trim() || !consultantName.trim() || saveCustomer.isPending}
+                    onClick={() => saveCustomer.mutate()}
+                  >
+                    {saveCustomer.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} Save Customer Details
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <FieldValue label="Primary Mobile" value={lead.mobile === '••••••' ? lead.mobile : `${lead.countryCode} ${lead.mobile}`} mono />
+                <FieldValue
+                  label="Alternate Mobile"
+                  value={lead.alternateMobile ? (lead.alternateMobile === '••••••' ? lead.alternateMobile : `${lead.countryCode} ${lead.alternateMobile}`) : '—'}
+                  mono={Boolean(lead.alternateMobile)}
+                />
+                <FieldValue label="E-mail" value={lead.email ?? '—'} />
+                <FieldValue label="Consultant" value={lead.consultantName} />
+                <FieldValue label="Source" value={title(lead.enquirySource)} />
+                <FieldValue label="Customer Profile" value={lead.customerType ? title(lead.customerType) : '—'} />
+                <FieldValue label="Test drive" value={lead.testDrive ? 'Yes' : 'No'} />
+                <FieldValue label="Exchange" value={lead.exchange === null ? '—' : lead.exchange ? `Yes${lead.exchangeDetails ? ` — ${lead.exchangeDetails}` : ''}` : 'No'} />
+                <FieldValue label="Address / Area" value={lead.address ?? '—'} />
+                {lead.additionalInfo && <FieldValue label="Anything else" value={lead.additionalInfo} className="sm:col-span-2" />}
+              </div>
+            )}
           </div>
           {!canViewPii && <p className="text-[11px] text-slate-400">Mobile, e-mail and address are visible only to MD, Developer and the other KIA customer-data roles.</p>}
 
@@ -1237,7 +1862,7 @@ function LeadDialog({ lead, canEdit, canDelete, canViewPii, onClose, onChanged }
                   </label>
                   <Button
                     className="bg-[#05141f] text-white hover:bg-slate-900"
-                    disabled={!dirty || save.isPending}
+                    disabled={!dirtyFollowUp || save.isPending}
                     onClick={() => save.mutate()}
                   >
                     {save.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Save follow-up
@@ -1285,42 +1910,87 @@ function LeadDialog({ lead, canEdit, canDelete, canViewPii, onClose, onChanged }
 }
 
 function FormLinksDialog({ onClose }: { onClose: () => void }) {
+  const [formType, setFormType] = React.useState<'walkin' | 'feedback'>('walkin')
   const links = useQuery({
     queryKey: ['kia-walk-in-links'],
     queryFn: () => api<{ links: WalkInFormLink[] }>('/api/brands/kia/walk-in-leads/links'),
     staleTime: 5 * 60_000,
   })
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-2rem)] max-w-5xl overflow-y-auto rounded-2xl border-0 bg-white p-0 shadow-2xl">
         <DialogHeader className="border-b border-slate-200 px-6 pb-4 pt-5 text-left">
-          <DialogTitle className="text-xl font-bold text-slate-900">Walk-in form links &amp; Showroom QRs</DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm text-slate-600 mt-1">
-            Staff open these without logging in. Print the QR code for the showroom desk, or share the link on WhatsApp. Each link files walk-ins under its branch.
-          </DialogDescription>
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <DialogTitle className="text-xl font-bold text-slate-900">Showroom QR Codes &amp; Public Links</DialogTitle>
+              <DialogDescription className="mt-1 text-xs text-slate-600 sm:text-sm">
+                No login required. Print for showroom desks, tablet stands, or share via WhatsApp.
+              </DialogDescription>
+            </div>
+
+            {/* Switcher */}
+            <div className="flex rounded-xl bg-slate-100 p-1 border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setFormType('walkin')}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer',
+                  formType === 'walkin'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900',
+                )}
+              >
+                Walk-in Register (Staff)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormType('feedback')}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer',
+                  formType === 'feedback'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900',
+                )}
+              >
+                ⭐ Guest Feedback (Visitors)
+              </button>
+            </div>
+          </div>
         </DialogHeader>
+
         <div className="grid gap-4 px-6 py-5 sm:grid-cols-2 lg:grid-cols-3">
           {links.isLoading && <p className="col-span-full py-8 text-center text-sm text-slate-500">Preparing showroom links…</p>}
           {links.isError && <p className="col-span-full py-8 text-center text-sm text-rose-700">{links.error instanceof Error ? links.error.message : 'The links could not be loaded.'}</p>}
-          {links.data?.links.map((link) => <LinkCard key={link.dealerCode} link={link} />)}
+          {links.data?.links.map((link) => (
+            <LinkCard
+              key={link.dealerCode}
+              link={link}
+              type={formType}
+            />
+          ))}
         </div>
-        <p className="border-t border-slate-200/80 bg-slate-50 px-6 py-3 text-[11px] text-slate-500 rounded-b-2xl">
-          If a link is shared somewhere it shouldn’t be, ask a developer to change WALK_IN_LINK_GENERATION: every old link stops working and new ones appear here.
+
+        <p className="rounded-b-2xl border-t border-slate-200/80 bg-slate-50 px-6 py-3 text-[11px] text-slate-500">
+          Security: Links are cryptographically signed. If a link needs rotation, updating the link generation key safely updates all branches simultaneously.
         </p>
       </DialogContent>
     </Dialog>
   )
 }
 
-function LinkCard({ link }: { link: WalkInFormLink }) {
-  const url = typeof window === 'undefined' ? link.path : new URL(link.path, window.location.origin).toString()
+function LinkCard({ link, type }: { link: WalkInFormLink; type: 'walkin' | 'feedback' }) {
+  const path = type === 'feedback' ? (link.feedbackPath || link.path.replace('/walk-in/', '/feedback/')) : link.path
+  const url = typeof window === 'undefined' ? path : new URL(path, window.location.origin).toString()
   const [qr, setQr] = React.useState<string | null>(null)
   const [copied, setCopied] = React.useState(false)
+
   React.useEffect(() => {
     let alive = true
     QRCode.toDataURL(url, { width: 360, margin: 1 }).then((data) => { if (alive) setQr(data) }).catch(() => {})
     return () => { alive = false }
   }, [url])
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(url)
@@ -1330,24 +2000,107 @@ function LinkCard({ link }: { link: WalkInFormLink }) {
       toast({ title: 'Copy failed', description: 'Select the link and copy it by hand.', variant: 'error' })
     }
   }
+
   return (
     <div className="kia-surface-sunken flex flex-col items-center gap-3 rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 text-center shadow-2xs">
-      <div className="inline-flex items-center gap-1.5 rounded-full bg-slate-200/80 px-3 py-1 text-xs font-bold text-slate-900">
-        <span className="h-2 w-2 rounded-full bg-slate-500" />
-        {link.branch} showroom
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-200/80 px-3 py-1 text-xs font-bold text-slate-900">
+          <span className="h-2 w-2 rounded-full bg-slate-500" />
+          {link.branch}
+        </span>
+        <span className={cn(
+          'text-[10.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border',
+          type === 'feedback' ? 'bg-amber-50 text-amber-900 border-amber-200' : 'bg-indigo-50 text-indigo-900 border-indigo-200'
+        )}>
+          {type === 'feedback' ? 'Guest Feedback' : 'Walk-in Intake'}
+        </span>
       </div>
+
       {qr ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={qr} alt={`QR code for the ${link.branch} walk-in form`} className="h-44 w-44 rounded-xl bg-white p-2 shadow-xs border border-slate-200/70" />
+        <img
+          src={qr}
+          alt={`QR code for ${link.branch} ${type === 'feedback' ? 'Customer Feedback' : 'Walk-in Register'}`}
+          className="h-44 w-44 rounded-xl bg-white p-2 shadow-xs border border-slate-200/70"
+        />
       ) : (
         <div className="h-44 w-44 animate-pulse rounded-xl bg-slate-200/60" />
       )}
-      <p className="w-full break-all rounded-lg bg-white px-2 py-1.5 font-mono text-[10.5px] font-medium text-slate-600 border border-slate-200/60 select-all">{url}</p>
+      <p className="w-full break-all rounded-lg bg-white px-2 py-1.5 font-mono text-[10.5px] font-medium text-slate-600 border border-slate-200/60 select-all">
+        {url}
+      </p>
       <div className="flex flex-wrap justify-center gap-2 pt-1">
-        <Button size="sm" variant="outline" onClick={copy} className="h-8 rounded-xl border-slate-200 text-xs font-semibold hover:bg-white">{copied ? <Check className="mr-1.5 h-3.5 w-3.5 text-slate-700" /> : <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />}{copied ? 'Copied' : 'Copy link'}</Button>
-        <Button size="sm" variant="outline" asChild className="h-8 rounded-xl border-slate-200 text-xs font-semibold hover:bg-white"><a href={url} target="_blank" rel="noreferrer"><ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Open</a></Button>
-        {qr && <Button size="sm" variant="outline" asChild className="h-8 rounded-xl border-slate-200 text-xs font-semibold hover:bg-white"><a href={qr} download={`kia-walk-in-${link.branch.toLowerCase()}.png`}><Download className="mr-1.5 h-3.5 w-3.5" /> QR</a></Button>}
+        <Button size="sm" variant="outline" onClick={copy} className="h-8 rounded-xl border-slate-200 text-xs font-semibold hover:bg-white">
+          {copied ? <Check className="mr-1.5 h-3.5 w-3.5 text-slate-700" /> : <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />}
+          {copied ? 'Copied' : 'Copy link'}
+        </Button>
+        <Button size="sm" variant="outline" asChild className="h-8 rounded-xl border-slate-200 text-xs font-semibold hover:bg-white">
+          <a href={url} target="_blank" rel="noreferrer">
+            <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Open
+          </a>
+        </Button>
+        {qr && (
+          <Button size="sm" variant="outline" asChild className="h-8 rounded-xl border-slate-200 text-xs font-semibold hover:bg-white">
+            <a href={qr} download={`kia-${type === 'feedback' ? 'feedback' : 'walk-in'}-${link.branch.toLowerCase().replace(/\s+/g, '-')}.png`}>
+              <Download className="mr-1.5 h-3.5 w-3.5" /> QR
+            </a>
+          </Button>
+        )}
       </div>
     </div>
   )
 }
+
+function ModernSentimentIcon({ rating, className }: { rating: number; className?: string }) {
+  if (rating === 1) {
+    return (
+      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="16" cy="16" r="13" />
+        <circle cx="11.5" cy="13.5" r="1.5" fill="currentColor" stroke="none" />
+        <circle cx="20.5" cy="13.5" r="1.5" fill="currentColor" stroke="none" />
+        <path d="M10 10.5c1.2.6 2.4.6 3.5 0" />
+        <path d="M18.5 10.5c1.1-.6 2.3-.6 3.5 0" />
+        <path d="M11 21.5c1.5-2 3.2-3 5-3s3.5 1 5 3" />
+      </svg>
+    )
+  }
+  if (rating === 2) {
+    return (
+      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="16" cy="16" r="13" />
+        <circle cx="11.5" cy="13.5" r="1.5" fill="currentColor" stroke="none" />
+        <circle cx="20.5" cy="13.5" r="1.5" fill="currentColor" stroke="none" />
+        <path d="M11.5 20.5c1.5-1.2 3-1.8 4.5-1.8s3 .6 4.5 1.8" />
+      </svg>
+    )
+  }
+  if (rating === 3) {
+    return (
+      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="16" cy="16" r="13" />
+        <circle cx="11.5" cy="13.5" r="1.5" fill="currentColor" stroke="none" />
+        <circle cx="20.5" cy="13.5" r="1.5" fill="currentColor" stroke="none" />
+        <line x1="11.5" y1="20" x2="20.5" y2="20" />
+      </svg>
+    )
+  }
+  if (rating === 4) {
+    return (
+      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="16" cy="16" r="13" />
+        <circle cx="11.5" cy="13.5" r="1.5" fill="currentColor" stroke="none" />
+        <circle cx="20.5" cy="13.5" r="1.5" fill="currentColor" stroke="none" />
+        <path d="M11 18.5c1.5 2 3.2 3 5 3s3.5-1 5-3" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="16" cy="16" r="13" />
+      <path d="M9.5 13.5c.8-1.5 2.2-2 3.5-1.5" />
+      <path d="M19 12c1.3-.5 2.7 0 3.5 1.5" />
+      <path d="M10.5 18c1.6 3 3.5 4.5 5.5 4.5s3.9-1.5 5.5-4.5" />
+    </svg>
+  )
+}
+

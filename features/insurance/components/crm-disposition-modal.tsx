@@ -36,9 +36,17 @@ type Props = {
   onOpenChange: (open: boolean) => void
   onSave: (data: {
     chassisNo: string
+    brand?: string | null
     policyNo?: string | null
     customerName?: string | null
     phone?: string | null
+    registrationNo?: string | null
+    model?: string | null
+    variant?: string | null
+    insuranceCompany?: string | null
+    dealerCode?: string | null
+    expiryDate?: string | null
+    lastPremium?: number | null
     disposition: CrmDisposition
     lossReason?: string | null
     remarks?: string | null
@@ -70,8 +78,16 @@ export function CrmDispositionModal({ lead, open, onOpenChange, onSave, isSaving
   const handleSave = () => {
     onSave({
       chassisNo: lead.chassisNo,
+      brand: lead.brand,
       policyNo: lead.policyNo,
       customerName: lead.customerName,
+      registrationNo: lead.registrationNo,
+      model: lead.model,
+      variant: lead.variant,
+      insuranceCompany: lead.insuranceCompany,
+      dealerCode: lead.dealerCode,
+      expiryDate: lead.expiryDate,
+      lastPremium: lead.lastPremium,
       disposition,
       lossReason: isLost ? lossReason || disposition : null,
       remarks: remarks || null,

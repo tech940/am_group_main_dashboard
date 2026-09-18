@@ -164,7 +164,7 @@ export function PolicyInspectorSheet({ brand, policy: initialPolicy, open, onOpe
             </div>
 
             <div className="text-right">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Gross Premium</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Gross Premium (Excl. GST)</span>
               <span className="text-xl font-black text-teal-600 dark:text-teal-400">
                 {formatInr(grossPremium)}
               </span>
@@ -267,7 +267,7 @@ export function PolicyInspectorSheet({ brand, policy: initialPolicy, open, onOpe
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div>
-                <span className="text-[10px] text-slate-500 font-semibold block uppercase">Gross Premium</span>
+                <span className="text-[10px] text-slate-500 font-semibold block uppercase">Gross Premium (Excl. GST)</span>
                 <span className="font-bold text-slate-900 dark:text-slate-100">
                   {formatInr(grossPremium)}
                 </span>

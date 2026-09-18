@@ -1307,6 +1307,20 @@ export const GRANT_ONLY_ROLE_DEFAULTS: Readonly<Partial<Record<PermissionRole, r
     'tata.h_promise.payments.view',
     'tata.h_promise.insights.view',
   ],
+  h_promise_head: [
+    'tata.h_promise.view',
+    'tata.h_promise.register.view',
+    'tata.h_promise.register.create',
+    'tata.h_promise.register.edit',
+    'tata.h_promise.register.delete',
+    'tata.h_promise.approvals.view',
+    'tata.h_promise.approvals.approve',
+    'tata.h_promise.payments.view',
+    'tata.h_promise.payments.edit',
+    'tata.h_promise.insights.view',
+    'tata.h_promise.settings.view',
+    'tata.h_promise.settings.edit',
+  ],
 }
 
 export const RESTRICTED_DEFAULT_PERMISSION_KEYS = new Set<string>(
@@ -1378,6 +1392,7 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   ccm: 'CCM (Customer Care Manager) — Delivered backup',
   process_coordinator: 'Process Coordinator (PC)',
   hr: 'HR (Human Resources)',
+  h_promise_head: 'H-Promise Head',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -1759,6 +1774,20 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   // needs one of those is granted it explicitly from the Access Map, which is the mechanism that
   // was designed for exactly this.
   hr: allPermissionKeys.filter((key) => !RESTRICTED_DEFAULT_PERMISSION_KEYS.has(key)),
+  h_promise_head: [
+    ...keysForGroups([
+      'tata.h_promise',
+      'tata.h_promise.register',
+      'tata.h_promise.approvals',
+      'tata.h_promise.payments',
+      'tata.h_promise.insights',
+      'tata.h_promise.settings',
+      'hyundai.h_promise',
+      'platinum.h_promise',
+      'kia.h_promise',
+      'mg.h_promise',
+    ], ['view', 'create', 'edit', 'delete', 'approve', 'audit']),
+  ],
 }
 
 export function getTemplateMap(role: PermissionRole) {

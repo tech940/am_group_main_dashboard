@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, smallint, decimal, js
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed', 'vp', 'assistant_manager', 'process_coordinator', 'hr', 'group_service_manager', 'dgm'])
+export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed', 'vp', 'assistant_manager', 'process_coordinator', 'hr', 'group_service_manager', 'dgm', 'h_promise_head'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -3547,3 +3547,27 @@ export const kiaWalkInLeads = pgTable('kia_walk_in_leads', {
   kiaWalkInLeadsMobileIdx: index('kia_walk_in_leads_mobile_idx').on(table.mobile),
   kiaWalkInLeadsFollowUpDateIdx: index('kia_walk_in_leads_follow_up_date_idx').on(table.followUpDate),
 }))
+
+export const kiaWalkInFeedback = pgTable('kia_walk_in_feedback', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  walkInLeadId: uuid('walk_in_lead_id').references(() => kiaWalkInLeads.id, { onDelete: 'set null' }),
+  dealerCode: text('dealer_code').default('JK402').notNull(),
+  customerName: text('customer_name'),
+  countryCode: text('country_code').default('+91'),
+  mobile: text('mobile'),
+  model: text('model'),
+  consultantName: text('consultant_name'),
+  overallRating: smallint('overall_rating').notNull(),
+  staffCourtesyRating: smallint('staff_courtesy_rating'),
+  testDriveRating: smallint('test_drive_rating'),
+  showroomAmbienceRating: smallint('showroom_ambience_rating'),
+  experienceTags: jsonb('experience_tags').$type<string[]>(),
+  remarks: text('remarks'),
+  source: text('source').default('qr_feedback').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaWalkInFeedbackDealerCreatedIdx: index('kia_walk_in_feedback_dealer_created_idx').on(table.dealerCode, table.createdAt),
+  kiaWalkInFeedbackMobileIdx: index('kia_walk_in_feedback_mobile_idx').on(table.mobile),
+  kiaWalkInFeedbackRatingIdx: index('kia_walk_in_feedback_rating_idx').on(table.overallRating),
+}))
+

@@ -79,11 +79,13 @@ export function InsuranceClient({
   initialSearchParams,
   lockedBrand,
   canEdit = false,
+  canExport = false,
   currentUserName = '',
 }: {
   initialSearchParams: SearchParamsInput
   lockedBrand?: InsuranceBrandId
   canEdit?: boolean
+  canExport?: boolean
   currentUserName?: string
 }) {
   const queryClient = useQueryClient()
@@ -310,9 +312,17 @@ export function InsuranceClient({
   const saveCrmMutation = useMutation({
     mutationFn: async (payload: {
       chassisNo: string
+      brand?: string | null
       policyNo?: string | null
       customerName?: string | null
       phone?: string | null
+      registrationNo?: string | null
+      model?: string | null
+      variant?: string | null
+      insuranceCompany?: string | null
+      dealerCode?: string | null
+      expiryDate?: string | null
+      lastPremium?: number | null
       disposition: CrmDisposition
       lossReason?: string | null
       remarks?: string | null
@@ -321,7 +331,7 @@ export function InsuranceClient({
       const res = await fetch('/api/insurance/crm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, brand: insuranceBrand }),
+        body: JSON.stringify({ ...payload, brand: payload.brand || insuranceBrand }),
       })
       if (!res.ok) throw new Error('Failed to save CRM record')
       return res.json()
@@ -517,6 +527,7 @@ export function InsuranceClient({
             onInspectPolicy={handleInspectPolicy}
             onExportCsv={handleExportCsv}
             isExporting={isExporting}
+            canExport={canExport}
           />
         )}
 

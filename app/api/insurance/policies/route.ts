@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { isSuperAdminRole } from '@/lib/auth/roles'
 import { requireInsuranceAccess } from '@/lib/insurance/access'
 import {
   CHASSIS_PATTERN,
@@ -156,6 +157,12 @@ export async function GET(request: Request) {
     const whereClause = whereConditions.join(' AND ')
 
     if (format === 'csv') {
+      if (!isSuperAdminRole(user.role)) {
+        return NextResponse.json(
+          { error: 'Export CSV is strictly restricted to MD and Developer only' },
+          { status: 403 },
+        )
+      }
       // Absent columns are filled with NULL so the header row and the value row stay aligned —
       // a KIA export has no 64VB / RM / sub-user, and a skipped column would shift every field after it.
       const csvKeys = ['id','policyNo','proposalNo','customerName','insuranceCompany','policyType',

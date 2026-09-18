@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canViewCallAnalysis } from '@/lib/callyzer/access'
+import { requireCallAnalysisApi } from '@/lib/call-analysis/access'
 import { getAllCalls, getSyncState } from '@/lib/callyzer/client'
 import { buildAnalytics, filterCalls, type CallFilters } from '@/lib/callyzer/analytics'
 import { matchCustomers, phone10 } from '@/lib/customer-identity/phone-match'
@@ -18,11 +17,9 @@ export const dynamic = 'force-dynamic'
  * then computed in memory over that slice, so a filter change is milliseconds of array work.
  */
 export async function GET(request: Request) {
-  const appUser = await getAuthenticatedAppUser()
-  if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canViewCallAnalysis(appUser.role)) {
-    return NextResponse.json({ error: 'You do not have access to Call Analysis.' }, { status: 403 })
-  }
+  // Same rule as the page: a Call Analysis role, or an explicit call_analysis.view grant.
+  const access = await requireCallAnalysisApi()
+  if ('denied' in access) return access.denied
 
   try {
     const params = new URL(request.url).searchParams
