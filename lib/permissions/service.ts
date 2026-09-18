@@ -96,9 +96,11 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 // v47 (2026-09-17): EA sees H Promise by default (GRANT_ONLY_ROLE_DEFAULTS). A v46 snapshot says it does not.
 // v48 (2026-09-17): registers kia.walk_in_leads (AM Kia · Sales · Walk-in Leads). A v47 snapshot has no such key.
 // v49 (2026-09-18): registers h_promise_head role (H-Promise Head) with full H-Promise access.
+// v51 (2026-09-18): registers car_evaluations (Car Evaluation Leads, grant-only). A v50 snapshot has no such key,
+//      so an Access-Map tick would not show — and the sidebar link would not appear — for up to 75 minutes.
 // v50: registers kia.dms_reconciliation (DMS Exceptions tab) and grants it to md, general_manager,
 //      sales_head, sales_manager, accounts, cxm and ccm. A new key is absent from every v49 snapshot.
-const PERMISSION_CACHE_VERSION = 'v50'
+const PERMISSION_CACHE_VERSION = 'v51'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

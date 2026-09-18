@@ -1087,6 +1087,20 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     sortOrder: 182,
     actions: ['view', 'edit'],
   },
+  /*
+   * Car Evaluation Leads (owner, 2026-09-18): the leads from the public /sell-used-car page, which the MD
+   * shares on WhatsApp. Group-level, not a brand's — the form takes any car. GRANT-ONLY: "MD + people I
+   * tick in Access Map". ⚠️ Carries customer names and mobile numbers, shown in full to whoever holds it
+   * (owner's choice) — which is exactly why no role default may set it.
+   */
+  {
+    key: 'car_evaluations',
+    name: 'Car Evaluation Leads',
+    parentKey: null,
+    description: 'Leads from the public sell-your-car page. ⚠️ Shows customer names and mobile numbers.',
+    sortOrder: 183,
+    actions: ['view'],
+  },
 ]
 
 /*
@@ -1139,6 +1153,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   data_health: { href: '/data-health' },
   call_analysis: { href: '/call-analysis' },
   social_media_leads: { href: '/social-media-leads' },
+  car_evaluations: { href: '/car-evaluations' },
   admin_panel: { href: '/admin' },
   'kia.vehicle_tracker': { href: '/brands/kia/vehicle-tracker' },
   // AM Tata · H Promise. The container `tata.h_promise` and `tata.h_promise.settings` have no route on purpose:
@@ -1297,6 +1312,8 @@ export const GRANT_ONLY_SECTIONS = new Set<string>([
   'tata.h_promise.payments',
   'tata.h_promise.insights',
   'tata.h_promise.settings',
+  // Car Evaluation Leads — MD / Developer + per-person ticks only (owner, 2026-09-18).
+  'car_evaluations',
 ])
 
 /** The concrete permission keys under a grant-only section. */

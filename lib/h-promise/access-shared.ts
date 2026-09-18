@@ -90,7 +90,7 @@ export function deriveCapabilities(
   }
   const payments = {
     view: hasAnyHPromiseGrant || rawPaymentsView,
-    edit: isSuperAdmin || has(HP_PERMISSION_KEYS.paymentsEdit),
+    edit: hasAnyHPromiseGrant || isSuperAdmin || has(HP_PERMISSION_KEYS.paymentsEdit),
   }
   const insights = { view: hasAnyHPromiseGrant || rawInsightsView }
   const settings = {

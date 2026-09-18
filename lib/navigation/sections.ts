@@ -393,6 +393,18 @@ export const ALL_SECTIONS: SearchSection[] = [
     category: 'kia',
   },
   {
+    id: 'car_evaluations',
+    name: 'Car Evaluation Leads',
+    description: 'Owners who asked for a free used-car evaluation on the sell-your-car page — car, day wanted, new-car interest and campaign.',
+    href: '/car-evaluations',
+    department: 'sales',
+    // 'common': the form takes any car, so no brand owns these leads (see customer_360 below for why a brand tag would hide it).
+    brand: 'common',
+    iconName: 'Car',
+    initials: 'CEL',
+    category: 'common_dashboards',
+  },
+  {
     id: 'customer_360',
     name: 'Customer 360',
     description: 'Search any customer and see their whole relationship with the group — enquiries, bookings, vehicles, insurance, service, spend and what to do next.',
@@ -780,6 +792,7 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/brands/kia/walk-in-leads',
   '/brands/kia/booking-payment-history',
   '/customer-360',
+  '/car-evaluations',
   // Reached as a tab inside Bookings; the old standalone path stays allowed because it still
   // resolves (it redirects to the tab), so a bookmarked link is not blocked by the href allowlist.
   '/brands/kia/proforma/allocation-history',

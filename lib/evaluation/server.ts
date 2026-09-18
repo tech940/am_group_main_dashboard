@@ -4,10 +4,21 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { sendEmail } from '@/lib/email/email-service'
 import { vehicleEvaluationAlertTemplate } from '@/lib/email/templates/vehicle-evaluation-alert'
-import { calculateEstimatedValuation } from './car-data'
-import { EvaluationSubmitSchema, type EvaluationSubmitInput } from './types'
+import { formatDay, formatKm } from './catalog'
+import type { EvaluationSubmitInput } from './types'
 
-const MANAGEMENT_ALERT_RECIPIENTS = ['tech@amgroupind.com', 'aryan@amgroupind.com']
+/** What `vehicle_evaluations.source` records for leads from /sell-used-car. The campaign is in utm_*. */
+export const EVALUATION_SOURCE = 'sell-used-car'
+
+/** The same person re-sending the same car inside this window gets their first lead back, not a second one. */
+const REPEAT_WINDOW_MINUTES = 10
+/**
+ * A ceiling on the whole public form, per 10 minutes. A WhatsApp blast brings bursts, but not hundreds of real
+ * people finishing the form inside ten minutes — this only stops a script filling the table and the inbox.
+ */
+const FLOOD_LIMIT = 300
+
+const DEFAULT_ALERT_RECIPIENTS = ['tech@amgroupind.com', 'aryan@amgroupind.com']
 
 export class EvaluationError extends Error {
   constructor(message: string, readonly status: number = 400) {
@@ -16,166 +27,105 @@ export class EvaluationError extends Error {
   }
 }
 
-/**
- * Normalizes 10-digit Indian phone number
- */
-function normalizeMobile(val: string): string {
-  const digits = val.replace(/\D/g, '')
-  if (digits.length === 10) return digits
-  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2)
-  if (digits.length > 10) return digits.slice(-10)
-  return digits
+type Row = { inserted: string | null; existing: string | null; recent: number }
+
+/** The six characters the customer sees on the confirmation and can quote on the call. */
+export function evaluationReference(id: string): string {
+  return id.replace(/-/g, '').slice(0, 6).toUpperCase()
 }
 
 /**
- * Creates and stores a new vehicle evaluation lead
+ * "Wrong number? Change it" sends a fresh lead that names the one it corrects. The note goes on the NEW row only:
+ * this route is public, so it never writes to a row it didn't just create.
  */
-export async function createVehicleEvaluation(rawInput: unknown): Promise<{
-  id: string
-  valuation: {
-    minPriceLakhs: number
-    maxPriceLakhs: number
-    minPriceFormatted: string
-    maxPriceFormatted: string
-  }
-}> {
-  const parsed = EvaluationSubmitSchema.safeParse(rawInput)
-  if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0]?.message ?? 'Invalid input data'
-    throw new EvaluationError(firstIssue, 400)
-  }
+function correctionNote(input: EvaluationSubmitInput): string | null {
+  return input.correctionOf
+    ? `Corrects request ${evaluationReference(input.correctionOf)}: the mobile number on that one was wrong.`
+    : null
+}
 
-  const input: EvaluationSubmitInput = parsed.data
-  const cleanMobile = normalizeMobile(input.mobile)
-  if (cleanMobile.length !== 10) {
-    throw new EvaluationError('Please enter a valid 10-digit mobile number', 400)
-  }
+/**
+ * Stores a lead. The double-submit and flood checks live in the insert statement itself, so two taps racing
+ * each other can't both pass a check made in an earlier round trip.
+ */
+export async function createVehicleEvaluation(input: EvaluationSubmitInput): Promise<{ id: string; duplicate: boolean }> {
+  const result = (await db.execute(sql`
+    WITH repeat_submit AS (
+      SELECT id FROM public.vehicle_evaluations
+      WHERE source = ${EVALUATION_SOURCE} AND mobile = ${input.mobile}
+        AND lower(brand) = lower(${input.brand}) AND lower(model) = lower(${input.model})
+        AND created_at > now() - make_interval(mins => ${REPEAT_WINDOW_MINUTES}::int)
+      ORDER BY created_at DESC
+      LIMIT 1
+    ),
+    flood AS (
+      SELECT count(*)::int AS n FROM public.vehicle_evaluations
+      WHERE source = ${EVALUATION_SOURCE}
+        AND created_at > now() - make_interval(mins => ${REPEAT_WINDOW_MINUTES}::int)
+    ),
+    inserted AS (
+      INSERT INTO public.vehicle_evaluations (
+        customer_name, country_code, mobile, brand, model, manufacturing_year, mileage_exact,
+        evaluation_date, interested_in_new_car, source, utm_source, utm_medium, utm_campaign, status, notes
+      )
+      SELECT
+        ${input.customerName}::text, '+91', ${input.mobile}::text, ${input.brand}::text, ${input.model}::text,
+        ${input.manufacturingYear}::int, ${input.kilometres}::int, ${input.evaluationDate}::text,
+        ${input.interestedInNewCar}::boolean, ${EVALUATION_SOURCE}::text,
+        ${input.utmSource}::text, ${input.utmMedium}::text, ${input.utmCampaign}::text, 'new', ${correctionNote(input)}::text
+      WHERE NOT EXISTS (SELECT 1 FROM repeat_submit) AND (SELECT n FROM flood) < ${FLOOD_LIMIT}::int
+      RETURNING id
+    )
+    SELECT (SELECT id FROM inserted) AS inserted,
+           (SELECT id FROM repeat_submit) AS existing,
+           (SELECT n FROM flood) AS recent
+  `)) as unknown as Row[]
+  const row = result[0]
+  if (row?.inserted) return { id: row.inserted, duplicate: false }
+  if (row?.existing) return { id: row.existing, duplicate: true }
+  throw new EvaluationError('We’re getting a lot of requests right now. Please try again in a few minutes.', 429)
+}
 
-  // Calculate Valuation Estimate
-  const valuation = calculateEstimatedValuation({
+/** `EVALUATION_ALERT_RECIPIENTS` (comma-separated) when set; otherwise the desk that has always received these. */
+export function evaluationAlertRecipients(): string[] {
+  const configured = (process.env.EVALUATION_ALERT_RECIPIENTS || '')
+    .split(',')
+    .map((address) => address.trim())
+    .filter((address) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))
+  return configured.length ? configured : DEFAULT_ALERT_RECIPIENTS
+}
+
+/**
+ * Emails the desk about one new lead. `send` is injectable so checks never reach real SMTP.
+ * Called from `after()` in the route: the customer's confirmation never waits on the mail server.
+ */
+export async function sendEvaluationAlert(
+  input: EvaluationSubmitInput,
+  id: string,
+  send: (options: Parameters<typeof sendEmail>[0]) => Promise<unknown> = sendEmail,
+  now: Date = new Date(),
+): Promise<void> {
+  const submittedAt = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(now)
+  const { subject, html, text } = vehicleEvaluationAlertTemplate({
+    customerName: input.customerName,
+    mobile: input.mobile,
     brand: input.brand,
     model: input.model,
-    year: input.manufacturingYear,
-    fuelType: input.fuelType,
-    transmission: input.transmission,
-    kmRangeId: input.kilometersDriven,
-    exactKm: input.mileageExact ?? undefined,
+    manufacturingYear: input.manufacturingYear,
+    kilometres: formatKm(input.kilometres),
+    evaluationDate: formatDay(input.evaluationDate, 'long'),
+    interestedInNewCar: input.interestedInNewCar,
+    submittedAt,
+    reference: evaluationReference(id),
+    correctsReference: input.correctionOf ? evaluationReference(input.correctionOf) : null,
+    campaign: [input.utmSource, input.utmCampaign].filter(Boolean).join(' / ') || null,
   })
-
-  // Insert into DB with flood protection (at most 10 submissions per minute per phone)
-  try {
-    const insertResult: any = await db.execute(sql`
-      INSERT INTO public.vehicle_evaluations (
-        customer_name,
-        country_code,
-        mobile,
-        brand,
-        model,
-        manufacturing_year,
-        fuel_type,
-        transmission,
-        kilometers_driven,
-        mileage_exact,
-        evaluation_date,
-        city_area,
-        interested_in_new_car,
-        estimated_price_min,
-        estimated_price_max,
-        source,
-        utm_source,
-        utm_medium,
-        utm_campaign,
-        status
-      ) VALUES (
-        ${input.customerName},
-        '+91',
-        ${cleanMobile},
-        ${input.brand},
-        ${input.model},
-        ${input.manufacturingYear},
-        ${input.fuelType || null},
-        ${input.transmission || null},
-        ${input.kilometersDriven || null},
-        ${input.mileageExact || null},
-        ${input.evaluationDate},
-        ${input.cityArea},
-        ${input.interestedInNewCar},
-        ${valuation.minPriceLakhs},
-        ${valuation.maxPriceLakhs},
-        ${input.source || 'whatsapp_campaign'},
-        ${input.utmSource || null},
-        ${input.utmMedium || null},
-        ${input.utmCampaign || null},
-        'new'
-      )
-      RETURNING id
-    `)
-
-    const row = Array.isArray(insertResult) ? insertResult[0] : insertResult?.rows?.[0]
-    const id = row?.id as string
-
-    // Dispatch background email alert to management
-    const submittedAt = new Intl.DateTimeFormat('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    }).format(new Date())
-
-    const estimatedPriceFormatted = `${valuation.minPriceFormatted} – ${valuation.maxPriceFormatted}`
-
-    const { subject, html, text } = vehicleEvaluationAlertTemplate({
-      customerName: input.customerName,
-      mobile: cleanMobile,
-      brand: input.brand,
-      model: input.model,
-      manufacturingYear: input.manufacturingYear,
-      fuelType: input.fuelType,
-      transmission: input.transmission,
-      kilometersDriven: input.kilometersDriven,
-      evaluationDate: input.evaluationDate,
-      cityArea: input.cityArea,
-      interestedInNewCar: input.interestedInNewCar,
-      estimatedPriceFormatted,
-      submittedAt,
-      source: input.source,
-    })
-
-    sendEmail({
-      to: MANAGEMENT_ALERT_RECIPIENTS,
-      subject,
-      html,
-      text,
-    }).catch((err) => {
-      console.error('[evaluation-alert-email] Failed to dispatch alert:', err)
-    })
-
-    return {
-      id,
-      valuation,
-    }
-  } catch (error: any) {
-    console.error('[createVehicleEvaluation] DB error:', error)
-    throw new EvaluationError('Failed to record evaluation request. Please try again.', 500)
-  }
-}
-
-/**
- * Attach uploaded vehicle photo URLs to the evaluation record
- */
-export async function attachEvaluationPhotos(
-  evaluationId: string,
-  photoUrls: string[],
-): Promise<void> {
-  if (!evaluationId || !photoUrls || photoUrls.length === 0) return
-
-  await db.execute(sql`
-    UPDATE public.vehicle_evaluations
-    SET uploaded_photos = ${JSON.stringify(photoUrls)}::jsonb,
-        updated_at = now()
-    WHERE id = ${evaluationId}::uuid
-  `)
+  await send({ to: evaluationAlertRecipients(), subject, html, text })
 }

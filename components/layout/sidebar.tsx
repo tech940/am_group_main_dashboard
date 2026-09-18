@@ -23,7 +23,7 @@ import {
   ShieldCheck,
   Camera,
   Calculator,
-  LogOut, UserSearch } from 'lucide-react'
+  LogOut, UserSearch, Car } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -666,6 +666,16 @@ export function Sidebar() {
       href: '/customer-360',
       icon: UserSearch,
       active: isSidebarHrefActive('/customer-360', pathname),
+    })
+    // Car Evaluation Leads — grant-only (lib/permissions/registry.ts GRANT_ONLY_SECTIONS), so the effective
+    // key is true only for MD / Developer and people ticked in the Access Map: the same rule the page and
+    // API apply through lib/evaluation/access.ts.
+    if (hasPermission('car_evaluations.view')) commonNodes.push({
+      key: '/car-evaluations',
+      label: 'Car Evaluation Leads',
+      href: '/car-evaluations',
+      icon: Car,
+      active: isSidebarHrefActive('/car-evaluations', pathname),
     })
     // Targets — MD + Developer ONLY. Gated on the role constant, not a permission key: a key would
     // still reach `admin` and `hr`, because both are family:'super' in lib/permissions/tiers.ts and
