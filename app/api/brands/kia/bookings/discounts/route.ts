@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { kiaBookingDiscounts, kiaBookings } from '@/lib/db/schema'
-import { eq, desc, and, or, ilike } from 'drizzle-orm'
+import { eq, desc, and, or, ilike, sql } from 'drizzle-orm'
 import {
   discountStage,
   canActOnDiscountRequest,
@@ -37,6 +37,12 @@ export async function GET(request: Request) {
     const stageFilter = searchParams.get('stage')
     const search = (searchParams.get('search') || '').trim()
 
+    /*
+     * A discount can stand on a DMS record with no booking here (migration kia-discounts/0001) — the
+     * join is LEFT, and the customer and car fall back to what was captured on the request itself.
+     * An INNER join here would make such a request invisible to every approver.
+     */
+    const snap = (key: string) => sql<string | null>`("kia_booking_discounts"."vehicle_snapshot" ->> ${key})`
     let query = db
       .select({
         id: kiaBookingDiscounts.id,
@@ -70,18 +76,20 @@ export async function GET(request: Request) {
         vehicleSnapshot: kiaBookingDiscounts.vehicleSnapshot,
         createdAt: kiaBookingDiscounts.createdAt,
         updatedAt: kiaBookingDiscounts.updatedAt,
-        bookingNumber: kiaBookings.bookingNumber,
-        customerName: kiaBookings.customerName,
+        dmsCustomerId: kiaBookingDiscounts.dmsCustomerId,
+        dmsBookingNo: kiaBookingDiscounts.dmsBookingNo,
+        bookingNumber: sql<string>`COALESCE("kia_bookings"."booking_number", 'DMS ' || "kia_booking_discounts"."dms_booking_no")`,
+        customerName: sql<string>`COALESCE("kia_bookings"."customer_name", ${snap('customerName')})`,
         customerPhone: kiaBookings.customerPhone,
-        model: kiaBookings.model,
-        variant: kiaBookings.variant,
-        color: kiaBookings.color,
-        dealerCode: kiaBookings.dealerCode,
-        consultantName: kiaBookings.consultantName,
-        bookingStatus: kiaBookings.status,
+        model: sql<string | null>`COALESCE("kia_bookings"."model", ${snap('model')})`,
+        variant: sql<string | null>`COALESCE("kia_bookings"."variant", ${snap('variant')})`,
+        color: sql<string | null>`COALESCE("kia_bookings"."color", ${snap('color')})`,
+        dealerCode: sql<string | null>`COALESCE("kia_bookings"."dealer_code", ${snap('dealerCode')})`,
+        consultantName: sql<string | null>`COALESCE("kia_bookings"."consultant_name", ${snap('consultantName')})`,
+        bookingStatus: sql<string | null>`COALESCE("kia_bookings"."status", ${snap('bookingStatus')})`,
       })
       .from(kiaBookingDiscounts)
-      .innerJoin(kiaBookings, eq(kiaBookingDiscounts.bookingId, kiaBookings.id))
+      .leftJoin(kiaBookings, eq(kiaBookingDiscounts.bookingId, kiaBookings.id))
 
     const filters = []
     if (statusFilter && statusFilter !== 'all') {
@@ -94,7 +102,10 @@ export async function GET(request: Request) {
         ilike(kiaBookings.customerPhone, `%${search}%`),
         ilike(kiaBookings.consultantName, `%${search}%`),
         ilike(kiaBookings.dealerCode, `%${search}%`),
-        ilike(kiaBookingDiscounts.discountType, `%${search}%`)
+        ilike(kiaBookingDiscounts.discountType, `%${search}%`),
+        // Booking-less requests: their DMS number and the customer captured on the request.
+        ilike(kiaBookingDiscounts.dmsBookingNo, `%${search}%`),
+        sql`${snap('customerName')} ILIKE ${`%${search}%`}`
       )!)
     }
 

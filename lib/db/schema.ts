@@ -2583,7 +2583,14 @@ export const kiaBookingPayments = pgTable('kia_booking_payments', {
 // KIA Booking Discounts Table
 export const kiaBookingDiscounts = pgTable('kia_booking_discounts', {
   id: uuid('id').primaryKey().defaultRandom(),
-  bookingId: uuid('booking_id').references(() => kiaBookings.id, { onDelete: 'cascade' }).notNull(),
+  /*
+   * NULL for a customer with no booking here (migration kia-discounts/0001, owner 2026-09-18): the
+   * request then stands on its DMS record — dmsCustomerId + dmsBookingNo — and the list reads the
+   * customer and car from vehicleSnapshot. A CHECK requires one or the other.
+   */
+  bookingId: uuid('booking_id').references(() => kiaBookings.id, { onDelete: 'cascade' }),
+  dmsCustomerId: text('dms_customer_id'),
+  dmsBookingNo: text('dms_booking_no'),
   requestedAmount: decimal('requested_amount', { precision: 14, scale: 2 }).notNull(),
   approvedAmount: decimal('approved_amount', { precision: 14, scale: 2 }),
   reason: text('reason'),
@@ -3571,3 +3578,35 @@ export const kiaWalkInFeedback = pgTable('kia_walk_in_feedback', {
   kiaWalkInFeedbackRatingIdx: index('kia_walk_in_feedback_rating_idx').on(table.overallRating),
 }))
 
+export const vehicleEvaluations = pgTable('vehicle_evaluations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  customerName: text('customer_name').notNull(),
+  countryCode: text('country_code').default('+91').notNull(),
+  mobile: text('mobile').notNull(),
+  brand: text('brand').notNull(),
+  model: text('model').notNull(),
+  manufacturingYear: integer('manufacturing_year').notNull(),
+  fuelType: text('fuel_type'),
+  transmission: text('transmission'),
+  kilometersDriven: text('kilometers_driven'),
+  mileageExact: integer('mileage_exact'),
+  evaluationDate: text('evaluation_date'),
+  cityArea: text('city_area').default('Jammu City').notNull(),
+  interestedInNewCar: boolean('interested_in_new_car').default(false).notNull(),
+  estimatedPriceMin: decimal('estimated_price_min', { precision: 10, scale: 2 }),
+  estimatedPriceMax: decimal('estimated_price_max', { precision: 10, scale: 2 }),
+  uploadedPhotos: jsonb('uploaded_photos').$type<string[]>().default([]),
+  source: text('source').default('whatsapp_campaign').notNull(),
+  utmSource: text('utm_source'),
+  utmMedium: text('utm_medium'),
+  utmCampaign: text('utm_campaign'),
+  status: text('status').default('new').notNull(),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  vehicleEvaluationsCreatedIdx: index('vehicle_evaluations_created_idx').on(table.createdAt),
+  vehicleEvaluationsMobileIdx: index('vehicle_evaluations_mobile_idx').on(table.mobile),
+  vehicleEvaluationsStatusIdx: index('vehicle_evaluations_status_idx').on(table.status),
+  vehicleEvaluationsBrandIdx: index('vehicle_evaluations_brand_idx').on(table.brand),
+}))

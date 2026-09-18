@@ -68,20 +68,23 @@ export async function POST(
       .where(eq(kiaBookingDiscounts.id, id))
       .returning()
 
-    // Log booking activity
+    // Log booking activity — only when there is a booking to log it on. A request that stands on a
+    // DMS record (migration kia-discounts/0001) has none; the row itself carries who acted and when.
     const activityDesc = action === 'APPROVE'
       ? `Approved discount of INR ${Number(finalApprovedAmount).toLocaleString('en-IN')} (requested: INR ${Number(discountRequest.requestedAmount).toLocaleString('en-IN')}) by ${appUser.fullName}. Remarks: ${remarks || 'None'}.`
       : `Rejected discount request of INR ${Number(discountRequest.requestedAmount).toLocaleString('en-IN')} by ${appUser.fullName}. Remarks: ${remarks || 'None'}.`
 
-    await db.insert(kiaBookingActivity).values({
-      bookingId: discountRequest.bookingId,
-      activityType: action === 'APPROVE' ? 'discount_approved' : 'discount_rejected',
-      title: action === 'APPROVE' ? 'Discount Approved' : 'Discount Rejected',
-      description: activityDesc,
-      actorUserId: appUser.id,
-      actorName: appUser.fullName,
-      actorRole: appUser.role,
-    })
+    if (discountRequest.bookingId) {
+      await db.insert(kiaBookingActivity).values({
+        bookingId: discountRequest.bookingId,
+        activityType: action === 'APPROVE' ? 'discount_approved' : 'discount_rejected',
+        title: action === 'APPROVE' ? 'Discount Approved' : 'Discount Rejected',
+        description: activityDesc,
+        actorUserId: appUser.id,
+        actorName: appUser.fullName,
+        actorRole: appUser.role,
+      })
+    }
 
     return NextResponse.json({ success: true, discount: updated })
   } catch (error) {

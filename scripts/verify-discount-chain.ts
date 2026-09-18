@@ -151,10 +151,11 @@ async function main() {
   console.log('\n7) Against the LIVE table')
   const rows = await analyticsExecute<{
     id: string; booking_number: string | null; customer_name: string | null; booking_status: string | null
+    booking_id: string | null; dms_customer_id: string | null
     requested_amount: string; sm_status: string | null; md_status: string | null; payout_status: string | null
   }>(sql`
     SELECT d.id::text, d.requested_amount::text, d.sm_status, d.md_status, d.payout_status,
-           b.booking_number, b.customer_name, b.status AS booking_status
+           b.booking_number, b.customer_name, b.status AS booking_status, d.booking_id::text, d.dms_customer_id
     FROM kia_booking_discounts d LEFT JOIN kia_bookings b ON b.id = d.booking_id
     ORDER BY d.created_at`)
   console.log(`   ${rows.length} discount request(s) on file:`)
@@ -186,10 +187,12 @@ async function main() {
     'nothing was paid out that the GSM/SM never approved')
   check(rows.every((r) => n(r.booking_status) !== 'CANCELLED'),
     'no request is attached to a cancelled booking')
-  check(rows.every((r) => r.booking_status !== null),
-    'every request still points at a booking that exists')
+  // A request may stand on a DMS customer with no booking here (migration kia-discounts/0001). What must
+  // hold: one that names a booking finds it, and one without a booking names its DMS customer.
+  check(rows.every((r) => (r.booking_id ? r.booking_status !== null : Boolean(r.dms_customer_id))),
+    'every request points at a booking that exists, or at its DMS customer')
 
-  const preDelivery = rows.filter((r) => n(r.booking_status) !== 'DELIVERED').length
+  const preDelivery = rows.filter((r) => r.booking_id && n(r.booking_status) !== 'DELIVERED').length
   console.log(`   ${preDelivery} of ${rows.length} request(s) are against a booking that is not yet delivered`
     + ' — allowed since 2026-09-16.')
 
