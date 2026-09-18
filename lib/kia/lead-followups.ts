@@ -8,7 +8,11 @@ import { canDeliverKiaBooking } from '@/lib/kia/workflow-access'
 import type { AppUser } from '@/lib/auth/app-user'
 import { canRevealKiaFollowupPhone } from '@/lib/kia/pii'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
-import { createFinancePayoutForDeliveredBooking } from './bookings'
+import {
+  assertKiaBookingAllottedAndPaid,
+  createFinancePayoutForDeliveredBooking,
+  KIA_WORKFLOW_OWNED_STATUSES,
+} from './bookings'
 
 // The KIA lead follow-up pipeline. A follow-up is a scheduled "next touch" on a booking.
 //
@@ -69,6 +73,18 @@ function parseIstDate(value: string | Date): Date {
     return new Date(`${str}+05:30`)
   }
   return new Date(str)
+}
+
+/**
+ * A follow-up records a conversation. It may tag the booking (pending, demo vehicle, fake…), but it
+ * may not claim the vehicle is allotted, paid for or delivered: those statuses belong to the steps
+ * that check them (KIA_WORKFLOW_OWNED_STATUSES). A delivery is recorded by closing the follow-up as
+ * Converted, which runs those checks.
+ */
+function assertFollowupMayTagBooking(bookingStatus: string) {
+  if (KIA_WORKFLOW_OWNED_STATUSES.has(bookingStatus)) {
+    throw new Error(`A follow-up cannot set the booking to '${bookingStatus.replace(/_/g, ' ')}'. Allotment, payment and delivery are recorded in their own steps.`)
+  }
 }
 
 function requireRemarks(value: unknown, bypass = false): string {
@@ -966,6 +982,7 @@ export async function updateFollowup(appUser: AppUser, id: string, patch: {
   const activityBits: string[] = []
 
   if (patch.bookingStatus) {
+    assertFollowupMayTagBooking(patch.bookingStatus)
     await db.update(kiaBookings).set({ status: patch.bookingStatus, updatedAt: new Date() }).where(eq(kiaBookings.id, existing.bookingId))
     activityBits.push(`Booking status set to ${patch.bookingStatus.replace(/_/g, ' ')}`)
   }
@@ -1043,18 +1060,38 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
       }
     }
 
+    /*
+     * Converted = the sale closed and the car is going out. Owner rule (2026-09-18): a follow-up may
+     * not say that until the vehicle is allotted AND Accounts has confirmed its payment — whoever
+     * closes it, CRE included. Checked here, before anything is written.
+     *
+     * The CCM's Converted / "Delivered" quick action delivered on the spot with no check at all:
+     * 4 of September's 10 deliveries had never been allotted a vehicle or paid for, and showed
+     * "NO VIN ON BOOKING" on the Stock board. See resolveKiaDeliveryVehicle.
+     *
+     * An already-delivered booking is left alone: the outcome is recorded, the delivery is not
+     * repeated (it used to re-stamp delivered_at and re-open the finance payout).
+     */
+    let bookingToDeliver: typeof kiaBookings.$inferSelect | null = null
+    let deliveryVin = ''
+    if (outcome === 'converted') {
+      const [booking] = await tx.select().from(kiaBookings)
+        .where(and(eq(kiaBookings.id, existing.bookingId), isNull(kiaBookings.deletedAt))).limit(1)
+      if (!booking) throw new Error('Booking not found.')
+      if (booking.status !== 'delivered') {
+        deliveryVin = await assertKiaBookingAllottedAndPaid(tx, booking)
+        if (canDeliverKiaBooking(appUser.role)) bookingToDeliver = booking
+      }
+    }
+
     if (input.bookingStatus) {
       /*
-       * A follow-up may nudge a booking along, but it may NOT declare the car delivered.
-       *
-       * Delivery is owned by CXM (with CCM as backup) and enforced in updateKiaBooking via
-       * canDeliverKiaBooking. This path wrote kia_bookings.status directly and so bypassed that gate
-       * entirely — which is how a CRE working their own follow-up queue moved vehicles into
-       * Delivered on the Bookings and Stock screens.
+       * A follow-up may tag a booking, but it may NOT declare the car allotted, paid for or
+       * delivered. This path wrote kia_bookings.status directly and so bypassed every one of those
+       * gates — which is how a CRE working their own follow-up queue moved vehicles into Delivered on
+       * the Bookings and Stock screens.
        */
-      if (input.bookingStatus === 'delivered' && !canDeliverKiaBooking(appUser.role)) {
-        throw new Error('Only CXM or CCM can mark a vehicle delivered. Record the follow-up outcome and they will confirm it.')
-      }
+      assertFollowupMayTagBooking(input.bookingStatus)
       await tx.update(kiaBookings).set({
         status: input.bookingStatus,
         updatedBy: appUser.id,
@@ -1094,9 +1131,10 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
      * workflow are deliberately NOT the same thing — a CRE closing their own queue item must not move
      * a vehicle on the Bookings and Stock boards.
      *
-     * So the outcome is still recorded either way; only the delivery itself is gated.
+     * So the outcome is still recorded either way; only the delivery itself is gated. Both branches
+     * run only once the vehicle is allotted and paid for (checked at the top of this function).
      */
-    if (outcome === 'converted' && !canDeliverKiaBooking(appUser.role)) {
+    if (deliveryVin && !bookingToDeliver) {
       await tx.insert(kiaBookingActivity).values({
         bookingId: existing.bookingId,
         activityType: 'followup_completed',
@@ -1108,32 +1146,31 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
       })
     }
 
-    // Delivery proper — CXM / CCM / admin only, same rule the Bookings screen enforces.
-    if (outcome === 'converted' && canDeliverKiaBooking(appUser.role)) {
-      const [before] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, existing.bookingId), isNull(kiaBookings.deletedAt))).limit(1)
-      if (before) {
-        const [booking] = await tx.update(kiaBookings).set({
-          status: 'delivered',
-          deliveredAt: new Date(),
-          updatedBy: appUser.id,
-          updatedAt: new Date()
-        }).where(eq(kiaBookings.id, existing.bookingId)).returning()
+    // Delivery proper — CXM / CCM / admin only, the same rule (resolveKiaDeliveryVehicle's) the
+    // Bookings screen enforces, and the allotted chassis is stamped with it.
+    if (bookingToDeliver && deliveryVin) {
+      const [booking] = await tx.update(kiaBookings).set({
+        status: 'delivered',
+        deliveredAt: new Date(),
+        allocatedVin: deliveryVin,
+        updatedBy: appUser.id,
+        updatedAt: new Date()
+      }).where(eq(kiaBookings.id, existing.bookingId)).returning()
 
-        await tx.insert(kiaBookingActivity).values({
-          bookingId: existing.bookingId,
-          activityType: 'delivered',
-          title: 'Vehicle delivered',
-          description: `Vehicle marked delivered via follow-up conversion by ${appUser.fullName}`,
-          actorUserId: appUser.id,
-          actorName: appUser.fullName,
-          actorRole: appUser.role,
-        })
+      await tx.insert(kiaBookingActivity).values({
+        bookingId: existing.bookingId,
+        activityType: 'delivered',
+        title: 'Vehicle delivered',
+        description: `Chassis ${deliveryVin} marked delivered via follow-up conversion by ${appUser.fullName}`,
+        actorUserId: appUser.id,
+        actorName: appUser.fullName,
+        actorRole: appUser.role,
+      })
 
-        // Also cancel other pending followups for this booking
-        await cancelKiaBookingFollowups(tx, existing.bookingId, 'vehicle delivered')
-        // And create the finance payout record
-        await createFinancePayoutForDeliveredBooking(tx, booking, appUser)
-      }
+      // Also cancel other pending followups for this booking
+      await cancelKiaBookingFollowups(tx, existing.bookingId, 'vehicle delivered')
+      // And create the finance payout record
+      await createFinancePayoutForDeliveredBooking(tx, booking, appUser)
     }
 
     // The customer was actually spoken to → keep the journey going: schedule the next touch 7 days

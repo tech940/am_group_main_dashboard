@@ -20,6 +20,8 @@ function rows<T = Row>(result: unknown): T[] {
   return result as unknown as T[]
 }
 
+import { sendManagementFeedbackAlert } from './alert-email'
+
 /**
  * Public submission of showroom customer feedback.
  */
@@ -27,8 +29,32 @@ export async function createWalkInFeedback(
   dealerCode: string,
   input: FeedbackSubmitInput,
 ): Promise<{ id: string }> {
-  const customerName = input.customerName ? titleCaseName(input.customerName) : null
-  const mobile = input.mobile ? normalizeMobile(input.mobile) : null
+  let customerName = input.customerName ? titleCaseName(input.customerName) : null
+  let mobile = input.mobile ? normalizeMobile(input.mobile) : null
+  let model = input.model ?? null
+  let consultantName = input.consultantName ? titleCaseName(input.consultantName) : null
+
+  // If leadId is attached but details were not filled in, look up the lead
+  if (input.walkInLeadId && (!customerName || !mobile || !model || !consultantName)) {
+    try {
+      const leadRes: any = await db.execute(sql`
+        SELECT customer_name, mobile, model, consultant_name
+        FROM kia_walk_in_leads
+        WHERE id = ${input.walkInLeadId}::uuid
+        LIMIT 1
+      `)
+      const leadRow = Array.isArray(leadRes) ? leadRes[0] : leadRes?.rows?.[0]
+      if (leadRow) {
+        if (!customerName && leadRow.customer_name) customerName = leadRow.customer_name
+        if (!mobile && leadRow.mobile) mobile = leadRow.mobile
+        if (!model && leadRow.model) model = leadRow.model
+        if (!consultantName && leadRow.consultant_name) consultantName = leadRow.consultant_name
+      }
+    } catch {
+      // Non-fatal lookup fallback
+    }
+  }
+
   const experienceTagsJson = input.experienceTags && input.experienceTags.length > 0
     ? JSON.stringify(input.experienceTags)
     : null
@@ -63,8 +89,8 @@ export async function createWalkInFeedback(
         ${customerName},
         '+91',
         ${mobile},
-        ${input.model ?? null},
-        ${input.consultantName ? titleCaseName(input.consultantName) : null},
+        ${model},
+        ${consultantName},
         ${input.overallRating}::smallint,
         ${input.staffCourtesyRating ? input.staffCourtesyRating : null}::smallint,
         ${input.testDriveRating ? input.testDriveRating : null}::smallint,
@@ -82,7 +108,20 @@ export async function createWalkInFeedback(
 
   const first = result[0]
   if (!first) throw new FeedbackError('Failed to record your feedback. Please try again.', 500)
-  if (first.inserted) return { id: first.inserted }
+  if (first.inserted) {
+    // Dispatch management notification email to tech@amgroupind.com & aryan@amgroupind.com
+    sendManagementFeedbackAlert(dealerCode, {
+      ...input,
+      customerName,
+      mobile,
+      model,
+      consultantName,
+    }).catch((err) => {
+      console.error('[feedback-submission] Error sending management alert:', err)
+    })
+
+    return { id: first.inserted }
+  }
   if (Number(first.recent ?? 0) >= FLOOD_LIMIT) {
     throw new FeedbackError('Too many submissions right now. Please wait a moment.', 429)
   }

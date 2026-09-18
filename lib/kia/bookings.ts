@@ -33,7 +33,8 @@ import { canAllotKiaVehicle,
   canTransferKiaVehicle,
   canAllotKiaVehicleToBooking,
   canVerifyKiaAccounts,
-  canViewAllKiaBookings, KIA_PAYMENT_SECURED_THRESHOLD } from '@/lib/kia/workflow-access'
+  canViewAllKiaBookings,
+  isKiaWorkflowAdmin, KIA_PAYMENT_SECURED_THRESHOLD } from '@/lib/kia/workflow-access'
 export { KIA_PAYMENT_SECURED_THRESHOLD }
 
 type JsonRecord = Record<string, unknown>
@@ -1835,6 +1836,102 @@ export async function getKiaBookingDetail(id: string) {
   }
 }
 
+/**
+ * Statuses that ASSERT a vehicle is allotted, in transit to the customer, paid for or handed over.
+ * Each is written by its own step — allot, transfer, Accounts, delivery — which checks the thing the
+ * status claims. A bare status write (the Bookings PATCH `status` field, the follow-up screen's
+ * `bookingStatus`) checks none of it, so it may not set these.
+ */
+export const KIA_WORKFLOW_OWNED_STATUSES: ReadonlySet<string> = new Set([
+  'vehicle_allocated',
+  'transferring',
+  'transfer_requested',
+  'payment_confirmed',
+  'ready_delivery',
+  'delivered',
+])
+
+/**
+ * ── THE ONE RULE FOR MARKING A KIA BOOKING DELIVERED ────────────────────────────────────────────
+ *
+ * Every delivery path calls this: the Bookings "Mark Delivered" button, a raw status change to
+ * 'delivered', and a follow-up closed as Converted / Delivered. Returns the chassis being handed over,
+ * which the caller stamps on `allocated_vin` in the same UPDATE as the status.
+ *
+ *   1. who      — CXM / CCM / admin (canDeliverKiaBooking)
+ *   2. payment  — the booking is ready_delivery, the state only Accounts' payment confirmation sets
+ *   3. vehicle  — a LIVE allocation with a VIN, whose payment Accounts confirmed
+ *   4. no clash — that chassis is not already delivered on another booking
+ *
+ * ⚠️ Why this exists (2026-09-18). 4 of September's 10 deliveries showed "NO VIN ON BOOKING" on the
+ * Stock board: Tahar mohd, Khurshid ahmed, Panniru Nagendra, Udhay Partap singh jamwal. All four
+ * were closed from the FOLLOW-UP screen as Converted by the CCM, which delivered on the spot with
+ * no check at all — the Bookings button required ready_delivery, the follow-up path did not. All
+ * four were still proforma_generated, never allotted, ₹0 recorded. Three more (Anish Kumar, Sanjeev
+ * Gupta, Sandeep Charak) and Deore Kapil were delivered after the expiry sweep had RELEASED their
+ * unpaid allotment back to free stock, so their `allocated_vin` was a stale pointer to a car the
+ * stock board was offering to other customers.
+ *
+ * ⚠️ `allocated_vin` alone is NOT proof of an allotment: the expiry sweep releases the allocation
+ * row but leaves that pointer behind. Only a live allocation says the car is this booking's today.
+ */
+export async function resolveKiaDeliveryVehicle(
+  tx: DbTx,
+  booking: typeof kiaBookings.$inferSelect,
+  appUser: AppUser,
+): Promise<string> {
+  if (!canDeliverKiaBooking(appUser.role)) {
+    throw new Error('Only CXM or CCM can mark a vehicle delivered.')
+  }
+  if (booking.status === 'delivered') {
+    throw new Error('This booking is already delivered.')
+  }
+  return assertKiaBookingAllottedAndPaid(tx, booking)
+}
+
+/**
+ * Rules 2–4 above, without the role: the vehicle is allotted, Accounts confirmed its payment, and
+ * nobody else took delivery of it. A follow-up may not be closed as Converted until this holds,
+ * whoever closes it (owner, 2026-09-18). Returns the allotted chassis.
+ */
+export async function assertKiaBookingAllottedAndPaid(
+  tx: DbTx,
+  booking: typeof kiaBookings.$inferSelect,
+): Promise<string> {
+  const [allocation] = await tx.select({
+    vinNumber: kiaVehicleAllocations.vinNumber,
+    paymentConfirmedAt: kiaVehicleAllocations.paymentConfirmedAt,
+  })
+    .from(kiaVehicleAllocations)
+    .where(and(eq(kiaVehicleAllocations.bookingId, booking.id), isNull(kiaVehicleAllocations.releasedAt)))
+    .orderBy(desc(kiaVehicleAllocations.createdAt))
+    .limit(1)
+  const vin = text(allocation?.vinNumber).trim().toUpperCase()
+  if (!allocation || !vin) {
+    throw new Error('No vehicle is allotted to this booking yet. The vehicle (VIN) must be allotted and Accounts must confirm payment before it can be marked converted or delivered.')
+  }
+  // Both Accounts steps (Payment received, Payment & invoice) stamp payment_confirmed_at AND move the
+  // booking to ready_delivery, together. Requiring both means a status written by hand cannot stand
+  // in for a payment nobody recorded.
+  if (booking.status !== 'ready_delivery' || !allocation.paymentConfirmedAt) {
+    throw new Error(`Accounts has not confirmed payment for ${vin} yet. It can be marked converted or delivered once payment is confirmed.`)
+  }
+
+  const [clash] = await tx.select({ bookingNumber: kiaBookings.bookingNumber })
+    .from(kiaBookings)
+    .where(and(
+      ne(kiaBookings.id, booking.id),
+      isNull(kiaBookings.deletedAt),
+      eq(kiaBookings.status, 'delivered'),
+      sql`UPPER(TRIM(COALESCE(${kiaBookings.allocatedVin}, ''))) = ${vin}`,
+    ))
+    .limit(1)
+  if (clash) {
+    throw new Error(`${vin} is already delivered on booking ${clash.bookingNumber}. Check the allotment before delivering this booking.`)
+  }
+  return vin
+}
+
 export async function updateKiaBooking(id: string, input: UpdateBookingInput, appUser: AppUser) {
   return db.transaction(async (tx) => {
     const [before] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
@@ -1909,15 +2006,22 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
       updates.metadata = { ...(before.metadata || {}), ...incoming } as JsonRecord
     }
     if (input.deliveryTargetDate !== undefined) updates.deliveryTargetDate = input.deliveryTargetDate ? input.deliveryTargetDate : null
-    if (input.status !== undefined) updates.status = normalizeStatus(input.status)
-    if (input.delivered) {
-      // Delivery is the Sales Executive's final step (after Accounts verification).
-      if (!canDeliverKiaBooking(appUser.role)) {
-        throw new Error('Only the CRM can mark the vehicle delivered.')
+    // A raw status write to 'delivered' IS a delivery: it goes through the same gate and side effects
+    // as the button, instead of flipping the column (no VIN, no payment, no delivered_at).
+    let delivering = Boolean(input.delivered)
+    if (input.status !== undefined) {
+      const nextStatus = normalizeStatus(input.status)
+      if (nextStatus !== before.status) {
+        if (nextStatus === 'delivered') {
+          delivering = true
+        } else if (KIA_WORKFLOW_OWNED_STATUSES.has(nextStatus) && !isKiaWorkflowAdmin(appUser.role)) {
+          throw new Error(`'${nextStatus.replace(/_/g, ' ')}' is set by its own step (allotment, transfer or Accounts), not by editing the status.`)
+        }
       }
-      if (before.status !== 'ready_delivery') {
-        throw new Error('Delivery is available only after Accounts completes verification.')
-      }
+      if (nextStatus !== 'delivered') updates.status = nextStatus
+    }
+    if (delivering) {
+      updates.allocatedVin = await resolveKiaDeliveryVehicle(tx, before, appUser)
       updates.status = 'delivered'
       updates.deliveredAt = new Date()
     }
@@ -1925,8 +2029,9 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     const [booking] = await tx.update(kiaBookings).set(updates).where(eq(kiaBookings.id, id)).returning()
     await addActivity(tx, {
       bookingId: id,
-      type: input.delivered ? 'delivered' : 'updated',
-      title: input.delivered ? 'Vehicle delivered' : 'Booking updated',
+      type: delivering ? 'delivered' : 'updated',
+      title: delivering ? 'Vehicle delivered' : 'Booking updated',
+      description: delivering ? `Chassis ${updates.allocatedVin}` : null,
       before: before as unknown as JsonRecord,
       after: booking as unknown as JsonRecord,
       appUser,
@@ -1936,7 +2041,7 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     // has already been handed over, and no reminder email goes out. In the same transaction as the
     // delivery, so it can't half-apply. The pipeline query also filters delivered bookings out —
     // this is what stops the reminder emails, which read the table directly.
-    if (input.delivered) {
+    if (delivering) {
       await cancelKiaBookingFollowups(tx, id, 'vehicle delivered')
       // …and the FINANCE journey begins: the payout ledger tracks bank/dealer payouts AFTER
       // delivery. This only CREATES a finance record from the booking — it never reads back into

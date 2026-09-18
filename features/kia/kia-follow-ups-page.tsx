@@ -1523,12 +1523,23 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                                     </button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end" className="font-bold w-48 shadow-lg">
-                                    <DropdownMenuItem
-                                      onClick={() => handleQuickStatusAction(f, 'delivered')}
-                                      className="text-emerald-600 focus:text-emerald-700 cursor-pointer flex items-center gap-2"
-                                    >
-                                      <CheckCheck className="h-4 w-4 text-emerald-600" /> Delivered
-                                    </DropdownMenuItem>
+                                    {/* Delivery needs an allotted vehicle whose payment Accounts confirmed — that is
+                                        exactly ready_delivery. The server re-checks (resolveKiaDeliveryVehicle). */}
+                                    {(f.bookingStatus || '').toLowerCase() === 'ready_delivery' ? (
+                                      <DropdownMenuItem
+                                        onClick={() => handleQuickStatusAction(f, 'delivered')}
+                                        className="text-emerald-600 focus:text-emerald-700 cursor-pointer flex items-center gap-2"
+                                      >
+                                        <CheckCheck className="h-4 w-4 text-emerald-600" /> Delivered
+                                      </DropdownMenuItem>
+                                    ) : (
+                                      <DropdownMenuItem disabled className="flex flex-col items-start gap-0.5">
+                                        <span className="flex items-center gap-2 text-slate-500">
+                                          <CheckCheck className="h-4 w-4" /> Delivered
+                                        </span>
+                                        <span className="pl-6 text-[10px] font-semibold leading-tight text-slate-500">Needs an allotted vehicle and confirmed payment</span>
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuItem
                                       onClick={() => handleQuickStatusAction(f, 'cancelled')}
                                       className="text-rose-600 focus:text-rose-700 cursor-pointer flex items-center gap-2"

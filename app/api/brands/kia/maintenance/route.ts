@@ -7,6 +7,7 @@ import {
   markKiaTransferMissing,
   startKiaArrivedAllocationCountdowns,
 } from '@/lib/kia/bookings'
+import { runKiaDmsReconciliation } from '@/lib/kia/dms-reconciliation/run'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
     expiredHolds: 0,
     soldFlagged: 0,
     transferMissing: null as string | null,
+    dmsReconciliation: null as string | null,
     errors: [] as string[],
   }
 
@@ -82,6 +84,14 @@ export async function POST(request: Request) {
     result.transferMissing = 'ok'
   } catch (error) {
     result.errors.push(`markKiaTransferMissing: ${error instanceof Error ? error.message : 'failed'}`)
+  }
+  // DMS Exceptions: rebuilt only when a DMS feed or a booking moved since the last build. Last, so the
+  // sweeps above (which change booking state) are already reflected in it.
+  try {
+    const recon = await runKiaDmsReconciliation({ onlyIfStale: true })
+    result.dmsReconciliation = recon.ran ? `rebuilt (${recon.opened} new, ${recon.resolved} resolved)` : recon.reason
+  } catch (error) {
+    result.errors.push(`runKiaDmsReconciliation: ${error instanceof Error ? error.message : 'failed'}`)
   }
 
   result.ok = result.errors.length === 0

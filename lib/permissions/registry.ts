@@ -394,6 +394,19 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'approve'],
   },
   {
+    // AM Kia · Bookings · DMS Exceptions (owner, 2026-09-18): bookings the DMS has moved past — paid,
+    // invoiced, delivered, cancelled — while the Kia Booking workflow has not, and the reverse. A tab
+    // in the Bookings shell. Restricted-by-default (NOT in DEFAULT_VISIBLE_SECTIONS) — it shows customer
+    // DMS payments across bookings; granted to the roles that fix those bookings in the templates below.
+    // View-only: the section flags, it never changes a booking. `name` must equal the search label.
+    key: 'kia.dms_reconciliation',
+    name: 'DMS Exceptions',
+    parentKey: 'kia.sales',
+    description: 'AM KIA bookings where the DMS (sales, payments, delivery) is ahead of or out of step with the Kia Booking workflow.',
+    sortOrder: 48,
+    actions: ['view'],
+  },
+  {
     key: 'kia.call_center',
     name: 'Call Center',
     parentKey: 'kia.sales',
@@ -1173,6 +1186,8 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   // Also a TAB inside Bookings, for the same reason. Being listed here (and NOT in
   // DEFAULT_VISIBLE_SECTIONS) is what makes it restricted-by-default.
   'kia.payment_window_requests': { href: '/brands/kia/proforma/payment-window-requests' },
+  // DMS Exceptions — a TAB inside Bookings too; restricted-by-default the same way.
+  'kia.dms_reconciliation': { href: '/brands/kia/proforma/dms-exceptions' },
   'kia.call_analytics': { href: '/brands/kia/call-analytics' },
   'kia.bookings': { href: '/brands/kia/bookings' },
   'kia.approvals': { href: '/brands/kia/payment-approvals', aliases: ['/brands/kia/vendors'] },
@@ -1497,6 +1512,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     // every permission check for md/developer, so this is belt-and-braces — but listing it keeps the
     // grant visible in the Access Map instead of looking like an accidental omission.
     'kia.payment_window_requests',
+    'kia.dms_reconciliation',
     'reports',
   ], ['view', 'approve', 'audit']),
   eba: keysForGroups([
@@ -1591,6 +1607,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),
     // Confirms payment against an allocation, so they get the trail of the ones that lapsed.
     ...keysForGroups(['kia.allocation_history'], ['view']),
+    // …and the bookings DMS shows as paid that nobody confirmed here.
+    ...keysForGroups(['kia.dms_reconciliation'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.bookings'], ['view', 'edit', 'audit']),
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
@@ -1625,6 +1643,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.allocation_history'], ['view']),
+    ...keysForGroups(['kia.dms_reconciliation'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),    // Fallback gate pass approver, so a demo car is never stuck behind one Sales Manager on leave.
@@ -1651,6 +1670,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.allocation_history'], ['view']),
+    ...keysForGroups(['kia.dms_reconciliation'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),    ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
@@ -1674,6 +1694,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.approvals'], ['view']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.allocation_history'], ['view']),
+    ...keysForGroups(['kia.dms_reconciliation'], ['view']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
     ...keysForGroups(['petty_cash'], ['view', 'create', 'edit']),    ...keysForGroups(['gate_pass'], ['view', 'create', 'edit', 'approve', 'audit']),
@@ -1747,12 +1768,15 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   // CXM (Customer Experience Management): the booking pipeline, so they can mark vehicles Delivered.
   cxm: [
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+    // Delivery is theirs, so the cars DMS delivered that are not delivered here are too.
+    ...keysForGroups(['kia.dms_reconciliation'], ['view']),
     ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   // CCM (Customer Care Manager): manages customer care, delivery backup & lead follow-up pipeline.
   ccm: [
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+    ...keysForGroups(['kia.dms_reconciliation'], ['view']),
     ...keysForGroups(['gate_pass'], ['view', 'create']),
   ],
   vp: [

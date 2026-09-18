@@ -430,6 +430,49 @@ export async function GET(request: Request) {
     const transfersCountSql = `(SELECT COUNT(*) FROM kia_vehicle_transfers t WHERE ${transferFilters.join(' AND ')})::int`
 
 
+    /*
+     * ── PAID · TO DELIVER, ROOTED AT THE BOOKING ─────────────────────────────────────────────
+     *
+     * Paid · To Deliver means: Accounts confirmed payment (booking ready_delivery) and the car is
+     * still reserved for this customer (a LIVE allocation) — nothing about the DMS stock feed. It was
+     * counted over kia_stock_management like the stock buckets, and a car leaves that feed the moment
+     * DMS retails it. Found 2026-09-18: Vijay kumar (KIA_JK402_2026_120265) paid and allotted
+     * MZBGB814LTN333189, DMS retailed it on 17 Sep, so it had left the feed and the card read 0 while
+     * the car was waiting to be handed over. Same defect, same fix as DELIVERED below: root it at
+     * the booking, and take the vehicle fields from the feed when present, else the allocation
+     * snapshot, else the booking.
+     *
+     * Card and list share paidFrom, so they cannot disagree.
+     */
+    const paidScope: string[] = []
+    if (dealerScope && dealerScope.length) {
+      paidScope.push(`UPPER(TRIM(COALESCE(kb.dealer_code, ''))) IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''").toUpperCase()}'`).join(', ')})`)
+    }
+    if (dealerCode !== 'All') paidScope.push(`UPPER(TRIM(COALESCE(kb.dealer_code, ''))) = '${dealerCode.replace(/'/g, "''").toUpperCase()}'`)
+    if (model !== 'All') paidScope.push(`COALESCE(sm.model, va.vehicle_snapshot->>'model', kb.model) ILIKE '%${model.replace(/'/g, "''")}%'`)
+    if (search) {
+      const escaped = search.replace(/'/g, "''")
+      paidScope.push(`(
+        va.vin_number ILIKE '%${escaped}%' OR
+        kb.customer_name ILIKE '%${escaped}%' OR
+        kb.customer_phone ILIKE '%${escaped}%' OR
+        kb.booking_number ILIKE '%${escaped}%' OR
+        kb.consultant_name ILIKE '%${escaped}%'
+      )`)
+    }
+    const paidFrom = `
+      FROM kia_bookings kb
+      JOIN LATERAL (
+        SELECT v.* FROM kia_vehicle_allocations v
+        WHERE v.booking_id = kb.id AND v.released_at IS NULL
+        ORDER BY v.created_at DESC
+        LIMIT 1
+      ) va ON TRUE
+      LEFT JOIN kia_stock_management sm ON UPPER(TRIM(sm.vin_number)) = UPPER(TRIM(va.vin_number))
+      WHERE kb.deleted_at IS NULL
+        AND kb.status = 'ready_delivery'
+        ${paidScope.map((clause) => `AND ${clause}`).join('\n        ')}`
+
     // 1. Fetch metrics
     //
     // TOTAL VINS is now literally every vehicle in scope — it is the card that means "whole
@@ -471,7 +514,8 @@ export async function GET(request: Request) {
                     AND va.id IS NULL AND vt.id IS NULL
                     AND NOT ${deliveredExpr} THEN 1 END)::int AS dms_allocated,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW() THEN 1 END)::int AS payment_overdue,
-        COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'ready_delivery' THEN 1 END)::int AS paid_to_deliver,
+        -- Rooted at the booking (paidFrom), not this stock row — see the note on paidFrom.
+        (SELECT COUNT(*)::int ${paidFrom}) AS paid_to_deliver,
         /*
          * Counts the same set the Delivered VIEW lists, so card and list always agree — and that
          * view is rooted at kia_bookings, not here. A CASE over kia_stock_management can only ever
@@ -648,10 +692,13 @@ export async function GET(request: Request) {
         ${deliveredWindowSql('kb')}`
 
     const isTransferredView = status === 'TRANSFERRED'
+    const isPaidView = status === 'PAID_TO_DELIVER'
 
     // 2. Fetch total count for pagination (join transfers and local statuses too)
     const totalCountResult = isDeliveredView
       ? await db.execute(sql.raw(`SELECT COUNT(DISTINCT kb.id)::int as count ${deliveredFrom}`))
+      : isPaidView
+      ? await db.execute(sql.raw(`SELECT COUNT(*)::int as count ${paidFrom}`))
       : isTransferredView
       ? await db.execute(sql.raw(`SELECT COUNT(*)::int as count ${transferredFrom}`))
       : await db.execute(sql.raw(`
@@ -766,6 +813,54 @@ export async function GET(request: Request) {
       ORDER BY kb.id, va.created_at DESC NULLS LAST
       ) d
       ORDER BY d.booking_delivery_date DESC NULLS LAST, d.booking_number DESC
+      ${limitOffsetClause}
+    `))
+      : isPaidView
+      ? await db.execute(sql.raw(`
+      SELECT
+        kb.id::text AS id,
+        va.vin_number,
+        COALESCE(sm.model, va.vehicle_snapshot->>'model', kb.model) AS model,
+        COALESCE(sm.variant, va.vehicle_snapshot->>'variant', kb.variant) AS variant,
+        COALESCE(sm.exterior_color_name, va.vehicle_snapshot->>'exterior_color_name', kb.color) AS color,
+        COALESCE(sm.stock_age, va.vehicle_snapshot->>'stock_age') AS stock_age,
+        -- Absent from the feed means DMS has already retailed it; say so rather than show blank.
+        COALESCE(sm.stock_status, 'Retailed in DMS') AS stock_status,
+        ${invoiceYearFrom("COALESCE(sm.kin_invoice_date, va.vehicle_snapshot->>'kin_invoice_date')")} AS invoice_year,
+        ${invoiceYearIsCurrent("COALESCE(sm.kin_invoice_date, va.vehicle_snapshot->>'kin_invoice_date')")} AS invoice_year_is_current,
+        -- Shape parity with the main projection; a paid car is not on hold.
+        NULL AS local_status, NULL AS hold_notes, NULL AS hold_marked_at, NULL AS hold_by,
+        NULL AS hold_expires_at, FALSE AS hold_paid,
+        COALESCE(kb.dealer_code, sm.order_dealer) AS dealer_code,
+        COALESCE(sm.engine_no, va.vehicle_snapshot->>'engine_no') AS engine_no,
+        va.id AS allocation_id,
+        va.allocation_status,
+        va.expires_at,
+        va.payment_secured_at,
+        COALESCE(kb.amount_received, 0)::float8 AS amount_received,
+        va.created_at AS allocated_at,
+        kb.id AS booking_id,
+        kb.booking_number,
+        kb.customer_name,
+        kb.customer_phone,
+        kb.consultant_name,
+        kb.status AS booking_status,
+        kb.bank_name,
+        kb.delivery_target_date AS raw_delivery_target_date,
+        COALESCE(kb.delivery_target_date::text, kb.metadata->>'expectedDeliveryDate') AS booking_delivery_date,
+        kb.metadata,
+        NULL AS transfer_id,
+        NULL AS transfer_status,
+        NULL AS to_dealer_code,
+        NULL AS transfer_requested_at,
+        NULL AS transfer_requester_name,
+        -- A paid car is spoken for, so the FIFO ageing comparison does not apply.
+        0 AS older_count,
+        NULL AS oldest_alternative_vin,
+        NULL AS oldest_alternative_age
+      ${paidFrom}
+      -- Longest-waiting handover first.
+      ORDER BY va.payment_confirmed_at ASC NULLS LAST, kb.booking_number
       ${limitOffsetClause}
     `))
       : isTransferredView

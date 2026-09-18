@@ -349,6 +349,17 @@ export const ALL_SECTIONS: SearchSection[] = [
     category: 'kia',
   },
   {
+    id: 'kia_dms_reconciliation',
+    name: 'DMS Exceptions',
+    description: 'Bookings the DMS has moved past — paid, invoiced, delivered or cancelled — while the Kia Booking workflow has not, and cars delivered here that DMS never retailed.',
+    href: '/brands/kia/proforma/dms-exceptions',
+    department: 'sales',
+    brand: 'kia',
+    iconName: 'GitCompare',
+    initials: 'DMS',
+    category: 'kia',
+  },
+  {
     id: 'kia_payment_window_requests',
     name: 'Payment Window Requests',
     description: 'Requests for extra customer payment time on an allotted vehicle, with any competing bookings for the same car. MD approves or rejects.',

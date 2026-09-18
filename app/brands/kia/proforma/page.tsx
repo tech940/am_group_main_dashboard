@@ -23,9 +23,10 @@ export default async function Page() {
 
   // Same flags the [section] route resolves — without them this landing page would omit the
   // Allocation History and Extra Time Requests tabs for everyone, since both props default to false.
-  const [allocationHistory, paymentWindow] = await Promise.all([
+  const [allocationHistory, paymentWindow, dmsReconciliation] = await Promise.all([
     requirePermission(access.appUser, 'kia.allocation_history.view'),
     requirePermission(access.appUser, 'kia.payment_window_requests.view'),
+    requirePermission(access.appUser, 'kia.dms_reconciliation.view'),
   ])
 
   return (
@@ -33,6 +34,7 @@ export default async function Page() {
       section="bookings"
       canViewAllocationHistory={allocationHistory.allowed}
       canViewPaymentWindowRequests={paymentWindow.allowed}
+      canViewDmsReconciliation={dmsReconciliation.allowed}
     />
   )
 }

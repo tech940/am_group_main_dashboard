@@ -36,6 +36,7 @@ import {
   Columns3,
   FileText,
   Filter,
+  GitCompare,
   History,
   Loader2,
   Lock,
@@ -52,6 +53,7 @@ import { KiaBookingsClient } from '@/app/brands/kia/bookings/kia-bookings-client
 import { KiaStockManagementDashboard } from './kia-stock-management-dashboard'
 import { AllocationHistoryPage } from './allocation-history-page'
 import { PaymentWindowRequestsPage } from './payment-window-requests-page'
+import { DmsExceptionsPage } from './dms-exceptions-page'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -88,6 +90,7 @@ export type KiaProformaSection =
   | 'bookings'
   | 'allocation-history'
   | 'payment-window-requests'
+  | 'dms-exceptions'
   | 'stock'
   | 'generate'
   | 'all'
@@ -556,6 +559,9 @@ const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: st
   { section: 'stock', label: 'Stock', href: '/brands/kia/proforma/stock' },
   { section: 'generate', label: 'Generate Proforma', href: '/brands/kia/proforma/generate', hideFromNav: true },
   { section: 'all', label: 'Proformas', href: '/brands/kia/proforma/all-proforma-details' },
+  // Beside Proformas (owner, 2026-09-18): bookings the DMS has moved past. Permission-gated like
+  // Allocation History, via canViewDmsReconciliation (kia.dms_reconciliation.view).
+  { section: 'dms-exceptions', label: 'DMS Exceptions', href: '/brands/kia/proforma/dms-exceptions' },
   { section: 'finance-remarks', label: 'Finance Remarks', href: '/brands/kia/proforma/finance-remarks', hideFromNav: true },
 ]
 
@@ -679,6 +685,8 @@ function ModuleHeader({
   currentUserRole,
   canViewAllocationHistory,
   canViewPaymentWindowRequests,
+  canViewDmsReconciliation = false,
+  onlySections,
   onPricesImported,
 }: {
   section: KiaProformaSection
@@ -687,12 +695,16 @@ function ModuleHeader({
   currentUserRole: string
   canViewAllocationHistory: boolean
   canViewPaymentWindowRequests: boolean
+  canViewDmsReconciliation?: boolean
+  /** When the shell's options could not load (no kia.proforma.view), offer only these tabs. */
+  onlySections?: KiaProformaSection[]
   onPricesImported: () => void
 }) {
   const titles: Record<KiaProformaSection, { title: string; subtitle: string; icon: typeof ClipboardList }> = {
     bookings: { title: 'Booking CRM', subtitle: 'Manage customer bookings, stock allocations, and finance workflows.', icon: ClipboardList },
     'allocation-history': { title: 'Vehicle Allocation History', subtitle: 'Permanent audit trail of every vehicle allocation and release back to free stock.', icon: History },
     'payment-window-requests': { title: 'Extra Time Requests', subtitle: 'Requests for extra customer payment time, with any competing bookings for the same car.', icon: History },
+    'dms-exceptions': { title: 'DMS Exceptions', subtitle: 'Bookings the DMS has moved past — paid, invoiced, delivered or cancelled — while the booking workflow here has not.', icon: GitCompare },
     stock: { title: 'Stock', subtitle: 'Approved bookings, stock matching, VIN reservation, and accounts payment follow-up.', icon: ClipboardList },
     generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: FileText },
     all: { title: 'Proformas', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: Columns3 },
@@ -709,6 +721,8 @@ function ModuleHeader({
     // the answer down. Showing a tab whose route then 403s is the exact desync this avoids.
     .filter((item) => item.section !== 'allocation-history' || canViewAllocationHistory)
     .filter((item) => item.section !== 'payment-window-requests' || canViewPaymentWindowRequests)
+    .filter((item) => item.section !== 'dms-exceptions' || canViewDmsReconciliation)
+    .filter((item) => !onlySections || onlySections.includes(item.section))
 
   /*
    * Pending count for the tab badge. `countOnly=1` so this does NOT run the competing-bookings
@@ -731,6 +745,20 @@ function ModuleHeader({
     retry: 1,
   })
   const pendingPaymentWindowCount = pendingPaymentWindowQuery.data?.pendingCount ?? 0
+
+  // Open DMS exceptions for the tab badge — one indexed count, gated like the tab itself.
+  const dmsExceptionCountQuery = useQuery<{ openCount: number }>({
+    queryKey: ['kia-dms-recon-count'],
+    queryFn: async () => {
+      const res = await fetch('/api/brands/kia/dms-reconciliation?countOnly=1')
+      if (!res.ok) throw new Error('Failed to load exception count')
+      return res.json()
+    },
+    enabled: canViewDmsReconciliation,
+    staleTime: 60_000,
+    retry: 1,
+  })
+  const dmsExceptionCount = dmsExceptionCountQuery.data?.openCount ?? 0
 
   return (
     <Reveal>
@@ -794,6 +822,17 @@ function ModuleHeader({
                       aria-label={`${pendingPaymentWindowCount} extra time request${pendingPaymentWindowCount === 1 ? '' : 's'} awaiting approval`}
                     >
                       {pendingPaymentWindowCount}
+                    </span>
+                  )}
+                  {item.section === 'dms-exceptions' && dmsExceptionCount > 0 && (
+                    <span
+                      className={cn(
+                        'ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums leading-none',
+                        activeTab ? 'bg-white/25 text-white' : 'bg-rose-600 text-white',
+                      )}
+                      aria-label={`${dmsExceptionCount} open DMS exception${dmsExceptionCount === 1 ? '' : 's'}`}
+                    >
+                      {dmsExceptionCount}
                     </span>
                   )}
                 </span>
@@ -3048,11 +3087,14 @@ export function KiaProformaPage({
   section,
   canViewAllocationHistory = false,
   canViewPaymentWindowRequests = false,
+  canViewDmsReconciliation = false,
 }: {
   section: KiaProformaSection
   /** Resolved server-side from kia.allocation_history.view; decides whether that tab is offered. */
   canViewAllocationHistory?: boolean
   canViewPaymentWindowRequests?: boolean
+  /** Resolved server-side from kia.dms_reconciliation.view. */
+  canViewDmsReconciliation?: boolean
 }) {
   const searchParams = useSearchParams()
   const bookingId = searchParams.get('bookingId')
@@ -3065,6 +3107,21 @@ export function KiaProformaPage({
   const approverOnly = section === 'pending-approval'
   if (loading) {
     return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="kia-premium space-y-4"><div className="kia-skeleton h-32 rounded-[2rem]" /><PremiumTableSkeleton rows={7} columns={9} /></div></MainLayout>
+  }
+  /*
+   * DMS Exceptions does not need the proforma options — and CXM/CCM, who own delivery and hold
+   * kia.dms_reconciliation.view, do not hold kia.proforma.view, so for them the options request is
+   * refused. The route already checked the tab's own permission; render it on a slim shell.
+   */
+  if ((error || !options) && section === 'dms-exceptions' && canViewDmsReconciliation) {
+    return (
+      <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
+        <div className="kia-proforma-shell kia-premium space-y-5">
+          <ModuleHeader section={section} isApprover={false} currentUserRole="" canViewAllocationHistory={false} canViewPaymentWindowRequests={false} canViewDmsReconciliation onlySections={['dms-exceptions']} onPricesImported={reload} />
+          <DmsExceptionsPage />
+        </div>
+      </MainLayout>
+    )
   }
   if (error || !options) {
     return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="kia-premium"><PremiumEmptyState illustration="error" title="Unable to load Kia Proforma" description={error || 'Please retry in a moment.'} action={<Button variant="outline" className={cn('h-10 rounded-xl', proformaOutlineButton)} onClick={reload}>Retry</Button>} /></div></MainLayout>
@@ -3079,13 +3136,14 @@ export function KiaProformaPage({
   return (
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
       <div className="kia-proforma-shell kia-premium space-y-5">
-        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} canViewAllocationHistory={canViewAllocationHistory} canViewPaymentWindowRequests={canViewPaymentWindowRequests} onPricesImported={reload} />
+        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} canViewAllocationHistory={canViewAllocationHistory} canViewPaymentWindowRequests={canViewPaymentWindowRequests} canViewDmsReconciliation={canViewDmsReconciliation} onPricesImported={reload} />
         {/* Hand the already-loaded options down so the bookings client does NOT fire its own second
             /api/brands/kia/proforma/options request (its query is gated on `!priceOptions`). The
             standalone /brands/kia/bookings page passes no prop and keeps fetching for itself. */}
         {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} priceOptions={options} currentUserRole={options.currentUser.role} currentUserName={options.currentUser.fullName} />}
         {section === 'allocation-history' && <AllocationHistoryPage embedded />}
         {section === 'payment-window-requests' && <PaymentWindowRequestsPage />}
+        {section === 'dms-exceptions' && <DmsExceptionsPage />}
         {section === 'stock' && <KiaStockManagementDashboard currentUserRole={options.currentUser.role} />}
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} bookingPrefill={bookingPrefill} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}

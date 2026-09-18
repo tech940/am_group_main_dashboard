@@ -12,6 +12,7 @@ const SECTION_MAP: Record<string, KiaProformaSection> = {
   bookings: 'bookings',
   'allocation-history': 'allocation-history',
   'payment-window-requests': 'payment-window-requests',
+  'dms-exceptions': 'dms-exceptions',
   stock: 'stock',
   generate: 'generate',
   'all-proforma-details': 'all',
@@ -43,7 +44,11 @@ export default async function Page({ params }: { params: Promise<{ section: stri
       ? 'kia.allocation_history.view'
       : resolved === 'payment-window-requests'
         ? 'kia.payment_window_requests.view'
-        : 'kia.proforma.view'
+        // DMS Exceptions carries its own restricted key too — and CXM/CCM, who own delivery, hold it
+        // without holding kia.proforma.view at all.
+        : resolved === 'dms-exceptions'
+          ? 'kia.dms_reconciliation.view'
+          : 'kia.proforma.view'
   const permission = await requirePermission(access.appUser, permissionKey)
   if (!permission.allowed) forbidden()
 
@@ -59,12 +64,16 @@ export default async function Page({ params }: { params: Promise<{ section: stri
   const paymentWindow = resolved === 'payment-window-requests'
     ? permission
     : await requirePermission(access.appUser, 'kia.payment_window_requests.view')
+  const dmsReconciliation = resolved === 'dms-exceptions'
+    ? permission
+    : await requirePermission(access.appUser, 'kia.dms_reconciliation.view')
 
   return (
     <KiaProformaPage
       section={resolved}
       canViewAllocationHistory={allocationHistory.allowed}
       canViewPaymentWindowRequests={paymentWindow.allowed}
+      canViewDmsReconciliation={dmsReconciliation.allowed}
     />
   )
 }

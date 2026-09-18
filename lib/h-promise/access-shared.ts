@@ -63,16 +63,43 @@ export function deriveCapabilities(
   isSuperAdmin: boolean,
 ): HPromiseCapabilities {
   const has = (key: string) => isSuperAdmin || effective[key] === true
+
+  const rawRegisterView = has(HP_PERMISSION_KEYS.registerView)
+  const rawApprovalsView = has(HP_PERMISSION_KEYS.approvalsView)
+  const rawPaymentsView = has(HP_PERMISSION_KEYS.paymentsView)
+  const rawInsightsView = has(HP_PERMISSION_KEYS.insightsView)
+  const hasAnyHPromiseGrant =
+    isSuperAdmin ||
+    rawRegisterView ||
+    rawApprovalsView ||
+    rawPaymentsView ||
+    rawInsightsView ||
+    effective['tata.h_promise'] === true ||
+    Object.keys(effective).some((k) => k.startsWith('tata.h_promise') && effective[k] === true)
+
   const register = {
-    view: has(HP_PERMISSION_KEYS.registerView),
-    create: has(HP_PERMISSION_KEYS.registerCreate),
-    edit: has(HP_PERMISSION_KEYS.registerEdit),
-    delete: has(HP_PERMISSION_KEYS.registerDelete),
+    view: hasAnyHPromiseGrant || rawRegisterView,
+    create: hasAnyHPromiseGrant || has(HP_PERMISSION_KEYS.registerCreate),
+    edit: hasAnyHPromiseGrant || has(HP_PERMISSION_KEYS.registerEdit),
+    delete: isSuperAdmin || has(HP_PERMISSION_KEYS.registerDelete),
   }
-  const approvals = { view: has(HP_PERMISSION_KEYS.approvalsView), approve: has(HP_PERMISSION_KEYS.approvalsApprove), final: isSuperAdmin }
-  const payments = { view: has(HP_PERMISSION_KEYS.paymentsView), edit: has(HP_PERMISSION_KEYS.paymentsEdit) }
-  const insights = { view: has(HP_PERMISSION_KEYS.insightsView) }
-  const settings = { view: has(HP_PERMISSION_KEYS.settingsView), edit: has(HP_PERMISSION_KEYS.settingsEdit) }
+  const approvals = {
+    view: hasAnyHPromiseGrant || rawApprovalsView,
+    approve: isSuperAdmin || has(HP_PERMISSION_KEYS.approvalsApprove),
+    final: isSuperAdmin,
+  }
+  const payments = {
+    view: hasAnyHPromiseGrant || rawPaymentsView,
+    edit: isSuperAdmin || has(HP_PERMISSION_KEYS.paymentsEdit),
+  }
+  const insights = { view: hasAnyHPromiseGrant || rawInsightsView }
+  const settings = {
+    view: isSuperAdmin || has(HP_PERMISSION_KEYS.settingsView),
+    edit: isSuperAdmin || has(HP_PERMISSION_KEYS.settingsEdit),
+  }
+
+  const anyView = hasAnyHPromiseGrant || register.view || approvals.view || payments.view || insights.view
+
   return {
     userId: user.id,
     userName: user.name,
@@ -82,7 +109,7 @@ export function deriveCapabilities(
     payments,
     insights,
     settings,
-    anyView: register.view || approvals.view || payments.view || insights.view,
+    anyView,
     canSeePii: isSuperAdmin || register.create || register.edit || approvals.approve || payments.edit,
   }
 }

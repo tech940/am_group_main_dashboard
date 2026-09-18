@@ -182,12 +182,12 @@ type PickPurpose = 'sale' | 'booking' | 'documents' | 'rc'
 type FormDef = { id: FormId; label: string; hint: string; icon: LucideIcon; tone: Tone; allowed: (caps: HPromiseCapabilities) => boolean }
 
 const FORMS: readonly FormDef[] = [
-  { id: 'purchase', label: 'Purchase Car', hint: 'Record a car bought', icon: ShoppingCart, tone: 'stock', allowed: (caps) => caps.register.create },
-  { id: 'sale', label: 'Record Sale', hint: 'Sell a car from stock', icon: Handshake, tone: 'sold', allowed: (caps) => caps.register.edit },
-  { id: 'booking', label: 'New Booking', hint: 'Take booking on stock', icon: CalendarClock, tone: 'booked', allowed: (caps) => caps.register.edit },
-  { id: 'documents', label: 'Documents', hint: 'RC, KYC, insurance', icon: FileCheck2, tone: 'pending', allowed: (caps) => caps.register.edit },
-  { id: 'rc', label: 'Broker RC Transfer', hint: 'Broker sales transfer', icon: FileKey2, tone: 'rejected', allowed: (caps) => caps.register.edit },
-  { id: 'bonus', label: 'Exchange Bonus', hint: 'Bonus on exchange', icon: Gift, tone: 'accent', allowed: (caps) => caps.register.create },
+  { id: 'purchase', label: 'Purchase Car', hint: 'Record a car bought', icon: ShoppingCart, tone: 'stock', allowed: (caps) => caps.register.create || caps.anyView },
+  { id: 'sale', label: 'Record Sale', hint: 'Sell a car from stock', icon: Handshake, tone: 'sold', allowed: (caps) => caps.register.edit || caps.anyView },
+  { id: 'booking', label: 'New Booking', hint: 'Take booking on stock', icon: CalendarClock, tone: 'booked', allowed: (caps) => caps.register.edit || caps.anyView },
+  { id: 'documents', label: 'Documents', hint: 'RC, KYC, insurance', icon: FileCheck2, tone: 'pending', allowed: (caps) => caps.register.edit || caps.anyView },
+  { id: 'rc', label: 'Broker RC Transfer', hint: 'Broker sales transfer', icon: FileKey2, tone: 'rejected', allowed: (caps) => caps.register.edit || caps.anyView },
+  { id: 'bonus', label: 'Exchange Bonus', hint: 'Bonus on exchange', icon: Gift, tone: 'accent', allowed: (caps) => caps.register.create || caps.register.view || caps.anyView },
 ]
 
 function FormsBar() {
