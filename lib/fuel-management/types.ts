@@ -382,6 +382,11 @@ export type FuelEventRow = {
   variance: number | null
   /** The receipt total. */
   cost: number | null
+  /**
+   * Only when there is no receipt total: an approved petrol/diesel fill's quantity × the configured market price
+   * (fuel settings). An ESTIMATE — never part of `cost`, never used to judge prices. Null otherwise.
+   */
+  estimatedCost: number | null
   /** Receipt total ÷ (actual, else approved) — from the engine. */
   unitPrice: number | null
   odometerKm: number | null
@@ -432,15 +437,31 @@ export type FuelFleetFigure = {
   unit: FuelUnit
   efficiency: number | null
   costPerKm: number | null
+  /** Counting market-price estimates for unbilled fills (see FuelHeadline.spend.prices). */
+  costPerKmWithEstimates: number | null
   distanceKm: number
   quantity: number
   segments: number
   costedSegments: number
+  /** Stretches priced in full only thanks to estimates. */
+  estimatedSegments: number
+  /** Stretches left out of the mileage because the odometer looks mistyped (see the impossible_mileage exception). */
+  implausibleSegments: number
   basis: 'full_tank' | 'provisional' | 'none'
 }
 
 export type FuelHeadline = {
-  spend: FuelComparison & { costedEvents: number; closedEvents: number }
+  spend: FuelComparison & {
+    costedEvents: number
+    closedEvents: number
+    /** Market-price estimate for approved fills with no bill — NOT in `current`. */
+    estimated: number
+    estimatedEvents: number
+    /** The previous period on the same billed + estimated basis, for a like-for-like change. */
+    previousWithEstimates: number | null
+    /** The market prices behind the estimates (₹ per litre; 0 = not estimated). */
+    prices: { petrol: number; diesel: number }
+  }
   requestedQty: number
   approvedQty: FuelComparison
   actualQty: FuelComparison & { recordedEvents: number; eligibleEvents: number }

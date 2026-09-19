@@ -874,9 +874,32 @@ console.log('\n8b) The calculation engine, on the owner\'s own examples:')
     const wild = run([fill({ date: '2026-08-01', odometerKm: 1000 }), fill({ date: '2026-08-10', odometerKm: 4200, quantity: 40 })])
     assert('80 km/L against an expected 15 is a possible data-entry error — never "fraud"',
       wild.some((x) => x.kind === 'impossible_mileage' && /data-entry error/.test(x.message)) && !wild.some((x) => /fraud|fault|tamper/i.test(x.message)))
-    assert('with no benchmark and no history there is nothing to call impossible', !run([
-      fill({ date: '2026-08-01', odometerKm: 1000 }), fill({ date: '2026-08-10', odometerKm: 4200, quantity: 40 }),
-    ], false).some((x) => x.kind === 'impossible_mileage'))
+    /*
+     * ⚠️ Changed 2026-09-19 (owner: "average mileage is wrong"). This used to assert that with no benchmark and no
+     * history NOTHING could be called impossible — which is how 58,677 km on 20 L (2,934 km/L, a mistyped odometer)
+     * reached the fleet average and made it 424.8 km/L. There is now an absolute ceiling (maxPlausibleKmPerLitre, a
+     * setting) that needs no benchmark; a believable figure with no benchmark is still left alone.
+     */
+    const noBenchmark = [fill({ date: '2026-08-01', odometerKm: 1000 }), fill({ date: '2026-08-10', odometerKm: 4200, quantity: 40 })]
+    assert('with no benchmark, 80 km/L is still flagged — the ceiling needs no expected mileage',
+      run(noBenchmark, false).some((x) => x.kind === 'impossible_mileage' && /data-entry error/.test(x.message)))
+    const believable = [fill({ date: '2026-08-01', odometerKm: 1000 }), fill({ date: '2026-08-10', odometerKm: 1800, quantity: 40 })]
+    assert('with no benchmark, a believable 20 km/L is not called impossible', !run(believable, false).some((x) => x.kind === 'impossible_mileage'))
+    {
+      const segs = E.buildSegments([...noBenchmark, ...believable.map((f, i) => ({ ...f, id: `b${i}`, vehicleKey: 'V2' }))], E.DEFAULT_FUEL_SETTINGS)
+      const fleet = E.fleetEfficiency(segs, 'L', '2026-08-01', '2026-08-31')
+      assert('the mistyped stretch is left out of the fleet average, and counted as left out',
+        segs.some((x) => x.problem === 'implausible_mileage' && !x.usable) && fleet.efficiency === 20 && fleet.implausibleSegments === 1,
+        JSON.stringify({ eff: fleet.efficiency, left: fleet.implausibleSegments }))
+    }
+    {
+      // Market-price estimates ride beside the bill; they never become one.
+      const f = (over: Partial<Fill>) => fill({ date: '2026-08-01', odometerKm: 1000, quantity: 40, ...over })
+      const segs = E.buildSegments([f({ id: 'e1', totalCost: 4000 }), f({ id: 'e2', date: '2026-08-10', odometerKm: 1600, totalCost: null, estimatedCost: 4165 })], E.DEFAULT_FUEL_SETTINGS)
+      const s1 = segs[0]
+      assert('an unbilled fill gets an estimated cost, but the billed cost stays unknown',
+        Boolean(s1) && s1.cost === null && s1.costWithEstimates === 4165 && s1.estimatedFills === 1, JSON.stringify(s1))
+    }
     const sameDay = run([1, 2, 3, 4].map((i) => fill({ date: '2026-08-01', quantity: 5 + i, isFullTank: false })), false)
     assert('four fills in one day is flagged once', sameDay.filter((x) => x.kind === 'refuel_frequency').length === 1)
     const priced = [98, 99, 100, 101, 100, 130].map((p, i) => fill({ vehicleKey: `V${i}`, date: '2026-08-01', quantity: 10, totalCost: p * 10 }))

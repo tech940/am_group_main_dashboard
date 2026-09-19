@@ -45,6 +45,11 @@ export type EngineFill = {
   quantity: number
   /** The receipt total. Null when it was not captured (every entry before the rework). */
   totalCost: number | null
+  /**
+   * Only when `totalCost` is null: quantity × the configured market price for its fuel (owner, 2026-09-19 — "if we
+   * don't have price then get current amount from internet"). Never used for unit-price checks, which judge bills.
+   */
+  estimatedCost?: number | null
   odometerKm: number | null
   /** Null means "not recorded" — never read as either answer. */
   isFullTank: boolean | null
@@ -88,6 +93,15 @@ export type FuelIntelligenceSettings = {
   consumptionSpikeMinQty: number
   /** An approved order whose bill is still unrecorded after this many days needs chasing. */
   closeOverdueDays: number
+  /**
+   * No car does better than this; a stretch above it is a mistyped odometer and gives no mileage. Unlike
+   * `impossibleMileageMultiplier` it needs no expected mileage, so it guards the cars nobody has configured —
+   * 58,677 km on 20 L (2,934 km/L) once took the fleet average to 424.8 km/L.
+   */
+  maxPlausibleKmPerLitre: number
+  /** Market price per litre, used ONLY to estimate fills that have no bill. 0 = do not estimate. */
+  marketPricePetrolPerLitre: number
+  marketPriceDieselPerLitre: number
 }
 
 /**
@@ -113,6 +127,13 @@ export const DEFAULT_FUEL_SETTINGS: FuelIntelligenceSettings = {
   consumptionSpikePct: 50,
   consumptionSpikeMinQty: 20,
   closeOverdueDays: 7,
+  maxPlausibleKmPerLitre: 40,
+  /*
+   * Jammu retail price on 19 Sep 2026 (v3cars.com, updated 05:30 that day; other sites said up to 106.41 / 95.01).
+   * AM Group's own bills that month: petrol 105.15, diesel 93.62. Update it on the settings screen when prices move.
+   */
+  marketPricePetrolPerLitre: 104.13,
+  marketPriceDieselPerLitre: 92.81,
 }
 
 /** What each setting means, for the settings screen. Keys match FuelIntelligenceSettings exactly. */
@@ -135,6 +156,9 @@ export const FUEL_SETTING_DESCRIPTIONS: Record<keyof FuelIntelligenceSettings, {
   consumptionSpikePct: { label: 'Rise against the previous period that counts as a spike', unit: '%' },
   consumptionSpikeMinQty: { label: '…when the period uses at least', unit: 'L' },
   closeOverdueDays: { label: 'Days an approved order may wait for its bill', unit: 'days' },
+  maxPlausibleKmPerLitre: { label: 'Highest believable mileage — above it the odometer is treated as mistyped', unit: 'km/L' },
+  marketPricePetrolPerLitre: { label: 'Petrol market price, used to estimate fills with no bill (0 = off)', unit: '₹/L' },
+  marketPriceDieselPerLitre: { label: 'Diesel market price, used to estimate fills with no bill (0 = off)', unit: '₹/L' },
 }
 
 /** A stored override, or the default. Unknown keys and non-finite values are ignored — never a silent zero. */
@@ -192,7 +216,7 @@ function formatQuantity(value: number, unit: EnergyUnit): string {
 /* ────────────────────────────────────────────────────────────────────────────────────────────── segments */
 
 export type SegmentKind = 'full_tank' | 'provisional'
-export type SegmentProblem = 'missing_odometer' | 'override_inside' | 'odometer_decrease' | 'too_short'
+export type SegmentProblem = 'missing_odometer' | 'override_inside' | 'odometer_decrease' | 'too_short' | 'implausible_mileage'
 
 export type MileageSegment = {
   vehicleKey: string
@@ -209,6 +233,10 @@ export type MileageSegment = {
   quantity: number
   /** Null unless every counted fill carries a receipt total. */
   cost: number | null
+  /** Bills where present, market-price estimates for the rest; null if any fill has neither. */
+  costWithEstimates: number | null
+  /** Fills in the stretch priced by estimate rather than a bill. */
+  estimatedFills: number
   /** Distance ÷ quantity, only when the segment is usable. */
   efficiency: number | null
   costPerKm: number | null
@@ -227,6 +255,9 @@ function makeSegment(
   const quantity = sum(counted.map((f) => f.quantity))
   const costs = counted.map((f) => f.totalCost)
   const cost = costs.every(isNum) ? sum(costs as number[]) : null
+  const withEstimates = counted.map((f) => (isNum(f.totalCost) ? f.totalCost : f.estimatedCost ?? null))
+  const costWithEstimates = withEstimates.every(isNum) ? sum(withEstimates as number[]) : null
+  const estimatedFills = counted.filter((f) => !isNum(f.totalCost) && isNum(f.estimatedCost)).length
 
   let problem: SegmentProblem | null = null
   let distanceKm: number | null = null
@@ -243,6 +274,9 @@ function makeSegment(
     if (counted.some((f) => f.odometerOverride)) problem = 'override_inside'
     else if (readings.some((r, i) => i > 0 && r < readings[i - 1])) problem = 'odometer_decrease'
     else if (distanceKm < settings.minSegmentDistanceKm) problem = 'too_short'
+    // ⚠️ Absolute ceiling, needing no expected mileage — see maxPlausibleKmPerLitre. Litres and kg only: kWh runs lower.
+    else if (quantity > 0 && closing.unit !== 'kWh' && settings.maxPlausibleKmPerLitre > 0
+      && distanceKm / quantity > settings.maxPlausibleKmPerLitre) problem = 'implausible_mileage'
   }
 
   const usable = problem === null && quantity > 0 && distanceKm !== null && distanceKm > 0
@@ -259,6 +293,8 @@ function makeSegment(
     distanceKm,
     quantity,
     cost,
+    costWithEstimates,
+    estimatedFills,
     efficiency,
     costPerKm: usable && cost !== null ? cost / distanceKm! : null,
     usable,
@@ -400,7 +436,9 @@ export function summariseVehicleMileage(
   let unavailableReason: string | null = null
   if (!closedBy.length) {
     const problems = new Set(mine.map((s) => s.problem))
-    unavailableReason = problems.has('odometer_decrease')
+    unavailableReason = problems.has('implausible_mileage')
+      ? 'An odometer reading looks mistyped — the distance is more than any car could do on that fuel. See Exceptions.'
+      : problems.has('odometer_decrease')
       ? 'Odometer readings go backwards — see Exceptions.'
       : problems.has('override_inside')
         ? 'An odometer correction sits inside this stretch, so its distance cannot be trusted.'
@@ -447,6 +485,12 @@ export type FleetEfficiency = {
   costPerKm: number | null
   /** How many of those segments carried a full cost. */
   costedSegments: number
+  /** Σ cost ÷ Σ distance counting market-price estimates for unbilled fills. Null when that covers nothing. */
+  costPerKmWithEstimates: number | null
+  /** Segments priced in full only thanks to estimates. */
+  estimatedSegments: number
+  /** Stretches in the window left out because their mileage is not believable (a mistyped odometer). */
+  implausibleSegments: number
   basis: MileageBasis
 }
 
@@ -472,6 +516,9 @@ export function fleetEfficiency(
   const costed = chosen.filter((s) => isNum(s.cost))
   const costedDistance = sum(costed.map((s) => s.distanceKm ?? 0))
   const costedSpend = sum(costed.map((s) => s.cost as number))
+  const withEstimates = chosen.filter((s) => isNum(s.costWithEstimates))
+  const estimatedDistance = sum(withEstimates.map((s) => s.distanceKm ?? 0))
+  const estimatedSpend = sum(withEstimates.map((s) => s.costWithEstimates as number))
   return {
     unit,
     segments: chosen.length,
@@ -480,6 +527,10 @@ export function fleetEfficiency(
     efficiency: quantity > 0 && distanceKm > 0 ? distanceKm / quantity : null,
     costPerKm: costedDistance > 0 ? costedSpend / costedDistance : null,
     costedSegments: costed.length,
+    costPerKmWithEstimates: estimatedDistance > 0 ? estimatedSpend / estimatedDistance : null,
+    estimatedSegments: withEstimates.length - costed.length,
+    implausibleSegments: segments.filter((s) => s.problem === 'implausible_mileage' && s.unit === unit && s.closedOn >= from && s.closedOn <= to
+      && (!vehicleKeys || vehicleKeys.has(s.vehicleKey))).length,
     basis,
   }
 }
@@ -692,6 +743,17 @@ export function detectExceptions(input: ExceptionInput): FuelException[] {
         seen.set(key, fill)
       }
     }
+  }
+
+  // A stretch above the absolute ceiling: almost always a mistyped odometer. It gives no mileage, so say why.
+  for (const segment of input.segments) {
+    if (segment.problem !== 'implausible_mileage' || !isNum(segment.distanceKm) || !(segment.quantity > 0)) continue
+    const eff = segment.distanceKm / segment.quantity
+    out.push({
+      kind: 'impossible_mileage', severity: 'warning', vehicleKey: segment.vehicleKey, fillId: segment.closingFillId, date: segment.closedOn,
+      value: eff, expected: settings.maxPlausibleKmPerLitre, variance: eff - settings.maxPlausibleKmPerLitre,
+      message: `${formatNumber(Math.round(segment.distanceKm))} km on ${formatNumber(segment.quantity)} ${segment.unit} (${formatEfficiency(eff, segment.unit)}) between ${segment.openedOn} and ${segment.closedOn} — possibly a data-entry error: an odometer reading looks mistyped, so this stretch is left out of mileage.`,
+    })
   }
 
   // Mileage drop and impossible mileage — per vehicle AND unit, against the vehicle's own recent history.

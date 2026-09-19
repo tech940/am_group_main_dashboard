@@ -31,6 +31,7 @@ const PROBLEM_WORD: Record<string, string> = {
   override_inside: 'An odometer correction sits inside',
   odometer_decrease: 'The odometer went backwards',
   too_short: 'Too short to measure',
+  implausible_mileage: 'The odometer looks mistyped — more km than the fuel allows',
 }
 
 export function VehicleDrawer({

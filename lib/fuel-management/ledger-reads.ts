@@ -47,7 +47,8 @@ import type { FuelEnergy, FuelExceptionReview, FuelFilters } from './types'
 
 const LEDGER_TTL_SECONDS = 60
 /** Bump when the Ledger shape changes, or a cached copy of the old shape is served for a minute. */
-const LEDGER_CACHE_VERSION = 'v1'
+// v2 (2026-09-19): estimatedCost on events, costWithEstimates / implausible stretches on segments.
+const LEDGER_CACHE_VERSION = 'v2'
 
 const toNum = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') return null

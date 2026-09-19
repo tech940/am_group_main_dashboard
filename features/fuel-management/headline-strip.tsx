@@ -33,20 +33,37 @@ export function HeadlineStrip({ data, navigate }: { data: FuelManagementResponse
   const h = data.headline
   const fleet = h.fleet
   const mileageState: DataState = !fleet || fleet.efficiency === null ? 'missing' : fleet.basis === 'full_tank' ? 'measured' : 'provisional'
-  const costState: DataState | undefined = !fleet || fleet.costPerKm === null
+
+  /*
+   * Estimates (owner, 2026-09-19): a fill with no bill is priced at the market rate in Fuel settings. They are
+   * added to the figure but always named beside it, so a billed rupee and an estimated one never look alike.
+   */
+  const spend = h.spend
+  const spendTotal = spend.current + spend.estimated
+  const unbilledLeft = h.approvedEvents.current - spend.costedEvents - spend.estimatedEvents
+  const spendState: DataState | undefined = spend.estimatedEvents > 0
+    ? (unbilledLeft > 0 ? 'partial' : 'estimated')
+    : spend.costedEvents > 0 && spend.costedEvents < h.approvedEvents.current ? 'partial' : undefined
+  const priceNote = `petrol ${fmtInrPrecise(spend.prices.petrol)}/L, diesel ${fmtInrPrecise(spend.prices.diesel)}/L`
+
+  const allBilled = !!fleet && fleet.segments > 0 && fleet.costedSegments === fleet.segments
+  const costPerKm = !fleet ? null : allBilled ? fleet.costPerKm : fleet.costPerKmWithEstimates ?? fleet.costPerKm
+  const costState: DataState | undefined = !fleet || costPerKm === null
     ? 'missing'
-    : fleet.costedSegments < fleet.segments ? 'partial' : undefined
+    : allBilled ? undefined : fleet.estimatedSegments > 0 ? 'estimated' : 'partial'
 
   const cells: Cell[] = [
     {
       key: 'spend',
       label: 'Fuel spend',
-      value: fmtInr(h.spend.current),
+      value: fmtInr(spendTotal),
       icon: IndianRupee,
-      sub: h.spend.costedEvents === 0
-        ? 'No bills recorded yet'
-        : <Change current={h.spend.current} previous={h.spend.previous} />,
-      state: h.spend.costedEvents > 0 && h.spend.costedEvents < h.approvedEvents.current ? 'partial' : undefined,
+      sub: spend.estimatedEvents > 0
+        ? `${fmtInr(spend.current)} billed · ${fmtInr(spend.estimated)} estimated on ${fmtCount(spend.estimatedEvents)} unbilled fill${spend.estimatedEvents === 1 ? '' : 's'}`
+        : spend.costedEvents === 0
+          ? 'No bills recorded yet'
+          : <Change current={spend.current} previous={spend.previous} />,
+      state: spendState,
       onOpen: () => navigate.toTab('records', { recordState: 'completed' }),
       actionLabel: 'Show billed fuel records',
     },
@@ -79,8 +96,10 @@ export function HeadlineStrip({ data, navigate }: { data: FuelManagementResponse
       value: fleet?.efficiency != null ? fmtEff(fleet.efficiency, 'L') : '—',
       icon: Gauge,
       sub: fleet?.efficiency != null
-        ? `${fmtQty(fleet.quantity)} over ${fmtKm(fleet.distanceKm)}`
-        : 'Needs two fills with odometer readings',
+        ? `${fmtQty(fleet.quantity)} over ${fmtKm(fleet.distanceKm)}${fleet.implausibleSegments ? ` · ${fmtCount(fleet.implausibleSegments)} mistyped stretch${fleet.implausibleSegments === 1 ? '' : 'es'} left out` : ''}`
+        : fleet?.implausibleSegments
+          ? `${fmtCount(fleet.implausibleSegments)} stretch${fleet.implausibleSegments === 1 ? '' : 'es'} left out — odometer looks mistyped`
+          : 'Needs two fills with odometer readings',
       state: mileageState,
       onOpen: () => navigate.toTab('vehicles'),
       actionLabel: 'Show vehicle mileage',
@@ -88,10 +107,12 @@ export function HeadlineStrip({ data, navigate }: { data: FuelManagementResponse
     {
       key: 'cost-km',
       label: 'Cost per km',
-      value: fleet?.costPerKm != null ? fmtInrPrecise(fleet.costPerKm) : '—',
+      value: costPerKm != null ? fmtInrPrecise(costPerKm) : '—',
       icon: Coins,
       sub: fleet && fleet.segments > 0
-        ? `billed on ${fmtCount(fleet.costedSegments)} of ${fmtCount(fleet.segments)} stretches`
+        ? allBilled || fleet.estimatedSegments === 0
+          ? `billed on ${fmtCount(fleet.costedSegments)} of ${fmtCount(fleet.segments)} stretches`
+          : `billed on ${fmtCount(fleet.costedSegments)} of ${fmtCount(fleet.segments)} stretches · rest at ${priceNote}`
         : 'Needs billed fills on the same car',
       state: costState,
       onOpen: () => navigate.toTab('vehicles'),

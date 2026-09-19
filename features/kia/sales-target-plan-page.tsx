@@ -568,19 +568,30 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
     queryFn: async () => {
       const params = new URLSearchParams({ outlet })
       if (year && month) { params.set('year', String(year)); params.set('month', String(month)) }
-      /* no-store: the session fetch cache would hold this for 30 minutes — see query-provider.tsx. */
       const res = await fetch(`/api/brands/kia/sales-performance/plan?${params.toString()}`, { cache: 'no-store' })
+      if (res.status === 404) {
+        throw new Error('API route not found (404). If running on localhost, please restart the Next.js dev server (`npm run dev`) so it compiles the route.')
+      }
+      if (res.status === 401) {
+        throw new Error('Your session has expired. Please sign in again.')
+      }
+      if (res.status === 403) {
+        const text = await res.text().catch(() => '')
+        let errJson: any = null
+        try { errJson = JSON.parse(text) } catch {}
+        throw new Error(errJson?.error || 'You do not have permission to view KIA Sales Target Plan.')
+      }
       const text = await res.text().catch(() => '')
       let json: any = null
       try {
         json = text ? JSON.parse(text) : null
       } catch {
         if (text.includes('<!DOCTYPE') || text.includes('<html')) {
-          throw new Error('Server returned HTML instead of JSON. Please check authentication.')
+          throw new Error('Server returned HTML instead of JSON. Please check authentication or restart the local server.')
         }
         throw new Error('Invalid JSON response from server')
       }
-      if (!res.ok) throw new Error(json?.error || 'Failed to load the plan')
+      if (!res.ok) throw new Error(json?.error || `Failed to load the plan (${res.status})`)
       return json
     },
     staleTime: 0,
@@ -773,9 +784,45 @@ export function KiaSalesTargetPlanPage({ canSetTargets }: { canSetTargets: boole
 
       {/* Error State */}
       {query.isError && (
-        <div className="rounded-2xl border border-red-200 bg-red-50/50 dark:bg-red-950/20 p-6 text-center">
-          <AlertCircle className="mx-auto h-7 w-7" style={{ color: INK.bad }} />
-          <p className="mt-2 text-sm font-bold" style={{ color: INK.bad }}>{(query.error as Error).message}</p>
+        <div className="rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 p-8 text-center space-y-4 max-w-lg mx-auto my-6">
+          <div className="h-12 w-12 rounded-2xl bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+            <AlertCircle className="h-6 w-6" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Unable to Load Sales Target Plan</h3>
+            <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+              {(query.error as Error)?.message || 'An unexpected error occurred while loading data.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => {
+                const currentPath = typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/brands/kia/sales-performance'
+                window.location.href = `/auth/login?redirect=${encodeURIComponent(currentPath)}`
+              }}
+              className="rounded-xl px-4 font-semibold text-xs h-9 bg-[var(--dashboard-action-bg,#055B65)] hover:opacity-90 cursor-pointer"
+            >
+              Sign In Again
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.reload()}
+              className="rounded-xl px-4 font-semibold text-xs h-9 border-slate-200 dark:border-slate-700 cursor-pointer"
+            >
+              Reload Page
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => query.refetch()}
+              className="rounded-xl px-4 font-semibold text-xs h-9 cursor-pointer"
+            >
+              Try Again
+            </Button>
+          </div>
         </div>
       )}
 

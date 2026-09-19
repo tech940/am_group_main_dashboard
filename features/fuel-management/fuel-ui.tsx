@@ -254,12 +254,13 @@ export function LifecycleChip({ lifecycle }: { lifecycle: FuelLifecycle }) {
   return <Chip tone={LIFECYCLE_TONE[lifecycle]}>{LIFECYCLE_WORD[lifecycle]}</Chip>
 }
 
-export type DataState = 'measured' | 'provisional' | 'partial' | 'missing'
+export type DataState = 'measured' | 'provisional' | 'partial' | 'estimated' | 'missing'
 
 const DATA_STATE: Record<DataState, { tone: Tone; word: string; title: string }> = {
   measured: { tone: 'ok', word: 'Measured', title: 'Full tank to full tank, with odometer readings at both ends.' },
   provisional: { tone: 'info', word: 'Provisional', title: 'Fill to fill — no full-tank pair yet, so the figure may move.' },
   partial: { tone: 'review', word: 'Partial', title: 'Only part of the data behind this figure is recorded.' },
+  estimated: { tone: 'info', word: 'Estimated', title: 'Includes fills with no bill, priced at the market rate set in Fuel settings.' },
   missing: { tone: 'muted', word: 'Not enough data', title: 'The records needed for this figure do not exist yet.' },
 }
 

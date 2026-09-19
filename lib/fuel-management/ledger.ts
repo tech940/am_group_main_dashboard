@@ -448,6 +448,11 @@ export function buildLedger(input: LedgerInput): Ledger {
     const engineQty = approvedish ? (row.actual ?? row.approved ?? row.requested) : null
     const priceBase = row.actual ?? row.approved
     const price = isNum(row.totalCost) && isNum(priceBase) ? unitPrice({ totalCost: row.totalCost, quantity: priceBase }) : null
+    // No bill: estimate an approved petrol/diesel fill at the configured market price (owner, 2026-09-19).
+    const marketPrice = energy === 'petrol' ? settings.marketPricePetrolPerLitre : energy === 'diesel' ? settings.marketPriceDieselPerLitre : 0
+    const estimatedCost = !isNum(row.totalCost) && isNum(engineQty) && engineQty > 0 && unit === 'L' && marketPrice > 0
+      ? round2(engineQty * marketPrice)
+      : null
 
     trails[row.id] = row.trail
     const statusKey = String(row.status ?? '').trim().toLowerCase()
@@ -481,6 +486,7 @@ export function buildLedger(input: LedgerInput): Ledger {
       actual: row.actual,
       variance: isNum(row.actual) && isNum(row.approved) ? round2(row.actual - row.approved) : null,
       cost: row.totalCost,
+      estimatedCost,
       unitPrice: price === null ? null : round2(price),
       odometerKm,
       fullTank: row.isFullTank,
@@ -512,6 +518,7 @@ export function buildLedger(input: LedgerInput): Ledger {
       unit: d.unit as EnergyUnit,
       quantity: d.engineQty as number,
       totalCost: d.cost,
+      estimatedCost: d.estimatedCost,
       // A genset has no odometer; its fills never form a mileage segment.
       odometerKm: d.identity === 'vin' ? d.odometerKm : null,
       isFullTank: d.identity === 'vin' ? d.fullTank : null,
@@ -1002,6 +1009,8 @@ const counts = (events: readonly FuelEventRow[], unit: FuelUnit = 'L') => {
     approvedQty: sumOf(approved.map((e) => e.approved)),
     actualQty: sumOf(live.filter((e) => e.unit === unit).map((e) => e.actual)),
     spend: sumOf(live.map((e) => e.cost)),
+    estimated: sumOf(live.filter((e) => e.cost === null).map((e) => e.estimatedCost)),
+    estimatedEvents: live.filter((e) => e.cost === null && e.estimatedCost !== null).length,
   }
 }
 
@@ -1229,10 +1238,13 @@ export function summariseLedger(ledger: Ledger, filters: FuelFilters): FuelManag
     unit: 'L',
     efficiency: fleetNow.efficiency,
     costPerKm: fleetNow.costPerKm,
+    costPerKmWithEstimates: fleetNow.costPerKmWithEstimates,
     distanceKm: round2(fleetNow.distanceKm),
     quantity: round2(fleetNow.quantity),
     segments: fleetNow.segments,
     costedSegments: fleetNow.costedSegments,
+    estimatedSegments: fleetNow.estimatedSegments,
+    implausibleSegments: fleetNow.implausibleSegments,
     basis: fleetNow.basis,
   }
 
@@ -1245,6 +1257,10 @@ export function summariseLedger(ledger: Ledger, filters: FuelFilters): FuelManag
       previous: previous.length ? p.spend : null,
       costedEvents: c.live.filter((e) => e.cost !== null).length,
       closedEvents: c.live.filter((e) => e.lifecycle === 'completed').length,
+      estimated: round2(c.estimated),
+      estimatedEvents: c.estimatedEvents,
+      previousWithEstimates: previous.length ? round2(p.spend + p.estimated) : null,
+      prices: { petrol: ledger.settings.marketPricePetrolPerLitre, diesel: ledger.settings.marketPriceDieselPerLitre },
     },
     requestedQty: sumOf(c.live.filter((e) => e.unit === 'L').map((e) => e.requested)),
     approvedQty: { current: c.approvedQty, previous: previous.length ? p.approvedQty : null },
@@ -1328,6 +1344,9 @@ export function summariseLedger(ledger: Ledger, filters: FuelFilters): FuelManag
       }
       if (!allCosted) {
         narrative.push(`Cost per km needs a bill on every fill of a stretch; ${fleet.costedSegments} of ${fleet.segments} stretches have one.`)
+        if (fleet.costPerKmWithEstimates !== null && fleet.estimatedSegments > 0) {
+          narrative.push(`Pricing the unbilled fills at the market rate (petrol ₹${formatNumber(ledger.settings.marketPricePetrolPerLitre, 2)}/L, diesel ₹${formatNumber(ledger.settings.marketPriceDieselPerLitre, 2)}/L), cost per km is about ₹${formatNumber(fleet.costPerKmWithEstimates, 2)} — an estimate until the bills are recorded.`)
+        }
       }
       narrative.push(...sentences.slice(1, 2))
     } else if (vinKeys.size > 0) {
