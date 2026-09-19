@@ -67,7 +67,7 @@ function shiftDay(ymd: string, by: number) {
   const dt = new Date(Date.UTC(y, m - 1, d + by))
   return dt.toISOString().slice(0, 10)
 }
-const indiaToday = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10)
+export const indiaToday = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10)
 
 const isGroup = (c: string) => c.toLowerCase().startsWith('group')
 
@@ -255,10 +255,12 @@ async function fetchSnapshot(day: string): Promise<Snapshot> {
   return res.json()
 }
 
-export function IndiaSnapshotSection() {
-  const [day, setDay] = useState(indiaToday)
-
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<Snapshot>({
+/**
+ * The one query for a day's snapshot. Shared with the cockpit's Hyundai/Platinum retail cards, which read
+ * today's sales rows from it — same key, so the page fetches the snapshot once and the two can never disagree.
+ */
+export function useIndiaSnapshot(day: string) {
+  return useQuery<Snapshot>({
     queryKey: ['cockpit-india', day],
     queryFn: () => fetchSnapshot(day),
     // Same reasoning as the cockpit query: the global config sets retry:false, and this endpoint
@@ -266,6 +268,12 @@ export function IndiaSnapshotSection() {
     retry: (n, err) => (/\b(401|403|Unauthorized|Forbidden)\b/i.test((err as Error)?.message || '') ? false : n < 2),
     retryDelay: (attempt) => Math.min(1500 * 2 ** attempt, 6000),
   })
+}
+
+export function IndiaSnapshotSection() {
+  const [day, setDay] = useState(indiaToday)
+
+  const { data, isLoading, isError, error, refetch, isFetching } = useIndiaSnapshot(day)
 
   const atToday = day >= indiaToday()
 

@@ -27,6 +27,10 @@
     {
       "path": "/api/call-analysis/ai/digest",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cockpit/refresh",
+      "schedule": "*/10 2-15 * * *"
     }
   ]
 }

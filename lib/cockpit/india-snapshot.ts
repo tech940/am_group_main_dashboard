@@ -39,8 +39,7 @@
 import 'server-only'
 import { sql } from 'drizzle-orm'
 import { analyticsDb } from '@/lib/analytics/db'
-import { getCachedData } from '@/lib/redis/cache-utils'
-import { CACHE_TTL } from '@/lib/redis/client'
+import { getCachedData, setCachedData } from '@/lib/redis/cache-utils'
 import { INDIA_SALES_SQL, INDIA_SERVICE_SQL, INDIA_INSURANCE_SQL } from './india-snapshot-sql'
 
 export type IndiaSalesRow = {
@@ -232,5 +231,19 @@ function monthName(day: string) {
 export async function getIndiaSnapshot(input?: { day?: string | null }): Promise<IndiaSnapshot> {
   const day = input?.day && DATE_RE.test(input.day) ? input.day : indiaToday()
   // Keyed on the day so yesterday's snapshot stays cached and today's turns over on its own.
-  return getCachedData(`cockpit:india:v1:${day}`, () => buildIndiaSnapshot(day), CACHE_TTL.SHORT)
+  // 15 minutes, kept warm every 10 by the cockpit's scheduled refresh; a snapshot with a failed section
+  // lives one minute and never becomes the stale fallback.
+  return getCachedData(`cockpit:india:v1:${day}`, () => buildIndiaSnapshot(day), INDIA_TTL_SECONDS, {
+    ttlFor: (snap) => (snap.failed.length > 0 ? 60 : null),
+  })
+}
+
+const INDIA_TTL_SECONDS = 15 * 60
+
+/** Build today's snapshot off the request path (the scheduled warmer). A partial build is not stored. */
+export async function refreshIndiaSnapshot(): Promise<{ stored: boolean; failed: string[] }> {
+  const day = indiaToday()
+  const snap = await buildIndiaSnapshot(day)
+  if (snap.failed.length === 0) await setCachedData(`cockpit:india:v1:${day}`, snap, INDIA_TTL_SECONDS)
+  return { stored: snap.failed.length === 0, failed: snap.failed }
 }

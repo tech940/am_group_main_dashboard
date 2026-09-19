@@ -33,6 +33,11 @@ export type CaBranchSummaryRow = {
   approvals: CaMetric
   po: CaMetric
   pettyCashFunding: CaMetric
+  /**
+   * Approved petty-cash EXPENSES (money actually spent out of the funding). Reported beside the others, NOT
+   * added to `total`: it is drawn from `pettyCashFunding`, so adding it would count the same rupees twice.
+   */
+  pettyCashSpend: CaMetric
   total: CaMetric
 }
 
@@ -43,6 +48,7 @@ export type CaSummaryResponse = {
     approvals: CaMetric
     po: CaMetric
     pettyCashFunding: CaMetric
+    pettyCashSpend: CaMetric
     total: CaMetric
   }
   filters: { from: string | null; to: string | null }
@@ -209,6 +215,7 @@ function emptyRow(branch: string): CaBranchSummaryRow {
     approvals: emptyMetric(),
     po: emptyMetric(),
     pettyCashFunding: emptyMetric(),
+    pettyCashSpend: emptyMetric(),
     total: emptyMetric(),
   }
 }
@@ -646,7 +653,7 @@ export async function getCaBranchSummary(
   if (from) poFilters.push(gte(purchaseOrders.createdAt, istStart(from)))
   if (to) poFilters.push(lte(purchaseOrders.createdAt, istEnd(to)))
 
-  const [approvalResult, poRows, fundingResult] = await Promise.all([
+  const [approvalResult, poRows, fundingResult, spendResult] = await Promise.all([
     db.execute(sql`
       SELECT 
         COALESCE(LOWER(TRIM(brand)), 'unassigned') AS branch,
@@ -676,6 +683,18 @@ export async function getCaBranchSummary(
         ${from ? sql`AND created_at >= ${istStart(from).toISOString()}::timestamptz` : sql``}
         ${to ? sql`AND created_at <= ${istEnd(to).toISOString()}::timestamptz` : sql``}
       GROUP BY COALESCE(LOWER(TRIM(branch_id)), 'unassigned')`),
+    // Approved spend — the Petty Cash section's own rule (status 'approved', not deleted), dated by
+    // expense_date as that section dates spend, and keyed like funding so the two columns line up.
+    db.execute(sql`
+      SELECT
+        COALESCE(LOWER(TRIM(branch_id)), 'unassigned') AS branch,
+        COUNT(*)::int AS approved_cnt,
+        COALESCE(SUM(amount), 0)::float AS approved_total
+      FROM petty_cash_expenses
+      WHERE deleted_at IS NULL AND status = 'approved'
+        ${from ? sql`AND expense_date >= ${from}::date` : sql``}
+        ${to ? sql`AND expense_date <= ${to}::date` : sql``}
+      GROUP BY COALESCE(LOWER(TRIM(branch_id)), 'unassigned')`),
   ])
 
   // Populate Approvals
@@ -700,6 +719,13 @@ export async function getCaBranchSummary(
     row.pettyCashFunding.approvedAmount = parseMoney(r.approved_total)
   }
 
+  // Populate Petty Cash Spend (reported alongside; never added to `total`)
+  for (const r of rows(spendResult)) {
+    const row = ensure(branchKey(String(r.branch || '')))
+    row.pettyCashSpend.approvedCount = Number(r.approved_cnt) || 0
+    row.pettyCashSpend.approvedAmount = parseMoney(r.approved_total)
+  }
+
   // Calculate totals per branch
   for (const row of map.values()) {
     row.total.approvedCount =
@@ -720,11 +746,12 @@ export async function getCaBranchSummary(
     approvals: emptyMetric(),
     po: emptyMetric(),
     pettyCashFunding: emptyMetric(),
+    pettyCashSpend: emptyMetric(),
     total: emptyMetric(),
   }
 
   for (const b of [...branches, ...(unassigned ? [unassigned] : [])]) {
-    for (const k of ['approvals', 'po', 'pettyCashFunding', 'total'] as const) {
+    for (const k of ['approvals', 'po', 'pettyCashFunding', 'pettyCashSpend', 'total'] as const) {
       totals[k].approvedCount += b[k].approvedCount
       totals[k].approvedAmount += b[k].approvedAmount
     }

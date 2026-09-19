@@ -132,6 +132,31 @@
   display: none;
 }
 
+/* For people who would rather ring than type: under the form, never inside it. */
+.callLine {
+  margin: 14px 0 0;
+  text-align: center;
+  color: var(--steel);
+  font-size: 15px;
+}
+
+.callLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.callLink:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
 /* ── Lower band: who we are ───────────────────────────────────────────────────────────────── */
 
 .lower {
@@ -172,7 +197,7 @@
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 1024 / 597;
   object-fit: cover;
   border-radius: var(--radius);
   background: var(--mist-deep);
@@ -882,6 +907,50 @@
   font-weight: 700;
   text-decoration: none;
   transition: background-color 120ms ease;
+}
+
+.closingActions {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.closingActions > a {
+  white-space: nowrap;
+}
+
+.closingOr {
+  color: var(--steel);
+  font-size: 15px;
+  text-align: center;
+}
+
+/* The same size as the main button but quiet — the form stays the first choice. */
+.callButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+  padding: 0 24px;
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: inset 0 0 0 2px var(--ink);
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 120ms ease;
+}
+
+.callButton:hover {
+  background: var(--mist);
+}
+
+.callButton:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 .closingButton:hover {

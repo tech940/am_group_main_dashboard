@@ -34,6 +34,9 @@ export type BrandStockSnapshot = {
   availableStock: number
   stockValue: number
   avgStockAge: number
+  /** Units in stock 61–90 days and over 90 days — the stock report's own ageing buckets. */
+  aged61To90: number
+  agedOver90: number
 }
 
 function num(v: unknown): number { const n = Number(v); return Number.isFinite(n) ? n : 0 }
@@ -49,7 +52,7 @@ function previousMonth(year: number, month: number): { year: number; month: numb
 
 const pctOf = (value: number, target: number) => (target > 0 ? Math.round((value / target) * 100) : null)
 function emptyStock(brand: string, label: string): BrandStockSnapshot {
-  return { brand, label, available: false, availableStock: 0, stockValue: 0, avgStockAge: 0 }
+  return { brand, label, available: false, availableStock: 0, stockValue: 0, avgStockAge: 0, aged61To90: 0, agedOver90: 0 }
 }
 
 function stockKpi(overview: { kpis: { label: string; value: number }[] } | undefined, label: string): number {
@@ -138,11 +141,14 @@ export async function getBrandStockSnapshot(brand: string): Promise<BrandStockSn
   if (!src) return emptyStock(brand, brand)
   if (src.brand === 'kia' && src.readerImplemented) {
     const s = await getKiaStockReportSummary({})
+    const bucket = (name: string) => num(s.overview?.agingBuckets?.find((b) => b.name === name)?.value)
     return {
       brand: src.brand, label: src.label, available: true,
       availableStock: stockKpi(s.overview, 'Available Stock'),
       stockValue: stockKpi(s.overview, 'Stock Value'),
       avgStockAge: stockKpi(s.overview, 'Avg Stock Age'),
+      aged61To90: bucket('61-90D'),
+      agedOver90: bucket('90D+'),
     }
   }
   return emptyStock(src.brand, src.label)

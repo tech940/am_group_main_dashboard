@@ -1,21 +1,45 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Wrench, ShoppingCart, Wallet, Car, TrendingUp, TrendingDown, Package, Banknote, Gauge, Clock } from 'lucide-react'
+import Link from 'next/link'
+import { Loader2, Wrench, ShoppingCart, Wallet, Car, TrendingUp, TrendingDown, Package, Banknote, Gauge, Clock, Receipt } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { indiaToday, useIndiaSnapshot } from './india-snapshot-section'
 
 type ServiceBrand = { brand: string; brandLabel: string; available: boolean; status: 'ok' | 'no_data' | 'unavailable'; coverageThrough: string | null; lastUploadedAt: string | null; lagging: boolean; revenue: number; labour: number; parts: number; roCount: number; lyRevenue: number; growthPct: number | null }
-type CashBrand = { brand: string; brandLabel: string; poAmount: number; poCount: number; fundingAmount: number; spendAmount: number }
+type CashBrand = { brand: string; brandLabel: string; vendorPaymentAmount: number; vendorPaymentCount: number; poAmount: number; poCount: number; fundingAmount: number; spendAmount: number }
 type SalesBrand = { brand: string; label: string; available: boolean; monthLabel: string | null; bookings: number; deliveries: number; conversion: number; bookingTarget: number; deliveryTarget: number; bookingAchievement: number | null; deliveryAchievement: number | null; consultants: number; targetBasis?: 'configured' | 'auto' | null }
-type StockBrand = { brand: string; label: string; available: boolean; availableStock: number; stockValue: number; avgStockAge: number }
+type StockBrand = { brand: string; label: string; available: boolean; availableStock: number; stockValue: number; avgStockAge: number; aged61To90?: number; agedOver90?: number }
+type MdQueue = {
+  total: number
+  sources: { id: string; label: string; href: string; count: number; amount: number; withoutAmount: number; oldestDays: number | null }[]
+  byBranch: { branchLabel: string; count: number }[]
+}
+type BankFacilities = {
+  total: number
+  expired: { count: number; creditLimit: number }
+  expiringSoon: { count: number; creditLimit: number; withinDays: number }
+  items: { loanType: string; location: string; expiryDate: string; creditLimit: number | null; expired: boolean }[]
+}
+type DmsExceptions = {
+  month: string; open: number; review: number
+  byType: { type: string; label: string; severity: 'critical' | 'high' | 'medium'; count: number }[]
+  unmatchedDms: number
+  lastRunAt: string | null; stale: boolean
+}
 type Cockpit = {
   meta: { monthLabel: string; startDate: string; endDate: string; throughDay: number; generatedAt: string }
   service: { brands: ServiceBrand[]; totals: { revenue: number; labour: number; parts: number; roCount: number; lyRevenue: number; growthPct: number | null; excluded: string[] } }
-  cash: { brands: CashBrand[]; unassignedPresent: boolean; totals: { poAmount: number; poCount: number; fundingAmount: number; spendAmount: number } }
+  cash: { brands: CashBrand[]; unassignedPresent: boolean; available?: boolean; totals: { vendorPaymentAmount: number; vendorPaymentCount: number; poAmount: number; poCount: number; fundingAmount: number; spendAmount: number } }
   sales: { brands: SalesBrand[]; totals: { deliveries: number; bookings: number } }
   stock: { brands: StockBrand[]; totals: { availableStock: number; stockValue: number } }
+  /** Present only for the MD / Developer; the API strips them for everyone else. */
+  mdQueue?: MdQueue | null
+  bankFacilities?: BankFacilities | null
+  dmsExceptions?: DmsExceptions | null
   freshness: { service: string | null; brands: { brand: string; brandLabel: string; lastUploadedAt: string | null; coverageThrough: string | null }[] }
+  degraded?: string[]
 }
 
 function formatCurrency(v: number) {
@@ -69,6 +93,9 @@ export function CockpitDashboard() {
       return failureCount < 2
     },
     retryDelay: (attempt) => Math.min(1500 * 2 ** attempt, 6000),
+    // A payload with a section missing is cached for one minute only (cockpit-data.ts), so ask again
+    // just after that instead of leaving the gap on screen until someone reloads.
+    refetchInterval: (query) => ((query.state.data?.degraded?.length ?? 0) > 0 ? 65_000 : false),
   })
 
   if (isLoading) {
@@ -99,6 +126,8 @@ export function CockpitDashboard() {
   }
 
   const { meta, service, cash, sales, stock, freshness } = data
+  const degraded = data.degraded ?? []
+  const cashOk = cash.available !== false
 
   return (
     <div className="space-y-6">
@@ -129,6 +158,21 @@ export function CockpitDashboard() {
           })}
         </div>
       </div>
+
+      {degraded.length > 0 && (
+        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">
+          Not read this time: {degraded.join(', ')}. Those parts are marked below and left out of every total, never shown as zero. The page asks again in about a minute.
+        </p>
+      )}
+
+      {/* Needs attention — the API sends only the blocks this viewer may see */}
+      {(data.mdQueue || data.bankFacilities || data.dmsExceptions) && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {data.mdQueue && <MdQueuePanel queue={data.mdQueue} countedAt={meta.generatedAt} />}
+          {data.bankFacilities && <BankFacilitiesPanel facilities={data.bankFacilities} />}
+          {data.dmsExceptions && <DmsExceptionsPanel dms={data.dmsExceptions} />}
+        </div>
+      )}
 
       {/* 1. Vehicle sales — ON TOP */}
       <div className="space-y-3">
@@ -173,6 +217,7 @@ export function CockpitDashboard() {
               )}
             </Card>
           ))}
+          <RetailCards />
           {sales.brands.length === 0 && (
             <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs col-span-full"><p className="text-sm font-semibold text-slate-500">No vehicle sales feed is connected yet.</p></Card>
           )}
@@ -199,6 +244,12 @@ export function CockpitDashboard() {
                   <MiniStat label="Available" value={formatInt(b.availableStock)} sub="unsold units" />
                   <MiniStat label="Stock Value" value={formatCurrency(b.stockValue)} sub="approx. invoice" />
                   <MiniStat label="Avg Age" value={`${formatInt(b.avgStockAge)}d`} sub="current stock" />
+                  {b.aged61To90 !== undefined && b.agedOver90 !== undefined && (
+                    <p className="col-span-full flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-[11px] font-semibold text-slate-500">
+                      <span>61–90 days <span className={cn('font-black tabular-nums', b.aged61To90 > 0 ? 'text-amber-700' : 'text-slate-700')}>{formatInt(b.aged61To90)}</span></span>
+                      <span>Over 90 days <span className={cn('font-black tabular-nums', b.agedOver90 > 0 ? 'text-rose-700' : 'text-slate-700')}>{formatInt(b.agedOver90)}</span></span>
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="text-xs font-semibold italic text-slate-400 py-2">Stock figures could not be read for this brand — not shown as zero.</p>
@@ -212,7 +263,7 @@ export function CockpitDashboard() {
       </div>
 
       {/* 3. Group KPI strip */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <BigKpi
           icon={<Wrench className="h-5 w-5" />}
           label="Group Service Revenue"
@@ -223,8 +274,9 @@ export function CockpitDashboard() {
           growth={service.totals.growthPct}
           tone="from-indigo-700 to-indigo-600"
         />
-        <BigKpi icon={<ShoppingCart className="h-5 w-5" />} label="Approved Purchase Orders" value={formatCurrency(cash.totals.poAmount)} sub={`${formatInt(cash.totals.poCount)} approved · cumulative`} tone="from-cyan-800 to-cyan-700" />
-        <BigKpi icon={<Wallet className="h-5 w-5" />} label="Approved Petty-Cash Spend" value={formatCurrency(cash.totals.spendAmount)} sub={`funding ${formatCurrency(cash.totals.fundingAmount)} · cumulative`} tone="from-teal-800 to-teal-700" />
+        <BigKpi icon={<Receipt className="h-5 w-5" />} label="Approved Vendor Payments" value={cashOk ? formatCurrency(cash.totals.vendorPaymentAmount) : '—'} sub={cashOk ? `${formatInt(cash.totals.vendorPaymentCount)} approved · cumulative` : 'could not be read — not shown as zero'} tone="from-slate-800 to-slate-700" />
+        <BigKpi icon={<ShoppingCart className="h-5 w-5" />} label="Approved Purchase Orders" value={cashOk ? formatCurrency(cash.totals.poAmount) : '—'} sub={cashOk ? `${formatInt(cash.totals.poCount)} approved · cumulative` : 'could not be read — not shown as zero'} tone="from-cyan-800 to-cyan-700" />
+        <BigKpi icon={<Wallet className="h-5 w-5" />} label="Approved Petty-Cash Spend" value={cashOk ? formatCurrency(cash.totals.spendAmount) : '—'} sub={cashOk ? `of ${formatCurrency(cash.totals.fundingAmount)} funding · cumulative` : 'could not be read — not shown as zero'} tone="from-teal-800 to-teal-700" />
       </div>
 
       {/* 4. Service revenue by brand */}
@@ -300,37 +352,39 @@ export function CockpitDashboard() {
       <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">Approved cash by branch · cumulative</h2>
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500"><Banknote className="h-3.5 w-3.5" />approved POs + petty cash</span>
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500"><Banknote className="h-3.5 w-3.5" />vendor payments, POs + petty cash</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <caption className="sr-only">Approved purchase orders and petty cash by branch, cumulative to date.</caption>
+            <caption className="sr-only">Approved vendor payments, purchase orders and petty cash by branch, cumulative to date.</caption>
             <thead>
               <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600 bg-slate-50/60">
                 <th scope="col" className="px-5 py-2.5 text-left">Branch</th>
-                <th scope="col" className="px-5 py-2.5 text-right">Approved POs</th>
-                <th scope="col" className="px-5 py-2.5 text-right">PO value</th>
+                <th scope="col" className="px-5 py-2.5 text-right">Vendor payments</th>
+                <th scope="col" className="px-5 py-2.5 text-right">Purchase orders</th>
                 <th scope="col" className="px-5 py-2.5 text-right">PC funding</th>
                 <th scope="col" className="px-5 py-2.5 text-right">PC spend</th>
               </tr>
             </thead>
             <tbody>
-              {cash.brands.length === 0 ? (
+              {!cashOk ? (
+                <tr><td className="px-5 py-8 text-center text-sm font-semibold italic text-rose-700" colSpan={5}>Approved cash could not be read this time — not shown as zero.</td></tr>
+              ) : cash.brands.length === 0 ? (
                 <tr><td className="px-5 py-8 text-center text-sm font-semibold text-slate-500" colSpan={5}>No approved cash activity.</td></tr>
               ) : cash.brands.map((b) => (
                 <tr key={b.brand} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/40 transition-colors">
                   <td className="px-5 py-3 text-left font-black text-slate-800">{b.brandLabel}</td>
-                  <td className="px-5 py-3 text-right font-semibold text-slate-600 font-sans tabular-nums">{formatInt(b.poCount)}</td>
-                  <td className="px-5 py-3 text-right font-black text-slate-900 font-sans tabular-nums">{formatCurrency(b.poAmount)}</td>
+                  <CashCell amount={b.vendorPaymentAmount} count={b.vendorPaymentCount} />
+                  <CashCell amount={b.poAmount} count={b.poCount} />
                   <td className="px-5 py-3 text-right font-semibold text-slate-600 font-sans tabular-nums">{formatCurrency(b.fundingAmount)}</td>
                   <td className="px-5 py-3 text-right font-semibold text-slate-600 font-sans tabular-nums">{formatCurrency(b.spendAmount)}</td>
                 </tr>
               ))}
-              {cash.brands.length > 0 && (
+              {cashOk && cash.brands.length > 0 && (
                 <tr className="border-t-2 border-slate-200 bg-slate-50/80">
                   <td className="px-5 py-3 text-left font-black text-slate-900">Group total</td>
-                  <td className="px-5 py-3 text-right font-bold text-slate-700 font-sans tabular-nums">{formatInt(cash.totals.poCount)}</td>
-                  <td className="px-5 py-3 text-right font-black text-slate-900 font-sans tabular-nums">{formatCurrency(cash.totals.poAmount)}</td>
+                  <CashCell amount={cash.totals.vendorPaymentAmount} count={cash.totals.vendorPaymentCount} />
+                  <CashCell amount={cash.totals.poAmount} count={cash.totals.poCount} />
                   <td className="px-5 py-3 text-right font-bold text-slate-700 font-sans tabular-nums">{formatCurrency(cash.totals.fundingAmount)}</td>
                   <td className="px-5 py-3 text-right font-bold text-slate-700 font-sans tabular-nums">{formatCurrency(cash.totals.spendAmount)}</td>
                 </tr>
@@ -338,9 +392,237 @@ export function CockpitDashboard() {
             </tbody>
           </table>
         </div>
-        <p className="border-t border-slate-100 px-5 py-2 text-[10px] font-semibold italic text-slate-500">Cumulative approved to date (POs by MD-approval, petty cash by approval). Group total excludes any unassigned-branch rows. Full detail in the CA section.</p>
+        <p className="border-t border-slate-100 px-5 py-2 text-[10px] font-semibold italic text-slate-500">Cumulative approved to date: vendor payments once management approves them, POs once the MD approves them, petty cash by approval. Spend is paid out of funding, so the two are not added together. Group total excludes any unassigned-branch rows. Full detail in the CA section.</p>
       </Card>
     </div>
+  )
+}
+
+/** The India report's names for the two Hyundai dealers, and how the dashboard labels them. */
+const RETAIL_DEALERS = [
+  { company: 'Jammu Automart Hyundai', label: 'AM Hyundai' },
+  { company: 'Platinum Hyundai', label: 'AM Platinum' },
+] as const
+
+/**
+ * Hyundai / Platinum retail from today's India snapshot — the same query (same key) the India section
+ * below runs, so the page reads it once and the cards always match that table. Retail = delivery date
+ * (owner, 2026-09-19). Their bookings and enquiries stay off the cockpit.
+ */
+function RetailCards() {
+  const { data, isLoading, isError } = useIndiaSnapshot(indiaToday())
+  const failed = isError || Boolean(data?.failed.includes('sales'))
+  return (
+    <>
+      {RETAIL_DEALERS.map(({ company, label }) => {
+        const row = data?.sales.find((r) => r.company === company)
+        return (
+          <Card key={`retail-${company}`} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all hover:shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-[var(--dashboard-action-bg)]" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">{label} Retail</h3>
+            </div>
+            {isLoading ? (
+              <p className="flex items-center gap-2 py-2 text-xs font-semibold text-slate-400" aria-busy="true">
+                <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden /> Reading today’s India report…
+              </p>
+            ) : failed ? (
+              <p className="text-xs font-semibold italic text-slate-400 py-2">Retail could not be read this time — not shown as zero.</p>
+            ) : !row ? (
+              <p className="text-xs font-semibold italic text-slate-400 py-2">No retail row for this dealer in today’s India report.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <MiniStat label="Retail" value={formatInt(row.retailMtd)} sub="delivered this month" />
+                <MiniStat label="Today" value={formatInt(row.retailDay)} sub="delivered today" />
+              </div>
+            )}
+            <p className="mt-3 text-[10px] font-semibold text-slate-400">By delivery date, from the daily India report below. Bookings are not shown for this brand.</p>
+          </Card>
+        )
+      })}
+    </>
+  )
+}
+
+function CashCell({ amount, count }: { amount: number; count: number }) {
+  return (
+    <td className="px-5 py-3 text-right font-sans tabular-nums">
+      <span className="block font-black text-slate-900">{formatCurrency(amount)}</span>
+      <span className="block text-[11px] font-semibold text-slate-500">{formatInt(count)} approved</span>
+    </td>
+  )
+}
+
+/** "2026-09" -> "September 2026". */
+function formatMonth(ym: string) {
+  const [y, m] = ym.split('-').map(Number)
+  if (!y || !m) return ym
+  return new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, 1)))
+}
+
+/** Whole calendar days from `today` (YYYY-MM-DD, IST) to `day`. Negative = in the past. */
+function daysFrom(today: string, day: string) {
+  const utc = (ymd: string) => {
+    const [y, m, d] = ymd.split('-').map(Number)
+    return Date.UTC(y, m - 1, d)
+  }
+  return Math.round((utc(day) - utc(today)) / 86_400_000)
+}
+
+/** "14 Jul", or "14 Jul 2025" when the day is not in the current year. */
+function formatDayWithYear(ymd: string, today: string) {
+  const day = formatDay(ymd)
+  return day && ymd.slice(0, 4) !== today.slice(0, 4) ? `${day} ${ymd.slice(0, 4)}` : day
+}
+
+function todayIst() {
+  return new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10)
+}
+
+function PanelHeader({ title, href, linkLabel }: { title: string; href: string; linkLabel: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-600">{title}</h2>
+      <Link
+        href={href}
+        prefetch={false}
+        className="shrink-0 rounded text-[11px] font-bold text-[var(--dashboard-action-bg)] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dashboard-action-bg)] focus-visible:ring-offset-2"
+      >
+        {linkLabel}
+      </Link>
+    </div>
+  )
+}
+
+/** Everything waiting on the MD, by source — the MD Approvals section's own definition of "waiting". */
+function MdQueuePanel({ queue, countedAt }: { queue: MdQueue; countedAt: string }) {
+  const counted = formatAsOf(countedAt)
+  return (
+    <section className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xs" aria-label="Waiting on you">
+      <PanelHeader title="Waiting on you" href="/md-approvals" linkLabel="Open MD Approvals" />
+      <p className="mt-3 flex items-baseline gap-2">
+        <span className="text-3xl font-black tracking-tight text-slate-900 tabular-nums">{formatInt(queue.total)}</span>
+        <span className="text-xs font-semibold text-slate-500">{queue.total === 1 ? 'item needs' : 'items need'} your approval</span>
+      </p>
+      {queue.total === 0 ? (
+        <p className="mt-3 text-xs font-semibold text-slate-500">Nothing is waiting on you right now.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+          {queue.sources.map((src) => (
+            <li key={src.id} className="py-2">
+              <p className="flex items-baseline justify-between gap-3">
+                <span className="text-xs font-bold text-slate-700">{src.label}</span>
+                <span className="text-sm font-black text-slate-900 tabular-nums">{formatInt(src.count)}</span>
+              </p>
+              {src.count > 0 && (
+                <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                  {[
+                    src.amount > 0 ? formatCurrency(src.amount) : null,
+                    src.withoutAmount > 0 ? `${formatInt(src.withoutAmount)} with no value yet` : null,
+                    src.oldestDays !== null ? `oldest ${src.oldestDays === 0 ? 'today' : `${src.oldestDays} days`}` : null,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-auto space-y-1 pt-3 text-[11px] font-semibold text-slate-500">
+        {queue.byBranch.length > 0 && (
+          <p>
+            {queue.byBranch.slice(0, 5).map((b) => `${b.branchLabel} ${b.count}`).join(' · ')}
+            {queue.byBranch.length > 5 ? ` · +${queue.byBranch.length - 5} more` : ''}
+          </p>
+        )}
+        {/* The cockpit is rebuilt every 10 minutes, so this count can trail what was just approved. */}
+        {counted && <p className="text-slate-400">Counted {counted}. MD Approvals shows the live list.</p>}
+      </div>
+    </section>
+  )
+}
+
+/** Credit facilities already expired or expiring within 30 days. */
+function BankFacilitiesPanel({ facilities }: { facilities: BankFacilities }) {
+  const today = todayIst()
+  const nothingDue = facilities.expired.count === 0 && facilities.expiringSoon.count === 0
+  return (
+    <section className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xs" aria-label="Bank facilities">
+      <PanelHeader title="Bank facilities" href="/bank-sanctions" linkLabel="Open Bank Sanctions" />
+      <div className="mt-3 grid grid-cols-2 gap-4">
+        <div>
+          <p className={cn('text-3xl font-black tracking-tight tabular-nums', facilities.expired.count > 0 ? 'text-rose-700' : 'text-slate-900')}>{formatInt(facilities.expired.count)}</p>
+          <p className="text-[11px] font-semibold text-slate-500">expired{facilities.expired.count > 0 ? ` · ${formatCurrency(facilities.expired.creditLimit)}` : ''}</p>
+        </div>
+        <div>
+          <p className={cn('text-3xl font-black tracking-tight tabular-nums', facilities.expiringSoon.count > 0 ? 'text-amber-700' : 'text-slate-900')}>{formatInt(facilities.expiringSoon.count)}</p>
+          <p className="text-[11px] font-semibold text-slate-500">expire in {facilities.expiringSoon.withinDays} days{facilities.expiringSoon.count > 0 ? ` · ${formatCurrency(facilities.expiringSoon.creditLimit)}` : ''}</p>
+        </div>
+      </div>
+      {nothingDue ? (
+        <p className="mt-3 text-xs font-semibold text-slate-500">None of the {formatInt(facilities.total)} facilities expires in the next {facilities.expiringSoon.withinDays} days.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+          {facilities.items.slice(0, 4).map((f, i) => {
+            const days = daysFrom(today, f.expiryDate)
+            return (
+              <li key={`${f.loanType}-${f.location}-${f.expiryDate}-${i}`} className="flex items-baseline justify-between gap-3 py-2">
+                <span className="min-w-0 truncate text-xs font-bold text-slate-700" title={`${f.loanType} · ${f.location}`}>{f.loanType}<span className="font-semibold text-slate-500"> · {f.location}</span></span>
+                <span className="shrink-0 text-right text-[11px] font-semibold">
+                  <span className={f.expired ? 'text-rose-700' : 'text-amber-700'}>
+                    {f.expired ? `expired ${formatDayWithYear(f.expiryDate, today)}` : days === 0 ? 'expires today' : `in ${days} days · ${formatDay(f.expiryDate)}`}
+                  </span>
+                  {f.creditLimit !== null && <span className="block text-slate-500 tabular-nums">{formatCurrency(f.creditLimit)}</span>}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+const SEVERITY_DOT: Record<DmsExceptions['byType'][number]['severity'], string> = {
+  critical: 'bg-rose-600',
+  high: 'bg-amber-500',
+  medium: 'bg-slate-400',
+}
+
+/** KIA bookings the DMS disagrees with, for the current booking month. */
+function DmsExceptionsPanel({ dms }: { dms: DmsExceptions }) {
+  const lastRun = formatAsOf(dms.lastRunAt)
+  return (
+    <section className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xs" aria-label="KIA DMS exceptions">
+      <PanelHeader title="KIA DMS exceptions" href="/brands/kia/proforma/dms-exceptions" linkLabel="Open DMS Exceptions" />
+      <p className="mt-3 flex items-baseline gap-2">
+        <span className="text-3xl font-black tracking-tight text-slate-900 tabular-nums">{formatInt(dms.open)}</span>
+        <span className="text-xs font-semibold text-slate-500">open for {formatMonth(dms.month).split(' ')[0]} bookings{dms.review > 0 ? `, including ${formatInt(dms.review)} to review` : ''}</span>
+      </p>
+      {dms.byType.length === 0 ? (
+        <p className="mt-3 text-xs font-semibold text-slate-500">No open exceptions this month.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+          {dms.byType.slice(0, 5).map((t) => (
+            <li key={t.type} className="flex items-baseline justify-between gap-3 py-2">
+              <span className="flex min-w-0 items-baseline gap-2 text-xs font-bold text-slate-700">
+                <span className={cn('h-2 w-2 shrink-0 translate-y-[-1px] rounded-full', SEVERITY_DOT[t.severity])} aria-hidden />
+                <span>{t.label}</span>
+                <span className="sr-only">({t.severity})</span>
+              </span>
+              <span className="text-sm font-black text-slate-900 tabular-nums">{formatInt(t.count)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {dms.unmatchedDms > 0 && (
+        <p className="mt-2 text-[11px] font-semibold text-slate-500">
+          Also {formatInt(dms.unmatchedDms)} DMS {dms.unmatchedDms === 1 ? 'booking has' : 'bookings have'} no matching booking here.
+        </p>
+      )}
+      <p className={cn('mt-auto pt-3 text-[11px] font-semibold', dms.stale ? 'text-amber-700' : 'text-slate-500')}>
+        {lastRun ? `Last matched ${lastRun}` : 'Not matched yet'}{dms.stale ? ' · the match is out of date' : ''}
+      </p>
+    </section>
   )
 }
 

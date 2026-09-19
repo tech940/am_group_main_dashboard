@@ -16,7 +16,7 @@ type L1Entry = {
 const l1Cache = new Map<string, L1Entry>()
 const pendingFetches = new Map<string, Promise<unknown>>()
 
-function setL1(key: string, value: unknown, ttl: number) {
+function setL1(key: string, value: unknown, ttl: number, keepStale = true) {
   if (l1Cache.size >= L1_MAX_ENTRIES && !l1Cache.has(key)) {
     const oldestKey = l1Cache.keys().next().value
     if (oldestKey) l1Cache.delete(oldestKey)
@@ -26,8 +26,34 @@ function setL1(key: string, value: unknown, ttl: number) {
   l1Cache.set(key, {
     value,
     freshUntil: now + ttl * 1000,
-    staleUntil: now + (ttl + STALE_TTL_SECONDS) * 1000,
+    // A short-lived value (see CacheOptions.ttlFor) must not linger as a stale fallback either.
+    staleUntil: now + (keepStale ? ttl + STALE_TTL_SECONDS : ttl) * 1000,
   })
+}
+
+/** Optional per-call behaviour for getCachedData. Omitting it keeps the long-standing behaviour exactly. */
+export type CacheOptions<T> = {
+  /**
+   * Cache THIS value for fewer seconds than `ttl` — return a number to do so, or null/undefined for the normal
+   * TTL. Meant for a value that is incomplete (e.g. a dashboard section that timed out): it should be retried
+   * soon rather than served for the full TTL. Such a value is also never written to the `:stale` twin, so the
+   * last COMPLETE value stays the fallback instead of being overwritten by a partial one.
+   */
+  ttlFor?: (value: T) => number | null | undefined
+}
+
+function effectiveTtl<T>(value: T, ttl: number, options?: CacheOptions<T>): { ttl: number; keepStale: boolean } {
+  const override = options?.ttlFor?.(value)
+  return typeof override === 'number' && override > 0 && override < ttl
+    ? { ttl: override, keepStale: false }
+    : { ttl, keepStale: true }
+}
+
+async function writeRedis(redis: NonNullable<ReturnType<typeof getRedisClient>>, key: string, value: unknown, ttl: number, keepStale: boolean) {
+  await Promise.all([
+    redis.setex(key, ttl, value),
+    ...(keepStale ? [redis.setex(`${key}:stale`, ttl + STALE_TTL_SECONDS, value)] : []),
+  ])
 }
 
 function readL1<T>(key: string) {
@@ -58,7 +84,8 @@ function parseCachedValue<T>(cached: unknown): T {
 async function fetchSingleFlight<T>(
   key: string,
   fetchFn: () => Promise<T>,
-  ttl: number
+  ttl: number,
+  options?: CacheOptions<T>
 ) {
   const existing = pendingFetches.get(key)
   if (existing) {
@@ -68,7 +95,8 @@ async function fetchSingleFlight<T>(
 
   const work = (async () => {
     const value = await fetchFn()
-    setL1(key, value, ttl)
+    const eff = effectiveTtl(value, ttl, options)
+    setL1(key, value, eff.ttl, eff.keepStale)
     return value
   })()
   pendingFetches.set(key, work)
@@ -103,12 +131,14 @@ function refreshInBackground<T>(
   key: string,
   fetchFn: () => Promise<T>,
   ttl: number,
-  writeRemote: (value: T) => Promise<void>
+  writeRemote: (value: T) => Promise<void>,
+  options?: CacheOptions<T>
 ) {
   if (pendingFetches.has(key)) return
   const work = (async () => {
     const value = await fetchFn()
-    setL1(key, value, ttl)
+    const eff = effectiveTtl(value, ttl, options)
+    setL1(key, value, eff.ttl, eff.keepStale)
     await writeRemote(value)
     return value
   })()
@@ -127,7 +157,8 @@ function refreshInBackground<T>(
 export async function getCachedData<T>(
   key: string,
   fetchFn: () => Promise<T>,
-  ttl: number = CACHE_TTL.MEDIUM
+  ttl: number = CACHE_TTL.MEDIUM,
+  options?: CacheOptions<T>
 ): Promise<T> {
   const local = readL1<T>(key)
   if (local?.fresh) {
@@ -140,11 +171,11 @@ export async function getCachedData<T>(
   if (!redis) {
     if (local) {
       recordCacheStatus('L1-STALE')
-      refreshInBackground(key, fetchFn, ttl, async () => {})
+      refreshInBackground(key, fetchFn, ttl, async () => {}, options)
       return local.value
     }
     recordCacheStatus('MISS')
-    return await fetchSingleFlight(key, fetchFn, ttl)
+    return await fetchSingleFlight(key, fetchFn, ttl, options)
   }
 
   try {
@@ -152,7 +183,9 @@ export async function getCachedData<T>(
 
     if (cached !== null && cached !== undefined) {
       const value = parseCachedValue<T>(cached)
-      setL1(key, value, ttl)
+      // A short-lived value keeps its short life in L1 too — otherwise L1 would hold it for the full TTL.
+      const eff = effectiveTtl(value, ttl, options)
+      setL1(key, value, eff.ttl, eff.keepStale)
       recordCacheStatus('REDIS-HIT')
       if (process.env.NODE_ENV !== 'production') {
         console.log(`Cache HIT for key: ${key}`)
@@ -168,11 +201,9 @@ export async function getCachedData<T>(
       if (staleEntry) staleEntry.freshUntil = 0
       recordCacheStatus('STALE')
       refreshInBackground(key, fetchFn, ttl, async (value) => {
-        await Promise.all([
-          redis.setex(key, ttl, value),
-          redis.setex(staleKey, ttl + STALE_TTL_SECONDS, value),
-        ])
-      })
+        const eff = effectiveTtl(value, ttl, options)
+        await writeRedis(redis, key, value, eff.ttl, eff.keepStale)
+      }, options)
       return stale
     }
 
@@ -181,12 +212,10 @@ export async function getCachedData<T>(
     }
 
     recordCacheStatus('MISS')
-    const data = await fetchSingleFlight(key, fetchFn, ttl)
+    const data = await fetchSingleFlight(key, fetchFn, ttl, options)
     try {
-      await Promise.all([
-        redis.setex(key, ttl, data),
-        redis.setex(staleKey, ttl + STALE_TTL_SECONDS, data),
-      ])
+      const eff = effectiveTtl(data, ttl, options)
+      await writeRedis(redis, key, data, eff.ttl, eff.keepStale)
     } catch (error) {
       console.error(`Redis write failed for key ${key}:`, error)
     }
@@ -203,7 +232,22 @@ export async function getCachedData<T>(
       return local.value
     }
     recordCacheStatus('MISS')
-    return await fetchSingleFlight(key, fetchFn, ttl)
+    return await fetchSingleFlight(key, fetchFn, ttl, options)
+  }
+}
+
+/**
+ * Write a value straight into the cache — L1, the key and its `:stale` twin — as if it had just been built.
+ * For scheduled warmers that build a payload off the request path, so the next viewer never waits.
+ */
+export async function setCachedData<T>(key: string, value: T, ttl: number): Promise<void> {
+  setL1(key, value, ttl)
+  const redis = getRedisClient()
+  if (!redis) return
+  try {
+    await writeRedis(redis, key, value, ttl, true)
+  } catch (error) {
+    console.error(`Redis write failed for key ${key}:`, error)
   }
 }
 

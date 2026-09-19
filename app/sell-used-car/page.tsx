@@ -31,10 +31,17 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { themeColor: '#ffffff', colorScheme: 'light' }
 
-/** The group's dealerships, named and badged as the dashboard's own brand list names them (components/layout/sidebar.tsx). */
+/** The number for people who would rather ring than fill in the form (owner, 2026-09-19). */
+const CALL_NUMBER = '9484200000'
+const CALL_NUMBER_SHOWN = '94842 00000'
+
+/**
+ * The group's dealerships, badged as the dashboard's own brand list has them (components/layout/sidebar.tsx). Names are
+ * the customer-facing ones: the dashboard's "AM Platinum" is shown as "AM Hyundai Paloura" here (owner, 2026-09-19).
+ */
 const DEALERSHIPS = [
   { name: 'AM Hyundai', sells: 'Hyundai cars', logo: '/brand-logos/hyundai.svg', width: 64, height: 32, shown: 40 },
-  { name: 'AM Platinum', sells: 'Hyundai cars', logo: '/brand-logos/hyundai.svg', width: 64, height: 32, shown: 40 },
+  { name: 'AM Hyundai Paloura', sells: 'Hyundai cars', logo: '/brand-logos/hyundai.svg', width: 64, height: 32, shown: 40 },
   { name: 'AM Kia', sells: 'Kia cars', logo: '/brand-logos/kia.svg', width: 96, height: 22, shown: 18 },
   { name: 'AM Tata', sells: 'Tata cars', logo: '/brand-logos/tata.svg', width: 48, height: 36, shown: 32 },
   { name: 'AM MG', sells: 'MG cars', logo: '/brand-logos/mg.svg', width: 40, height: 40, shown: 36 },
@@ -124,6 +131,12 @@ export default function SellUsedCarPage() {
           </div>
           <div id="evaluate" className={styles.cardSlot}>
             <SellCarForm />
+            <p className={styles.callLine}>
+              Rather talk to us?{' '}
+              <a className={styles.callLink} href={`tel:+91${CALL_NUMBER}`}>
+                Call {CALL_NUMBER_SHOWN}
+              </a>
+            </p>
             <span className={styles.burst}>
               <Burst />
             </span>
@@ -142,12 +155,12 @@ export default function SellUsedCarPage() {
               {' showrooms across Jammu & Kashmir.'}
             </p>
             <figure className={styles.photo}>
-              {/* AM Group's own photo (amgroupind.com abt-4-1024x576.webp), chosen by the owner, 2026-09-18. */}
+              {/* AM Kia's own photo (amkia.in kia-1536x896-1-1024x597.webp), chosen by the owner, 2026-09-19. */}
               <Image
-                src="/assets/am-group-showroom.webp"
-                alt="An AM Group showroom (Tata Motors) with new cars parked in front"
+                src="/assets/am-kia-showroom.webp"
+                alt="Inside an AM Kia showroom, with a Kia Carens and a Seltos on display"
                 width={1024}
-                height={576}
+                height={597}
                 sizes="(min-width: 900px) 460px, calc(100vw - 32px)"
               />
             </figure>
@@ -211,9 +224,15 @@ export default function SellUsedCarPage() {
           </div>
           <div className={styles.closing}>
             <p className={styles.closingText}>Ready? It takes about a minute.</p>
-            <a href="#evaluate" className={styles.closingButton}>
-              Get my car’s price
-            </a>
+            <div className={styles.closingActions}>
+              <a href="#evaluate" className={styles.closingButton}>
+                Get my car’s price
+              </a>
+              <span className={styles.closingOr}>or</span>
+              <a className={styles.callButton} href={`tel:+91${CALL_NUMBER}`}>
+                Call {CALL_NUMBER_SHOWN}
+              </a>
+            </div>
           </div>
         </div>
       </section>

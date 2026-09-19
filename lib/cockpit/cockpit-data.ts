@@ -1,16 +1,19 @@
 import 'server-only'
 
-// Force-reload cockpit data module to clear stale cache
 import { sql } from 'drizzle-orm'
 import { analyticsDb } from '@/lib/analytics/db'
-import { getCachedData } from '@/lib/redis/cache-utils'
-import { CACHE_TTL } from '@/lib/redis/client'
+import { getCachedData, setCachedData } from '@/lib/redis/cache-utils'
+import { createDbGate } from '@/lib/db/concurrency'
 import { getCaBranchSummary } from '@/lib/ca/ca-data'
 import { getKiaWorkshopSummary } from '@/lib/kia/workshop-summary'
 import { getBrandSalesSnapshot, getBrandStockSnapshot, type BrandSalesSnapshot, type BrandStockSnapshot } from '@/lib/brands/sales-stock'
 import { availableSalesStockBrands } from '@/lib/brands/sales-stock-sources'
 import { fetchCanonicalHyundaiRoBillingMetrics } from '@/lib/hyundai/business-excellence-metrics'
 import { fetchCanonicalRoBillingMetrics } from '@/lib/platinum/business-excellence-metrics'
+import { MD_APPROVAL_SOURCE_IDS, MD_APPROVAL_SOURCES } from '@/lib/md-approvals/sources'
+import { listAllBankSanctionsForAlerts } from '@/lib/bank-sanctions/store'
+import { currentReconMonth, listReconItems, readReconFreshness } from '@/lib/kia/dms-reconciliation/read'
+import { RECON_EXCEPTION_TYPES, RECON_TYPE_META, type ReconSeverity } from '@/lib/kia/dms-reconciliation/types'
 
 // Executive Group Cockpit — a single cross-brand, month-to-date rollup for leadership. It reuses the
 // EXACT canonical aggregations that power each brand's own screens, so every figure ties back to the
@@ -20,11 +23,14 @@ import { fetchCanonicalRoBillingMetrics } from '@/lib/platinum/business-excellen
 //     · Hyundai  → fetchCanonicalHyundaiRoBillingMetrics (hyundai_ro_billing_report)
 //     · Platinum → fetchCanonicalRoBillingMetrics        (am_platinum_ro_billing_report)
 //     (MG + the two-wheeler brands have NO service data — omitted, not zero-padded.)
-//   Approved cash (branch-wise, all brands) → getCaBranchSummary (approved POs + petty cash).
-//   Vehicle sales & stock (per available brand — KIA only today) → lib/brands/sales-stock dispatcher.
+//   Approved cash (branch-wise, all brands) → getCaBranchSummary (vendor payments, POs, petty cash).
+//   Vehicle sales & stock → lib/brands/sales-stock (KIA). Hyundai/Platinum retail is NOT read here: the
+//     dashboard takes it from the India snapshot query the page already runs (useIndiaSnapshot), so it is
+//     read once and can never disagree with the India table below (owner, 2026-09-19: retail = delivery date).
+//   Waiting on the MD → the MD Approvals section's own readers (lib/md-approvals/sources).
+//   Bank facilities expiring → lib/bank-sanctions/store.   KIA DMS exceptions → lib/kia/dms-reconciliation.
 //
-// Service data lives in analyticsDb; cash/sales/stock helpers hit the app db + analyticsDb. They are
-// independent, so the loader fans them out in parallel and the whole payload is short-cached.
+// ⚠️ analyticsDb and db are the SAME client and pool (ANALYTICS_READ_SOURCE=postgres).
 
 const SERVICE_BRANDS = [
   { brand: 'kia', label: 'AM KIA', table: 'ro_billing_report' },
@@ -60,10 +66,51 @@ export type CockpitServiceBrand = {
 export type CockpitCashBrand = {
   brand: string
   brandLabel: string
+  /** Approved vendor payments (kia_approval_requests — every brand, despite the table name). */
+  vendorPaymentAmount: number
+  vendorPaymentCount: number
   poAmount: number
   poCount: number
   fundingAmount: number
+  /** Approved petty-cash expenses — spent out of `fundingAmount`, so never added to a cash total. */
   spendAmount: number
+}
+
+export type CockpitMdQueue = {
+  total: number
+  sources: Array<{
+    id: string
+    label: string
+    href: string
+    count: number
+    /** Sum of the waiting rows that carry a number. POs have none at the MD stage. */
+    amount: number
+    /** Waiting rows with no amount yet (shown as "value n/a", never as ₹0). */
+    withoutAmount: number
+    oldestDays: number | null
+  }>
+  byBranch: Array<{ branchLabel: string; count: number }>
+}
+
+export type CockpitBankFacilities = {
+  total: number
+  expired: { count: number; creditLimit: number }
+  expiringSoon: { count: number; creditLimit: number; withinDays: number }
+  /** The soonest expired-or-expiring facilities, oldest expiry first. */
+  items: Array<{ loanType: string; location: string; expiryDate: string; creditLimit: number | null; expired: boolean }>
+}
+
+export type CockpitDmsExceptions = {
+  month: string
+  /** Exceptions + reviews — the DMS Exceptions tab's own badge (summary.total). */
+  open: number
+  review: number
+  /** Open exceptions by type. Excludes unmatched DMS bookings, which the tab counts separately. */
+  byType: Array<{ type: string; label: string; severity: ReconSeverity; count: number }>
+  /** DMS bookings with no booking here — not in `open`, same as the tab. */
+  unmatchedDms: number
+  lastRunAt: string | null
+  stale: boolean
 }
 
 export type CockpitPayload = {
@@ -79,7 +126,11 @@ export type CockpitPayload = {
   cash: {
     brands: CockpitCashBrand[]
     unassignedPresent: boolean
-    totals: { poAmount: number; poCount: number; fundingAmount: number; spendAmount: number }
+    available: boolean
+    totals: {
+      vendorPaymentAmount: number; vendorPaymentCount: number
+      poAmount: number; poCount: number; fundingAmount: number; spendAmount: number
+    }
   }
   sales: {
     brands: BrandSalesSnapshot[]
@@ -89,12 +140,22 @@ export type CockpitPayload = {
     brands: BrandStockSnapshot[]
     totals: { availableStock: number; stockValue: number }
   }
+  /** MD / Developer only — stripped by the API for anyone else (see app/api/cockpit/route.ts). */
+  mdQueue: CockpitMdQueue | null
+  /** MD / Developer only — group-level facilities are theirs alone (lib/auth/bank-sanctions-access.ts). */
+  bankFacilities: CockpitBankFacilities | null
+  dmsExceptions: CockpitDmsExceptions | null
   freshness: {
     /** Newest upload across the feeds. Kept for compatibility — read `brands` for the honest picture. */
     service: string | null
     /** Per-feed, because the group max hides a laggard: one fresh feed made all three look current. */
     brands: { brand: string; brandLabel: string; lastUploadedAt: string | null; coverageThrough: string | null }[]
   }
+  /**
+   * Sections that could not be read this time (failed or over their deadline). A payload with any entry
+   * is cached for ~1 minute only and never replaces the last complete one — see getGroupCockpit.
+   */
+  degraded: string[]
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -102,6 +163,11 @@ const ymd = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pa
 function num(v: unknown) { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 function growth(cy: number, ly: number): number | null {
   return ly > 0 ? Math.round(((cy - ly) / ly) * 1000) / 10 : null
+}
+function addDaysYmd(day: string, days: number) {
+  const d = new Date(`${day}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return ymd(d)
 }
 
 // MTD windows anchored on "today" in IST (so the day matches the dealership's calendar). LY uses the
@@ -137,7 +203,10 @@ type FeedCoverage = {
 //   · telling "no bills this month" apart from "the read failed" — the latter must never render as ₹0.
 // bill_date is clamped to the anchor day so a future-dated bill can't widen the window.
 async function fetchFeedCoverage(monthStart: string, end: string): Promise<Record<string, FeedCoverage>> {
-  const entries = await Promise.all(SERVICE_BRANDS.map(async ({ brand, table }) => {
+  // One feed at a time: this runs inside a cockpit gate slot, and the whole point of the gate is to keep
+  // the number of simultaneous queries below what the pooler can serve (see COCKPIT_DB_CONCURRENCY).
+  const entries: Array<readonly [string, FeedCoverage]> = []
+  for (const { brand, table } of SERVICE_BRANDS) {
     try {
       const result = await analyticsDb.execute(sql`
         SELECT MAX(uploaded_at)::text AS last_upload,
@@ -148,17 +217,20 @@ async function fetchFeedCoverage(monthStart: string, end: string): Promise<Recor
       const rows = Array.isArray(result) ? result as Record<string, unknown>[] : []
       // Aggregate-only SELECT: exactly one row is guaranteed. None => the read failed, and a null
       // coverage would wrongly read as "no bills this month".
-      if (rows.length === 0) return [brand, { lastBillDate: null, lastUploadedAt: null, failed: true }] as const
+      if (rows.length === 0) {
+        entries.push([brand, { lastBillDate: null, lastUploadedAt: null, failed: true }])
+        continue
+      }
       const r = rows[0]
-      return [brand, {
+      entries.push([brand, {
         lastBillDate: r.last_bill ? String(r.last_bill).slice(0, 10) : null,
         lastUploadedAt: r.last_upload ? new Date(String(r.last_upload)).toISOString() : null,
         failed: false,
-      }] as const
+      }])
     } catch {
-      return [brand, { lastBillDate: null, lastUploadedAt: null, failed: true }] as const
+      entries.push([brand, { lastBillDate: null, lastUploadedAt: null, failed: true }])
     }
-  }))
+  }
   return Object.fromEntries(entries)
 }
 
@@ -186,52 +258,137 @@ function brandWindows(win: ReturnType<typeof monthWindows>, coverageThrough: str
   }
 }
 
+// ── New blocks (2026-09-19) ─────────────────────────────────────────────────────────────────────────
+
+/** Everything waiting on the MD right now, by source — the MD Approvals section's own definition. */
+async function readMdQueue(): Promise<CockpitMdQueue> {
+  const now = Date.now()
+  const sources: CockpitMdQueue['sources'] = []
+  const byBranch = new Map<string, number>()
+  // Sequential on purpose: three small reads inside one gate slot (see COCKPIT_DB_CONCURRENCY).
+  for (const id of MD_APPROVAL_SOURCE_IDS) {
+    const source = MD_APPROVAL_SOURCES[id]
+    const waiting = (await source.read()).filter((row) => row.awaitingMd)
+    let amount = 0
+    let withoutAmount = 0
+    let oldest: number | null = null
+    for (const row of waiting) {
+      if (row.amount === null) withoutAmount += 1
+      else amount += row.amount
+      const created = row.createdAt ? Date.parse(row.createdAt) : NaN
+      if (Number.isFinite(created)) oldest = oldest === null ? created : Math.min(oldest, created)
+      const label = row.branchLabel || 'Unassigned'
+      byBranch.set(label, (byBranch.get(label) ?? 0) + 1)
+    }
+    sources.push({
+      id, label: source.label, href: source.href, count: waiting.length, amount, withoutAmount,
+      oldestDays: oldest === null ? null : Math.max(0, Math.floor((now - oldest) / 86_400_000)),
+    })
+  }
+  return {
+    total: sources.reduce((a, s) => a + s.count, 0),
+    sources,
+    byBranch: [...byBranch.entries()].map(([branchLabel, count]) => ({ branchLabel, count })).sort((a, b) => b.count - a.count),
+  }
+}
+
+const EXPIRING_WITHIN_DAYS = 30
+
+/** Bank credit facilities that have expired or expire within 30 days (IST calendar days). */
+async function readBankFacilities(today: string): Promise<CockpitBankFacilities> {
+  const records = await listAllBankSanctionsForAlerts()
+  const horizon = addDaysYmd(today, EXPIRING_WITHIN_DAYS)
+  const expired = records.filter((r) => r.expiryDate && r.expiryDate < today)
+  const soon = records.filter((r) => r.expiryDate && r.expiryDate >= today && r.expiryDate <= horizon)
+  const sum = (list: typeof records) => list.reduce((a, r) => a + (r.creditLimit ?? 0), 0)
+  // What is about to lapse first (soonest first), then what already has (most recent first): a facility that
+  // expired two years ago and was never renewed matters less than one expiring next week.
+  const byDate = (a: typeof records[number], b: typeof records[number]) => String(a.expiryDate).localeCompare(String(b.expiryDate))
+  const items = [...[...soon].sort(byDate), ...[...expired].sort(byDate).reverse()]
+    .slice(0, 8)
+    .map((r) => ({
+      loanType: r.loanType, location: r.location, expiryDate: String(r.expiryDate),
+      creditLimit: r.creditLimit, expired: String(r.expiryDate) < today,
+    }))
+  return {
+    total: records.length,
+    expired: { count: expired.length, creditLimit: sum(expired) },
+    expiringSoon: { count: soon.length, creditLimit: sum(soon), withinDays: EXPIRING_WITHIN_DAYS },
+    items,
+  }
+}
+
+/** Open KIA DMS exceptions for the current booking month — the DMS Exceptions tab's own summary. */
+async function readDmsExceptions(): Promise<CockpitDmsExceptions> {
+  const month = currentReconMonth()
+  // Aggregates only, all branches, no PII: the viewer shape the tab uses for a group-wide count.
+  const viewer = { dealerScope: null, canViewPii: false }
+  const list = await listReconItems({ month, type: 'all', q: '', page: 1, pageSize: 1 }, viewer)
+  const fresh = await readReconFreshness()
+  const byType = RECON_EXCEPTION_TYPES.filter((type) => type !== 'unmatched_dms').map((type) => ({
+    type, label: RECON_TYPE_META[type].label, severity: RECON_TYPE_META[type].severity, count: num(list.summary.byType[type]),
+  })).filter((t) => t.count > 0)
+  return {
+    month,
+    open: num(list.summary.total),
+    review: num(list.summary.review),
+    byType,
+    unmatchedDms: num(list.summary.byType.unmatched_dms),
+    lastRunAt: fresh.freshness.lastRunAt,
+    stale: fresh.stale,
+  }
+}
+
+/*
+ * ============================================================================
+ * CONCURRENCY — why the sources run two at a time
+ * ============================================================================
+ *
+ * Production reads through Supabase's TRANSACTION pooler, which serves this project with only about six
+ * server connections (measured; see lib/db/concurrency.ts). Fire more queries than that at once and they do
+ * not queue — they STALL until something times out.
+ *
+ * The cockpit used to start every source together, and each source fans out several queries of its own. On
+ * 2026-09-19, three cold builds in a row took 25–33s and each DROPPED a section (KIA sales, and KIA service
+ * revenue — rendered "unavailable" and left out of the group total). Measured with the same sources:
+ *     all at once → 25–33s, sections missing          two at a time → 7.1–7.4s, complete
+ *     one at a time → ~11s, complete
+ * So every source goes through one gate of two. The order they are queued in is the order they run: the
+ * figures an executive quotes (service revenue, cash) first, then the rest.
+ */
+const COCKPIT_DB_CONCURRENCY = 2
+
 async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
   const win = monthWindows(endDate)
   const [ey, em] = win.end.split('-').map(Number)
+  const gate = createDbGate(COCKPIT_DB_CONCURRENCY)
+  const run = <T,>(label: string, work: () => Promise<T>, ms: number) => withDeadline(label, gate(work), ms)
 
   // Vehicle sales & stock, per brand that has a live feed + reader (KIA only today). The registry
   // decides the set, so a new brand joins automatically once it flips to available.
   const salesStockBrands = availableSalesStockBrands()
 
-  /*
-   * ── EVERYTHING THAT DOES NOT NEED COVERAGE STARTS NOW ──────────────────────────────────────
-   *
-   * Coverage used to be awaited BEFORE the whole fan-out, so cash, sales and stock — none of which
-   * look at it — sat idle behind a probe they have no relationship with. Measured: the probe costs
-   * ~2.5s in-request (three MAX() aggregates over the RO feeds; each is only ~35ms of real work and
-   * ~200ms of pooler round trip, the rest is first-connection setup), and the cold build was 7.8s.
-   *
-   * Only the three SERVICE queries consume the windows coverage produces. So those three wait; the
-   * rest are kicked off first and overlap the probe entirely.
-   *
-   * ⚠️ Starting a promise before awaiting it is safe here ONLY because withDeadline already swallows
-   * rejections (`work.catch(() => null)`). A bare promise started early and awaited late would be an
-   * unhandled rejection in between. Do not remove that catch.
-   */
-  const cashPromise = withDeadline('approved cash', getCaBranchSummary({ from: null, to: null }), BUDGET.headline)
-  // Per brand, not per batch: one slow brand must not take the others' cards with it.
-  const salesPromise = Promise.all(salesStockBrands.map((s) => withDeadline(`${s.brand} sales`, getBrandSalesSnapshot(s.brand, { year: ey, month: em }), BUDGET.secondary)))
-  const stockPromise = Promise.all(salesStockBrands.map((s) => withDeadline(`${s.brand} stock`, getBrandStockSnapshot(s.brand), BUDGET.secondary)))
-
-  // Coverage: each brand's service window depends on how far its own feed reaches, so this probe has
-  // to land before the per-brand billing queries fan out. Deadline-guarded: if it stalls, every brand
-  // simply loses its lagging-window refinement rather than the whole page failing. `?? {}` keeps the
-  // existing "no coverage" shape.
-  const coverage = (await withDeadline('feed coverage', fetchFeedCoverage(win.monthStart, win.end), BUDGET.coverage)) ?? ({} as Awaited<ReturnType<typeof fetchFeedCoverage>>)
+  // Coverage first (every brand's service window depends on it), cash beside it.
+  const coveragePromise = run('feed coverage', () => fetchFeedCoverage(win.monthStart, win.end), BUDGET.coverage)
+  const cashPromise = run('approved cash', () => getCaBranchSummary({ from: null, to: null }), BUDGET.headline)
+  const coverage = (await coveragePromise) ?? ({} as Awaited<ReturnType<typeof fetchFeedCoverage>>)
   const kiaWin = brandWindows(win, coverage.kia?.lastBillDate ?? null)
   const hyWin = brandWindows(win, coverage.hyundai?.lastBillDate ?? null)
   const plWin = brandWindows(win, coverage.platinum?.lastBillDate ?? null)
 
-  const [kiaWs, hyundai, platinum, cash, salesSnapsRaw, stockSnapsRaw] = await Promise.all([
-    withDeadline('kia workshop', getKiaWorkshopSummary({ endDate: kiaWin.cyEnd }), BUDGET.headline),
-    withDeadline('hyundai ro billing', fetchCanonicalHyundaiRoBillingMetrics({ cyStart: hyWin.cyStart, cyEnd: hyWin.cyEnd, lyStart: hyWin.lyStart, lyEnd: hyWin.lyEnd }), BUDGET.headline),
-    withDeadline('platinum ro billing', fetchCanonicalRoBillingMetrics({ cyStart: plWin.cyStart, cyEnd: plWin.cyEnd, lyStart: plWin.lyStart, lyEnd: plWin.lyEnd }), BUDGET.headline),
-    // Cash is the CUMULATIVE approved book (no date filter) — a running commitment/spend total that an
-    // exec/CA wants in full, and unlike MTD it is always populated. Service revenue stays month-to-date.
-    cashPromise,
-    salesPromise,
-    stockPromise,
+  // Queued in priority order — the gate is first-in, first-out.
+  const kiaWsP = run('kia workshop', () => getKiaWorkshopSummary({ endDate: kiaWin.cyEnd }), BUDGET.headline)
+  const hyundaiP = run('hyundai ro billing', () => fetchCanonicalHyundaiRoBillingMetrics({ cyStart: hyWin.cyStart, cyEnd: hyWin.cyEnd, lyStart: hyWin.lyStart, lyEnd: hyWin.lyEnd }), BUDGET.headline)
+  const platinumP = run('platinum ro billing', () => fetchCanonicalRoBillingMetrics({ cyStart: plWin.cyStart, cyEnd: plWin.cyEnd, lyStart: plWin.lyStart, lyEnd: plWin.lyEnd }), BUDGET.headline)
+  // Per brand, not per batch: one slow brand must not take the others' cards with it.
+  const salesP = Promise.all(salesStockBrands.map((s) => run(`${s.brand} sales`, () => getBrandSalesSnapshot(s.brand, { year: ey, month: em }), BUDGET.secondary)))
+  const stockP = Promise.all(salesStockBrands.map((s) => run(`${s.brand} stock`, () => getBrandStockSnapshot(s.brand), BUDGET.secondary)))
+  const mdQueueP = run('md queue', readMdQueue, BUDGET.secondary)
+  const bankP = run('bank facilities', () => readBankFacilities(win.end), BUDGET.secondary)
+  const dmsP = run('dms exceptions', readDmsExceptions, BUDGET.secondary)
+
+  const [kiaWs, hyundai, platinum, cash, salesSnapsRaw, stockSnapsRaw, mdQueue, bankFacilities, dmsExceptions] = await Promise.all([
+    kiaWsP, hyundaiP, platinumP, cashPromise, salesP, stockP, mdQueueP, bankP, dmsP,
   ])
   const salesSnaps = salesSnapsRaw ?? []
   const stockSnaps = stockSnapsRaw ?? []
@@ -296,22 +453,17 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
   )
   const excluded = serviceBrands.filter((b) => b.status !== 'ok').map((b) => b.brandLabel)
 
-  // --- Approved cash per brand (all brands with activity) ---
+  // --- Approved cash per branch (all brands with activity) ---
+  // Vendor payments were fetched here all along and thrown away — the largest cash category (₹2.74 Cr on
+  // 2026-09-19 against ₹4.6L of petty-cash funding). Spend used to be a hard-coded 0.
   const cashRows: CockpitCashBrand[] = []
   if (cash) {
-    for (const b of cash.branches) {
+    for (const b of [...cash.branches, ...(cash.unassigned ? [cash.unassigned] : [])]) {
       cashRows.push({
         brand: b.branch, brandLabel: b.branchLabel,
+        vendorPaymentAmount: b.approvals.approvedAmount, vendorPaymentCount: b.approvals.approvedCount,
         poAmount: b.po.approvedAmount, poCount: b.po.approvedCount,
-        fundingAmount: b.pettyCashFunding.approvedAmount, spendAmount: 0,
-      })
-    }
-    if (cash.unassigned) {
-      const u = cash.unassigned
-      cashRows.push({
-        brand: u.branch, brandLabel: u.branchLabel,
-        poAmount: u.po.approvedAmount, poCount: u.po.approvedCount,
-        fundingAmount: u.pettyCashFunding.approvedAmount, spendAmount: 0,
+        fundingAmount: b.pettyCashFunding.approvedAmount, spendAmount: b.pettyCashSpend.approvedAmount,
       })
     }
   }
@@ -334,7 +486,7 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
     brand: salesStockBrands[i]?.brand ?? 'unknown',
     label: salesStockBrands[i]?.label ?? 'Unknown',
     available: false,
-    availableStock: 0, stockValue: 0, avgStockAge: 0,
+    availableStock: 0, stockValue: 0, avgStockAge: 0, aged61To90: 0, agedOver90: 0,
   } as unknown as BrandStockSnapshot))
   // Placeholders are excluded from totals — an unread feed must not contribute a real zero.
   const salesTotals = salesBrands.filter((b) => b.available !== false).reduce(
@@ -345,6 +497,17 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
     (a, b) => ({ availableStock: a.availableStock + b.availableStock, stockValue: a.stockValue + b.stockValue }),
     { availableStock: 0, stockValue: 0 },
   )
+
+  // Every section that did not come back, named — drives the short cache life (see getGroupCockpit).
+  const degraded = [
+    ...excluded.filter((label) => serviceBrands.find((b) => b.brandLabel === label)?.status === 'unavailable').map((l) => `${l} service`),
+    ...(cash ? [] : ['approved cash']),
+    ...salesBrands.filter((b) => b.available === false).map((b) => `${b.label} sales`),
+    ...stockBrands.filter((b) => b.available === false).map((b) => `${b.label} stock`),
+    ...(mdQueue ? [] : ['waiting on MD']),
+    ...(bankFacilities ? [] : ['bank facilities']),
+    ...(dmsExceptions ? [] : ['DMS exceptions']),
+  ]
 
   return {
     meta: {
@@ -358,19 +521,25 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
     cash: {
       brands: cashRows,
       unassignedPresent: Boolean(cash?.unassigned),
+      available: Boolean(cash),
       totals: {
+        vendorPaymentAmount: num(cash?.totals.approvals.approvedAmount), vendorPaymentCount: num(cash?.totals.approvals.approvedCount),
         poAmount: num(cash?.totals.po.approvedAmount), poCount: num(cash?.totals.po.approvedCount),
-        fundingAmount: num(cash?.totals.pettyCashFunding.approvedAmount), spendAmount: 0,
+        fundingAmount: num(cash?.totals.pettyCashFunding.approvedAmount), spendAmount: num(cash?.totals.pettyCashSpend.approvedAmount),
       },
     },
     sales: { brands: salesBrands, totals: salesTotals },
     stock: { brands: stockBrands, totals: stockTotals },
+    mdQueue,
+    bankFacilities,
+    dmsExceptions,
     freshness: {
       service: serviceBrands.map((b) => b.lastUploadedAt).filter(Boolean).sort().pop() ?? null,
       brands: serviceBrands.map((b) => ({
         brand: b.brand, brandLabel: b.brandLabel, lastUploadedAt: b.lastUploadedAt, coverageThrough: b.coverageThrough,
       })),
     },
+    degraded,
   }
 }
 
@@ -380,18 +549,15 @@ async function buildCockpit(endDate?: string | null): Promise<CockpitPayload> {
  * ============================================================================
  *
  * Every source below already carried `.catch(() => null)`, which covers a source that THROWS. It
- * does nothing for a source that simply does not come back, and that is what was happening: a cold
- * build (no cached key) was measured at over 240s against this route's `maxDuration = 60`, so the
- * platform killed the request mid-flight and the browser reported a bare "Failed to fetch". The
- * page was not slow — it was dead on every cache miss.
+ * does nothing for a source that simply does not come back — which is exactly what a stalled pooler
+ * does (see CONCURRENCY above). A stalled build used to run past this route's `maxDuration = 60` and
+ * the platform killed it mid-flight, which the browser reported as a bare "Failed to fetch".
  *
- * The offender is the sales/stock fan-out (kia_sales_report, 90-day window grouped by model and
- * variant), which is also the least important thing on the page.
- *
- * So each source now races a deadline and degrades to `null` — the SAME value `.catch()` already
- * produced, travelling the same path, which the UI already renders honestly as "Data unavailable —
- * not counted in the group total" rather than a confident ₹0. The headline numbers (service revenue
- * and cash) get the large budget; the secondary cards get a small one and drop out first.
+ * So each source races a deadline and degrades to `null` — the SAME value `.catch()` already
+ * produced, travelling the same path, which the UI renders honestly as "could not be read — not
+ * counted" rather than a confident ₹0. A deadline counts from when the source is QUEUED, not when it
+ * starts, so the budgets include the wait for a gate slot. Two at a time, the whole build measured
+ * 7–9s cold, far inside these.
  *
  * The underlying query is not cancelled — it runs on and populates its own cache, so the NEXT
  * request is fast. What changes is that it can no longer hold the whole response hostage.
@@ -401,13 +567,8 @@ const BUDGET = {
   coverage: 8_000,
   /** Service revenue + approved cash — the figures an executive actually quotes. */
   headline: 30_000,
-  /**
-   * Sales & stock cards. Measured at 12-20s cold (the kia_sales_report 90-day model/variant
-   * aggregate), so 12s dropped them almost every cold load. This runs CONCURRENTLY with the
-   * headline budget, so raising it costs nothing in worst case — the ceiling stays
-   * coverage + headline = 38s, comfortably inside maxDuration = 60.
-   */
-  secondary: 25_000,
+  /** Everything else. Runs after the headline sources in the same gate; ceiling stays inside maxDuration. */
+  secondary: 40_000,
 } as const
 
 function withDeadline<T>(label: string, work: Promise<T>, ms: number): Promise<T | null> {
@@ -421,12 +582,35 @@ function withDeadline<T>(label: string, work: Promise<T>, ms: number): Promise<T
   return Promise.race([work.catch(() => null), guard]).finally(() => { if (timer) clearTimeout(timer) })
 }
 
+/**
+ * 15 minutes, refreshed every 10 by the scheduled warmer (app/api/cockpit/refresh), so the MD opens a
+ * built cockpit instead of paying for a cold build.
+ */
+const COCKPIT_TTL_SECONDS = 15 * 60
+/** A payload with a section missing: kept briefly so the next viewer retries, never as the stale fallback. */
+const DEGRADED_TTL_SECONDS = 60
+
+function cockpitKey(endDate?: string | null) {
+  const win = monthWindows(endDate)
+  // Cache-key on the anchor day so a new day/month busts it. v7: vendor payments, real petty-cash spend,
+  // stock ageing, MD queue, bank facilities, DMS exceptions and `degraded` — the key MUST be
+  // bumped with a shape change, or a v6 payload (no `degraded`, spend 0) would be served until it expired.
+  return `cockpit:group:v7:${win.monthStart}:${win.end}`
+}
 
 export async function getGroupCockpit(input?: { endDate?: string | null }): Promise<CockpitPayload> {
-  const win = monthWindows(input?.endDate)
-  // Cache-key on the anchor month so a new day/month busts it; short TTL keeps it lively for exec use.
-  // v5: sales targets fall back to last-month-actual + 10% (`targetBasis`). The key MUST be bumped
-  // with a shape or semantics change — e.g. a v3 payload has no `status`, so every brand would fall
-  // through as not-ok, and a v4 one would keep showing "target 0" until it expired.
-  return getCachedData(`cockpit:group:v6:${win.monthStart}:${win.end}`, () => buildCockpit(input?.endDate), CACHE_TTL.SHORT)
+  return getCachedData(cockpitKey(input?.endDate), () => buildCockpit(input?.endDate), COCKPIT_TTL_SECONDS, {
+    ttlFor: (payload) => (payload.degraded.length > 0 ? DEGRADED_TTL_SECONDS : null),
+  })
+}
+
+/**
+ * Build today's cockpit off the request path and store it — for the scheduled warmer. A build with any
+ * section missing is NOT stored: the last complete cockpit keeps being served instead.
+ */
+export async function refreshGroupCockpit(): Promise<{ stored: boolean; degraded: string[]; ms: number }> {
+  const started = Date.now()
+  const payload = await buildCockpit(null)
+  if (payload.degraded.length === 0) await setCachedData(cockpitKey(null), payload, COCKPIT_TTL_SECONDS)
+  return { stored: payload.degraded.length === 0, degraded: payload.degraded, ms: Date.now() - started }
 }
