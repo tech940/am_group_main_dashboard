@@ -29,7 +29,11 @@ export async function GET(_request: Request, context: RouteContext<'/api/brands/
 
     // Rows arrive oldest-first (FIFO). The longest-standing vehicle is flagged so the UI can nudge
     // toward it and warn when something newer is picked instead — advisory only, never a block.
+    // An INVOICED car is left out of that nudge: the DMS has invoiced it to a named customer, so it is
+    // that customer's car, never the generic "allot the oldest first" pick for somebody else.
+    const isInvoiced = (row: Record<string, unknown>) => text(row.stock_status).trim().toLowerCase() === 'invoice'
     const ages = rows
+      .filter((row) => !isInvoiced(row))
       .map((row) => Number(row.age_days ?? 0))
       .filter((n) => Number.isFinite(n))
     const oldestAge = ages.length ? Math.max(...ages) : 0
@@ -45,12 +49,14 @@ export async function GET(_request: Request, context: RouteContext<'/api/brands/
           variant: text(row.variant),
           color: text(row.color),
           stockStatus: text(row.stock_status),
+          // Who the DMS invoiced the car to — the picker shows it on Invoice rows.
+          dmsCustomerName: text(row.dms_customer_name) || null,
           source: text(row.source) === 'bbnd' ? 'bbnd' : 'dms',
           // Named `stockAge` because the client already reads that field ("… days on lot") — the
           // API simply never sent it, so that figure has always rendered as 0.
           stockAge: ageDays,
           // True for the longest-standing vehicle in this list — the FIFO-correct pick.
-          isOldest: ageDays > 0 && ageDays === oldestAge,
+          isOldest: !isInvoiced(row) && ageDays > 0 && ageDays === oldestAge,
         }
       }),
     })

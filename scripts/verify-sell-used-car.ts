@@ -211,11 +211,16 @@ async function main() {
   const form = readFileSync('app/sell-used-car/sell-car-form.tsx', 'utf8')
   assert('the form posts to the hardened route', form.includes("'/api/evaluations/submit'"))
   const page = readFileSync('app/sell-used-car/page.tsx', 'utf8')
-  assert('the showroom photo is served from our own domain', page.includes('/assets/am-kia-showroom.webp') && !/https?:\/\/(amgroupind\.com|amkia\.in)/.test(page) && existsSync('public/assets/am-kia-showroom.webp'))
+  assert('the showroom photo is served from our own domain', page.includes('/assets/am-hyundai-showroom.webp') && !/https?:\/\/(amgroupind\.com|amkia\.in)/.test(page) && existsSync('public/assets/am-hyundai-showroom.webp'))
   assert('the photo carries no caption', !page.includes('<figcaption'))
   assert('the call-us number is on the page as a tap-to-call link', page.includes("CALL_NUMBER = '9484200000'") && (page.match(/tel:\+91\$\{CALL_NUMBER\}/g) ?? []).length === 2)
   assert('AM Platinum is shown as AM Hyundai Paloura', page.includes("name: 'AM Hyundai Paloura'") && !page.includes("name: 'AM Platinum'"))
   assert('the form never shows a computed price', !/calculateEstimatedValuation|lakh/i.test(form))
+  const gtm = readFileSync('app/sell-used-car/google-tag-manager.tsx', 'utf8')
+  assert('Google Tag Manager GTM-PKQ9XM5H is on this page (script + noscript)', page.includes('<GoogleTagManager />') && gtm.includes("GTM_ID = 'GTM-PKQ9XM5H'") && gtm.includes('<noscript>') && gtm.includes('googletagmanager.com/gtm.js'))
+  assert('GTM is NOT in the dashboard root layout (it could read customer data there)', !/googletagmanager|GoogleTagManager/.test(readFileSync('app/layout.tsx', 'utf8')))
+  const leadPush = form.match(/pushDataLayer\(\{[^}]*\}\)/)?.[0] ?? ''
+  assert('the GTM lead event carries no name or mobile, and skips number corrections', leadPush.includes("event: 'sell_car_lead'") && !/name|mobile|phone/i.test(leadPush) && /if \(!correcting\) pushDataLayer/.test(form))
 
   console.log('\n7. Car Evaluation Leads — who can open the dashboard page')
   const KEY = 'car_evaluations.view'

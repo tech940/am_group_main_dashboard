@@ -249,12 +249,19 @@ const istTodayStart = () => sql`((to_char(now() AT TIME ZONE 'Asia/Kolkata', 'YY
  * the Stock tab already labels them Available. Leaving them out of this list is what made 9
  * bookings read "Not in stock" against cars the Stock tab was showing as available on the next tab.
  *
+ * 'invoice' is included by owner decision (2026-09-19): invoiced cars must be allottable like Free
+ * Stock and In transit. The DMS has invoiced each one to a named customer, so the Stock tab keeps them
+ * in their own Invoiced bucket with that name on the row, and the picker shows it too. Only a car OUR
+ * people delivered is excluded (kiaDeliveredByUsSql, applied below) — the DMS retail feed's delivery
+ * status is deliberately ignored (owner: "delivered from our side, not DMS status delivered").
+ *
  * ⚠️ 'allocated' is deliberately NOT here. In this feed it means sold in the DMS by someone outside
  * this dashboard — 10 rows, all carrying a DMS cust_name and booking_no, and 9 of the 10 match no
  * booking in this system at all. Folding those into availability would offer other people's sold
  * cars to new customers.
  */
-const KIA_ALLOTTABLE_STOCK_STATUSES = ['free stock', 'in transit', 'from other dealer'] as const
+const KIA_ALLOTTABLE_STOCK_STATUSES = ['free stock', 'in transit', 'from other dealer', 'invoice'] as const
+
 
 /**
  * THE booking-to-stock match. One definition, six call sites.
@@ -2352,6 +2359,8 @@ export async function getKiaBookingMatchingVehicles(id: string) {
         sm.stock_status,
         sm.stock_location,
         sm.uploaded_at,
+        -- Who the DMS invoiced it to (Invoice rows); shown in the picker so the right booking gets it.
+        NULLIF(TRIM(sm.cust_name), '') AS dms_customer_name,
         -- stock_age is TEXT in the DMS feed; strip non-digits before casting or one stray
         -- character aborts the whole query.
         COALESCE(NULLIF(regexp_replace(COALESCE(sm.stock_age, ''), '[^0-9]', '', 'g'), ''), '0')::int AS age_days,
@@ -2395,6 +2404,7 @@ export async function getKiaBookingMatchingVehicles(id: string) {
         coalesce(ls.stock_status_at_mark, 'BBND') AS stock_status,
         ls.stock_location,
         ls.source_uploaded_at AS uploaded_at,
+        NULL::text AS dms_customer_name,
         -- BBND rows carry the original stock row in vehicle_snapshot, so age comes from there.
         COALESCE(NULLIF(regexp_replace(COALESCE(ls.vehicle_snapshot->>'stock_age', ''), '[^0-9]', '', 'g'), ''), '0')::int AS age_days,
         ls.vehicle_snapshot AS snapshot,

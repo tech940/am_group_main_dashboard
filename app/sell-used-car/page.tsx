@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Caveat, Lato } from 'next/font/google'
 import Image from 'next/image'
+import { GoogleTagManager } from './google-tag-manager'
 import { Burst, CalloutArrow, FigureBackdrop } from './pointing-figure'
 import { SellCarForm } from './sell-car-form'
 import styles from './sell-used-car.module.css'
@@ -83,6 +84,7 @@ const QUESTIONS = [
 export default function SellUsedCarPage() {
   return (
     <main className={`${lato.variable} ${caveat.variable} ${styles.page}`}>
+      <GoogleTagManager />
       <div className={styles.upper}>
         <div className={`${styles.shell} ${styles.upperGrid}`}>
           <div className={styles.intro}>
@@ -155,12 +157,12 @@ export default function SellUsedCarPage() {
               {' showrooms across Jammu & Kashmir.'}
             </p>
             <figure className={styles.photo}>
-              {/* AM Kia's own photo (amkia.in kia-1536x896-1-1024x597.webp), chosen by the owner, 2026-09-19. */}
+              {/* The AM Hyundai showroom front, supplied by the owner 2026-09-19 (replaced the AM Kia interior). */}
               <Image
-                src="/assets/am-kia-showroom.webp"
-                alt="Inside an AM Kia showroom, with a Kia Carens and a Seltos on display"
-                width={1024}
-                height={597}
+                src="/assets/am-hyundai-showroom.webp"
+                alt="The front of the AM Hyundai showroom, with Hyundai cars on display behind the glass"
+                width={1305}
+                height={774}
                 sizes="(min-width: 900px) 460px, calc(100vw - 32px)"
               />
             </figure>

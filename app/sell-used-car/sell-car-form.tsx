@@ -62,6 +62,13 @@ function cx(...names: Array<string | false | null | undefined>) {
   return names.filter(Boolean).join(' ')
 }
 
+/** Google Tag Manager's queue. Created if GTM has not loaded (e.g. blocked), so a push never throws. */
+function pushDataLayer(event: Record<string, unknown>) {
+  const w = window as unknown as { dataLayer?: unknown[] }
+  w.dataLayer = w.dataLayer || []
+  w.dataLayer.push(event)
+}
+
 function stepKey(stage: Stage, carStep: CarStep): string {
   return stage === 'car' ? `car:${carStep}` : `${stage}:`
 }
@@ -486,6 +493,9 @@ export function SellCarForm() {
         fieldErrors?: Record<string, string>
       }
       if (response.ok && body.ok) {
+        // Google Tag Manager conversion (google-tag-manager.tsx). A number correction is the SAME person
+        // resubmitting, so it is not a second lead. No personal data — never the name or mobile.
+        if (!correcting) pushDataLayer({ event: 'sell_car_lead', car_brand: parsed.data.brand, interested_in_new_car: parsed.data.interestedInNewCar ?? null })
         setSent({ id: body.id ?? '', mobile: parsed.data.mobile })
         setCorrecting(null)
         setErrors({})

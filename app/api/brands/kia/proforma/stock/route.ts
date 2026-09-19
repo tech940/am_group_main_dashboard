@@ -205,6 +205,34 @@ export async function GET(request: Request) {
     const deliveredByUsExpr = kiaDeliveredByUsSql('sm')
 
     /*
+     * INVOICED — every car the DMS reports as invoiced (stock_status 'Invoice') EXCEPT the ones OUR people
+     * marked delivered. Owner, 2026-09-19: "I want to see all invoice no matter what; if allotted to
+     * someone then show that info as well", then "exclude delivered from our side, not DMS status
+     * delivered". So an allotted or paid invoiced car stays listed with its booking (customer, booking no.)
+     * beside the DMS invoice name, and whatever the DMS retail feed says about delivery is ignored here.
+     *
+     * ⚠️ This card is NOT disjoint from the others: an invoiced car we allotted is ALSO in Payment Pending
+     * or Paid. Deliberate — it is a view of the DMS status, not a stage of our pipeline. Never add it into
+     * a total.
+     */
+    const invoicedAllExpr = `(UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'INVOICE' AND NOT ${deliveredByUsExpr})`
+
+    /*
+     * The part of INVOICED that can still be ALLOTTED (owner, 2026-09-19: invoiced cars must be allottable
+     * "just like Available and In transit"): no live allocation or transfer, not held / BBND / locally
+     * retailed, and not delivered by us. The DMS retail feed's delivery status is deliberately NOT a test
+     * (owner: "delivered from our side, not DMS status delivered"). The Bookings picker applies the same
+     * rule (lib/kia/bookings.ts, KIA_ALLOTTABLE_STOCK_STATUSES). Counted as invoiced_open: the card's
+     * "not allotted yet" figure and the printed tile's subtraction.
+     */
+    const invoicedAllottableExpr = `(
+      UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'INVOICE'
+      AND va.id IS NULL AND vt.id IS NULL
+      AND ${KIA_ALLOTTABLE_LOCAL_STATUS_PREDICATE}
+      AND NOT ${deliveredByUsExpr}
+    )`
+
+    /*
      * A vehicle that has left inventory. THREE independent signals, because no one of them catches
      * everything: our own booking marked delivered, a local 'retail' status, or the DMS having sold
      * it. Hoisted above the filter block on purpose — the DELIVERED view used to apply only the
@@ -286,6 +314,9 @@ export async function GET(request: Request) {
          * hold branch above the DMS-Allocated branch.
          */
         filters.push(`UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'ALLOCATED' AND va.id IS NULL AND vt.id IS NULL AND NOT (${KIA_BBND_PREDICATE})`)
+      } else if (status === 'INVOICED') {
+        // EVERY DMS-invoiced car, allotted or delivered included — see invoicedAllExpr.
+        filters.push(invoicedAllExpr)
       } else if (status === 'ON_HOLD') {
         /*
          * #12 Vehicles held for a dealer or a customer, reserved outside the allocation workflow.
@@ -351,7 +382,9 @@ export async function GET(request: Request) {
     // same expression. (Defined above, next to dmsSoldExpr.)
     // Skipped for an explicit dms_status: this guard contains dmsSoldExpr, which excludes every
     // stock_status='Invoice' row, so leaving it on made that option match 0 of its 2 rows.
-    if (status !== 'DELIVERED' && !showEveryStatus) {
+    // Skipped for INVOICED too: deliveredExpr counts every 'Invoice' row as sold (a DMS signal), while that
+    // view excludes only what WE delivered — invoicedAllExpr carries that test.
+    if (status !== 'DELIVERED' && status !== 'INVOICED' && !showEveryStatus) {
       filters.push(`NOT ${deliveredExpr}`)
     }
 
@@ -513,6 +546,10 @@ export async function GET(request: Request) {
         COUNT(CASE WHEN UPPER(TRIM(COALESCE(sm.stock_status, ''))) = 'ALLOCATED'
                     AND va.id IS NULL AND vt.id IS NULL
                     AND NOT ${deliveredExpr} THEN 1 END)::int AS dms_allocated,
+        -- Every DMS-invoiced car, the SAME expression the INVOICED filter uses. Overlaps other buckets.
+        COUNT(CASE WHEN ${invoicedAllExpr} THEN 1 END)::int AS invoiced,
+        -- ...and how many of them can still be allotted.
+        COUNT(CASE WHEN ${invoicedAllottableExpr} THEN 1 END)::int AS invoiced_open,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW() THEN 1 END)::int AS payment_overdue,
         -- Rooted at the booking (paidFrom), not this stock row — see the note on paidFrom.
         (SELECT COUNT(*)::int ${paidFrom}) AS paid_to_deliver,
@@ -578,6 +615,8 @@ export async function GET(request: Request) {
        */
       on_hold: 0,
       bbnd: 0,
+      invoiced: 0,
+      invoiced_open: 0,
     }
 
     /*
@@ -925,6 +964,9 @@ export async function GET(request: Request) {
         sm.exterior_color_name as color,
         sm.stock_age,
         sm.stock_status,
+        -- Who the DMS invoiced the car to. Shown on Invoiced rows so whoever allots it can match the
+        -- booking to that customer; the name only, never the DMS phone.
+        NULLIF(TRIM(sm.cust_name), '') AS dms_customer_name,
         ${invoiceYearFrom('sm.kin_invoice_date')} AS invoice_year,
         ${invoiceYearIsCurrent('sm.kin_invoice_date')} AS invoice_year_is_current,
         /*

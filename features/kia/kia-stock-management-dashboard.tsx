@@ -70,6 +70,8 @@ type StockRow = {
   payment_secured_at?: string | null
   /** 'hold_customer' | 'hold_dealer' | 'retail' | 'bbnd_marked' | 'bbnd' | null — ours, not the DMS's. */
   local_status?: string | null
+  /** Who the DMS invoiced the car to (sm.cust_name) — shown on Invoiced rows. Name only. */
+  dms_customer_name?: string | null
   /** Year from kin_invoice_date; null when the feed has no parseable date. */
   invoice_year?: number | null
   /** Computed server-side in Asia/Kolkata — never re-derive this from the browser clock. */
@@ -177,6 +179,10 @@ type StockPayload = {
     on_hold?: number
     /** Build But Not Delivered. Optional like on_hold — read as `|| 0`, never bare. */
     bbnd?: number
+    /** Every DMS-invoiced car except those WE delivered; allotted ones included — overlaps other cards. */
+    invoiced?: number
+    /** The invoiced cars that can still be allotted. Read as `|| 0`. */
+    invoiced_open?: number
   }
   rows: StockRow[]
   soldMissing?: SoldMissingRow[]
@@ -1020,7 +1026,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     return `Rs ${v.toLocaleString('en-IN')}`
   }
 
-  const renderStatus = (row: StockRow) => {
+  const renderStatusChip = (row: StockRow) => {
     // Each state gets a distinct tone so Available / Allotted / Paid / Delivered
     // / Transferred never read as the same colour. Active allocation states take
     // precedence; an unallocated VIN with a transfer record reads as Transferred.
@@ -1114,7 +1120,39 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     if (String(row.stock_status || '').trim().toUpperCase() === 'ALLOCATED') {
       return <Chip tone="neutral">DMS Allocated</Chip>
     }
+    /*
+     * Invoiced in the DMS with no allocation of ours. It fell through to the green Available chip,
+     * though the Available card has never counted it. It IS allottable (owner, 2026-09-19), so the row
+     * keeps its Allot button; the name under the chip is who the DMS invoiced it to, so the car goes to
+     * that customer's booking.
+     */
+    if (String(row.stock_status || '').trim().toUpperCase() === 'INVOICE') {
+      return <Chip tone="indigo">DMS Invoiced</Chip>
+    }
     return <Chip tone="emerald">Available</Chip>
+  }
+
+  /*
+   * Every DMS-invoiced row carries WHO the DMS invoiced it to under its status — the allotted and
+   * delivered ones too (owner, 2026-09-19: "if allotted to someone then show that info as well"). Their
+   * booking customer is in the Customer column, so a DMS invoice made out to a different person than the
+   * booking here is visible on the row.
+   */
+  const renderStatus = (row: StockRow) => {
+    const chip = renderStatusChip(row)
+    if (String(row.stock_status || '').trim().toUpperCase() !== 'INVOICE') return chip
+    const invoicedTo = String(row.dms_customer_name || '').trim()
+    return (
+      <div className="flex flex-col items-start gap-0.5">
+        {chip}
+        <span
+          className="max-w-[200px] truncate text-[10px] font-semibold leading-tight text-indigo-700"
+          title={invoicedTo ? `Invoiced in the DMS to ${invoicedTo}` : 'The DMS feed has no customer name for this invoice'}
+        >
+          {invoicedTo ? `DMS invoice: ${invoicedTo}` : 'DMS invoice: name not in feed'}
+        </span>
+      </div>
+    )
   }
 
   // Activity icon mapping
@@ -1281,6 +1319,14 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
              * one is not — it is inventory we simply cannot offer.
              */
             { key: 'ALLOCATED_DMS', label: 'DMS Allocated', value: data.metrics.dms_allocated || 0, icon: Lock, tone: 'neutral' as Tone, hint: 'Committed in DMS · not ours' },
+            /*
+             * Every car the DMS reports as invoiced, allotted ones included, EXCEPT those our people
+             * delivered (owner, 2026-09-19: "see all invoice no matter what", then "exclude delivered from
+             * our side, not DMS status delivered"). So it OVERLAPS Payment Pending / Paid — a view of the
+             * DMS status, not a pipeline stage. The ones still free to allot are named in the hint; those
+             * keep their Allot button.
+             */
+            { key: 'INVOICED', label: 'Invoiced', value: data.metrics.invoiced || 0, icon: FileText, tone: 'indigo' as Tone, hint: `All DMS invoices · ${data.metrics.invoiced_open || 0} not allotted yet` },
             { key: 'PAID_TO_DELIVER', label: 'Paid · To Deliver', value: data.metrics.paid_to_deliver, icon: BadgeIndianRupee, tone: 'violet' as Tone, hint: 'Ready to hand over' },
             /*
              * Vehicles in THIS stock list that OUR people marked delivered — no DMS signal, per the
@@ -1400,6 +1446,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                     capability one: readMatchingVehicle ignores stock_status, so these are still
                     allottable and keep their Allot button. */}
                 <SelectItem value="ALLOCATED_DMS" className="text-xs font-bold cursor-pointer">Allocated (DMS)</SelectItem>
+                {/* Every DMS-invoiced car, allotted or not; unallotted ones can be allotted. */}
+                <SelectItem value="INVOICED" className="text-xs font-bold cursor-pointer">Invoiced (DMS)</SelectItem>
                 <SelectItem value="PAID_TO_DELIVER" className="text-xs font-bold cursor-pointer">Paid - To Deliver</SelectItem>
                 <SelectItem value="ON_HOLD" className="text-xs font-bold cursor-pointer">On Hold</SelectItem>
                 <SelectItem value="BBND" className="text-xs font-bold cursor-pointer">BBND</SelectItem>
@@ -1949,8 +1997,23 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             */}
             {(() => {
               const row = data?.rows?.find(r => r.vin_number === allotVin)
+              if (!row || String(row.stock_status || '').trim().toUpperCase() !== 'INVOICE') return null
+              const invoicedTo = String(row.dms_customer_name || '').trim()
+              return (
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-[11px] font-semibold leading-relaxed text-indigo-900">
+                  <p className="text-xs font-black uppercase tracking-wider">Invoiced in DMS</p>
+                  <p className="mt-1">
+                    This car is invoiced to <span className="font-black">{invoicedTo || 'a customer whose name is not in the feed'}</span>.
+                    Allot it only to that customer&apos;s booking.
+                  </p>
+                </div>
+              )
+            })()}
+            {(() => {
+              const row = data?.rows?.find(r => r.vin_number === allotVin)
               const olderCount = row?.older_count ?? 0
-              if (!row || olderCount < 1) return null
+              // An invoiced car is its DMS customer's, so "older identical stock is waiting" does not apply.
+              if (!row || olderCount < 1 || String(row.stock_status || '').trim().toUpperCase() === 'INVOICE') return null
               const thisAge = Number(String(row.stock_age || '').replace(/[^0-9]/g, '')) || 0
               const oldestAge = row.oldest_alternative_age ?? 0
               const gap = oldestAge - thisAge
@@ -3287,7 +3350,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                * pending. Subtracting it is the minimum fix; the honest one is to stop deriving this
                * tile by subtraction at all.
                */
-              { label: 'Allotted / Pending', val: data.metrics.total_vins - data.metrics.available - (data.metrics.bbnd || 0), accent: '#4f46e5' },
+              // invoiced_open, not invoiced: an invoiced car we allotted IS allotted / pending.
+              { label: 'Allotted / Pending', val: data.metrics.total_vins - data.metrics.available - (data.metrics.bbnd || 0) - (data.metrics.invoiced_open || 0), accent: '#4f46e5' },
               { label: 'BBND', val: data.metrics.bbnd || 0, accent: '#e11d48' },
               { label: 'Transfers', val: data.metrics.transfers, accent: '#0891b2' },
             ].map((s) => (
@@ -3543,7 +3607,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                       // this table must not call these Available either.
                       : String(row.stock_status || '').trim().toUpperCase() === 'ALLOCATED'
                         ? { label: 'DMS Allocated', bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' }
-                        : { label: 'Available', bg: '#f0fdfa', text: '#0f766e', border: '#99f6e4' }
+                        : String(row.stock_status || '').trim().toUpperCase() === 'INVOICE'
+                          ? { label: 'DMS Invoiced', bg: '#eef2ff', text: '#4338ca', border: '#c7d2fe' }
+                          : { label: 'Available', bg: '#f0fdfa', text: '#0f766e', border: '#99f6e4' }
                 const aged = Number(row.stock_age) > 180
                 return (
                   <tr key={row.id} className="page-break-avoid border-b border-slate-100 odd:bg-white even:bg-slate-50/60 last:border-b-0">

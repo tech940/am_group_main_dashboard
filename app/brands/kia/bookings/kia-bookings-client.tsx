@@ -368,9 +368,15 @@ type MatchingVehicle = {
   stockStatus?: string | null
   stockAge?: number | null
   source?: 'dms' | 'bbnd'
+  /** Who the DMS invoiced the car to — set on stockStatus 'Invoice' rows. */
+  dmsCustomerName?: string | null
   /** True for the longest-standing vehicle in the list — the FIFO-correct pick. */
   isOldest?: boolean
 }
+
+/** Invoiced in the DMS to a named customer: allottable (owner, 2026-09-19), but that customer's car. */
+const isDmsInvoiced = (vehicle?: Pick<MatchingVehicle, 'stockStatus'> | null) =>
+  String(vehicle?.stockStatus || '').trim().toLowerCase() === 'invoice'
 
 type MatchingVehiclesPayload = {
   rows: MatchingVehicle[]
@@ -4368,10 +4374,21 @@ export function KiaBookingsClient({
               Ageing-stock warning. Advisory only — it never blocks the allotment. It exists for the
               case where an identical car has been sitting far longer and simply got forgotten.
             */}
+            {isDmsInvoiced(allotDialogVehicle) && (
+              <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-[11px] font-semibold leading-5 text-violet-900">
+                <p className="font-black uppercase tracking-wider">Invoiced in DMS</p>
+                <p className="mt-1">
+                  This car is invoiced to <span className="font-black">{allotDialogVehicle?.dmsCustomerName || 'a customer whose name is not in the feed'}</span>.
+                  Allot it only to that customer&apos;s booking.
+                </p>
+              </div>
+            )}
             {(() => {
               const picked = allotDialogVehicle
-              if (!picked || picked.isOldest) return null
-              const all = matchingQuery.data?.rows ?? []
+              // An invoiced car is its DMS customer's, so "an older car is waiting" does not apply to it,
+              // and an invoiced car is never offered as the older alternative either.
+              if (!picked || picked.isOldest || isDmsInvoiced(picked)) return null
+              const all = (matchingQuery.data?.rows ?? []).filter(v => !isDmsInvoiced(v))
               const pickedAge = picked.stockAge ?? 0
               const older = all.filter(v => (v.stockAge ?? 0) > pickedAge)
               if (older.length === 0) return null
@@ -7134,7 +7151,7 @@ function BookingDrawer({
             </div>
           ) : matchingVehicles.length === 0 ? (
             <div className="mt-4">
-              <PremiumEmptyState illustration="garage" title="No matching vehicles" description="No free-stock or in-transit VIN currently matches this booking. Try a transfer, or check back after the next stock sync." />
+              <PremiumEmptyState illustration="garage" title="No matching vehicles" description="No free-stock, in-transit or invoiced VIN currently matches this booking. Try a transfer, or check back after the next stock sync." />
             </div>
           ) : (
             <Stagger className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -7154,6 +7171,11 @@ function BookingDrawer({
                             <Chip tone={vehicle.source === 'bbnd' ? 'warning' : 'info'}>{vehicle.source === 'bbnd' ? 'BBND' : (vehicle.stockStatus || 'DMS')}</Chip>
                             {typeof vehicle.stockAge === 'number' && <Chip tone="neutral">{vehicle.stockAge}d</Chip>}
                           </div>
+                          {isDmsInvoiced(vehicle) && (
+                            <p className="mt-1.5 text-[11px] font-semibold leading-4 text-violet-700">
+                              Invoiced in DMS to {vehicle.dmsCustomerName || 'a customer (name not in the feed)'}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-col gap-2">
