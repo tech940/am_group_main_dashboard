@@ -62,6 +62,7 @@ import {
   Fuel
 } from 'lucide-react'
 import { KiaDiscountApprovalsPanel } from './kia-discount-approvals-panel'
+import { DiscountApprovalsDashboardClient } from '@/app/brands/hyundai/sales/discount-approvals/discount-approvals-client'
 import { FuelApprovalsClient } from '@/features/fuel-approvals/fuel-approvals-client'
 import { KpiCard } from '@/components/ui/kpi-card'
 import { printPaymentOrder } from '@/lib/kia/print-payment-order'
@@ -215,7 +216,16 @@ interface CurrentUser {
   role: string
   fullName: string
   email: string
+  brand?: string | null
 }
+
+/** Brands whose discounts live in discount_approvals (not KIA's system) — see lib/discount-approvals/access.ts. */
+type DiscountBrand = 'kia' | 'hyundai' | 'platinum'
+const HYUNDAI_GROUP_DISCOUNT_LABEL: Record<Exclude<DiscountBrand, 'kia'>, string> = {
+  hyundai: 'AM Hyundai',
+  platinum: 'AM Platinum',
+}
+const HYUNDAI_GROUP_PENDING = new Set(['PENDING_GSM', 'PENDING_VP', 'PENDING_SM', 'PENDING_MD'])
 
 /**
  * Every bill on a request, oldest storage shape first.
@@ -446,7 +456,17 @@ const brandKeyOf = (row: { brand?: string | null; requestNo?: string | null; dea
   return 'kia'
 }
 
-export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }) {
+export function KiaApprovalsClient({
+  currentUser,
+  discountBranches = [],
+}: {
+  currentUser: CurrentUser
+  /**
+   * AM Hyundai / AM Platinum discount tabs this viewer may see — decided on the server
+   * (app/brands/kia/payment-approvals/page.tsx) with the same rule the discount API enforces.
+   */
+  discountBranches?: Array<'hyundai' | 'platinum'>
+}) {
   const queryClient = useQueryClient()
   const effectiveRole = ['developer', 'admin'].includes(currentUser.role) ? 'md' : currentUser.role
 
@@ -478,6 +498,33 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     const list = (discountSummaryQuery.data?.discounts || discountSummaryQuery.data?.rows || []) as any[]
     return list.length
   }, [discountSummaryQuery.data?.discounts, discountSummaryQuery.data?.rows])
+
+  /*
+   * AM Hyundai / AM Platinum discounts: a DIFFERENT system from KIA's (discount_approvals, raised from the
+   * public brand forms, chain GSM or VP -> MD). Shown here as brand tabs by owner request, 2026-09-19; the
+   * panel is the brand pages' own dashboard, embedded, so data, filters and Approve / Reject are identical.
+   */
+  const [discountBrand, setDiscountBrand] = useState<DiscountBrand>('kia')
+  const groupDiscountQuery = useQuery({
+    queryKey: ['hyundai-group-discount-summary'],
+    enabled: discountBranches.length > 0,
+    queryFn: async () => {
+      const res = await fetch('/api/discount-approvals')
+      if (!res.ok) return [] as Array<{ branch: string; status: string }>
+      return (await res.json()) as Array<{ branch: string; status: string }>
+    },
+    staleTime: 30000,
+  })
+  const groupDiscountPending = useMemo(() => {
+    const counts: Record<string, number> = { hyundai: 0, platinum: 0 }
+    for (const row of groupDiscountQuery.data ?? []) {
+      const branch = String(row.branch || '').toLowerCase()
+      if (branch in counts && HYUNDAI_GROUP_PENDING.has(row.status)) counts[branch] += 1
+    }
+    return counts
+  }, [groupDiscountQuery.data])
+  const allDiscountPending = discountPendingCount
+    + discountBranches.reduce((sum, b) => sum + (groupDiscountPending[b] || 0), 0)
 
   // Fast count query for fuel approvals badge
   const fuelSummaryQuery = useQuery({
@@ -2755,9 +2802,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             >
               <Tag className="w-4 h-4 text-amber-600" />
               <span>Discount Approvals</span>
-              {discountPendingCount > 0 ? (
+              {allDiscountPending > 0 ? (
                 <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white shadow-2xs animate-pulse">
-                  {discountPendingCount}
+                  {allDiscountPending}
                 </span>
               ) : discountTotalCount > 0 ? (
                 <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700">
@@ -2793,7 +2840,50 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         {approvalSection === 'fuel' ? (
           <FuelApprovalsClient currentUser={currentUser} embedded={true} />
         ) : approvalSection === 'discounts' ? (
-          <KiaDiscountApprovalsPanel currentUser={currentUser} />
+          <div className="space-y-4">
+            {discountBranches.length > 0 && (
+              <div role="tablist" aria-label="Discount approvals by brand" className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+                {(['kia', ...discountBranches] as DiscountBrand[]).map((brand) => {
+                  const active = discountBrand === brand
+                  const pending = brand === 'kia' ? discountPendingCount : groupDiscountPending[brand] || 0
+                  return (
+                    <button
+                      key={brand}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setDiscountBrand(brand)}
+                      className={cn(
+                        'flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-black transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400',
+                        active ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                      )}
+                    >
+                      <span>{brand === 'kia' ? 'AM KIA' : HYUNDAI_GROUP_DISCOUNT_LABEL[brand]}</span>
+                      {pending > 0 && (
+                        <span className={cn(
+                          'rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums',
+                          active ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800',
+                        )}>
+                          {pending}
+                          <span className="sr-only"> pending</span>
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {discountBrand === 'kia' || !discountBranches.includes(discountBrand) ? (
+              <KiaDiscountApprovalsPanel currentUser={currentUser} />
+            ) : (
+              <DiscountApprovalsDashboardClient
+                key={discountBrand}
+                embedded
+                branch={discountBrand}
+                currentUser={{ ...currentUser, brand: currentUser.brand ?? null }}
+              />
+            )}
+          </div>
         ) : (
           <>
             {/* Clean, modern single navigation tab bar */}

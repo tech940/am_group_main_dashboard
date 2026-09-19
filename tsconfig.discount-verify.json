@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.verify.json",
+  "compilerOptions": {
+    "paths": {
+      "@/lib/db": ["./scripts/_shims/hp-test-db.ts"],
+      "@/lib/auth/app-user": ["./scripts/_shims/test-app-user.ts"],
+      "@/*": ["./*"],
+      "server-only": ["./scripts/_shims/empty.ts"],
+      "client-only": ["./scripts/_shims/empty.ts"]
+    }
+  }
+}

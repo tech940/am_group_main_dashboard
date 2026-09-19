@@ -3,6 +3,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canUserAccessPermission } from '@/lib/permissions/service'
 import { isPermissionExplicitlyAllowed } from '@/lib/permissions/deny'
 import { KiaApprovalsClient } from '@/features/kia/kia-approvals-page'
+import { discountBranchesFor } from '@/lib/discount-approvals/access'
 
 /**
  * ⚠️ This page had NO guard. The line here read `// Gated by 'kia.approvals.view' permission` — a
@@ -34,6 +35,10 @@ export default async function KiaPaymentApprovalsPage() {
     forbidden()
   }
 
+  // AM Hyundai / AM Platinum discount tabs: the Hyundai discount permission AND that brand — the same rule
+  // GET/PATCH /api/discount-approvals enforce, so a tab never shows a list the API would refuse.
+  const discountBranches = await discountBranchesFor(appUser)
+
   return (
     <KiaApprovalsClient
       currentUser={{
@@ -41,7 +46,9 @@ export default async function KiaPaymentApprovalsPage() {
         role: appUser.role,
         fullName: appUser.fullName,
         email: appUser.email,
+        brand: appUser.brand,
       }}
+      discountBranches={discountBranches}
     />
   )
 }

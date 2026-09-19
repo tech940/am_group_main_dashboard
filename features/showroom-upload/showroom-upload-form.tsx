@@ -66,6 +66,7 @@ export type SlotDefinition = {
   title: string
   subtitle: string
   icon: typeof Car | typeof Wrench | typeof Tv | typeof Droplets | typeof Presentation | typeof Armchair
+  isOptional?: boolean
 }
 
 export function getSlotDefinitions(dept: ShowroomDepartmentKey = 'sales'): SlotDefinition[] {
@@ -174,8 +175,9 @@ export function getSlotDefinitions(dept: ShowroomDepartmentKey = 'sales'): SlotD
       categoryLabel: 'Standee',
       slotNumber: 1,
       title: 'Standee #1',
-      subtitle: 'Showroom promotional / model standee',
+      subtitle: 'Showroom promotional / model standee (Optional)',
       icon: Presentation,
+      isOptional: true,
     },
     {
       key: 'bathroom_1',
@@ -244,6 +246,17 @@ export function ShowroomUploadForm({
   }, [slotDefinitions, activeSlotKey])
 
   const totalCaptured = Object.keys(slotPhotos).length
+
+  const mandatorySlots = useMemo(() => {
+    return slotDefinitions.filter((s) => !s.isOptional)
+  }, [slotDefinitions])
+
+  const missingMandatorySlots = useMemo(() => {
+    return mandatorySlots.filter((s) => !slotPhotos[s.key])
+  }, [mandatorySlots, slotPhotos])
+
+  const isReadyToSubmit = missingMandatorySlots.length === 0
+  const allSlotsComplete = isReadyToSubmit && totalCaptured === slotDefinitions.length
 
   const safeBrand: ShowroomBrandKey = brand || 'kia'
   const safeLocation: string = location || 'Jammu'
@@ -586,10 +599,14 @@ export function ShowroomUploadForm({
   // Submit all captured photos
   const handleSubmit = async () => {
     const photosToUpload = Object.values(slotPhotos)
-    if (photosToUpload.length === 0) {
+    if (missingMandatorySlots.length > 0) {
+      const firstMissing = missingMandatorySlots[0]
+      if (firstMissing) {
+        setActiveSlotKey(firstMissing.key)
+      }
       toast({
-        title: 'No photos captured',
-        description: 'Please capture at least one showroom photo before submitting.',
+        title: 'Mandatory Photos Missing',
+        description: `Please capture all mandatory inspection photos before submitting. Missing (${missingMandatorySlots.length}): ${missingMandatorySlots.map((s) => s.title).join(', ')}`,
         variant: 'error',
       })
       return
@@ -882,8 +899,14 @@ export function ShowroomUploadForm({
           <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-slate-100 text-slate-800 border border-slate-200">
             {department}
           </span>
-          <div className="flex items-center gap-1.5 bg-[#055B65] text-white px-3 py-1 rounded-full text-xs font-bold shadow-2xs">
-            <span>{totalCaptured}/6 Snapped</span>
+          <div
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold shadow-2xs ${
+              isReadyToSubmit
+                ? 'bg-emerald-600 text-white'
+                : 'bg-[#055B65] text-white'
+            }`}
+          >
+            <span>{totalCaptured}/6 {isReadyToSubmit ? 'Ready' : `(${missingMandatorySlots.length} needed)`}</span>
           </div>
         </div>
       </header>
@@ -934,13 +957,15 @@ export function ShowroomUploadForm({
         {/* Guided Category Counts Checklist */}
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Required Inspection Slots (6 Photos)
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+              <span>{department === 'sales' ? 'Mandatory Inspection (5 Req + 1 Opt)' : 'All 6 Photos Mandatory'}</span>
             </span>
-            <span className="text-[11px] text-[#055B65] font-bold">
-              {department === 'service'
-                ? '3 Workshop Bays · 1 TV · 1 Lounge · 1 Washroom'
-                : '3 Vehicles · 1 TV · 1 Standee · 1 Washroom'}
+            <span className="text-[11px] font-bold">
+              {isReadyToSubmit ? (
+                <span className="text-emerald-700 font-bold flex items-center gap-1">✓ Ready to Upload</span>
+              ) : (
+                <span className="text-rose-600 font-bold">{missingMandatorySlots.length} required slot(s) missing</span>
+              )}
             </span>
           </div>
 
@@ -954,6 +979,7 @@ export function ShowroomUploadForm({
               const countCaptured = catSlots.filter((s) => Boolean(slotPhotos[s.key])).length
               const isComplete = countCaptured === cat.slotCount
               const isCurrentCat = activeSlot.category === cat.key
+              const isOptionalCat = cat.key === 'standee' && department === 'sales'
               const catLabel =
                 cat.key === 'vehicles' && department === 'service'
                   ? 'Workshop Bays'
@@ -971,7 +997,10 @@ export function ShowroomUploadForm({
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold truncate">{catLabel}</span>
+                    <span className="text-xs font-bold truncate">
+                      {catLabel}
+                      {isOptionalCat && <span className="text-[9px] text-slate-400 font-normal ml-1">(Opt)</span>}
+                    </span>
                     {isComplete ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     ) : (
@@ -1022,8 +1051,10 @@ export function ShowroomUploadForm({
             <div>
               <p className="text-xs font-bold text-slate-900 leading-tight flex items-center gap-1.5">
                 <span>Capturing {activeSlot.title}</span>
-                <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-0.2 rounded-full font-mono">
-                  {activeSlot.categoryLabel}
+                <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${
+                  activeSlot.isOptional ? 'bg-slate-100 text-slate-600 font-semibold' : 'bg-rose-50 text-rose-700 font-bold border border-rose-200'
+                }`}>
+                  {activeSlot.isOptional ? 'Optional' : 'Mandatory'}
                 </span>
               </p>
               <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
@@ -1113,9 +1144,15 @@ export function ShowroomUploadForm({
                       </button>
                     </div>
                   ) : (
-                    <div className="w-full h-22 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 mb-2 bg-white">
+                    <div className={`w-full h-22 rounded-xl border border-dashed flex flex-col items-center justify-center mb-2 ${
+                      slot.isOptional
+                        ? 'border-slate-300 bg-slate-50/50 text-slate-400'
+                        : 'border-rose-300/80 bg-rose-50/30 text-slate-400'
+                    }`}>
                       <slot.icon className="w-5 h-5 mb-1 text-slate-400" />
-                      <span className="text-[10px] font-bold text-slate-600">Tap to Snap</span>
+                      <span className={`text-[10px] font-bold ${slot.isOptional ? 'text-slate-500' : 'text-rose-700'}`}>
+                        {slot.isOptional ? 'Optional Slot' : 'Required Slot'}
+                      </span>
                     </div>
                   )}
 
@@ -1130,10 +1167,19 @@ export function ShowroomUploadForm({
                     </div>
 
                     {photo ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    ) : isSelected ? (
-                      <span className="w-2 h-2 rounded-full bg-[#055B65] animate-ping shrink-0" />
-                    ) : null}
+                      <div className="flex items-center gap-1">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span className="text-[9px] font-bold text-emerald-700 hidden sm:inline">Done</span>
+                      </div>
+                    ) : slot.isOptional ? (
+                      <span className="bg-slate-100 text-slate-600 text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0">
+                        Optional
+                      </span>
+                    ) : (
+                      <span className="bg-rose-100 text-rose-800 text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0">
+                        Required
+                      </span>
+                    )}
                   </div>
                 </div>
               )
@@ -1144,21 +1190,33 @@ export function ShowroomUploadForm({
           <Button
             type="button"
             onClick={handleSubmit}
-            disabled={uploading || totalCaptured === 0}
-            className="w-full h-12 rounded-xl bg-[#055B65] hover:bg-[#044850] text-white font-bold text-sm shadow-sm cursor-pointer transition-all mt-2"
+            disabled={uploading || !isReadyToSubmit}
+            className={`w-full h-12 rounded-xl text-white font-bold text-sm shadow-sm cursor-pointer transition-all mt-2 ${
+              isReadyToSubmit
+                ? 'bg-[#055B65] hover:bg-[#044850]'
+                : 'bg-slate-400 hover:bg-slate-500 cursor-not-allowed opacity-85'
+            }`}
           >
             {uploading ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading {totalCaptured}{' '}
-                Photos…
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading {totalCaptured} Inspection Photos…
+              </>
+            ) : isReadyToSubmit ? (
+              <>
+                <ShieldCheck className="w-4 h-4 mr-2" /> Upload {totalCaptured} {department === 'sales' ? 'Sales' : 'Service'} Photos
               </>
             ) : (
               <>
-                <ShieldCheck className="w-4 h-4 mr-2" /> Upload {totalCaptured}{' '}
-                {department === 'sales' ? 'Sales' : 'Service'} Photos
+                <Lock className="w-4 h-4 mr-2" /> Capture Required Photos ({totalCaptured}/{mandatorySlots.length} required)
               </>
             )}
           </Button>
+
+          {!isReadyToSubmit && (
+            <div className="text-[11px] text-center font-semibold text-rose-700 bg-rose-50/90 border border-rose-200/90 rounded-xl py-2.5 px-3 shadow-2xs">
+              ⚠️ Please capture the remaining {missingMandatorySlots.length} mandatory photo(s): {missingMandatorySlots.map((s) => s.title).join(', ')}.
+            </div>
+          )}
         </div>
       </main>
     </div>

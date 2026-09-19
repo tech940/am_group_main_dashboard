@@ -1,164 +1,156 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
+import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import {
+  canAccessDiscountBranch,
+  canViewDiscountApprovals,
+  isDiscountApprovalBranch,
+  NEVER_SERIALISED_FEED_FIELDS,
+} from '@/lib/discount-approvals/access'
 
 export const dynamic = 'force-dynamic'
+
+/*
+ * Customer lookup behind the Hyundai / Platinum discount forms. Two callers, two answers:
+ *
+ *  - the PUBLIC submit forms (/brands/<brand>/discount-approvals/submit — no login, by design) get only
+ *    what they prefill: name, car, consultant, team leader, insurance type, delivery date. Matched on the
+ *    customer ID / order ref / VIN / invoice numbers the form asks for — NOT on a phone number.
+ *  - a logged-in approver (section permission + that brand) also gets the full booking + sales rows for
+ *    the dashboard's detail drawer, minus PAN and GST number, and may search by phone.
+ *
+ * ⚠️ Until 2026-09-19 every caller, anonymous included, got `rawData`: the complete DMS rows — PAN,
+ * every contact number, home address and PIN, GST number — for any phone number, VIN or customer ID they
+ * typed. And every query was assembled with sql.raw. Both are fixed here; keep the two tiers.
+ */
+
+const FEEDS = {
+  hyundai: { booking: 'hyundai_booking_report', sales: 'hyundai_sales_report' },
+  platinum: { booking: 'am_platinum_booking_report', sales: 'am_platinum_sales_report' },
+} as const
+
+type Row = Record<string, unknown>
+
+const up = (v: unknown) => String(v ?? '').trim().toUpperCase()
+
+function firstRow(result: unknown): Row | null {
+  return Array.isArray(result) && result.length > 0 ? (result[0] as Row) : null
+}
+
+/** `col = value OR …`, parameterised; empty values are skipped so '' can never match a blank column. */
+function anyEquals(pairs: Array<[column: string, value: string]>): SQL | null {
+  const parts = pairs.filter(([, value]) => value !== '').map(([column, value]) => sql`UPPER(${sql.raw(column)}) = ${value}`)
+  return parts.length ? sql.join(parts, sql` OR `) : null
+}
+
+async function findOne(table: string, where: SQL | null): Promise<Row | null> {
+  if (!where) return null
+  return firstRow(await db.execute(sql`SELECT * FROM ${sql.raw(table)} WHERE (${where}) LIMIT 1`))
+}
+
+function withoutNeverSerialised(row: Row): Row {
+  const copy = { ...row }
+  for (const key of NEVER_SERIALISED_FEED_FIELDS) delete copy[key]
+  return copy
+}
+
+const text = (v: unknown) => (v === null || v === undefined ? '' : String(v))
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
-    const branch = url.searchParams.get('branch') || ''
-    const vin = (url.searchParams.get('vin') || '').trim()
+    const branch = (url.searchParams.get('branch') || '').trim().toLowerCase()
+    const key = up(url.searchParams.get('vin'))
 
-    if (!vin) {
+    if (!key) {
       return NextResponse.json({ error: 'VIN / Customer ID is required' }, { status: 400 })
     }
-
-    const normalizedBranch = branch.toLowerCase()
-    let bookingTable = ''
-    let salesTable = ''
-
-    if (normalizedBranch === 'hyundai') {
-      bookingTable = 'hyundai_booking_report'
-      salesTable = 'hyundai_sales_report'
-    } else if (normalizedBranch === 'platinum') {
-      bookingTable = 'am_platinum_booking_report'
-      salesTable = 'am_platinum_sales_report'
-    } else {
+    if (key.length > 64) {
+      return NextResponse.json({ error: 'That Customer ID is too long' }, { status: 400 })
+    }
+    if (!isDiscountApprovalBranch(branch)) {
       return NextResponse.json({ error: 'Invalid branch selection' }, { status: 400 })
     }
+    const feed = FEEDS[branch]
 
-    const escapedVin = vin.toUpperCase().replace(/'/g, "''")
+    // The full tier needs the section permission AND this brand. Anyone else — including a logged-in
+    // employee without them — gets the public tier.
+    const appUser = await getAuthenticatedAppUser().catch(() => null)
+    const full = Boolean(appUser) && (await canViewDiscountApprovals(appUser)) && (await canAccessDiscountBranch(appUser, branch))
 
-    // 1. Query booking table directly
-    const bookingQuery = sql.raw(`
-      SELECT *
-      FROM ${bookingTable}
-      WHERE (
-        UPPER(customer_id) = '${escapedVin}' 
-        OR UPPER(order_ref_no) = '${escapedVin}'
-        OR UPPER(contact_number) = '${escapedVin}'
-      )
-      LIMIT 1
-    `)
-    const bookingResult = await db.execute(bookingQuery)
-    let booking = (bookingResult[0] as Record<string, any>) || null
+    // 1 + 2. Direct matches. A phone number is a search key for approvers only.
+    let booking = await findOne(feed.booking, anyEquals([
+      ['customer_id', key],
+      ['order_ref_no', key],
+      ...(full ? ([['contact_number', key]] as Array<[string, string]>) : []),
+    ]))
+    let sales = await findOne(feed.sales, anyEquals([
+      ['customerid', key],
+      ['vin_number', key],
+      ['order_ref_no', key],
+      ['invoice_no', key],
+      ['hmi_invoice_no', key],
+    ]))
 
-    // 2. Query sales table directly
-    const salesQuery = sql.raw(`
-      SELECT *
-      FROM ${salesTable}
-      WHERE (
-        UPPER(customerid) = '${escapedVin}'
-        OR UPPER(vin_number) = '${escapedVin}'
-        OR UPPER(order_ref_no) = '${escapedVin}'
-        OR UPPER(invoice_no) = '${escapedVin}'
-        OR UPPER(hmi_invoice_no) = '${escapedVin}'
-      )
-      LIMIT 1
-    `)
-    const salesResult = await db.execute(salesQuery)
-    let sales = (salesResult[0] as Record<string, any>) || null
-
-    // 3. If booking found but sales not found, try cross-referencing sales table using booking keys
+    // 3. Booking found, sales not: cross-reference the sales feed by the booking's own keys.
     if (booking && !sales) {
-      const bOrderRef = (booking.order_ref_no || '').toString().trim().toUpperCase().replace(/'/g, "''")
-      const bCustId = (booking.customer_id || '').toString().trim().toUpperCase().replace(/'/g, "''")
-      const conditions: string[] = []
-      if (bOrderRef) conditions.push(`UPPER(order_ref_no) = '${bOrderRef}'`)
-      if (bCustId) {
-        conditions.push(`UPPER(customerid) = '${bCustId}'`)
-        conditions.push(`UPPER(vin_number) = '${bCustId}'`)
-      }
-      if (conditions.length > 0) {
-        const crossSales = await db.execute(sql.raw(`
-          SELECT * FROM ${salesTable}
-          WHERE (${conditions.join(' OR ')})
-          LIMIT 1
-        `))
-        if (crossSales.length > 0) {
-          sales = crossSales[0] as Record<string, any>
-        }
-      }
+      const orderRef = up(booking.order_ref_no)
+      const custId = up(booking.customer_id)
+      sales = await findOne(feed.sales, anyEquals([['order_ref_no', orderRef], ['customerid', custId], ['vin_number', custId]]))
     }
 
-    // 4. If sales found but booking not found, try cross-referencing booking table using sales keys
+    // 4. Sales found, booking not: the reverse.
     if (sales && !booking) {
-      const sOrderRef = (sales.order_ref_no || '').toString().trim().toUpperCase().replace(/'/g, "''")
-      const sCustId = (sales.customerid || '').toString().trim().toUpperCase().replace(/'/g, "''")
-      const conditions: string[] = []
-      if (sOrderRef) conditions.push(`UPPER(order_ref_no) = '${sOrderRef}'`)
-      if (sCustId) conditions.push(`UPPER(customer_id) = '${sCustId}'`)
-      if (conditions.length > 0) {
-        const crossBooking = await db.execute(sql.raw(`
-          SELECT * FROM ${bookingTable}
-          WHERE (${conditions.join(' OR ')})
-          LIMIT 1
-        `))
-        if (crossBooking.length > 0) {
-          booking = crossBooking[0] as Record<string, any>
-        }
-      }
+      booking = await findOne(feed.booking, anyEquals([['order_ref_no', up(sales.order_ref_no)], ['customer_id', up(sales.customerid)]]))
     }
 
-    // If neither record exists
     if (!booking && !sales) {
       return NextResponse.json({ error: 'No matching booking or sales record found' }, { status: 404 })
     }
 
-    // Extract delivery date
     let deliveryDate: string | null = null
     const rawDeliveryDate = sales?.delivery_date || sales?.confirm_date || booking?.committed_delivery_date
     if (rawDeliveryDate) {
-      try {
-        deliveryDate = new Date(rawDeliveryDate).toISOString().slice(0, 10)
-      } catch {
-        deliveryDate = null
-      }
+      const parsed = new Date(String(rawDeliveryDate instanceof Date ? rawDeliveryDate.toISOString() : rawDeliveryDate))
+      deliveryDate = Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10)
     }
 
-    // Extract insurance type
     let insuranceType: 'In House' | 'Out House' | '' = ''
     if (sales?.insurance_in_house_y_n) {
-      const val = sales.insurance_in_house_y_n.toString().trim().toUpperCase()
+      const val = up(sales.insurance_in_house_y_n)
       if (val === 'Y' || val === 'YES' || val === 'IN HOUSE') insuranceType = 'In House'
       else if (val === 'N' || val === 'NO' || val === 'OUT HOUSE') insuranceType = 'Out House'
     }
 
-    // Extract discount amount
-    let discountAmount: number | undefined
-    if (sales?.dealer_cash_discount && !isNaN(Number(sales.dealer_cash_discount))) {
-      discountAmount = Number(sales.dealer_cash_discount)
+    // What the public form prefills — nothing more.
+    const prefill = {
+      customerName: text(booking?.name_of_the_customer || sales?.registration_name),
+      model: text(booking?.model || sales?.model),
+      variant: text(booking?.variant || sales?.variant),
+      color: text(booking?.color || sales?.color),
+      consultantName: text(sales?.consultant_name || booking?.consultant_name),
+      tlManager: text(booking?.team_leader),
+      insuranceType,
+      deliveryDate,
     }
+    if (!full) return NextResponse.json(prefill)
 
-    // Extract amount received
-    const amountReceived = booking?.amount_received 
-      ? Number(booking.amount_received) 
+    const discountAmount = sales?.dealer_cash_discount && !Number.isNaN(Number(sales.dealer_cash_discount))
+      ? Number(sales.dealer_cash_discount)
+      : undefined
+    const amountReceived = booking?.amount_received
+      ? Number(booking.amount_received)
       : (sales?.basic_amount ? Number(sales.basic_amount) : 0)
 
-    const customerName = booking?.name_of_the_customer || sales?.registration_name || ''
-    const model = booking?.model || sales?.model || ''
-    const variant = booking?.variant || sales?.variant || ''
-    const color = booking?.color || sales?.color || ''
-    const consultantName = sales?.consultant_name || booking?.consultant_name || ''
-    const tlManager = booking?.team_leader || ''
-
     return NextResponse.json({
-      customerName,
-      model,
-      variant,
-      color,
-      consultantName,
-      tlManager,
-      insuranceType,
+      ...prefill,
       discountAmount,
       amountReceived,
-      deliveryDate,
-      rawData: { ...booking, ...sales },
+      rawData: withoutNeverSerialised({ ...(booking ?? {}), ...(sales ?? {}) }),
     })
   } catch (error) {
     console.error('Error during discount approvals lookup:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-

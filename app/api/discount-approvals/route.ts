@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { discountApprovals } from '@/lib/db/schema'
-import { desc, eq, sql } from 'drizzle-orm'
+import { discountApprovals, discountApprovalsEmployees } from '@/lib/db/schema'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { canAccessBrand } from '@/lib/auth/brand-access'
-import { hasAllBranchAccess, type BranchValue } from '@/lib/branches'
-import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
-import { hasExplicitBrandGrant } from '@/lib/permissions/deny'
+import {
+  canAccessDiscountBranch,
+  canViewDiscountApprovals,
+  discountBranchesFor,
+  isDiscountApprovalBranch,
+} from '@/lib/discount-approvals/access'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,39 +66,27 @@ export async function GET(request: NextRequest) {
     if (!appUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    // ⚠️ This used to check only "logged in" — any employee with brand access could read every request.
+    // Now the section permission, and only the branches this user may see (lib/discount-approvals/access).
+    const allowedBranches = await discountBranchesFor(appUser)
+    if (allowedBranches.length === 0) {
+      return NextResponse.json({ error: 'You do not have access to discount approvals' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(request.url)
-    const branchParam = searchParams.get('branch')
+    const branchParam = (searchParams.get('branch') || '').trim().toLowerCase()
+    const branches = branchParam && branchParam !== 'all'
+      ? allowedBranches.filter((b) => b === branchParam)
+      : allowedBranches
+    if (branches.length === 0) return NextResponse.json([])
 
-    let rows
-    if (branchParam && branchParam.toLowerCase() !== 'all') {
-      rows = await db
-        .select()
-        .from(discountApprovals)
-        .where(sql`LOWER(${discountApprovals.branch}) = ${branchParam.toLowerCase().trim()}`)
-        .orderBy(desc(discountApprovals.createdAt))
-    } else {
-      rows = await db
-        .select()
-        .from(discountApprovals)
-        .orderBy(desc(discountApprovals.createdAt))
-    }
+    const rows = await db
+      .select()
+      .from(discountApprovals)
+      .where(inArray(sql`LOWER(${discountApprovals.branch})`, branches))
+      .orderBy(desc(discountApprovals.createdAt))
 
-    // Filter rows by authorized brand access
-    const isGlobal = isSuperAdminRole(appUser.role) || hasGlobalAccessRole(appUser.role)
-    let allowedRows = rows
-
-    if (!isGlobal && appUser.brand !== 'all' && !hasAllBranchAccess(appUser.brand)) {
-      const allowedBrands = new Set<string>()
-      for (const b of ['hyundai', 'platinum', 'kia', 'mg'] as BranchValue[]) {
-        if (canAccessBrand(appUser, b) || (await hasExplicitBrandGrant(appUser, b))) {
-          allowedBrands.add(b)
-        }
-      }
-      allowedRows = rows.filter((row) => allowedBrands.has(row.branch.toLowerCase()))
-    }
-
-    return NextResponse.json(allowedRows)
+    return NextResponse.json(rows)
   } catch (error) {
     console.error('Error fetching discount approvals:', error)
     return NextResponse.json({ error: 'Failed to fetch discount approvals' }, { status: 500 })
@@ -128,42 +118,47 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields (Tele Date & Insurance Type are required)' }, { status: 400 })
     }
 
-    // Auto-learn new employees/managers
+    /*
+     * ⚠️ PUBLIC route (the no-login submit forms), so every value is untrusted. `branch` used to be pasted
+     * into sql.raw() unescaped — an unauthenticated SQL injection, found in the Sep 2026 audit. It is now
+     * one of the two known branches, and nothing below builds SQL from a string.
+     */
     const normalizedBranch = String(branch).trim().toLowerCase()
-    
-    // Check & Insert Sales Executive
+    if (!isDiscountApprovalBranch(normalizedBranch)) {
+      return NextResponse.json({ error: 'Invalid branch selection' }, { status: 400 })
+    }
     const reqName = String(requesterName).trim()
-    const existingExec = await db.execute(sql.raw(`
-      SELECT id FROM am_group_discount_approvals_employees 
-      WHERE UPPER(name) = '${reqName.toUpperCase().replace(/'/g, "''")}' 
-        AND branch = '${normalizedBranch}'
-        AND role = 'sales_executive'
-      LIMIT 1
-    `))
-    if (existingExec.length === 0) {
-      await db.execute(sql.raw(`
-        INSERT INTO am_group_discount_approvals_employees (name, role, branch)
-        VALUES ('${reqName.replace(/'/g, "''")}', 'sales_executive', '${normalizedBranch}');
-      `))
+    const tlName = tlManager ? String(tlManager).trim() : ''
+    const amount = Number(discountAmount)
+    const accessories = accessoriesAmount === undefined || accessoriesAmount === null || accessoriesAmount === '' ? null : Number(accessoriesAmount)
+    const tele = String(teleDate).trim()
+    const tooLong = [reqName, tlName, String(customerId), String(customerName ?? ''), String(model ?? ''), String(variant ?? ''), String(color ?? '')]
+      .some((v) => v.length > 120) || String(reference ?? '').length > 500
+    if (!reqName || tooLong) {
+      return NextResponse.json({ error: 'One of the fields is empty or too long' }, { status: 400 })
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000_000 || (accessories !== null && (!Number.isFinite(accessories) || accessories < 0 || accessories > 10_000_000))) {
+      return NextResponse.json({ error: 'Enter the discount (and accessories) amount as a number' }, { status: 400 })
+    }
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(tele) || !['In House', 'Out House'].includes(String(insuranceType).trim())) {
+      return NextResponse.json({ error: 'Tele Date must be a date and Insurance Type In House or Out House' }, { status: 400 })
     }
 
-    // Check & Insert Team Leader
-    if (tlManager) {
-      const tlName = String(tlManager).trim()
-      const existingTL = await db.execute(sql.raw(`
-        SELECT id FROM am_group_discount_approvals_employees 
-        WHERE UPPER(name) = '${tlName.toUpperCase().replace(/'/g, "''")}' 
-          AND branch = '${normalizedBranch}'
-          AND role = 'team_leader'
-        LIMIT 1
-      `))
-      if (existingTL.length === 0) {
-        await db.execute(sql.raw(`
-          INSERT INTO am_group_discount_approvals_employees (name, role, branch)
-          VALUES ('${tlName.replace(/'/g, "''")}', 'team_leader', '${normalizedBranch}');
-        `))
-      }
+    // Auto-learn new sales executives / team leaders for the form's pickers.
+    const learn = async (name: string, role: 'sales_executive' | 'team_leader') => {
+      const [existing] = await db
+        .select({ id: discountApprovalsEmployees.id })
+        .from(discountApprovalsEmployees)
+        .where(and(
+          sql`UPPER(${discountApprovalsEmployees.name}) = ${name.toUpperCase()}`,
+          eq(discountApprovalsEmployees.branch, normalizedBranch),
+          eq(discountApprovalsEmployees.role, role),
+        ))
+        .limit(1)
+      if (!existing) await db.insert(discountApprovalsEmployees).values({ name, role, branch: normalizedBranch })
     }
+    await learn(reqName, 'sales_executive')
+    if (tlName) await learn(tlName, 'team_leader')
 
     const initialHistory = [{
       action: 'SUBMITTED',
@@ -183,10 +178,10 @@ export async function POST(request: NextRequest) {
       model: model ? String(model).trim() : null,
       variant: variant ? String(variant).trim() : null,
       color: color ? String(color).trim() : null,
-      discountAmount: String(discountAmount),
-      accessoriesAmount: accessoriesAmount ? String(accessoriesAmount) : null,
-      tlManager: tlManager ? String(tlManager).trim() : null,
-      teleDate: String(teleDate).trim(),
+      discountAmount: String(amount),
+      accessoriesAmount: accessories === null ? null : String(accessories),
+      tlManager: tlName || null,
+      teleDate: tele,
       insuranceType: String(insuranceType).trim(),
       reference: reference ? String(reference).trim() : null,
       status: 'PENDING_GSM',
@@ -239,7 +234,13 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Request has already been processed' }, { status: 400 })
     }
 
-    // 3. Validate stage authorization
+    // 3a. The section and THIS request's brand. Before 2026-09-19 only the role below was checked, so a
+    // general_manager of any brand (KIA's included) could clear Hyundai's stage 1.
+    if (!(await canViewDiscountApprovals(appUser)) || !(await canAccessDiscountBranch(appUser, String(reqItem.branch).toLowerCase()))) {
+      return NextResponse.json({ error: 'You are not authorized to act on this brand\'s discount requests' }, { status: 403 })
+    }
+
+    // 3b. Validate stage authorization
     // Rule: Either General Sales Manager OR VP can approve Stage 1 (PENDING_GSM / PENDING_VP / PENDING_SM) -> sends straight to MD (PENDING_MD)!
     // Stage 2: MD (PENDING_MD) -> approves to APPROVED!
     let allowed = false
@@ -292,7 +293,8 @@ export async function PATCH(request: NextRequest) {
     const existingHistory = Array.isArray(reqItem.history) ? reqItem.history : []
     const updatedHistory = [...existingHistory, newHistoryEntry]
 
-    // 6. Update request
+    // 6. Update request — only if nobody else moved it meanwhile. Two approvers pressing at once used to
+    // both succeed and double the history.
     const updated = await db
       .update(discountApprovals)
       .set({
@@ -301,8 +303,11 @@ export async function PATCH(request: NextRequest) {
         history: updatedHistory,
         updatedAt: new Date(),
       })
-      .where(eq(discountApprovals.id, id))
+      .where(and(eq(discountApprovals.id, id), eq(discountApprovals.status, reqItem.status)))
       .returning()
+    if (updated.length === 0) {
+      return NextResponse.json({ error: 'Someone else has just acted on this request — refresh to see it' }, { status: 409 })
+    }
 
     return NextResponse.json({
       message: `Discount approval request processed successfully.`,

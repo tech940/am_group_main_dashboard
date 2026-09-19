@@ -21,6 +21,7 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCw,
+  RotateCcw,
   ExternalLink,
   Copy,
   Check,
@@ -261,6 +262,13 @@ export function ShowroomGalleryClient({
         setActiveImageIndex((prev) => (prev > 0 ? prev - 1 : activeSessionImages.length - 1))
         setZoomLevel(1)
         setRotation(0)
+      } else if (e.key === 'r' || e.key === 'R') {
+        setRotation((r) => (r + 90) % 360)
+      } else if (e.key === 'l' || e.key === 'L') {
+        setRotation((r) => (r - 90 + 360) % 360)
+      } else if (e.key === '0') {
+        setRotation(0)
+        setZoomLevel(1)
       } else if (e.key === 'Escape') {
         setLightboxOpen(false)
       }
@@ -948,13 +956,13 @@ export function ShowroomGalleryClient({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))}
                 className="text-white hover:bg-white/20 h-9 w-9 p-0 cursor-pointer"
-                title="Zoom Out"
+                title="Zoom Out (-)"
               >
                 <ZoomOut className="w-4 h-4" />
               </Button>
@@ -963,19 +971,43 @@ export function ShowroomGalleryClient({
                 size="sm"
                 onClick={() => setZoomLevel((z) => Math.min(3, z + 0.25))}
                 className="text-white hover:bg-white/20 h-9 w-9 p-0 cursor-pointer"
-                title="Zoom In"
+                title="Zoom In (+)"
               >
                 <ZoomIn className="w-4 h-4" />
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => setRotation((r) => (r - 90 + 360) % 360)}
+                className="text-white hover:bg-white/20 h-9 w-9 p-0 cursor-pointer"
+                title="Rotate Left (-90°) [L]"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setRotation((r) => (r + 90) % 360)}
                 className="text-white hover:bg-white/20 h-9 w-9 p-0 cursor-pointer"
-                title="Rotate Clockwise"
+                title="Rotate Right (+90°) [R]"
               >
                 <RotateCw className="w-4 h-4" />
               </Button>
+              {(rotation !== 0 || zoomLevel !== 1) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setRotation(0)
+                    setZoomLevel(1)
+                  }}
+                  className="text-amber-300 hover:bg-white/20 h-9 px-2 text-xs font-semibold cursor-pointer gap-1"
+                  title="Reset Zoom & Rotation [0]"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{rotation !== 0 ? `${rotation}°` : 'Reset'}</span>
+                </Button>
+              )}
               <a
                 href={activeImage.url}
                 download={`showroom_${activeImage.brand}_${activeImage.category}_${Date.now()}.jpg`}
@@ -990,8 +1022,8 @@ export function ShowroomGalleryClient({
                 variant="ghost"
                 size="sm"
                 onClick={() => setLightboxOpen(false)}
-                className="text-white hover:bg-rose-600/80 h-9 w-9 p-0 rounded-lg ml-2 cursor-pointer"
-                title="Close"
+                className="text-white hover:bg-rose-600/80 h-9 w-9 p-0 rounded-lg ml-1 cursor-pointer"
+                title="Close [Esc]"
               >
                 <X className="w-5 h-5" />
               </Button>
@@ -1022,8 +1054,55 @@ export function ShowroomGalleryClient({
                 transform: `scale(${zoomLevel}) rotate(${rotation}deg)`,
                 transition: 'transform 0.2s ease-out',
               }}
-              className="max-h-[80vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
+              className={
+                rotation % 180 !== 0
+                  ? 'max-h-[75vw] max-w-[70vh] object-contain rounded-lg shadow-2xl'
+                  : 'max-h-[78vh] max-w-[88vw] object-contain rounded-lg shadow-2xl'
+              }
             />
+
+            {/* Floating Quick Action Toolbar (Bottom Center) */}
+            <div className="absolute bottom-4 sm:bottom-6 z-30 flex items-center gap-1.5 rounded-full bg-black/75 px-3 py-1.5 backdrop-blur-md border border-white/20 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => setRotation((r) => (r - 90 + 360) % 360)}
+                className="flex items-center gap-1.5 text-white hover:bg-white/20 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer"
+                title="Rotate Left 90° (Counter-Clockwise) [L]"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Rotate Left</span>
+              </button>
+
+              <div className="h-4 w-px bg-white/20" />
+
+              <button
+                type="button"
+                onClick={() => setRotation((r) => (r + 90) % 360)}
+                className="flex items-center gap-1.5 text-white hover:bg-white/20 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer"
+                title="Rotate Right 90° (Clockwise) [R]"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Rotate Right</span>
+              </button>
+
+              {(rotation !== 0 || zoomLevel !== 1) && (
+                <>
+                  <div className="h-4 w-px bg-white/20" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRotation(0)
+                      setZoomLevel(1)
+                    }}
+                    className="flex items-center gap-1 text-amber-300 hover:bg-white/20 px-2 py-1 rounded-full text-xs font-bold transition-all cursor-pointer"
+                    title="Reset Orientation [0]"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Reset ({rotation}°)</span>
+                  </button>
+                </>
+              )}
+            </div>
 
             {/* Right Nav Button */}
             <button

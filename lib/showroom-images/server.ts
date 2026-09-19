@@ -94,9 +94,32 @@ export async function uploadShowroomImages({
   }
 
   const bucketId = getShowroomBucketForBrand(brand)
-  const sessionId = crypto.randomUUID()
   const now = new Date()
   const sanitizedLocation = location.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase()
+
+  // Prevent splitting: If there was an upload for the exact same brand/location/department in the last 20 mins, reuse that sessionId
+  let sessionId = crypto.randomUUID()
+  try {
+    const twentyMinsAgo = new Date(Date.now() - 20 * 60 * 1000)
+    const recentRecords = await db
+      .select({ sessionId: showroomImages.sessionId })
+      .from(showroomImages)
+      .where(
+        and(
+          eq(showroomImages.brand, brand.trim().toLowerCase()),
+          eq(showroomImages.location, location.trim()),
+          eq(showroomImages.department, validDept),
+          gte(showroomImages.capturedAt, twentyMinsAgo)
+        )
+      )
+      .limit(1)
+
+    if (recentRecords.length > 0 && recentRecords[0].sessionId) {
+      sessionId = recentRecords[0].sessionId
+    }
+  } catch (err) {
+    console.warn('[uploadShowroomImages] Failed to check recent session, using fresh UUID:', err)
+  }
 
   // Prepare metadata and storage paths for all files
   const preparedUploads = files.map((file, i) => {
@@ -261,10 +284,11 @@ export async function getShowroomGallerySessions({
     .orderBy(desc(showroomImages.capturedAt))
     .limit(Math.min(limit * 30, 600))
 
-  // Group by session_id
-  const sessionMap = new Map<string, ShowroomUploadSession>()
+  // Intelligent session grouping: Coalesce uploads from the same branch/dept within 25 minutes
+  const sessionsList: ShowroomUploadSession[] = []
 
   for (const row of rows) {
+    const rowTime = new Date(row.capturedAt).getTime()
     const imgRecord: ShowroomImageRecord = {
       id: row.id,
       sessionId: row.sessionId,
@@ -285,45 +309,59 @@ export async function getShowroomGallerySessions({
       url: getStorageUrl(row.bucketId, row.storagePath),
     }
 
-    let session = sessionMap.get(row.sessionId)
-    if (!session) {
-      session = {
+    // Check if there is an existing session card for the same brand, location, and department within 25 mins
+    const existingSession = sessionsList.find((s) => {
+      if (
+        s.brand.toLowerCase() !== row.brand.toLowerCase() ||
+        s.location.toLowerCase() !== row.location.toLowerCase() ||
+        s.department.toLowerCase() !== row.department.toLowerCase()
+      ) {
+        return false
+      }
+      const sTime = new Date(s.capturedAt).getTime()
+      return Math.abs(sTime - rowTime) <= 25 * 60 * 1000
+    })
+
+    if (existingSession) {
+      existingSession.images.push(imgRecord)
+      existingSession.totalImages = existingSession.images.length
+      if (imgRecord.uploaderName && !existingSession.uploaderName) {
+        existingSession.uploaderName = imgRecord.uploaderName
+      }
+      if (row.category === 'vehicles') {
+        existingSession.byCategory.vehicles.push(imgRecord)
+      } else if (row.category === 'tv') {
+        existingSession.byCategory.tv.push(imgRecord)
+      } else if (row.category === 'standee') {
+        existingSession.byCategory.standee.push(imgRecord)
+      } else if (row.category === 'lounge') {
+        existingSession.byCategory.lounge.push(imgRecord)
+      } else if (row.category === 'bathroom') {
+        existingSession.byCategory.bathroom.push(imgRecord)
+      }
+    } else {
+      const newSession: ShowroomUploadSession = {
         sessionId: row.sessionId,
         brand: row.brand,
         location: row.location,
         department: row.department,
         capturedAt: row.capturedAt.toISOString(),
         uploaderName: row.uploaderName,
-        totalImages: 0,
-        images: [],
+        totalImages: 1,
+        images: [imgRecord],
         byCategory: {
-          vehicles: [],
-          tv: [],
-          standee: [],
-          lounge: [],
-          bathroom: [],
+          vehicles: row.category === 'vehicles' ? [imgRecord] : [],
+          tv: row.category === 'tv' ? [imgRecord] : [],
+          standee: row.category === 'standee' ? [imgRecord] : [],
+          lounge: row.category === 'lounge' ? [imgRecord] : [],
+          bathroom: row.category === 'bathroom' ? [imgRecord] : [],
         },
       }
-      sessionMap.set(row.sessionId, session)
-    }
-
-    session.images.push(imgRecord)
-    session.totalImages = session.images.length
-
-    if (row.category === 'vehicles') {
-      session.byCategory.vehicles.push(imgRecord)
-    } else if (row.category === 'tv') {
-      session.byCategory.tv.push(imgRecord)
-    } else if (row.category === 'standee') {
-      session.byCategory.standee.push(imgRecord)
-    } else if (row.category === 'lounge') {
-      session.byCategory.lounge.push(imgRecord)
-    } else if (row.category === 'bathroom') {
-      session.byCategory.bathroom.push(imgRecord)
+      sessionsList.push(newSession)
     }
   }
 
-  const sessions = Array.from(sessionMap.values()).slice(0, limit)
+  const sessions = sessionsList.slice(0, limit)
 
   return {
     sessions,

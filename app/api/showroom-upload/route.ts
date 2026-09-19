@@ -39,9 +39,14 @@ export async function POST(req: NextRequest) {
     const rawFiles = formData.getAll('photos') as File[]
     const fallbackFiles = formData.getAll('images') as File[]
     const allFiles = [...rawFiles, ...fallbackFiles].filter((f) => f && typeof f === 'object' && 'arrayBuffer' in f && f.size > 0)
-
-    if (allFiles.length === 0) {
-      return NextResponse.json({ error: 'Please capture at least one showroom photo.' }, { status: 400 })
+    
+    // Standee is optional for Sales (5 mandatory), Service requires all 6
+    const minRequiredPhotos = department.toLowerCase() === 'service' ? 6 : 5
+    if (allFiles.length < minRequiredPhotos) {
+      return NextResponse.json(
+        { error: `Minimum ${minRequiredPhotos} inspection photos are mandatory for ${department.toUpperCase()} (Standee is optional in Sales). Received only ${allFiles.length} photo(s).` },
+        { status: 400 }
+      )
     }
 
     const processedFiles: Array<{

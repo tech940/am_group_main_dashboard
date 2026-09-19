@@ -108,6 +108,7 @@
     "import:kia-price-sheet": "tsx --tsconfig ./tsconfig.verify.json scripts/import-kia-model-price-sheet.ts",
     "verify:kia-walk-in": "tsx --tsconfig ./tsconfig.hp-flow.json scripts/verify-kia-walk-in-leads.ts",
     "verify:sell-used-car": "tsx --tsconfig ./tsconfig.hp-flow.json scripts/verify-sell-used-car.ts",
+    "verify:discount-approvals": "tsx --tsconfig ./tsconfig.discount-verify.json scripts/verify-discount-approvals.ts",
     "verify:kia-delivery-guard": "tsx --tsconfig ./tsconfig.hp-flow.json scripts/verify-kia-delivery-guard.ts",
     "verify:kia-dms-reconciliation": "tsx --tsconfig ./tsconfig.hp-flow.json scripts/verify-kia-dms-reconciliation.ts",
     "kia:dms-recon": "tsx --tsconfig ./tsconfig.verify.json scripts/kia-dms-recon-run.ts",

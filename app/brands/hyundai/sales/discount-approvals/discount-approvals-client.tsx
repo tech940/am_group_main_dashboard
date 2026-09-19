@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
+import { discountExportQuery, isExportable, type DiscountExportFilters } from '@/lib/discount-approvals/filters'
 import {
   Search,
   Filter,
@@ -97,7 +98,6 @@ type BookingRawData = {
   approval_date?: string | null
   loan_amount?: number | string | null
   approved_loan_amount?: number | string | null
-  pan_number?: string | null
   dealer_code?: string | null
 }
 
@@ -110,9 +110,20 @@ type Props = {
     brand: string | null
   }
   branch?: 'hyundai' | 'platinum' | 'all'
+  /**
+   * Rendered inside another page (the Approvals page's AM Hyundai / AM Platinum tabs) — no page layout of
+   * its own and no page title; the host page supplies both. Same data, filters and Approve / Reject.
+   */
+  embedded?: boolean
 }
 
-export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props) {
+/** The host page's layout already wraps an embedded dashboard. */
+function EmbeddedShell({ children }: { children: React.ReactNode }) {
+  return <div className="min-w-0">{children}</div>
+}
+
+export function DiscountApprovalsDashboardClient({ currentUser, branch, embedded = false }: Props) {
+  const Shell = embedded ? EmbeddedShell : MainLayout
   const [data, setData] = useState<DiscountApproval[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -374,59 +385,48 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
   })
 
   // Export to Excel / CSV function
-  const handleExportExcel = () => {
-    if (!filteredData.length) {
-      alert('No records available to export.')
-      return
+  /*
+   * Export — APPROVED requests only, with the applied filters (owner, 2026-09-19), as Excel or PDF.
+   *
+   * Built on the server (app/api/discount-approvals/export), which applies the same access rule as the list
+   * and the SAME filter function counted here, so the number on the buttons is the number of rows in the
+   * file. It replaced a CSV of whatever tab was open — pending requests included — whose cells were not
+   * protected against spreadsheet formulas typed into the public form.
+   */
+  const exportFilters: DiscountExportFilters = {
+    branch: (branch && branch !== 'all') ? branch : appliedBranchFilter,
+    month: appliedSelectedMonth,
+    insurance: appliedInsuranceFilter,
+    q: appliedSearchTerm,
+  }
+  const exportCount = data.filter((item) => isExportable(item, exportFilters)).length
+  const [downloading, setDownloading] = useState<'xlsx' | 'pdf' | null>(null)
+
+  const handleDownload = async (format: 'xlsx' | 'pdf') => {
+    if (!exportCount || downloading) return
+    setDownloading(format)
+    try {
+      const res = await fetch(`/api/discount-approvals/export?${discountExportQuery(exportFilters, format)}`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        alert(body.error || 'Could not build the export. Please try again.')
+        return
+      }
+      const blob = await res.blob()
+      const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || `approved-discounts.${format}`
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = name
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch {
+      alert('Could not download the export — check your connection and try again.')
+    } finally {
+      setDownloading(null)
     }
-
-    const headers = [
-      'ID',
-      'Tele Date',
-      'Requester (Sales Exec)',
-      'TL / Manager',
-      'Branch',
-      'Customer ID / VIN',
-      'Customer Name',
-      'Model',
-      'Variant',
-      'Color',
-      'Insurance Type',
-      'Discount Amount (INR)',
-      'Accessories Amount (INR)',
-      'Status',
-      'Remarks',
-      'Submitted At',
-    ]
-
-    const rows = filteredData.map((item) => [
-      item.id,
-      item.teleDate || formatDate(item.createdAt),
-      `"${(item.requesterName || '').replace(/"/g, '""')}"`,
-      `"${(item.tlManager || '—').replace(/"/g, '""')}"`,
-      item.branch.toUpperCase(),
-      `"${(item.customerId || '').replace(/"/g, '""')}"`,
-      `"${(item.customerName || '—').replace(/"/g, '""')}"`,
-      `"${(item.model || '—').replace(/"/g, '""')}"`,
-      `"${(item.variant || '—').replace(/"/g, '""')}"`,
-      `"${(item.color || '—').replace(/"/g, '""')}"`,
-      `"${(item.insuranceType || '—').replace(/"/g, '""')}"`,
-      item.discountAmount,
-      item.accessoriesAmount || 0,
-      item.status,
-      `"${(item.remarks || '').replace(/"/g, '""')}"`,
-      item.createdAt,
-    ])
-
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `discount_approvals_export_${new Date().toISOString().substring(0, 10)}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
   }
 
   // Aggregated Stats & Deep Analysis Metrics
@@ -520,21 +520,24 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
     appliedInsuranceFilter !== 'all'
 
   return (
-    <MainLayout>
+    <Shell>
       {/* Top Header Banner */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
-            <IndianRupee className="h-6 w-6 text-[var(--dashboard-action-bg,#055B65)]" />
-            Discount Approvals Dashboard
-          </h1>
-          <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 mt-1">
-            Unified 2-Stage Approval System & Deep Analytics
-          </p>
-        </div>
+      <div className={`mb-6 flex flex-col sm:flex-row sm:items-center gap-4 ${embedded ? 'sm:justify-end' : 'sm:justify-between'}`}>
+        {!embedded && (
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
+              <IndianRupee className="h-6 w-6 text-[var(--dashboard-action-bg,#055B65)]" />
+              Discount Approvals Dashboard
+            </h1>
+            <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 mt-1">
+              Unified 2-Stage Approval System & Deep Analytics
+            </p>
+          </div>
+        )}
 
         {/* Action Buttons styled strictly with theme CSS variables */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setShowDeepAnalysis(!showDeepAnalysis)}
@@ -545,13 +548,29 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
           </button>
           <button
             type="button"
-            onClick={handleExportExcel}
+            onClick={() => void handleDownload('xlsx')}
+            disabled={!exportCount || downloading !== null}
             style={{ backgroundColor: 'var(--dashboard-action-bg, #055B65)', color: 'var(--dashboard-action-fg, #ffffff)' }}
-            className="h-10 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-md hover:opacity-90"
+            className="h-10 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-md hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Download className="h-4 w-4" />
+            {downloading === 'xlsx' ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Download className="h-4 w-4" />}
             Export Excel
           </button>
+          <button
+            type="button"
+            onClick={() => void handleDownload('pdf')}
+            disabled={!exportCount || downloading !== null}
+            className="h-10 px-4 bg-white text-[var(--dashboard-action-bg,#055B65)] border border-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_40%,transparent)] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 hover:bg-[color-mix(in_srgb,var(--dashboard-action-bg,#055B65)_8%,white)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {downloading === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <FileText className="h-4 w-4" />}
+            Download PDF
+          </button>
+        </div>
+        <p className="text-[11px] font-semibold text-slate-500 sm:text-right" aria-live="polite">
+          {exportCount > 0
+            ? `Exports the ${exportCount} approved request${exportCount === 1 ? '' : 's'} matching your filters. Pending and rejected are left out.`
+            : 'No approved requests match your filters, so there is nothing to export.'}
+        </p>
         </div>
       </div>
 
@@ -1160,7 +1179,6 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
                     <DrawerRow icon={<Phone className="h-3.5 w-3.5" />} label="Contact" value={drawerBooking.contact_number} />
                     <DrawerRow icon={<Hash className="h-3.5 w-3.5" />} label="Customer ID" value={drawerBooking.customer_id} mono />
                     <DrawerRow icon={<MapPin className="h-3.5 w-3.5" />} label="Location" value={drawerBooking.location} />
-                    <DrawerRow icon={<Hash className="h-3.5 w-3.5" />} label="PAN Number" value={drawerBooking.pan_number} mono />
                     <DrawerRow icon={<Tag className="h-3.5 w-3.5" />} label="Customer Segment" value={drawerBooking.customer_block} />
                   </DrawerSection>
 
@@ -1224,7 +1242,7 @@ export function DiscountApprovalsDashboardClient({ currentUser, branch }: Props)
           </div>
         </>
       )}
-    </MainLayout>
+    </Shell>
   )
 }
 
